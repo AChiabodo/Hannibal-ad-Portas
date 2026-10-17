@@ -50,12 +50,26 @@ describe('findAmbientNondeterminismReachableFromSimulation', () => {
 
   it('follows the same reachability the other fences do, and shows the chain', () => {
     const violations = violationsOf({
-      'src/sim/index.ts': "export * from '../ai/planner';\n",
+      'src/sim/index.ts': "export * from '../art/planner';\n",
+      'src/art/planner.ts': 'export const decideAt = (): number => Date.now();\n',
+    });
+
+    expect(violations.map((violation) => violation.file)).toEqual(['src/art/planner.ts']);
+    expect(violations[0]?.chain).toEqual(['src/sim/index.ts', 'src/art/planner.ts']);
+  });
+
+  it('walks the AI as a root of its own, the way the entry list does', () => {
+    // `src/ai` is an entry beside `src/sim`, so a file under it is reached as a
+    // root and its chain is itself — not a hop through `src/sim`. Both fences
+    // read the same walk, which is why this belongs here as well as there.
+    const violations = violationsOf({
+      // `src/sim` is required, so a tree that only has the AI is refused.
+      'src/sim/index.ts': 'export const ready = true;\n',
       'src/ai/planner.ts': 'export const decideAt = (): number => Date.now();\n',
     });
 
     expect(violations.map((violation) => violation.file)).toEqual(['src/ai/planner.ts']);
-    expect(violations[0]?.chain).toEqual(['src/sim/index.ts', 'src/ai/planner.ts']);
+    expect(violations[0]?.chain).toEqual(['src/ai/planner.ts']);
   });
 
   it('counts every spelling of the member, as the Math fences do', () => {
