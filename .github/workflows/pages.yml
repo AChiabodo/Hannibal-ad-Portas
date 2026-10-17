@@ -10,8 +10,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# These are the permissions `actions/configure-pages` and `actions/deploy-pages`
+# need, and they belong to the whole workflow rather than to the deploy job alone.
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: pages
@@ -56,9 +60,6 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    permissions:
-      pages: write
-      id-token: write
     steps:
       - name: Deploy
         id: deployment
