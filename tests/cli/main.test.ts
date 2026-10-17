@@ -119,6 +119,32 @@ describe('a Match that draws, played from the command line', () => {
   });
 });
 
+describe('a map dumped from the command line', () => {
+  it('prints the map a seed generates, and plays no Match', () => {
+    const ran = match('--seed', '7', '--map');
+
+    expect(ran.status).toBe(0);
+    expect(ran.stderr).toBe('');
+    expect(ran.stdout).toContain('seed 7');
+    expect(ran.stdout).toContain(`Rome's Stronghold`);
+    expect(ran.stdout).not.toContain('"hash"');
+  });
+
+  it('prints the very same bytes for the very same seed, so two maps can be diffed', () => {
+    expect(match('--seed', '7', '--map').stdout).toBe(match('--seed', '7', '--map').stdout);
+    expect(match('--seed', '7', '--map').stdout).not.toBe(match('--seed', '8', '--map').stdout);
+  });
+
+  it('exits 2, with the offending flag in the message, when --map comes with a Match to play', () => {
+    const ran = match('--map', '--ticks', '10');
+
+    expect(ran.status).toBe(2);
+    expect(ran.stdout).toBe('');
+    expect(ran.stderr).toContain('--map prints a map and plays nothing, so --ticks');
+    expect(ran.stderr).toContain('Usage:');
+  });
+});
+
 describe('a deliberately violated invariant', () => {
   it('accepts the hash a Match really ended on, which is the determinism gate (ADR-0006)', () => {
     const first = match('--seed', '11', '--ticks', '90');
@@ -156,6 +182,7 @@ describe('a misused command line', () => {
       expect(ran.stdout).toContain('--seed');
       expect(ran.stdout).toContain('--rules');
       expect(ran.stdout).toContain('draws');
+      expect(ran.stdout).toContain('--map');
       expect(ran.stdout).not.toContain('hash":');
     }
   });

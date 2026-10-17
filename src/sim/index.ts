@@ -33,6 +33,14 @@
  *   Match to a result, with no browser anywhere.
  * - `empty.ts` — the Match with no systems in it yet, which is the one the CLI
  *   can play today (A4); B1–C5 fill the world in behind it.
+ *
+ * B1 built the first piece of that world:
+ *
+ * - `map.ts` — a whole theatre generated from a seed: terrain, rivers crossed by
+ *   fords, resources, settlements, Strongholds and roads, with the invariants a
+ *   fair map has to satisfy asserted over a thousand seeds. It is a pure
+ *   function of the seed, and the map is integer state like everything else
+ *   (ADR-0006), so the Match that eventually runs on it replays exactly.
  */
 export { TICK_HZ, TICK_MS } from './clock.ts';
 export { requireTickCount } from './ticks.ts';
@@ -96,3 +104,36 @@ export { ForeignCommandError, runMatch } from './driver.ts';
 export type { MatchResult, MatchRun, MatchSetup, Outcome } from './driver.ts';
 export { emptyMatchOutcome, emptyMatchRules, observeEmptyMatch } from './empty.ts';
 export type { EmptyMatchVisible, EmptyMatchWorld } from './empty.ts';
+
+export {
+  generateMap,
+  halfOf,
+  isTerrain,
+  isWalkable,
+  MAP_HEIGHT,
+  MAP_WIDTH,
+  MAX_SETTLEMENTS,
+  MIN_FORDS_PER_RIVER,
+  MIN_SETTLEMENTS,
+  MIN_STRONGHOLD_DISTANCE,
+  RESOURCE,
+  RESOURCE_KINDS,
+  RESOURCE_TOLERANCE_PERCENT,
+  TERRAIN,
+  terrainAt,
+  TILE_COUNT,
+  TILE_SIZE,
+  tileIndex,
+  tileX,
+  tileY,
+} from './map.ts';
+export type {
+  Half,
+  MapGrid,
+  ResourceKind,
+  ResourceNode,
+  River,
+  Road,
+  Site,
+  Terrain,
+} from './map.ts';

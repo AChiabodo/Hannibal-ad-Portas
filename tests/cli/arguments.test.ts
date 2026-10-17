@@ -82,6 +82,23 @@ describe('the command line', () => {
     expect(() => parseArguments(['7'])).toThrow(/7/);
   });
 
+  it('prints the map a seed generates when asked for one, and plays no Match', () => {
+    expect(parseArguments(['--map'])).toEqual({ kind: 'map', seed: DEFAULT_SEED });
+    expect(parseArguments(['--map', '--seed', '7'])).toEqual({ kind: 'map', seed: 7 });
+    expect(parseArguments(['--seed', '7', '--map'])).toEqual({ kind: 'map', seed: 7 });
+  });
+
+  it('refuses a flag that only says something about a Match beside --map, which plays none', () => {
+    expect(() => parseArguments(['--map', '--ticks', '10'])).toThrow(UsageError);
+    expect(() => parseArguments(['--map', '--ticks', '10'])).toThrow(/--map prints a map and plays nothing, so --ticks/);
+    expect(() => parseArguments(['--map', '--expect-hash', '0a1b2c3d4e5f6071'])).toThrow(/--expect-hash/);
+    expect(() => parseArguments(['--map', '--rules', 'draws'])).toThrow(/--rules/);
+  });
+
+  it('refuses --map twice like any other flag', () => {
+    expect(() => parseArguments(['--map', '--map'])).toThrow(/--map is given twice/);
+  });
+
   it('refuses a flag with no value after it', () => {
     expect(() => parseArguments(['--seed'])).toThrow(/--seed needs a value/);
     expect(() => parseArguments(['--ticks'])).toThrow(/--ticks needs a value/);
@@ -122,7 +139,7 @@ describe('the command line', () => {
   });
 
   it('describes itself in one place, so the usage message cannot drift from the parser', () => {
-    for (const flag of ['--seed', '--ticks', '--expect-hash', '--rules', '--help']) {
+    for (const flag of ['--seed', '--ticks', '--expect-hash', '--rules', '--map', '--help']) {
       expect(USAGE).toContain(flag);
     }
     expect(USAGE).toContain(DEFAULT_TICKS.toString());

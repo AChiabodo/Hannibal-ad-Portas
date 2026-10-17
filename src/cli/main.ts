@@ -8,12 +8,15 @@
  * simulation is Node code, and this command is what plays it.
  *
  * It is thin on purpose. Reading the command line is `arguments.ts`, playing the
- * Match is `run.ts`, and writing the report is `report.ts`, so that everything
- * except "which stream, which exit code" is a function a test can call directly.
+ * Match is `run.ts`, printing a map is `dump.ts`, and writing the report is
+ * `report.ts`, so that everything except "which stream, which exit code" is a
+ * function a test can call directly.
  *
  * The contract, which the tests hold it to:
  *
- * - **Standard output** carries the report and nothing else, so `| jq` works.
+ * - **Standard output** carries the report and nothing else, so `| jq` works —
+ *   or, with `--map`, the map and nothing else, so the grid can be read and
+ *   diffed.
  * - **Standard error** carries one message, prefixed `cli:`, when something went
  *   wrong; the usage accompanies a misuse.
  * - **Exit 0** the Match ran; **1** a game invariant was violated, the expected
@@ -25,6 +28,7 @@
  * has to run it again to find out.
  */
 import { parseArguments, USAGE, UsageError } from './arguments.ts';
+import { formatMap } from './dump.ts';
 import { formatReport, reportOf } from './report.ts';
 import { playMatch, requireExpectedHash } from './run.ts';
 
@@ -33,6 +37,8 @@ try {
 
   if (parsed.kind === 'help') {
     process.stdout.write(`${USAGE}\n`);
+  } else if (parsed.kind === 'map') {
+    process.stdout.write(formatMap(parsed.seed));
   } else {
     const run = playMatch(parsed.options);
     process.stdout.write(formatReport(reportOf(run)));

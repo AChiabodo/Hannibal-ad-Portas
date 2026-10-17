@@ -29,7 +29,7 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | `npm run check`     | TypeScript in strict mode, all three projects, no emit                 |
 | `npm run lint`      | ESLint over the repository                                             |
 | `npm run guard`     | The fences: `pixi.js` under `render/`, and no `Math.random`, transcendentals or ambient clock in the simulation |
-| `npm run match`     | One whole Match headless, as a JSON report, with no build step         |
+| `npm run match`     | One whole Match headless as a JSON report, or — with `--map` — the map a seed generates, with no build step |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
 | `npm run test:e2e`  | Browser tests (Playwright, headless Chromium, software WebGL)           |
 | `npm run verify`    | Lint, check, guard, unit tests and build in one go                      |
@@ -119,6 +119,75 @@ The tick contract every later wave is built on (PLAN §3, ADR-0006):
 The tick rate and the hash are decisions, not accidents: the plan fixes the rate
 at 10 Hz, and a test records the hash of a fixed state so changing it is visible
 in review.
+
+## The map
+
+A Match begins on a map nobody drew. `generateMap(seed)` — `src/sim/map.ts` —
+is a pure function of its seed, returning a 96×96 grid of 16×16 tiles: terrain,
+one or two rivers crossed by fords, resource nodes of grain, timber, stone and iron,
+four to six capturable minor settlements, a Stronghold for each Faction, and
+roads joining the nodes to one another. The map is integer state like everything
+else the world holds, so the tiles a Match starts on are covered by the state
+hash and a replay begins on the same ones (ADR-0006).
+
+The theatre is **organic, not mirrored**: the two halves do not carry the same
+hills in the same places, and no pass reflects one side onto the other. Fairness
+is therefore not a symmetry baked into the generator; it is a set of invariants
+the generator satisfies on purpose, and `tests/sim/map-invariants.ts` is where
+they are asserted:
+
+- the same seed always produces the same map, tile for tile;
+- the land is **one landmass**, and every Stronghold, minor settlement and
+  resource node stands on it, so everything on the map is reachable from
+  everywhere;
+- every river runs from one edge of the map to the other and carries at least
+  **two fords a Squad can cross**;
+- the two Strongholds stand at least **56 tiles apart**;
+- the two halves of the theatre — the two sides of the perpendicular bisector of
+  the two Strongholds — hold the same number of nodes of each kind, and their
+  resource totals differ by no more than **20%**, resource by resource;
+- the roads join every settlement and resource node to the network, and the
+  network to the Strongholds, over tiles a Squad can walk on.
+
+`npm test` walks all of them over **a thousand seeds**, so a change to the
+generator that breaks the world fails a test instead of failing a Match three
+game-years in. What is deliberately not an invariant is the look of the map:
+which hill stands where, how a river wiggles, where the forests grew.
+
+To look at a map without a browser — and B3, the ticket that draws one on
+screen, is a wave away — the CLI dumps it:
+
+```
+npm run match -- --seed 7 --map
+```
+
+```
+seed 7 — 96×96 tiles of 16×16 pixels
+
+Rome's Stronghold at (11, 21); Carthage's at (79, 60); 78 tiles apart
+5 minor settlements · 1 river, carrying 3 fords
+
+resources, Rome's half against Carthage's — the two sides of the line between the Strongholds:
+  Rome      grain 64, timber 50, stone 21, iron 18
+  Carthage  grain 66, timber 50, stone 23, iron 18
+
+   012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345
+ 0 .................,,................................~~....,,,,,,.................................
+ 1 ................,,,,...............................~~...,,,,,,,,................................
+ 2 ...............,,,,,,.............................~~...,,,,,,,,,................................
+ 3 .........--------o,,,.............................~...,,,,,,,,,,,...............................
+ 4 .........-.....,,,,,,,............................~....,,,o----------...........................
+ 5 .........-......,,,,,.............................~....,,,,,,,,,,...-...........................
+   … ninety rows of map …
+95 ..............................................~......ffffffffff...............fffffffffffff.....
+legend: . plain   ^ hill   f forest   , farmland   ~ river   = ford   - road
+        R Rome's Stronghold   C Carthage's Stronghold   o minor settlement
+        g grain   t timber   s stone   i iron
+```
+
+The dump is a reading of the map and not a second opinion about it: it is
+byte-stable for a seed, so two runs diff cleanly, and it holds no timing, no
+path and no wall clock, the same as the Match report.
 
 ## The seam
 
@@ -216,10 +285,12 @@ src/                application code
     controller.ts   the one interface every mind implements, plus an idle and a scripted one
     driver.ts       two Controllers, one Match, a result and a command log
     empty.ts        the Match with no systems in it yet: what the CLI plays today
+    map.ts          the theatre a seed generates, and the invariants it satisfies
   cli/              the headless Match as a command
     arguments.ts    what the command line means, and what it refuses
     rules.ts        the Matches a run can play, by name, and what each draws
     run.ts          playing one Match, and the hash invariant the CLI checks
+    dump.ts         the map a seed generates, written out for inspection
     report.ts       the JSON report, ordered and free of anything that varies
     main.ts         the entry: standard output, standard error, exit codes
   render/           the application's one PixiJS-aware layer

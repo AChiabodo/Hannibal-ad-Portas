@@ -76,10 +76,11 @@ export interface RunOptions {
   readonly expectedHash: string | null;
 }
 
-/** A command line, read: either a Match to play or a request for the usage. */
+/** A command line, read: either a Match to play, a map to print, or a request for the usage. */
 export type ParsedArguments =
   | { readonly kind: 'help' }
-  | { readonly kind: 'run'; readonly options: RunOptions };
+  | { readonly kind: 'run'; readonly options: RunOptions }
+  | { readonly kind: 'map'; readonly seed: number };
 
 /**
  * A command line this CLI will not run.
@@ -133,6 +134,7 @@ const OPTION_LINES = [
   option('--expect-hash <hex>', 'Fail unless the Match ends on this 16-digit state hash.'),
   option('--rules <name>', `Which Match to play (default ${DEFAULT_RULES}):`),
   ...RULES_MENU,
+  option('--map', 'Print the map this seed generates, and play nothing.'),
   option('--help, -h', 'Print this and play nothing.'),
 ].join('\n');
 
@@ -143,7 +145,8 @@ ${OPTION_LINES}
 
 Plays one whole Match headless — no browser, no human and no AI — prints a JSON
 report of it on standard output, and exits non-zero when a game invariant is
-violated.
+violated. With --map it prints the theatre a seed generates instead, and plays
+nothing.
 
 Exit codes: 0 the Match ran, 1 an invariant was violated, 2 the command line was
 misused.`;
@@ -157,8 +160,9 @@ const DIGITS = /^[0-9]+$/;
 /**
  * Reads a command line.
  *
- * @throws UsageError when a flag is unknown or repeated, a value is missing, or
- *   a value is not the kind of thing that flag takes.
+ * @throws UsageError when a flag is unknown or repeated, a value is missing, a
+ *   value is not the kind of thing that flag takes, or `--map` was asked for
+ *   beside a flag that only means something to a Match.
  */
 export function parseArguments(argv: readonly string[]): ParsedArguments {
   const asked: Asked = {
@@ -166,6 +170,7 @@ export function parseArguments(argv: readonly string[]): ParsedArguments {
     ticks: DEFAULT_TICKS,
     rules: DEFAULT_RULES,
     expectedHash: null,
+    map: false,
   };
   const given = new Set<string>();
 
@@ -175,16 +180,30 @@ export function parseArguments(argv: readonly string[]): ParsedArguments {
     if (flag === '--help' || flag === '-h') return { kind: 'help' };
     if (flag === undefined) continue;
 
-    const read = OPTIONS[flag];
-    if (read === undefined) throw new UsageError(`${flag} is not an option this command knows`);
+    const option = OPTIONS[flag];
+    if (option === undefined) throw new UsageError(`${flag} is not an option this command knows`);
 
     requireFirstTime(given, flag);
+
+    if (option.value === 'none') {
+      option.read(asked);
+      continue;
+    }
+
     const value = requireValue(argv, index, flag);
     index += 1;
-    read(asked, value);
+    option.read(asked, value);
   }
 
-  return { kind: 'run', options: asked };
+  if (asked.map) {
+    requireNothingToPlay(given);
+    return { kind: 'map', seed: asked.seed };
+  }
+
+  return {
+    kind: 'run',
+    options: { seed: asked.seed, ticks: asked.ticks, rules: asked.rules, expectedHash: asked.expectedHash },
+  };
 }
 
 /** The options as the readers fill them in, before they leave as a `RunOptions`. */
@@ -193,34 +212,75 @@ interface Asked {
   ticks: number;
   rules: RulesName;
   expectedHash: string | null;
+  map: boolean;
 }
 
 /**
- * Every flag this command knows, and how it reads its value: one table, so an
- * option cannot be understood by the parser and forgotten by a reader, or the
- * other way round.
+ * One flag, and how the parser reads it.
+ *
+ * Whether it takes a value is part of the option and not a convention, so that
+ * a flag which stands alone cannot be given a value by a reader who typed one,
+ * and a flag which takes one cannot be left without it: the parser knows the
+ * difference from this table and nothing else has to remember.
  *
  * The flag is looked up before its value is, so a typo is refused as a flag
  * nobody knows rather than as a value that never arrived, which is the message
  * whoever typed `--seeds 7` can act on.
  */
-const OPTIONS: Readonly<Record<string, (asked: Asked, value: string) => void>> = {
-  '--seed': (asked, value) => {
-    asked.seed = readSeed(value);
+type Option =
+  | { readonly value: 'none'; readonly read: (asked: Asked) => void }
+  | { readonly value: 'one'; readonly read: (asked: Asked, value: string) => void };
+
+/** Every flag this command knows, and how it reads its value: one table, so an option cannot be
+ * understood by the parser and forgotten by a reader, or the other way round. */
+const OPTIONS: Readonly<Record<string, Option>> = {
+  '--seed': {
+    value: 'one',
+    read: (asked, value) => {
+      asked.seed = readSeed(value);
+    },
   },
 
-  '--ticks': (asked, value) => {
-    asked.ticks = readWholeNumber(value, '--ticks');
+  '--ticks': {
+    value: 'one',
+    read: (asked, value) => {
+      asked.ticks = readWholeNumber(value, '--ticks');
+    },
   },
 
-  '--expect-hash': (asked, value) => {
-    asked.expectedHash = readStateHash(value);
+  '--expect-hash': {
+    value: 'one',
+    read: (asked, value) => {
+      asked.expectedHash = readStateHash(value);
+    },
   },
 
-  '--rules': (asked, value) => {
-    asked.rules = readRulesName(value);
+  '--rules': {
+    value: 'one',
+    read: (asked, value) => {
+      asked.rules = readRulesName(value);
+    },
+  },
+
+  '--map': {
+    value: 'none',
+    read: (asked) => {
+      asked.map = true;
+    },
   },
 };
+
+/**
+ * @throws UsageError when a flag that only says something about a Match was
+ *   asked for beside `--map`, which plays no Match.
+ */
+function requireNothingToPlay(given: ReadonlySet<string>): void {
+  for (const flag of ['--ticks', '--expect-hash', '--rules']) {
+    if (!given.has(flag)) continue;
+
+    throw new UsageError(`--map prints a map and plays nothing, so ${flag} cannot come with it`);
+  }
+}
 
 /** @throws UsageError when the same flag is given twice, because one of the two was not meant. */
 function requireFirstTime(given: Set<string>, flag: string): void {

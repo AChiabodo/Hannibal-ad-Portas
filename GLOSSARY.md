@@ -33,6 +33,43 @@ One quarter of a Match's game year, and the Match's strategic clock: harvest in 
 _UI_: Stagione
 _Avoid_: Turn, phase, cycle
 
+### The theatre
+
+**Tile**:
+One square of the theatre's grid, 16×16 pixels, and the unit everything on the map stands on.
+_UI_: Casella
+_Avoid_: Cell, square, hex
+
+**Terrain**:
+What a tile is made of — plain, hill, forest, farmland, river, ford, road — and the modifier it carries. Only a river stops a Squad outright; the rest are costs and effects.
+_UI_: Terreno
+_Avoid_: Ground, biome
+
+**Ford**:
+A river tile a Squad may cross, at the cost of disorder. Every river carries several, because a river with one crossing is a wall with a gate.
+_UI_: Guado
+_Avoid_: Bridge, crossing (reserve "crossing" for the act)
+
+**Resource node**:
+A place on the map holding one resource — grain, timber, stone or iron — in a quantity the economy draws on. Nodes stand on the terrain that suits them: timber in forests, stone and iron on hills, grain on farmland.
+_UI_: Giacimento
+_Avoid_: Deposit, mine, patch, field
+
+**Minor settlement**:
+A capturable settlement that is not a Stronghold. Four to six stand on every map, and taking one means holding its centre.
+_UI_: Insediamento minore
+_Avoid_: Village, town, city, outpost
+
+**Road**:
+A path laid between settlements and resource nodes when the map is generated: it carries a Squad faster, and it crosses water only at a ford.
+_UI_: Strada
+_Avoid_: Highway, route (a route is what pathfinding returns)
+
+**Half**:
+One of the two sides of the perpendicular bisector of the two Strongholds: the territory each Faction starts nearest to, and the unit a generated map's resource parity is stated in. Not the map's left and right.
+_UI_: —
+_Avoid_: Side, half of the map
+
 ### Command
 
 **Controller**:
