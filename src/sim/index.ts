@@ -17,7 +17,9 @@
  * - `state.ts` — the authoritative state's canonical form, and what it refuses.
  * - `hash.ts` — the state hash, which is what makes two runs comparable.
  * - `match.ts` — the tick itself: a clock, a world, a cursor, and a hash of all three.
- * - `replay.ts` — a seed plus a command log, run again and compared.
+ * - `replay.ts` — a seed plus a command log, run again and compared; `replay`
+ *   re-enacts a log the caller holds, `replayCommands` closes the vocabulary on
+ *   one that arrived from outside.
  *
  * A3 made the seam real: one place where a decision enters the game.
  *
@@ -40,7 +42,7 @@ export { StateSerializationError, serializeState } from './state.ts';
 export { hashState } from './hash.ts';
 export { createMatch } from './match.ts';
 export type { Match, MatchOptions, MatchRules, MatchState } from './match.ts';
-export { replay } from './replay.ts';
+export { replay, replayCommands } from './replay.ts';
 export type {
   CommandLog,
   LoggedCommand,

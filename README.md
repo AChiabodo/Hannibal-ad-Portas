@@ -117,7 +117,10 @@ Controllers, differing in nothing else.
 The seam is also where the two rules that keep a Match honest are enforced: what
 a Controller returns is validated against the vocabulary before anything is
 applied, and a Command addressed to the other Faction is refused outright. The
-driver never lets a rule defend against either.
+driver never lets a rule defend against either. The other way into the rules —
+replaying a log that arrived from outside a Match — closes the same vocabulary
+first: `replayCommands` (`src/sim/replay.ts`) reads every line through it before
+the first tick runs, so a log is refused rather than replayed into a rule.
 
 ## The headless Match
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createMatch } from '../../src/sim/match';
-import { replay, type CommandLog } from '../../src/sim/replay';
+import { CommandValidationError, type Command } from '../../src/sim/command';
+import { createMatch, type MatchRules } from '../../src/sim/match';
+import { replay, replayCommands, type CommandLog } from '../../src/sim/replay';
 import { toyRules, type ToyCommand } from './toy-rules';
 
 /** Two Commands on the same tick, because a busy tick is normal rather than special. */
@@ -10,6 +11,49 @@ const LOG: CommandLog<ToyCommand> = [
   { tick: 47, command: 'levy' },
   { tick: 199, command: 'double' },
 ];
+
+/**
+ * A log as it arrives from outside a Match: text that was parsed, not checked.
+ *
+ * The cast is the point. Whoever parses an external agent's recording — or a bug
+ * report that came in as a small text file — has no way to know the values are
+ * Commands until something reads them through the vocabulary, so the type here
+ * says only what the caller hopes is true.
+ */
+function logFromOutside(text: string): CommandLog<Command> {
+  return JSON.parse(text) as CommandLog<Command>;
+}
+
+/** One march, as an external agent would send it. */
+const OUTSIDE_VALID = `[
+  { "tick": 3, "command": { "kind": "move", "faction": "rome", "squads": [1], "x": 2, "y": 3 } }
+]`;
+
+/** The march, and then a word the vocabulary has never heard of, three ticks later. */
+const OUTSIDE_UNKNOWN_KIND = `[
+  { "tick": 0, "command": { "kind": "move", "faction": "rome", "squads": [1], "x": 2, "y": 3 } },
+  { "tick": 3, "command": { "kind": "teleport", "faction": "rome" } }
+]`;
+
+/** The world these tests replay into: it counts the Commands a tick applied. */
+interface VocabularyWorld {
+  applied: number;
+}
+
+/**
+ * Rules over the closed vocabulary, so a Command the world received is visible in
+ * the hash — and, when a test wants to look, so is the object the rules were
+ * handed.
+ */
+function vocabularyRules(into: Command[] = []): MatchRules<VocabularyWorld, Command> {
+  return {
+    createWorld: () => ({ applied: 0 }),
+    step: (world, _rng, _tick, commands) => {
+      world.applied += commands.length;
+      into.push(...commands);
+    },
+  };
+}
 
 describe('a replay', () => {
   it('reproduces a seed and a command log, hash for hash, every run', () => {
@@ -74,5 +118,36 @@ describe('a replay', () => {
     expect(() => replay({ seed: 1, rules: toyRules, log: [], ticks: 1.5 })).toThrow(/ticks/);
     expect(() => replay({ seed: 1, rules: toyRules, log: [], ticks: -1 })).toThrow(/ticks/);
     expect(() => replay({ seed: 1, rules: toyRules, log: [], ticks: 5, everyTicks: 0 })).toThrow(/everyTicks/);
+  });
+});
+
+describe('replaying a log that arrived from outside', () => {
+  it('refuses a Command outside the vocabulary before any tick runs', () => {
+    const ticks: number[] = [];
+    const watched: MatchRules<VocabularyWorld, Command> = {
+      ...vocabularyRules(),
+      step: (_world, _rng, tick) => {
+        ticks.push(tick);
+      },
+    };
+
+    expect(() =>
+      replayCommands({ seed: 1, rules: watched, log: logFromOutside(OUTSIDE_UNKNOWN_KIND), ticks: 5 }),
+    ).toThrow(CommandValidationError);
+
+    expect(ticks).toEqual([]);
+  });
+
+  it('replays a log it accepted to the same checkpoints as replay, handing the rules the validated copy', () => {
+    const log = logFromOutside(OUTSIDE_VALID);
+    const delivered: Command[] = [];
+
+    expect(replayCommands({ seed: 7, rules: vocabularyRules(delivered), log, ticks: 6 })).toEqual(
+      replay({ seed: 7, rules: vocabularyRules(), log, ticks: 6 }),
+    );
+
+    const sent = log[0]?.command;
+    expect(delivered).toEqual([sent]);
+    expect(delivered[0]).not.toBe(sent);
   });
 });

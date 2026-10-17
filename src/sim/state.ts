@@ -17,7 +17,10 @@
  * The text form is also what a divergence report prints, so it is deliberately
  * boring: integers in decimal, arrays in brackets, plain objects in braces with
  * quoted keys. Every own field of an object is written, enumerable or not, so
- * two states serialize the same only when they really are the same state.
+ * two states serialize the same only when they really are the same state — and an
+ * own property defined by an accessor, on a field or on an array index, is
+ * refused rather than read, because invoking it would make the canonical form
+ * change from call to call.
  */
 
 /** What a typed array of integers has in common with an array: a length, and cells. */
@@ -56,7 +59,7 @@ export class StateSerializationError extends Error {
  *
  * @throws StateSerializationError when the state holds a non-integer number, an
  *   integer beyond the exact range of a `number`, a value that is not an array
- *   or a plain object, or a cycle.
+ *   or a plain object, an own property defined by an accessor, or a cycle.
  */
 export function serializeState(state: unknown): string {
   return write(state, 'state', new WeakSet());
@@ -88,9 +91,19 @@ function writeInteger(value: number, path: string): string {
 function writeSequence(items: ArrayLike<unknown> & object, path: string, seen: WeakSet<object>): string {
   enter(items, path, seen);
 
+  // A plain array can carry a getter on an index — `Object.defineProperty(a, '1', …)`
+  // — and reading it would invoke it, so its elements are checked the way a
+  // record's fields are. A typed array cannot carry one: the specification makes
+  // its indices plain data properties, and asking for a descriptor per cell would
+  // tax the grid the hash walks at every checkpoint. So the guard reads
+  // descriptors only for the kind of sequence that can lie.
+  const mayHoldAccessors = Array.isArray(items);
+
   const parts: string[] = [];
   for (let index = 0; index < items.length; index += 1) {
-    parts.push(write(items[index], `${path}[${index}]`, seen));
+    const element = `${path}[${index}]`;
+    if (mayHoldAccessors) requireDataProperty(items, String(index), element);
+    parts.push(write(items[index], element, seen));
   }
 
   seen.delete(items);
@@ -108,10 +121,32 @@ function writeRecord(value: Record<string, unknown> & object, path: string, seen
   // still state, and a float hiding there would otherwise never reach the hash.
   const parts = Object.getOwnPropertyNames(value)
     .sort()
-    .map((key) => `${JSON.stringify(key)}:${write(value[key], `${path}.${key}`, seen)}`);
+    .map((key) => {
+      const field = `${path}.${key}`;
+      requireDataProperty(value, key, field);
+      return `${JSON.stringify(key)}:${write(value[key], field, seen)}`;
+    });
 
   seen.delete(value);
   return `{${parts.join(',')}}`;
+}
+
+/**
+ * Refuses an own property defined by an accessor, before it is ever read.
+ *
+ * Reading an accessor is not reading state: a getter can compute, can count its
+ * calls, can answer something different every time it is asked. The same state
+ * would then hash to two different values, and a replay comparison would report a
+ * divergence that is not one, naming a tick that agrees with itself. State holds
+ * plain data, so a field of a record or an index of an array is refused here, the
+ * way a float or a symbol key is, rather than quietly invoked.
+ */
+function requireDataProperty(value: object, key: string, path: string): void {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  if (descriptor === undefined) return;
+  if (descriptor.get === undefined && descriptor.set === undefined) return;
+
+  throw new StateSerializationError(path, 'is defined by an accessor, and state holds plain data');
 }
 
 /**

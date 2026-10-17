@@ -28,6 +28,12 @@ Once per tick, for each of the two Players, the driver:
    its own Faction and no other;
 4. applies what is left to the tick, and writes it to the log.
 
+A log comes back the same way. The entry point for one that arrived from outside
+a Match — as text from an external agent, or a file attached to a bug report —
+is `replayCommands` (`src/sim/replay.ts`), and it reads every line through the
+vocabulary below before the first tick runs, so a word that is not a Command is
+refused with the field named instead of reaching the rules.
+
 A Controller can read nothing else: not the other Faction's Squads, not the
 Match state, not the seed. `Observation` carries a projection of the world that
 the rules supply, and a Controller that reaches for anything else fails to

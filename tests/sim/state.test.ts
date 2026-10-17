@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { hashState } from '../../src/sim/hash';
 import { StateSerializationError, serializeState } from '../../src/sim/state';
 
 describe('the state serializer', () => {
@@ -94,6 +95,55 @@ describe('the state serializer', () => {
     Object.defineProperty(state, 'morale', { value: 0.5, enumerable: false });
 
     expect(() => serializeState(state)).toThrow(/morale is not an integer: 0\.5/);
+  });
+
+  it('rejects a field defined by a getter instead of calling it, and names the field', () => {
+    let calls = 0;
+    const state: Record<string, unknown> = { strength: 1 };
+    Object.defineProperty(state, 'morale', {
+      get: () => {
+        calls += 1;
+        return 3;
+      },
+      enumerable: true,
+    });
+
+    expect(() => serializeState(state)).toThrow(StateSerializationError);
+    expect(() => serializeState(state)).toThrow(
+      /state\.morale is defined by an accessor, and state holds plain data/,
+    );
+    expect(calls).toBe(0);
+  });
+
+  it('rejects a getter nested in the world, and names the path to it', () => {
+    const squad: Record<string, unknown> = { id: 1 };
+    Object.defineProperty(squad, 'strength', { get: () => 3, enumerable: false });
+
+    expect(() => serializeState({ world: { squads: [squad] } })).toThrow(
+      /state\.world\.squads\[0\]\.strength is defined by an accessor/,
+    );
+  });
+
+  it('rejects a getter on an array index, and leaves a typed array unchecked', () => {
+    const grid: unknown[] = [1, 2, 3];
+    Object.defineProperty(grid, '1', { get: () => 99, enumerable: true, configurable: true });
+
+    expect(() => serializeState(grid)).toThrow(StateSerializationError);
+    expect(() => serializeState(grid)).toThrow(
+      /state\[1\] is defined by an accessor, and state holds plain data/,
+    );
+
+    expect(serializeState(new Uint8Array([1, 2, 3]))).toBe('[1,2,3]');
+  });
+
+  it('hashes an accepted state the same way twice, so a stable state has a stable fingerprint', () => {
+    // A regression guard on an accepted state, not the proof that an accessor is
+    // refused: no accessor can reach here, because `serializeState` refuses one
+    // before reading it.
+    const state = { tick: 4, tiles: new Uint8Array([0, 1]), world: { squads: [{ id: 1, strength: 3 }] } };
+
+    expect(hashState(state)).toBe(hashState(state));
+    expect(hashState({ ...state })).toBe(hashState(state));
   });
 
   it('rejects a symbol-keyed field instead of ignoring it', () => {

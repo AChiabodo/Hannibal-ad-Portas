@@ -14,7 +14,13 @@
  * The awkward possibility is a log that does not match its Match — a stamp past
  * the end of the run, a fraction of a tick. Those throw, because a replay that
  * quietly ignores a Command is worse than one that refuses to start.
+ *
+ * A log arrives from one of two places, and this module is the entry point for
+ * each of them: `replay` re-enacts a log the caller already holds, and
+ * `replayCommands` closes the Command vocabulary on one that arrived from
+ * outside. Which one a caller wants, and why, is `replayCommands`'s own note.
  */
+import { validateCommand, type Command } from './command.ts';
 import { createMatch, type MatchRules } from './match.ts';
 import { requireTickCount } from './ticks.ts';
 
@@ -57,6 +63,11 @@ const NO_COMMANDS: readonly never[] = [];
 /**
  * Runs a seed and a command log to `ticks` ticks, hashing as it goes.
  *
+ * This re-enacts a log its caller already holds, so it checks the stamps and not
+ * the Commands: a log a Match's own driver produced has been through
+ * `validateCommand` once per entry already. For a log that arrived from outside
+ * a Match, see `replayCommands`.
+ *
  * @throws RangeError when the log holds a Command stamped outside the run, or a
  *   stamp, run length or checkpoint interval that is not a whole number of ticks.
  * @throws StateSerializationError when a tick leaves anything but integers in state.
@@ -80,6 +91,40 @@ export function replay<World, Command = unknown>(options: ReplayOptions<World, C
   }
 
   return { seed: match.state.seed, ticks, checkpoints };
+}
+
+/**
+ * Runs a seed and a log that arrived from outside, refusing anything outside the
+ * vocabulary before the first tick.
+ *
+ * The difference from `replay` is where the log has been. `replay` re-enacts a
+ * log its caller already holds — A2's tests hand it the rules' own Command type,
+ * and the driver produced its log through `validateCommand`, so it trusts what
+ * it is given. This is the entry point for the log that came back as a small
+ * text file or from an external agent: nothing has read it, so nothing has said
+ * its entries are Commands. Every entry goes through `validateCommand` here, and
+ * the whole log is validated before the first tick runs, so an unknown kind is
+ * refused at the boundary with a sentence naming the field instead of reaching
+ * the rules as a shape the closed vocabulary was supposed to have made
+ * impossible.
+ *
+ * The Commands the rules are handed are the validated copies — `validateCommand`
+ * copies what it accepts — which is the same promise the driver makes when a
+ * Controller emits one: a log cannot keep a hand on the Match through the object
+ * it handed over.
+ *
+ * @throws CommandValidationError when an entry is not a Command of the vocabulary.
+ * @throws RangeError when the log holds a Command stamped outside the run, or a
+ *   stamp, run length or checkpoint interval that is not a whole number of ticks.
+ * @throws StateSerializationError when a tick leaves anything but integers in state.
+ */
+export function replayCommands<World>(options: ReplayOptions<World, Command>): ReplayResult {
+  return replay({ ...options, log: readLog(options.log) });
+}
+
+/** The log, every entry read through the vocabulary and kept with its stamp. */
+function readLog(log: CommandLog<Command>): CommandLog<Command> {
+  return log.map((entry) => ({ tick: entry.tick, command: validateCommand(entry.command) }));
 }
 
 /** The log, keyed by tick: the shape the tick loop wants to consume. */
