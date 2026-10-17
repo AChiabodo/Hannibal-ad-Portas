@@ -21,10 +21,39 @@
  * own property defined by an accessor, on a field or on an array index, is
  * refused rather than read, because invoking it would make the canonical form
  * change from call to call.
+ *
+ * A sequence is its indices, and nothing else. A plain array's own names are
+ * exactly its indices plus `length`, which every array carries on itself; a
+ * typed array's own names are exactly its indices, because its `length` is an
+ * accessor on the prototype and never appears among them. Anything else on a
+ * sequence — an extra named property, an own symbol key — is refused rather than
+ * dropped, because the canonical form has nowhere to write it, and a sequence
+ * that silently serializes as less than it holds makes two different states
+ * hash alike, which is the one thing a state hash must never do.
  */
 
 /** What a typed array of integers has in common with an array: a length, and cells. */
 type IntegerCells = ArrayLike<unknown> & object;
+
+/**
+ * The refusal a symbol key earns, shared by records and sequences.
+ *
+ * One sentence in both places on purpose: whether a symbol key sits on a plain
+ * object or on an array, it is state the canonical form cannot write, and a
+ * reader of the failure should not have to work out whether the two cases differ.
+ */
+const SYMBOL_KEY_REASON = 'is keyed by a symbol, and state holds plain string keys only';
+
+/**
+ * Whether an own name is spelled the way an index is: `'0'`, `'1'`, `'42'`.
+ *
+ * A spelling and nothing more, because that is only half a predicate: whether the
+ * name addresses a cell of the sequence in hand is `classifySequenceName`'s
+ * question, and the other half of its answer comes from the sequence's own
+ * length. Derived from `String(index)` rather than from a looser pattern, so
+ * `'007'` and `'1.5'` are ordinary names — nobody spells an index that way.
+ */
+const INDEX_NAME = /^(?:0|[1-9]\d*)$/;
 
 /** Typed arrays state may not hold, each with the sentence used to refuse it. */
 const NON_INTEGER_VIEWS = new Map([
@@ -59,7 +88,8 @@ export class StateSerializationError extends Error {
  *
  * @throws StateSerializationError when the state holds a non-integer number, an
  *   integer beyond the exact range of a `number`, a value that is not an array
- *   or a plain object, an own property defined by an accessor, or a cycle.
+ *   or a plain object, an own name or symbol key on a sequence beyond its
+ *   indices, an own property defined by an accessor, or a cycle.
  */
 export function serializeState(state: unknown): string {
   return write(state, 'state', new WeakSet());
@@ -90,6 +120,7 @@ function writeInteger(value: number, path: string): string {
 
 function writeSequence(items: ArrayLike<unknown> & object, path: string, seen: WeakSet<object>): string {
   enter(items, path, seen);
+  requireOnlyIndices(items, path);
 
   // A plain array can carry a getter on an index — `Object.defineProperty(a, '1', …)`
   // — and reading it would invoke it, so its elements are checked the way a
@@ -112,10 +143,7 @@ function writeSequence(items: ArrayLike<unknown> & object, path: string, seen: W
 
 function writeRecord(value: Record<string, unknown> & object, path: string, seen: WeakSet<object>): string {
   enter(value, path, seen);
-
-  if (Object.getOwnPropertySymbols(value).length > 0) {
-    throw new StateSerializationError(path, 'is keyed by a symbol, and state holds plain string keys only');
-  }
+  requireNoSymbolKeys(value, path);
 
   // Own names, not `Object.keys`: a field that hides from a plain enumeration is
   // still state, and a float hiding there would otherwise never reach the hash.
@@ -129,6 +157,75 @@ function writeRecord(value: Record<string, unknown> & object, path: string, seen
 
   seen.delete(value);
   return `{${parts.join(',')}}`;
+}
+
+/**
+ * Refuses an own symbol key, on a record or on a sequence.
+ *
+ * A symbol has no spelling and no order, so the canonical form has nowhere to
+ * put one: writing it is impossible and dropping it would make two different
+ * states hash alike. One function for both paths, so a symbol key is the same
+ * refusal whether it hides on an array or on a plain object.
+ */
+function requireNoSymbolKeys(value: object, path: string): void {
+  if (Object.getOwnPropertySymbols(value).length > 0) {
+    throw new StateSerializationError(path, SYMBOL_KEY_REASON);
+  }
+}
+
+/**
+ * Refuses an own name a sequence has beyond its indices.
+ *
+ * Writing only `0..length-1` would be a lie by omission: an array can carry an
+ * ordinary property (`a.extra = 5`), and a state that serializes as `[1,2]`
+ * whether or not it holds one gives two different states one hash — exactly what
+ * a state hash exists to prevent (ADR-0006). So the extra is refused where it is
+ * found, the way a float is, and `length` is not extra on an array: every array
+ * carries it as a non-enumerable own property of its own, and it only restates the
+ * indices. An ordinary typed array has no own `length` at all — its `length` is an
+ * accessor on the prototype — so a `length` found on one is an extra like any
+ * other name here.
+ *
+ * The cost is one enumeration of the sequence's own names per sequence, and that
+ * enumeration is linear in the same length the walk which follows it already
+ * traverses cell by cell: knowing whether a sequence holds more than its cells is
+ * not free. Unlike the descriptor lookup that guards an array index against an
+ * accessor, though, it adds nothing per element beyond that one enumeration.
+ */
+function requireOnlyIndices(items: ArrayLike<unknown> & object, path: string): void {
+  requireNoSymbolKeys(items, path);
+
+  for (const key of Object.getOwnPropertyNames(items)) {
+    const name = classifySequenceName(items, key);
+    const isOwnLength = name === 'named' && key === 'length' && Array.isArray(items);
+
+    if (name === 'inRange' || isOwnLength) continue;
+
+    throw new StateSerializationError(
+      name === 'named' ? `${path}.${key}` : `${path}[${key}]`,
+      'is an own property of a sequence beyond its indices, and state holds nothing there',
+    );
+  }
+}
+
+/**
+ * What an own name of a sequence is: a cell of it, a subscript that names no
+ * cell, or an ordinary name.
+ *
+ * One question asked once, and both the skip and the refusal are read off its
+ * answer, so the two can never disagree about a name. The regex supplies the
+ * spelling and the sequence's own length supplies the rest: `'4294967295'`, the
+ * first number past the largest array index, is spelled like an index and
+ * addresses nothing, which is why it is refused — with the subscript a reader
+ * would reach for — rather than skipped as if it were a cell.
+ */
+function classifySequenceName(
+  items: ArrayLike<unknown> & object,
+  key: string,
+): 'inRange' | 'outOfRange' | 'named' {
+  if (!INDEX_NAME.test(key)) return 'named';
+
+  return Number(key) < items.length ? 'inRange' : 'outOfRange';
 }
 
 /**
