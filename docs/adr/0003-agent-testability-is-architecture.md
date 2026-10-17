@@ -1,0 +1,5 @@
+# Agent-testability is architecture, not tooling
+
+The game must be fully playable and verifiable by an AI agent, so the deterministic simulation core is the product's primary interface. One seam carries every decision-maker: a Controller that observes the Match state and emits Commands, implemented by the human input handler, the built-in AI, scripted test drivers, and an external agent over a CLI protocol. No Controller may read state outside its own Observation. The core runs at a fixed timestep with a seeded PRNG, and identical seeds must produce identical result hashes, which CI verifies. The CLI can play a complete Match headless and fails the build on invariant violations.
+
+**Consequences**: fog of war is not optional — an AI that could see the whole map would make the Observation contract a lie, so partial observability belongs in the core from the first commit. Headless and AI-versus-AI Matches need a bounded clock to guarantee termination. The browser UI must expose debug hooks from its first day, because test hooks retrofitted into a UI cost far more than test hooks designed into it.
