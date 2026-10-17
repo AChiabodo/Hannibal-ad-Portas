@@ -6,13 +6,27 @@ import {
   UsageError,
   USAGE,
 } from '../../src/cli/arguments';
+import { DEFAULT_RULES, RULES, RULES_NAMES, type RulesName } from '../../src/cli/rules';
 import { MAX_SEED } from '../../src/sim/rng';
 
 /** The options a well-formed command line parses into, with the defaults filled in. */
-function run(overrides: Partial<{ seed: number; ticks: number; expectedHash: string | null }> = {}) {
+function run(
+  overrides: Partial<{
+    seed: number;
+    ticks: number;
+    expectedHash: string | null;
+    rules: RulesName;
+  }> = {},
+) {
   return {
     kind: 'run',
-    options: { seed: DEFAULT_SEED, ticks: DEFAULT_TICKS, expectedHash: null, ...overrides },
+    options: {
+      seed: DEFAULT_SEED,
+      ticks: DEFAULT_TICKS,
+      expectedHash: null,
+      rules: DEFAULT_RULES,
+      ...overrides,
+    },
   };
 }
 
@@ -31,6 +45,24 @@ describe('the command line', () => {
     expect(parseArguments(['--seed', String(MAX_SEED), '--ticks', '0'])).toEqual(
       run({ seed: MAX_SEED, ticks: 0 }),
     );
+  });
+
+  it('plays the empty Match by default, and takes which rules to play by name', () => {
+    expect(parseArguments([])).toEqual(run({ rules: 'empty' }));
+    expect(parseArguments(['--rules', 'draws'])).toEqual(run({ rules: 'draws' }));
+    expect(parseArguments(['--rules', 'empty', '--seed', '3'])).toEqual(
+      run({ seed: 3, rules: 'empty' }),
+    );
+  });
+
+  it('refuses a rules name it does not have, naming the name it was given', () => {
+    for (const value of ['nope', '', 'Empty', 'draws ']) {
+      expect(() => parseArguments(['--rules', value])).toThrow(UsageError);
+      expect(() => parseArguments(['--rules', value])).toThrow(/rules/);
+    }
+
+    expect(() => parseArguments(['--rules', 'nope'])).toThrow(/nope/);
+    expect(() => parseArguments(['--rules', ''])).toThrow(/an empty string/);
   });
 
   it('asks for help with --help or -h, and nothing else', () => {
@@ -54,6 +86,7 @@ describe('the command line', () => {
     expect(() => parseArguments(['--seed'])).toThrow(/--seed needs a value/);
     expect(() => parseArguments(['--ticks'])).toThrow(/--ticks needs a value/);
     expect(() => parseArguments(['--expect-hash'])).toThrow(/--expect-hash needs a value/);
+    expect(() => parseArguments(['--rules'])).toThrow(/--rules needs a value/);
   });
 
   it('refuses a flag given twice, rather than guessing which one was meant', () => {
@@ -62,6 +95,9 @@ describe('the command line', () => {
     expect(() =>
       parseArguments(['--expect-hash', 'aaaabbbbccccdddd', '--expect-hash', 'eeeeffff00001111']),
     ).toThrow(/--expect-hash is given twice/);
+    expect(() => parseArguments(['--rules', 'empty', '--rules', 'draws'])).toThrow(
+      /--rules is given twice/,
+    );
   });
 
   it('refuses a seed that is not an unsigned 32-bit integer, and says what a seed is', () => {
@@ -86,10 +122,19 @@ describe('the command line', () => {
   });
 
   it('describes itself in one place, so the usage message cannot drift from the parser', () => {
-    for (const flag of ['--seed', '--ticks', '--expect-hash', '--help']) {
+    for (const flag of ['--seed', '--ticks', '--expect-hash', '--rules', '--help']) {
       expect(USAGE).toContain(flag);
     }
     expect(USAGE).toContain(DEFAULT_TICKS.toString());
     expect(USAGE).toContain(`default ${DEFAULT_SEED}`);
+  });
+
+  it('lists every Match it can play, read out of the table rather than written twice', () => {
+    for (const name of RULES_NAMES) {
+      expect(USAGE).toContain(name);
+      expect(USAGE).toContain(RULES[name].description);
+    }
+
+    expect(USAGE).toContain(DEFAULT_RULES);
   });
 });

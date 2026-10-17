@@ -2,11 +2,15 @@
  * The Match the CLI plays, and the invariant it checks it ended on.
  *
  * The CLI is a harness, not a game: it hands the driver a seed, the two idle
- * Players and a bound, and takes whatever the rules give back. Today the rules
- * are the empty Match (`sim/empty.ts`) because no system has been built yet,
- * and this module is the one place that says so — when B1 to C5 land, they
- * change the `rules`, `observe` and `outcome` lines here and nothing else about
- * the command line or its report changes.
+ * Players and a bound, and takes whatever the rules give back. *Which* rules is
+ * the one choice this module leaves to the command line, and it is a name from
+ * the table in `rules.ts`: the empty Match by default, and a Match whose rules
+ * draw on every tick beside it, so that CI can gate a hash of the generator
+ * actually working (ADR-0006, A5 review F5).
+ *
+ * Today those two are the only Matches there are, because no system has been
+ * built yet; when B1 to C5 land, they change what a name plays and nothing
+ * about the command line or its report changes.
  *
  * The invariant is ADR-0006's, made checkable: the same seed and the same
  * Commands must end in the same state hash. A Match the caller asked a hash of
@@ -15,19 +19,15 @@
  * is what a golden hash in CI is for.
  */
 import type { RunOptions } from './arguments.ts';
-import {
-  emptyMatchOutcome,
-  emptyMatchRules,
-  idleController,
-  observeEmptyMatch,
-  runMatch,
-  type EmptyMatchVisible,
-  type EmptyMatchWorld,
-  type MatchRun,
-} from '../sim/index.ts';
+import { RULES } from './rules.ts';
+import type { MatchRun } from '../sim/index.ts';
 
 /**
  * Plays one whole Match, headless, from the options a command line gave.
+ *
+ * Which Match is the caller's to name and the table's to build, so this is a
+ * lookup and a call: the two Matches have different worlds and are played in
+ * their own types (`rules.ts`).
  *
  * Nothing here waits on anything: the loop runs ticks as fast as the processor
  * lets it, which is why a hundred short Matches are a routine command rather
@@ -39,17 +39,7 @@ import {
  *   those and exits 1.
  */
 export function playMatch(options: RunOptions): MatchRun {
-  return runMatch<EmptyMatchWorld, EmptyMatchVisible>({
-    seed: options.seed,
-    rules: emptyMatchRules,
-    observe: observeEmptyMatch,
-    outcome: emptyMatchOutcome,
-    players: [
-      { faction: 'rome', controller: idleController<EmptyMatchVisible>() },
-      { faction: 'carthage', controller: idleController<EmptyMatchVisible>() },
-    ],
-    ticks: options.ticks,
-  });
+  return RULES[options.rules].play(options.seed, options.ticks);
 }
 
 /**

@@ -45,6 +45,15 @@ jobs:
       - name: Play a Match headless
         run: npm run match -- --seed 1 --ticks 600 --expect-hash bf3d192e9ab9eb5f
 
+      # The Match above draws nothing: `emptyMatchRules.step` is a no-op, so its
+      # golden hash proves the seed expansion, the canonical form and the hash
+      # are portable across machines, and nothing about the draw loop — which is
+      # exactly where an engine-dependent implementation would hide. This Match
+      # draws on every tick instead, so the same gate covers `sfc32` itself
+      # (ADR-0006, A5 review F5). Two hashes, one with draws and one without.
+      - name: Play a Match that draws, headless
+        run: npm run match -- --seed 1 --ticks 600 --rules draws --expect-hash 337cd166204506b0
+
   guards:
     name: Fences (import guard, Math.random guard, transcendental guard)
     runs-on: ubuntu-latest

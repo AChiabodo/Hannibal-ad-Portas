@@ -1,0 +1,94 @@
+import { describe, expect, it } from 'vitest';
+import { DEFAULT_RULES, drawsRules, isRulesName, RULES, type DrawsWorld } from '../../src/cli/rules';
+import type { Command } from '../../src/sim/command';
+import { createMatch, type Match } from '../../src/sim/match';
+import type { RngState } from '../../src/sim/rng';
+
+/** The cursor of a Match, copied, so a later draw cannot rewrite what was read. */
+function cursor(match: Match<DrawsWorld, Command>): RngState {
+  return { ...match.state.rng };
+}
+
+describe('a Match whose rules draw, which is what CI needs a golden hash of', () => {
+  it('leaves the random cursor somewhere else after one tick: the draw loop runs', () => {
+    const match = createMatch({ seed: 1, rules: drawsRules });
+    const before = cursor(match);
+
+    match.step();
+
+    expect(cursor(match)).not.toEqual(before);
+  });
+
+  it('draws at least once on every tick: no two cursors in the Match are the same', () => {
+    const match = createMatch({ seed: 1, rules: drawsRules });
+    const cursors = [JSON.stringify(cursor(match))];
+
+    for (let tick = 0; tick < 5; tick += 1) {
+      match.step();
+      cursors.push(JSON.stringify(cursor(match)));
+    }
+
+    // The cursor before the first tick and after each of five: six spellings,
+    // all different, so the generator advanced on every tick rather than once.
+    expect(new Set(cursors).size).toBe(cursors.length);
+  });
+
+  it('takes both kinds of draw: a whole word, and an unbiased digit in [0, 9]', () => {
+    const match = createMatch({ seed: 1, rules: drawsRules });
+
+    match.step();
+
+    expect(match.state.world.word).toBeGreaterThanOrEqual(0);
+    expect(match.state.world.word).toBeLessThan(0x1_0000_0000);
+    expect(match.state.world.digit).toBeGreaterThanOrEqual(0);
+    expect(match.state.world.digit).toBeLessThanOrEqual(9);
+    expect(match.state.world.total).toBe(match.state.world.digit);
+  });
+
+  it('draws both ways round: the words differ between ticks, and the digits are not all zero', () => {
+    const match = createMatch({ seed: 1, rules: drawsRules });
+    const words = new Set<number>();
+    let digits = 0;
+
+    // Thirty-two ticks, so the strong claim here is the second one: a digit
+    // that came from the generator sums to more than zero with probability
+    // 1 - (1/10)^32, while a digit that is never drawn at all sums to exactly
+    // zero every time. The test fails if either draw path stops running.
+    for (let tick = 0; tick < 32; tick += 1) {
+      match.step();
+      words.add(match.state.world.word);
+      digits += match.state.world.digit;
+    }
+
+    expect(words.size).toBeGreaterThan(1);
+    expect(digits).toBeGreaterThan(0);
+  });
+});
+
+describe('the Matches the command line can play, by name', () => {
+  it('plays the drawing Match again from the same seed, hash for hash', () => {
+    const first = RULES.draws.play(1, 600);
+    const second = RULES.draws.play(1, 600);
+
+    expect(first.hash).toBe(second.hash);
+    expect(first.hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('ends the drawing Match by the tick bound, which is the outcome the empty one reports too', () => {
+    expect(RULES.draws.play(1, 600).result).toEqual({ kind: 'clock', tick: 600 });
+  });
+
+  it('gives the drawing Match a different hash from the empty Match on the same seed and bound', () => {
+    expect(RULES.draws.play(1, 600).hash).not.toBe(RULES.empty.play(1, 600).hash);
+  });
+
+  it('names the two Matches it ships, and nothing else', () => {
+    expect(isRulesName('empty')).toBe(true);
+    expect(isRulesName('draws')).toBe(true);
+    expect(isRulesName(DEFAULT_RULES)).toBe(true);
+
+    for (const value of ['', 'Empty', 'empty ', 'draws\n', 'anything else']) {
+      expect(isRulesName(value)).toBe(false);
+    }
+  });
+});

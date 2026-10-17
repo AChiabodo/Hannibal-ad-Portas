@@ -1,5 +1,6 @@
 /**
- * What the command line means: one Match, one seed, one bound, and nothing else.
+ * What the command line means: which Match to play, on which seed, for how long,
+ * and nothing else.
  *
  * The CLI is the harness the four waves after this one test the Match through
  * (PLAN §7), so its surface is deliberately small and deliberately strict: it
@@ -21,6 +22,7 @@
  */
 import { TICK_HZ } from '../sim/clock.ts';
 import { MAX_SEED } from '../sim/rng.ts';
+import { DEFAULT_RULES, isRulesName, RULES, RULES_NAMES, type RulesName } from './rules.ts';
 
 /** The seed a Match runs on when the command line does not name one. */
 export const DEFAULT_SEED = 1;
@@ -46,13 +48,22 @@ const HEADLESS_YEARS = 3;
  */
 export const DEFAULT_TICKS = HEADLESS_YEARS * SEASONS_PER_YEAR * MINUTES_PER_SEASON * 60 * TICK_HZ;
 
-/** What one command line asked for: a seed, a bound, and maybe a hash to expect. */
+/** What one command line asked for: a seed, a bound, which rules, and maybe a hash to expect. */
 export interface RunOptions {
   /** The Match's seed: the whole reproducibility of the run hangs on it (ADR-0006). */
   readonly seed: number;
 
   /** The longest the Match may run, in whole ticks. The bound always terminates it. */
   readonly ticks: number;
+
+  /**
+   * Which rules to play, by name.
+   *
+   * Not game content and not part of the report: a name selects *which*
+   * harness Match the CLI plays, which is how CI can gate a hash of a Match
+   * that draws beside the hash of one that cannot (`rules.ts`).
+   */
+  readonly rules: RulesName;
 
   /**
    * The state hash the Match is required to end on, or `null` to accept any.
@@ -85,14 +96,50 @@ export class UsageError extends Error {
   }
 }
 
+/** Where `--help` starts a description: every option line pads its flag to this column. */
+const DESCRIPTION_COLUMN = 23;
+
+/** One option as `--help` prints it: the flag, then its description in the shared column. */
+function option(flag: string, description: string): string {
+  return `  ${flag.padEnd(DESCRIPTION_COLUMN - 2)}${description}`;
+}
+
+/** A line continuing the option above it, starting where that option's description starts. */
+function continuation(text: string): string {
+  return `${' '.repeat(DESCRIPTION_COLUMN)}${text}`;
+}
+
+/** Wide enough for the longest rules name, plus the gap before its description. */
+const RULES_NAME_WIDTH = Math.max(...RULES_NAMES.map((name) => name.length)) + 2;
+
+/**
+ * The names `--rules` accepts, as `--help` lists them: read out of the table in
+ * `rules.ts`, so a Match cannot be playable and undocumented.
+ */
+const RULES_MENU = RULES_NAMES.map((name) =>
+  continuation(`${name.padEnd(RULES_NAME_WIDTH)}${RULES[name].description}`),
+);
+
+/**
+ * Every option, in the order `--help` prints them.
+ *
+ * The block is built from the same column constant as the menu above, so
+ * reflowing the usage cannot silently misalign the generated lines.
+ */
+const OPTION_LINES = [
+  option('--seed <n>', `The Match's seed: an unsigned 32-bit integer (default ${DEFAULT_SEED}).`),
+  option('--ticks <n>', 'The tick bound: how long the Match may run, in whole ticks,'),
+  continuation(`at ${TICK_HZ} ticks a second (default ${DEFAULT_TICKS}, three game years).`),
+  option('--expect-hash <hex>', 'Fail unless the Match ends on this 16-digit state hash.'),
+  option('--rules <name>', `Which Match to play (default ${DEFAULT_RULES}):`),
+  ...RULES_MENU,
+  option('--help, -h', 'Print this and play nothing.'),
+].join('\n');
+
 /** The one description of what this command accepts, printed verbatim by `--help`. */
 export const USAGE = `Usage: npm run match -- [options]
 
-  --seed <n>           The Match's seed: an unsigned 32-bit integer (default ${DEFAULT_SEED}).
-  --ticks <n>          The tick bound: how long the Match may run, in whole ticks,
-                       at ${TICK_HZ} ticks a second (default ${DEFAULT_TICKS}, three game years).
-  --expect-hash <hex>  Fail unless the Match ends on this 16-digit state hash.
-  --help, -h           Print this and play nothing.
+${OPTION_LINES}
 
 Plays one whole Match headless — no browser, no human and no AI — prints a JSON
 report of it on standard output, and exits non-zero when a game invariant is
@@ -114,7 +161,12 @@ const DIGITS = /^[0-9]+$/;
  *   a value is not the kind of thing that flag takes.
  */
 export function parseArguments(argv: readonly string[]): ParsedArguments {
-  const asked: Asked = { seed: DEFAULT_SEED, ticks: DEFAULT_TICKS, expectedHash: null };
+  const asked: Asked = {
+    seed: DEFAULT_SEED,
+    ticks: DEFAULT_TICKS,
+    rules: DEFAULT_RULES,
+    expectedHash: null,
+  };
   const given = new Set<string>();
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -139,6 +191,7 @@ export function parseArguments(argv: readonly string[]): ParsedArguments {
 interface Asked {
   seed: number;
   ticks: number;
+  rules: RulesName;
   expectedHash: string | null;
 }
 
@@ -162,6 +215,10 @@ const OPTIONS: Readonly<Record<string, (asked: Asked, value: string) => void>> =
 
   '--expect-hash': (asked, value) => {
     asked.expectedHash = readStateHash(value);
+  },
+
+  '--rules': (asked, value) => {
+    asked.rules = readRulesName(value);
   },
 };
 
@@ -206,6 +263,21 @@ function readWholeNumber(value: string, flag: string): number {
 function readStateHash(value: string): string {
   if (!STATE_HASH.test(value)) {
     throw new UsageError(`--expect-hash must be a 16-digit hexadecimal state hash, got ${describe(value)}`);
+  }
+
+  return value;
+}
+
+/**
+ * @throws UsageError when no rules have that name, naming the name it was given
+ *   and every name that exists — the mistake is a typo, and the list is the
+ *   answer to it.
+ */
+function readRulesName(value: string): RulesName {
+  if (!isRulesName(value)) {
+    throw new UsageError(
+      `--rules must name a Match this command can play — ${RULES_NAMES.join(', ')} — got ${describe(value)}`,
+    );
   }
 
   return value;

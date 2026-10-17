@@ -70,6 +70,55 @@ describe('one command plays a Match end to end, with no browser anywhere', () =>
   });
 });
 
+describe('a Match that draws, played from the command line', () => {
+  it('plays the drawing Match by name, and reports it like any other Match', () => {
+    const ran = match('--seed', '1', '--ticks', '600', '--rules', 'draws');
+
+    expect(ran.status).toBe(0);
+    expect(ran.stderr).toBe('');
+
+    const report = reportOf(ran);
+    expect(report).toMatchObject({
+      seed: 1,
+      ticks: 600,
+      outcome: 'clock',
+      winner: null,
+      commands: 0,
+    });
+    expect(report.hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('hashes the drawing Match differently from the empty one, so the gate covers the draw loop', () => {
+    expect(reportOf(match('--seed', '1', '--ticks', '600', '--rules', 'draws')).hash).not.toBe(
+      reportOf(match('--seed', '1', '--ticks', '600')).hash,
+    );
+  });
+
+  it('plays the empty Match when no rules are named, byte for byte the same command', () => {
+    expect(match('--seed', '1', '--ticks', '600').stdout).toBe(
+      match('--seed', '1', '--ticks', '600', '--rules', 'empty').stdout,
+    );
+  });
+
+  it('exits 1 on a mismatch for the drawing Match too, and prints the report first', () => {
+    const ran = match(
+      '--seed',
+      '1',
+      '--ticks',
+      '600',
+      '--rules',
+      'draws',
+      '--expect-hash',
+      '0000000000000000',
+    );
+
+    expect(ran.status).toBe(1);
+    expect(ran.stderr).toContain('expected 0000000000000000');
+    expect(ran.stderr).toContain(reportOf(ran).hash);
+    expect(reportOf(ran).outcome).toBe('clock');
+  });
+});
+
 describe('a deliberately violated invariant', () => {
   it('accepts the hash a Match really ended on, which is the determinism gate (ADR-0006)', () => {
     const first = match('--seed', '11', '--ticks', '90');
@@ -105,6 +154,8 @@ describe('a misused command line', () => {
       expect(ran.status).toBe(0);
       expect(ran.stdout).toContain('Usage:');
       expect(ran.stdout).toContain('--seed');
+      expect(ran.stdout).toContain('--rules');
+      expect(ran.stdout).toContain('draws');
       expect(ran.stdout).not.toContain('hash":');
     }
   });
@@ -118,10 +169,20 @@ describe('a misused command line', () => {
     expect(ran.stderr).toContain('Usage:');
   });
 
+  it('exits 2, with the offending name in the message, when a rules name is not one it knows', () => {
+    const ran = match('--rules', 'nope');
+
+    expect(ran.status).toBe(2);
+    expect(ran.stdout).toBe('');
+    expect(ran.stderr).toContain('nope');
+    expect(ran.stderr).toContain('Usage:');
+  });
+
   it('exits 2 when a flag arrived without its value, or with a value it cannot read', () => {
     expect(match('--seed').stderr).toContain('--seed needs a value');
     expect(match('--seed').status).toBe(2);
     expect(match('--ticks', 'half').status).toBe(2);
     expect(match('--expect-hash', 'zzz').status).toBe(2);
+    expect(match('--rules').status).toBe(2);
   });
 });

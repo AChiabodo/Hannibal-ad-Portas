@@ -144,8 +144,9 @@ One command plays a whole Match with no browser, no human and no AI, and prints
 what happened and why it ended. Standard output carries the report and nothing
 else, so it pipes into `jq`; the report holds no timing, no path and no wall
 clock, so two runs of the same command are byte-identical and a recorded hash can
-be gated on. `--seed` and `--ticks` choose the Match, `--expect-hash` requires it
-to end on a hash you recorded, and `--help` describes the lot.
+be gated on. `--seed` and `--ticks` choose the Match, `--rules` chooses which
+harness Match to play, `--expect-hash` requires it to end on a hash you
+recorded, and `--help` describes the lot.
 
 CI plays that very command, with the hash above as its `--expect-hash`: a change
 that moves the hash is a decision in review (ADR-0006).
@@ -157,9 +158,12 @@ the command line was misused. A violated hash still prints the report first: the
 interesting number is the one the Match ended on.
 
 Today the Match is empty, on purpose: no system has been built yet, so nothing
-can be lost and the tick bound is what ends the run (`src/sim/empty.ts`). The
-harness around it is the point, and the waves that build the world change what is
-inside it rather than how it is driven.
+can be lost and the tick bound is what ends the run (`src/sim/empty.ts`).
+`--rules` chooses which harness Match the CLI plays, and `--rules draws` plays
+one whose rules draw from the seed on every tick, so the golden hash in CI covers
+the draw loop as well as the seed expansion (`src/cli/rules.ts`). The harness
+around it is the point, and the waves that build the world change what is inside
+it rather than how it is driven.
 
 The command needs no build step. Node strips the types and runs `src/cli/main.ts`
 as it stands, which is why every relative import under `src/` names its extension
@@ -186,6 +190,7 @@ src/                application code
     empty.ts        the Match with no systems in it yet: what the CLI plays today
   cli/              the headless Match as a command
     arguments.ts    what the command line means, and what it refuses
+    rules.ts        the Matches a run can play, by name, and what each draws
     run.ts          playing one Match, and the hash invariant the CLI checks
     report.ts       the JSON report, ordered and free of anything that varies
     main.ts         the entry: standard output, standard error, exit codes

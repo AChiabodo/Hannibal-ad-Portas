@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { RunOptions } from '../../src/cli/arguments';
 import { HashMismatchError, playMatch, requireExpectedHash } from '../../src/cli/run';
+import { DEFAULT_RULES } from '../../src/cli/rules';
 
 /** What the CLI plays unless a test says otherwise. */
 function options(overrides: Partial<RunOptions> = {}): RunOptions {
-  return { seed: 7, ticks: 120, expectedHash: null, ...overrides };
+  return { seed: 7, ticks: 120, expectedHash: null, rules: DEFAULT_RULES, ...overrides };
 }
 
 describe('playing a Match headless', () => {
@@ -15,6 +16,13 @@ describe('playing a Match headless', () => {
     expect(run.result).toEqual({ kind: 'clock', tick: 120 });
     expect(run.log).toEqual([]);
     expect(run.hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('plays the rules the command line named, rather than the empty Match', () => {
+    const drawing = playMatch(options({ rules: 'draws' }));
+
+    expect(drawing.result).toEqual({ kind: 'clock', tick: 120 });
+    expect(drawing.hash).not.toBe(playMatch(options()).hash);
   });
 
   it('plays the same Match again from the same seed, hash for hash', () => {
