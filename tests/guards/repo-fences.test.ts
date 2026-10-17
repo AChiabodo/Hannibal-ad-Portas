@@ -1,0 +1,25 @@
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { findMathRandomViolations } from '../../scripts/guards/find-math-random.mjs';
+import { findRendererReachableFromSimulation } from '../../scripts/guards/simulation-boundary.mjs';
+import {
+  GUARDED_ROOTS,
+  collectSourceFiles,
+} from '../../scripts/guards/source-files.mjs';
+
+const REPO_ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
+
+/**
+ * The fences are only worth something if they are wired to the real tree, so
+ * this is the same check CI runs, against the repository as it is.
+ */
+describe('the repository itself', () => {
+  it('holds both fences', () => {
+    const files = collectSourceFiles(REPO_ROOT, GUARDED_ROOTS);
+
+    expect(files.length).toBeGreaterThan(0);
+    expect(findMathRandomViolations(files, { root: REPO_ROOT })).toEqual([]);
+    expect(findRendererReachableFromSimulation(REPO_ROOT)).toEqual([]);
+  });
+});

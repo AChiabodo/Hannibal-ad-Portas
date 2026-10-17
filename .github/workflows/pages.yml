@@ -1,0 +1,65 @@
+name: Pages
+
+# Deploys the static build to GitHub Pages from `main`.
+#
+# This workflow needs Pages switched on for the repository, with "GitHub Actions"
+# as the source. A private repository on a plan that does not include Pages will
+# fail here, loudly, until that setting exists.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the static site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      # The site is served from https://<owner>.github.io/<repo>/, so Vite has
+      # to be told where its assets live.
+      - name: Build
+        run: npm run build
+        env:
+          PAGES_BASE: /${{ github.event.repository.name }}/
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SPQR — Hannibal ad Portas</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #14110d;
+        color: #d8cbb4;
+        font-family: ui-monospace, monospace;
+      }
+
+      #app canvas {
+        image-rendering: pixelated;
+        width: 256px;
+        height: 256px;
+      }
+
+      [data-spqr-booted='failed'] #app {
+        padding: 1rem;
+        color: #e0a0a0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Build output — every artefact is regenerated from code (ADR-0002)
+dist/
+.vite/
+
+# Test output
+coverage/
+playwright-report/
+test-results/
+
+# Editor and OS noise
+*.local
+.DS_Store
+Thumbs.db
