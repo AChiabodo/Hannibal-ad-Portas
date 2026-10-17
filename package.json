@@ -5,7 +5,7 @@
   "description": "SPQR — Hannibal ad Portas. A browser RTS in the Second Punic War, rendered from code.",
   "type": "module",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.18.0"
   },
   "scripts": {
     "dev": "vite",
@@ -14,6 +14,7 @@
     "check": "tsc -b",
     "lint": "eslint .",
     "guard": "node scripts/guard.mjs",
+    "match": "node src/cli/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "pretest:e2e": "playwright install chromium",

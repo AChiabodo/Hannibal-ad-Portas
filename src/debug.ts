@@ -1,4 +1,4 @@
-import type { RenderProbe } from './render/boot';
+import type { RenderProbe } from './render/boot.ts';
 
 /** What the boot sequence managed to do, success or failure. */
 export type BootReport =

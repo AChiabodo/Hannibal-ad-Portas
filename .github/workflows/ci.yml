@@ -37,6 +37,14 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # A4's promise, run the way a reader runs it: one command, one Match, a
+      # JSON report on standard output and an exit code a script can branch on.
+      # The CLI needs no build step — Node runs the TypeScript source directly
+      # (ADR-0009) — and the recorded hash is the README's, so determinism is
+      # gated here rather than believed (ADR-0006).
+      - name: Play a Match headless
+        run: npm run match -- --seed 1 --ticks 600 --expect-hash bf3d192e9ab9eb5f
+
   guards:
     name: Fences (import guard, Math.random guard, transcendental guard)
     runs-on: ubuntu-latest

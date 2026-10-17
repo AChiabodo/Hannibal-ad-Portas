@@ -26,29 +26,31 @@
  *   documented for an agent author in `docs/COMMANDS.md`.
  * - `observation.ts` — everything a Controller is allowed to know, and nothing else.
  * - `controller.ts` — the interface the human, the AI, a script and an agent all
- *   implement, plus the scripted driver a headless Match runs on.
+ *   implement, plus the idle and scripted Controllers a headless Match runs on.
  * - `driver.ts` — the loop that asks two Controllers for Commands and runs a
  *   Match to a result, with no browser anywhere.
+ * - `empty.ts` — the Match with no systems in it yet, which is the one the CLI
+ *   can play today (A4); B1–C5 fill the world in behind it.
  */
-export { TICK_HZ, TICK_MS } from './clock';
-export { requireTickCount } from './ticks';
-export { MAX_SEED, makeRng, rngFromState } from './rng';
-export type { Rng, RngState } from './rng';
-export { StateSerializationError, serializeState } from './state';
-export { hashState } from './hash';
-export { createMatch } from './match';
-export type { Match, MatchOptions, MatchRules, MatchState } from './match';
-export { replay } from './replay';
+export { TICK_HZ, TICK_MS } from './clock.ts';
+export { requireTickCount } from './ticks.ts';
+export { MAX_SEED, makeRng, rngFromState } from './rng.ts';
+export type { Rng, RngState } from './rng.ts';
+export { StateSerializationError, serializeState } from './state.ts';
+export { hashState } from './hash.ts';
+export { createMatch } from './match.ts';
+export type { Match, MatchOptions, MatchRules, MatchState } from './match.ts';
+export { replay } from './replay.ts';
 export type {
   CommandLog,
   LoggedCommand,
   ReplayOptions,
   ReplayResult,
   StateCheckpoint,
-} from './replay';
+} from './replay.ts';
 
-export { FACTIONS, isFaction } from './faction';
-export type { Faction } from './faction';
+export { FACTIONS, isFaction } from './faction.ts';
+export type { Faction } from './faction.ts';
 export {
   assault,
   attack,
@@ -66,7 +68,7 @@ export {
   recruit,
   validateCommand,
   withdraw,
-} from './command';
+} from './command.ts';
 export type {
   AssaultCommand,
   AttackCommand,
@@ -84,9 +86,11 @@ export type {
   MoveCommand,
   RecruitCommand,
   WithdrawCommand,
-} from './command';
-export type { Observation } from './observation';
-export { scriptedController } from './controller';
-export type { Controller, Player, Players } from './controller';
-export { ForeignCommandError, runMatch } from './driver';
-export type { MatchResult, MatchRun, MatchSetup, Outcome } from './driver';
+} from './command.ts';
+export type { Observation } from './observation.ts';
+export { scriptedController, idleController } from './controller.ts';
+export type { Controller, Player, Players } from './controller.ts';
+export { ForeignCommandError, runMatch } from './driver.ts';
+export type { MatchResult, MatchRun, MatchSetup, Outcome } from './driver.ts';
+export { emptyMatchOutcome, emptyMatchRules, observeEmptyMatch } from './empty.ts';
+export type { EmptyMatchVisible, EmptyMatchWorld } from './empty.ts';

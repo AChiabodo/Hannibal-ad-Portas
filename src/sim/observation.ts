@@ -14,7 +14,7 @@
  * looking and the tick that is being decided, so a rule cannot claim to be
  * another Faction, or to be another tick (B4 owns the filtering).
  */
-import type { Faction } from './faction';
+import type { Faction } from './faction.ts';
 
 /** Who is looking, and what they are allowed to see. */
 export interface Observation<Visible> {

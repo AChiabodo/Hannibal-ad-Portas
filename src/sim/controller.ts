@@ -29,11 +29,11 @@
  * for hash. A Controller that draws from `Math.random`, reads a clock or a file
  * breaks that, and ADR-0006 bans the first of those repository-wide.
  */
-import { validateCommand, type Command } from './command';
-import type { Faction } from './faction';
-import type { Observation } from './observation';
-import type { CommandLog } from './replay';
-import { requireTickCount } from './ticks';
+import { validateCommand, type Command } from './command.ts';
+import type { Faction } from './faction.ts';
+import type { Observation } from './observation.ts';
+import type { CommandLog } from './replay.ts';
+import { requireTickCount } from './ticks.ts';
 
 /**
  * Whichever mind drives a Faction (GLOSSARY: Controller).
@@ -71,6 +71,19 @@ export type Players<Visible> = readonly [Player<Visible>, Player<Visible>];
 
 /** A tick with nothing stamped on it, so a script that stays silent allocates nothing. */
 const NO_COMMANDS: readonly Command[] = [];
+
+/**
+ * A Controller that watches: it emits nothing, ever.
+ *
+ * The Player a Match runs when nobody is deciding anything — a headless Match
+ * with no AI and no script, or one Faction of a Match left deliberately quiet
+ * so a test can watch what the other one does. It is a Controller like any
+ * other, not a special case in the driver: returning nothing is always legal,
+ * and this is the Controller that does exactly that.
+ */
+export function idleController<Visible = unknown>(): Controller<Visible> {
+  return { decide: () => NO_COMMANDS };
+}
 
 /**
  * A Controller that plays back a fixed script: at each tick it emits the

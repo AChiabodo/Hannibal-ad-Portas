@@ -15,8 +15,8 @@
  * the end of the run, a fraction of a tick. Those throw, because a replay that
  * quietly ignores a Command is worse than one that refuses to start.
  */
-import { createMatch, type MatchRules } from './match';
-import { requireTickCount } from './ticks';
+import { createMatch, type MatchRules } from './match.ts';
+import { requireTickCount } from './ticks.ts';
 
 /** A Command a Controller emitted, stamped with the tick it takes effect on. */
 export interface LoggedCommand<Command> {

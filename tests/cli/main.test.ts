@@ -1,0 +1,127 @@
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import type { MatchReport } from '../../src/cli/report';
+
+/**
+ * The command the harness itself runs, from the repository root and through the
+ * same Node that is running these tests. Nothing is imported: what A4 promises
+ * is a *command*, so it is the process — its exit code, its standard output and
+ * its standard error — that is under test here.
+ */
+const ROOT = fileURLToPath(new URL('../..', import.meta.url));
+const CLI = fileURLToPath(new URL('../../src/cli/main.ts', import.meta.url));
+
+interface Ran {
+  readonly status: number | null;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+function match(...args: readonly string[]): Ran {
+  const result: SpawnSyncReturns<string> = spawnSync(process.execPath, [CLI, ...args], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    timeout: 30_000,
+  });
+
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+/** The report the command printed, so a failure says why it could not be read. */
+function reportOf(result: Ran): MatchReport {
+  const report: unknown = JSON.parse(result.stdout);
+  return report as MatchReport;
+}
+
+describe('one command plays a Match end to end, with no browser anywhere', () => {
+  it('plays a whole Match and prints a JSON report of it', () => {
+    const ran = match('--seed', '7', '--ticks', '120');
+
+    expect(ran.status).toBe(0);
+    expect(ran.stderr).toBe('');
+
+    const report = reportOf(ran);
+    expect(report).toMatchObject({
+      seed: 7,
+      ticks: 120,
+      outcome: 'clock',
+      winner: null,
+      reason: 'the Match reached its tick bound of 120 ticks without a decision',
+      commands: 0,
+    });
+    expect(report.hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('plays a Match with no arguments at all, on the documented defaults', () => {
+    const ran = match();
+
+    expect(ran.status).toBe(0);
+    expect(reportOf(ran).seed).toBe(1);
+
+    // The documented default bound: three game years (PLAN §4). Spelled out
+    // here rather than imported, so changing it is visible in a review.
+    expect(reportOf(ran).ticks).toBe(25_200);
+  });
+
+  it('prints the very same bytes for the very same command, so runs can be diffed', () => {
+    expect(match('--seed', '3', '--ticks', '60').stdout).toBe(match('--seed', '3', '--ticks', '60').stdout);
+    expect(match('--seed', '3', '--ticks', '60').stdout).not.toBe(match('--seed', '4', '--ticks', '60').stdout);
+  });
+});
+
+describe('a deliberately violated invariant', () => {
+  it('accepts the hash a Match really ended on, which is the determinism gate (ADR-0006)', () => {
+    const first = match('--seed', '11', '--ticks', '90');
+    const decided = reportOf(first).hash;
+
+    const second = match('--seed', '11', '--ticks', '90', '--expect-hash', decided);
+
+    expect(second.status).toBe(0);
+    expect(reportOf(second).hash).toBe(decided);
+  });
+
+  it('exits non-zero, with a readable message, when the Match ended on another hash', () => {
+    const ran = match('--seed', '11', '--ticks', '90', '--expect-hash', '0000000000000000');
+
+    expect(ran.status).toBe(1);
+    expect(ran.stderr).toContain('expected 0000000000000000');
+    expect(ran.stderr).toContain(reportOf(ran).hash);
+    expect(ran.stderr).toContain('cli:');
+  });
+
+  it('still prints the report, so the hash it did end on is right there', () => {
+    const ran = match('--seed', '11', '--ticks', '90', '--expect-hash', '0000000000000000');
+
+    expect(reportOf(ran).outcome).toBe('clock');
+  });
+});
+
+describe('a misused command line', () => {
+  it('prints the usage and plays nothing when asked for help', () => {
+    for (const flag of ['--help', '-h']) {
+      const ran = match(flag);
+
+      expect(ran.status).toBe(0);
+      expect(ran.stdout).toContain('Usage:');
+      expect(ran.stdout).toContain('--seed');
+      expect(ran.stdout).not.toContain('hash":');
+    }
+  });
+
+  it('exits 2, with the offending argument in the message, when a flag is not one it knows', () => {
+    const ran = match('--speed', '3');
+
+    expect(ran.status).toBe(2);
+    expect(ran.stdout).toBe('');
+    expect(ran.stderr).toContain('--speed is not an option this command knows');
+    expect(ran.stderr).toContain('Usage:');
+  });
+
+  it('exits 2 when a flag arrived without its value, or with a value it cannot read', () => {
+    expect(match('--seed').stderr).toContain('--seed needs a value');
+    expect(match('--seed').status).toBe(2);
+    expect(match('--ticks', 'half').status).toBe(2);
+    expect(match('--expect-hash', 'zzz').status).toBe(2);
+  });
+});

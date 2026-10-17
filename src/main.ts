@@ -1,5 +1,5 @@
-import { bootRenderer } from './render/boot';
-import type { BootReport } from './debug';
+import { bootRenderer } from './render/boot.ts';
+import type { BootReport } from './debug.ts';
 
 /**
  * Boots the game: renderer up, one frame drawn, debug hooks published.

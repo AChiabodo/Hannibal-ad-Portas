@@ -13,8 +13,8 @@
  * The engine knows only what it must: Commands arrive stamped for a tick, and
  * the tick they are stamped for is the one that applies them.
  */
-import { hashState } from './hash';
-import { makeRng, type Rng, type RngState } from './rng';
+import { hashState } from './hash.ts';
+import { makeRng, type Rng, type RngState } from './rng.ts';
 
 /**
  * The authoritative state of a Match: integers all the way down, and exactly

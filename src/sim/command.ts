@@ -29,7 +29,7 @@
  * and `validateCommand` copies what it accepts, so a Controller cannot keep a
  * hand on the Match through the object it handed over.
  */
-import { FACTIONS, isFaction, type Faction } from './faction';
+import { FACTIONS, isFaction, type Faction } from './faction.ts';
 
 /** The field every Command carries: the Faction that issued it. */
 const FACTION_FIELD = 'faction';

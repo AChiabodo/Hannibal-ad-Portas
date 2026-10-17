@@ -14,7 +14,8 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 
 ## Requirements
 
-- **Node 22** (see `.nvmrc`; `vitest` needs 22.12 or newer) and npm.
+- **Node 22.18** or newer (see `.nvmrc`; 22.18 is where Node runs TypeScript
+  source directly, which is how the CLI does it — ADR-0009) and npm.
 - Nothing else. A clean clone needs no manual step: `npm ci` brings in the
   toolchain and `npm run build` compiles from source.
 
@@ -28,6 +29,7 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | `npm run check`     | TypeScript in strict mode, all three projects, no emit                 |
 | `npm run lint`      | ESLint over the repository                                             |
 | `npm run guard`     | The fences: `pixi.js` reachability, `Math.random` and transcendentals  |
+| `npm run match`     | One whole Match headless, as a JSON report, with no build step         |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
 | `npm run test:e2e`  | Browser tests (Playwright, headless Chromium, software WebGL)           |
 | `npm run verify`    | Lint, check, guard, unit tests and build in one go                      |
@@ -117,6 +119,49 @@ a Controller returns is validated against the vocabulary before anything is
 applied, and a Command addressed to the other Faction is refused outright. The
 driver never lets a rule defend against either.
 
+## The headless Match
+
+```
+npm run match -- --seed 1 --ticks 600
+```
+
+```json
+{
+  "seed": 1,
+  "ticks": 600,
+  "outcome": "clock",
+  "winner": null,
+  "reason": "the Match reached its tick bound of 600 ticks without a decision",
+  "commands": 0,
+  "hash": "bf3d192e9ab9eb5f"
+}
+```
+
+One command plays a whole Match with no browser, no human and no AI, and prints
+what happened and why it ended. Standard output carries the report and nothing
+else, so it pipes into `jq`; the report holds no timing, no path and no wall
+clock, so two runs of the same command are byte-identical and a recorded hash can
+be gated on. `--seed` and `--ticks` choose the Match, `--expect-hash` requires it
+to end on a hash you recorded, and `--help` describes the lot.
+
+CI plays that very command, with the hash above as its `--expect-hash`: a change
+that moves the hash is a decision in review (ADR-0006).
+
+The exit codes are the same three `npm run guard` uses: **0** the Match ran,
+**1** a game invariant was violated — a hash that is not the expected one, a
+Command outside the vocabulary, a float where state must be integers — and **2**
+the command line was misused. A violated hash still prints the report first: the
+interesting number is the one the Match ended on.
+
+Today the Match is empty, on purpose: no system has been built yet, so nothing
+can be lost and the tick bound is what ends the run (`src/sim/empty.ts`). The
+harness around it is the point, and the waves that build the world change what is
+inside it rather than how it is driven.
+
+The command needs no build step. Node strips the types and runs `src/cli/main.ts`
+as it stands, which is why every relative import under `src/` names its extension
+(`./command.ts`) — see [ADR-0009](docs/adr/0009-the-cli-runs-the-source-with-node.md).
+
 ## Layout
 
 ```
@@ -133,8 +178,14 @@ src/                application code
     faction.ts      the two Factions, as words rather than as state
     command.ts      the closed Command vocabulary: constructors and a reader
     observation.ts  everything a Controller may know, and nothing else
-    controller.ts   the one interface every mind implements, plus a scripted driver
+    controller.ts   the one interface every mind implements, plus an idle and a scripted one
     driver.ts       two Controllers, one Match, a result and a command log
+    empty.ts        the Match with no systems in it yet: what the CLI plays today
+  cli/              the headless Match as a command
+    arguments.ts    what the command line means, and what it refuses
+    run.ts          playing one Match, and the hash invariant the CLI checks
+    report.ts       the JSON report, ordered and free of anything that varies
+    main.ts         the entry: standard output, standard error, exit codes
   render/           the only place `pixi.js` exists
 scripts/guard.mjs   the fences
 tests/              Vitest unit tests
@@ -144,14 +195,14 @@ docs/COMMANDS.md    the Command vocabulary an external agent is written from
 ```
 
 Further modules from the plan's architecture (`content/`, `ai/`, `art/`,
-`audio/`, `ui/`, `cli/`) arrive with the tickets that need them, under `src/`.
+`audio/`, `ui/`) arrive with the tickets that need them, under `src/`.
 
 ## Continuous integration
 
-| Workflow                       | Trigger                   | What it proves                                                  |
-| ------------------------------ | ------------------------- | --------------------------------------------------------------- |
-| `.github/workflows/ci.yml`     | every push, every PR      | install, lint, strict types, build, unit tests, fences, browser |
-| `.github/workflows/pages.yml`  | push to `main`, manual    | the static build deploys to GitHub Pages                        |
+| Workflow                       | Trigger                   | What it proves                                                          |
+| ------------------------------ | ------------------------- | ----------------------------------------------------------------------- |
+| `.github/workflows/ci.yml`     | every push, every PR      | install, lint, strict types, build, unit tests, fences, a Match, browser |
+| `.github/workflows/pages.yml`  | push to `main`, manual    | the static build deploys to GitHub Pages                                |
 
 ### Deployment
 

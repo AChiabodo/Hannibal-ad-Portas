@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CommandValidationError, hold, move, type Command } from '../../src/sim/command';
-import { scriptedController, type Controller } from '../../src/sim/controller';
+import { idleController, scriptedController, type Controller } from '../../src/sim/controller';
 import type { Faction } from '../../src/sim/faction';
 import { createMatch, type MatchRules } from '../../src/sim/match';
 import type { Observation } from '../../src/sim/observation';
@@ -102,5 +102,14 @@ describe('a scripted Controller', () => {
     expect(() => scriptedController<SecretVisible>([{ tick: 0, command: notACommand }])).toThrow(
       CommandValidationError,
     );
+  });
+});
+
+describe('a Controller that watches', () => {
+  it('emits nothing, whatever tick it is asked about and whichever Faction is looking', () => {
+    const idle = idleController<SecretVisible>();
+
+    expect(idle.decide(look(0, 'rome'))).toEqual([]);
+    expect(idle.decide(look(7, 'carthage'))).toEqual([]);
   });
 });

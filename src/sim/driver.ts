@@ -26,13 +26,13 @@
  * processor allows, which is what makes a hundred Matches a routine command
  * rather than an afternoon, and the only bound is the one the caller sets.
  */
-import { validateCommand, type Command } from './command';
-import type { Player, Players } from './controller';
-import type { Faction } from './faction';
-import { createMatch, type Match, type MatchRules } from './match';
-import type { Observation } from './observation';
-import type { CommandLog, LoggedCommand } from './replay';
-import { requireTickCount } from './ticks';
+import { validateCommand, type Command } from './command.ts';
+import type { Player, Players } from './controller.ts';
+import type { Faction } from './faction.ts';
+import { createMatch, type Match, type MatchRules } from './match.ts';
+import type { Observation } from './observation.ts';
+import type { CommandLog, LoggedCommand } from './replay.ts';
+import { requireTickCount } from './ticks.ts';
 
 /**
  * A Controller emitted a Command for a Faction that is not its own.
