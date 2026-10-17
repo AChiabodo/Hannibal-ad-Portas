@@ -8,7 +8,7 @@ import {
   move,
   type Command,
 } from '../../src/sim/command';
-import { scriptedController, type Controller } from '../../src/sim/controller';
+import { idleController, scriptedController, type Controller } from '../../src/sim/controller';
 import { ForeignCommandError, runMatch, type MatchRun } from '../../src/sim/driver';
 import type { Observation } from '../../src/sim/observation';
 import { replay, type CommandLog } from '../../src/sim/replay';
@@ -61,6 +61,70 @@ function play(options: PlayOptions = {}): MatchRun {
     ],
     ticks: options.ticks ?? 200,
   });
+}
+
+/**
+ * The rules the write-through test drives: one Squad and one number behind it,
+ * and an `observe` that hands the world over as it stands.
+ *
+ * Returning the world itself is the widest a projection can be, and the exact
+ * shape the write-through finding was made with
+ * (`docs/reviews/A5-foundations-review.md`): with the world by reference, a
+ * Controller could write straight through the Observation — no Command, no line
+ * in the log, a hash no replay can carry. The driver's copy is what this test
+ * pins, so the projection here is the world on purpose: there is nothing else to
+ * disconnect it from.
+ */
+interface FunnelSquad {
+  readonly id: number;
+  strength: number;
+}
+
+interface FunnelWorld {
+  readonly squads: FunnelSquad[];
+  secretTotal: number;
+}
+
+/** A projection that holds a function, which the clone cannot carry at all. */
+interface FunnelVisibleWithSpy {
+  readonly squads: readonly FunnelSquad[];
+  readonly secretTotal: number;
+  readonly spy: () => number;
+}
+
+/** What one funnel Match produced, and what each side read while it ran. */
+interface FunnelRun {
+  readonly run: MatchRun;
+  /** The world the rules built. A Controller must not have reached it. */
+  readonly world: FunnelWorld;
+  /** What the rules read each tick: a write that reached them would show here. */
+  readonly readByRules: number[];
+}
+
+/**
+ * Plays the funnel Match with one Rome, Carthage watching, and a fresh world, so
+ * two runs cannot share the object the first one's Controller wrote to.
+ */
+function playFunnel(rome: Controller<FunnelWorld>): FunnelRun {
+  const world: FunnelWorld = { squads: [{ id: 1, strength: 10 }], secretTotal: 7 };
+  const readByRules: number[] = [];
+
+  const run = runMatch<FunnelWorld, FunnelWorld>({
+    seed: 5,
+    rules: {
+      createWorld: () => world,
+      step: (stepped) => readByRules.push(stepped.secretTotal, stepped.squads[0]?.strength ?? -1),
+    },
+    observe: (stepped) => stepped,
+    outcome: () => null,
+    players: [
+      { faction: 'rome', controller: rome },
+      { faction: 'carthage', controller: idleController<FunnelWorld>() },
+    ],
+    ticks: 2,
+  });
+
+  return { run, world, readByRules };
 }
 
 describe('a headless Match', () => {
@@ -225,6 +289,73 @@ describe('the Observation a Controller is handed', () => {
     expect(carthage?.visible.squads.map((squad) => squad.id)).toEqual([3]);
     expect(rome?.visible.squads[0]).not.toHaveProperty('owner');
     expect(rome?.visible).not.toBe(carthage?.visible);
+  });
+
+  it('is a copy, so a Controller cannot write the Match through it: the write reaches neither the rules nor the hash', () => {
+    const readByController: number[] = [];
+    const cheating: Controller<FunnelWorld> = {
+      decide: (observation) => {
+        readByController.push(
+          observation.visible.secretTotal,
+          observation.visible.squads[0]?.strength ?? -1,
+        );
+
+        observation.visible.secretTotal = 9999; // a top-level field ...
+        const first = observation.visible.squads[0];
+        if (first !== undefined) first.strength = 9999; // ... and a nested one
+
+        return [];
+      },
+    };
+
+    const cheated = playFunnel(cheating);
+    const honest = playFunnel(idleController<FunnelWorld>());
+
+    // Every tick the Controller reads the projection afresh: the fields are
+    // readable, and the write it made on the tick before is gone by the next.
+    expect(readByController).toEqual([7, 10, 7, 10]);
+
+    // The write it did make reached the copy and not the world: the rules read
+    // what was there on every tick, top-level field and nested one alike.
+    expect(cheated.world.secretTotal).toBe(7);
+    expect(cheated.world.squads[0]?.strength).toBe(10);
+    expect(cheated.readByRules).toEqual([7, 10, 7, 10]);
+
+    // And the Match it produced is the Match the same seed and log produce with
+    // no write at all, so the test cannot pass on an empty Match.
+    expect(cheated.run.hash).toBe(honest.run.hash);
+  });
+
+  it('refuses a projection the clone cannot carry at all, before the Match runs: the error is the clone\'s own, not a sim error', () => {
+    const steps: number[] = [];
+    let refused: unknown;
+
+    try {
+      runMatch<FunnelWorld, FunnelVisibleWithSpy>({
+        seed: 5,
+        rules: {
+          createWorld: () => ({ squads: [], secretTotal: 0 }),
+          step: () => steps.push(1),
+        },
+        // A function is not data, so `structuredClone` refuses it rather than
+        // copying it — and the driver does not rescue the refusal into one of
+        // the seam's own errors.
+        observe: () => ({ squads: [], secretTotal: 0, spy: () => 0 }),
+        outcome: () => null,
+        players: [
+          { faction: 'rome', controller: idleController<FunnelVisibleWithSpy>() },
+          { faction: 'carthage', controller: idleController<FunnelVisibleWithSpy>() },
+        ],
+        ticks: 2,
+      });
+    } catch (error) {
+      refused = error;
+    }
+
+    expect(refused).toBeInstanceOf(DOMException);
+    expect((refused as DOMException).name).toBe('DataCloneError');
+    // And the refusal happens at the hand-over, before a single tick is stepped.
+    expect(steps).toEqual([]);
   });
 });
 

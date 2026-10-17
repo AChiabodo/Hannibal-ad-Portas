@@ -12,7 +12,8 @@
  * - **The Observation.** Each tick, each Player is handed the world filtered
  *   for its own Faction, stamped with the Faction and the tick. A rule supplies
  *   the projection and nothing else, so a rule cannot claim to be another
- *   Faction or to be another tick.
+ *   Faction or to be another tick. The driver deep-copies the projection before
+ *   it is handed over, not the projection itself (see `decide`).
  * - **The validation.** What a Controller returns is read through
  *   `validateCommand` before anything is applied, and a Command addressed to
  *   the other Faction is refused outright: a Controller commands its own Faction
@@ -97,6 +98,12 @@ export interface MatchSetup<World, Visible> {
    * The world as `faction` may see it. The whole honesty of the project rests
    * on this function: a Controller can read nothing else (B4 filters it through
    * fog of war).
+   *
+   * It must return structured-cloneable plain data: the driver deep-copies the
+   * result before a Controller sees it, so returning a reference — the world
+   * itself, or part of it — is safe, and the copy carries nothing else (`decide`
+   * says what that rules out). The copy only disconnects; filtering is this
+   * function's job, and the driver cannot do it for you.
    */
   readonly observe: (world: World, faction: Faction) => Visible;
 
@@ -142,6 +149,9 @@ export interface MatchRun {
  *   a Command in the vocabulary.
  * @throws ForeignCommandError when a Controller emits a Command for the other
  *   Faction.
+ * @throws DOMException named `DataCloneError` when `observe` returns a
+ *   projection that is not structured-cloneable plain data — a function or a
+ *   proxy, which `structuredClone` refuses rather than copies.
  * @throws StateSerializationError when a tick leaves anything but integers in state.
  */
 export function runMatch<World, Visible>(setup: MatchSetup<World, Visible>): MatchRun {
@@ -174,7 +184,21 @@ function decide<World, Visible>(
     const observation: Observation<Visible> = {
       faction: player.faction,
       tick,
-      visible: setup.observe(world, player.faction),
+      // The Observation is the Controller's own, the way IN is copied too, in
+      // `validateCommand`: the driver deep-copies what `observe` returned, so a
+      // projection that aliases the world — the world itself, or a part of it —
+      // cannot be written back through.
+      //
+      // `structuredClone` is the whole contract on a projection, and it is a
+      // data copy, not a check. Arrays, plain objects, typed arrays and cycles
+      // come through; everything else is silently flattened — a class instance
+      // loses its prototype and its methods, an accessor becomes a data
+      // property, and symbol keys and non-enumerable own fields are dropped. So
+      // a projection must be structured-cloneable plain data, and nothing it
+      // holds may rely on prototype identity, accessors, symbol keys or
+      // non-enumerable fields. Only what the clone cannot carry at all — a
+      // function, a proxy — is refused, with `DataCloneError`.
+      visible: structuredClone(setup.observe(world, player.faction)),
     };
 
     for (const emitted of player.controller.decide(observation)) {
