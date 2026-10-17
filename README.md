@@ -81,7 +81,7 @@ Further modules from the plan's architecture (`content/`, `ai/`, `art/`,
 
 ### Deployment
 
-Pages serves `main` at `https://<owner>.github.io/2DSQPR/`; the workflow sets
+Pages serves `main` at `https://<owner>.github.io/<repo>/`; the workflow sets
 `PAGES_BASE` so Vite emits assets under that path.
 
 The deploy workflow needs Pages enabled for the repository with **GitHub Actions**
