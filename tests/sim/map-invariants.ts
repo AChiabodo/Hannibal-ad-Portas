@@ -78,9 +78,9 @@ export function terrainProblems(map: MapGrid): readonly string[] {
   }
 
   for (let index = 0; index < TILE_COUNT; index += 1) {
-    const ground = groundOf(map, index);
-    if (!isTerrain(ground)) {
-      return [`the tile at (${tileX(index)}, ${tileY(index)}) holds ${ground}, which is not a terrain`];
+    const here = terrainOf(map, index);
+    if (!isTerrain(here)) {
+      return [`the tile at (${tileX(index)}, ${tileY(index)}) holds ${here}, which is not a terrain`];
     }
   }
 
@@ -95,7 +95,7 @@ export function strongholdProblems(map: MapGrid): readonly string[] {
   if (squared < MIN_STRONGHOLD_DISTANCE * MIN_STRONGHOLD_DISTANCE) {
     return [
       `the Strongholds at (${rome.x}, ${rome.y}) and (${carthage.x}, ${carthage.y}) stand ` +
-        `${tilesApart(squared)} tiles apart, nearer than the ${MIN_STRONGHOLD_DISTANCE} the contract states`,
+        `${wholeTilesApart(squared)} tiles apart, nearer than the ${MIN_STRONGHOLD_DISTANCE} the contract states`,
     ];
   }
 
@@ -168,8 +168,15 @@ export function riverProblems(map: MapGrid): readonly string[] {
 
   if (map.rivers.length === 0) problems.push('the theatre has no river at all');
 
+  // A river running edge to edge is load-bearing rather than pretty: a river
+  // that stopped inside the map could seal a pocket of land off, and the repair
+  // pass that fords whatever water still parts the land relies on every river
+  // crossing the whole map, so that following it always reaches another
+  // landmass. It is also the shape every planted ford and every road was drawn
+  // against, so a generator that changed it should have to fail a test.
+
   for (const [index, river] of map.rivers.entries()) {
-    const fords = river.tiles.filter((tile) => groundOf(map, tile) === TERRAIN.ford);
+    const fords = river.tiles.filter((tile) => terrainOf(map, tile) === TERRAIN.ford);
 
     for (const tile of fords) {
       if (dryNeighbours(map, tile) < 2) {
@@ -180,18 +187,18 @@ export function riverProblems(map: MapGrid): readonly string[] {
       }
     }
 
-    const crossings = fords.filter((tile) => isCrossing(map, tile)).length;
-    if (crossings < MIN_FORDS_PER_RIVER) {
+    const crossable = fords.filter((tile) => isStraightFord(map, tile)).length;
+    if (crossable < MIN_FORDS_PER_RIVER) {
       problems.push(
-        `river ${index} has ${crossings} fords a Squad can cross, fewer than the ` +
+        `river ${index} has ${crossable} fords a Squad can cross, fewer than the ` +
           `${MIN_FORDS_PER_RIVER} the contract states`,
       );
     }
 
     for (const tile of river.tiles) {
-      const ground = groundOf(map, tile);
-      if (ground !== TERRAIN.river && ground !== TERRAIN.ford) {
-        const name = isTerrain(ground) ? TERRAIN_NAMES[ground] : String(ground);
+      const here = terrainOf(map, tile);
+      if (here !== TERRAIN.river && here !== TERRAIN.ford) {
+        const name = isTerrain(here) ? TERRAIN_NAMES[here] : String(here);
         problems.push(
           `river ${index} runs through a ${name} tile at (${tileX(tile)}, ${tileY(tile)}), ` +
             'which is not water and not a ford',
@@ -272,7 +279,7 @@ export function roadProblems(map: MapGrid): readonly string[] {
     }
 
     for (const tile of road.tiles) {
-      if (!isWalkable(groundOf(map, tile))) {
+      if (!isWalkable(terrainOf(map, tile))) {
         problems.push(`a road crosses water at (${tileX(tile)}, ${tileY(tile)})`);
       }
     }
@@ -322,6 +329,11 @@ export function roadProblems(map: MapGrid): readonly string[] {
  * halves are not the map's left and right — they are the two sides of the
  * perpendicular bisector of the two Strongholds — so the sum is taken through
  * `halfOf` rather than by comparing x to half the width.
+ *
+ * Worked out here rather than imported from `map.ts`, which has the same
+ * function for the CLI's dump to print: the quantity the balance invariant is
+ * stated over is the map's own data, and an assertion that read it back through
+ * the code it is asserting would be asserting that code against itself.
  */
 export function resourceTotals(map: MapGrid): readonly [readonly number[], readonly number[]] {
   const rome: number[] = RESOURCE_KINDS.map(() => 0);
@@ -358,7 +370,7 @@ export function landmasses(map: MapGrid): Landmasses {
   for (let start = 0; start < TILE_COUNT; start += 1) {
     const known = labels[start];
     if (known !== undefined && known >= 0) continue;
-    if (!isWalkable(groundOf(map, start))) continue;
+    if (!isWalkable(terrainOf(map, start))) continue;
 
     const label = count;
     count += 1;
@@ -418,7 +430,7 @@ function roadNetworkFromStrongholds(map: MapGrid): ReadonlySet<number> {
 function flood(map: MapGrid, labels: Int32Array, index: number, label: number, queue: number[]): void {
   const known = labels[index];
   if (known !== undefined && known >= 0) return;
-  if (!isWalkable(groundOf(map, index))) return;
+  if (!isWalkable(terrainOf(map, index))) return;
 
   labels[index] = label;
   queue.push(index);
@@ -433,7 +445,7 @@ function labelAt(labels: Int32Array, x: number, y: number): number {
 }
 
 /** The terrain of a tile by flat index; the grid is exactly `TILE_COUNT` cells. */
-function groundOf(map: MapGrid, index: number): number {
+function terrainOf(map: MapGrid, index: number): number {
   return map.terrain[index] ?? TERRAIN.river;
 }
 
@@ -444,19 +456,22 @@ function distanceSquared(from: Site, to: Site): number {
   return dx * dx + dy * dy;
 }
 
-/** A squared distance in tiles, for a failure message: the floor, so it never overstates. */
-function tilesApart(squared: number): number {
+/**
+ * Failure message helper: a squared distance in whole tiles, floored so it never
+ * overstates how far apart two things are.
+ */
+function wholeTilesApart(squared: number): number {
   return Math.floor(Math.sqrt(squared));
 }
 
 /** Whether a ford can be crossed straight over: two opposite neighbours are dry. */
-function isCrossing(map: MapGrid, tile: number): boolean {
+function isStraightFord(map: MapGrid, tile: number): boolean {
   const x = tileX(tile);
   const y = tileY(tile);
-  const west = x > 0 && isWalkable(groundOf(map, tile - 1));
-  const east = x < MAP_WIDTH - 1 && isWalkable(groundOf(map, tile + 1));
-  const north = y > 0 && isWalkable(groundOf(map, tile - MAP_HEIGHT));
-  const south = y < MAP_HEIGHT - 1 && isWalkable(groundOf(map, tile + MAP_WIDTH));
+  const west = x > 0 && isWalkable(terrainOf(map, tile - 1));
+  const east = x < MAP_WIDTH - 1 && isWalkable(terrainOf(map, tile + 1));
+  const north = y > 0 && isWalkable(terrainOf(map, tile - MAP_HEIGHT));
+  const south = y < MAP_HEIGHT - 1 && isWalkable(terrainOf(map, tile + MAP_WIDTH));
 
   return (west && east) || (north && south);
 }
@@ -466,13 +481,13 @@ function dryNeighbours(map: MapGrid, tile: number): number {
   const x = tileX(tile);
   const y = tileY(tile);
   const around = [
-    x > 0 ? groundOf(map, tile - 1) : TERRAIN.river,
-    x < MAP_WIDTH - 1 ? groundOf(map, tile + 1) : TERRAIN.river,
-    y > 0 ? groundOf(map, tile - MAP_WIDTH) : TERRAIN.river,
-    y < MAP_HEIGHT - 1 ? groundOf(map, tile + MAP_WIDTH) : TERRAIN.river,
+    x > 0 ? terrainOf(map, tile - 1) : TERRAIN.river,
+    x < MAP_WIDTH - 1 ? terrainOf(map, tile + 1) : TERRAIN.river,
+    y > 0 ? terrainOf(map, tile - MAP_WIDTH) : TERRAIN.river,
+    y < MAP_HEIGHT - 1 ? terrainOf(map, tile + MAP_WIDTH) : TERRAIN.river,
   ];
 
-  return around.filter((ground) => isWalkable(ground)).length;
+  return around.filter((beside) => isWalkable(beside)).length;
 }
 
 /** Whether a river runs from one edge of the map to the opposite one. */

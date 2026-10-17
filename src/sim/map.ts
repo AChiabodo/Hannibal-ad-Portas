@@ -34,13 +34,13 @@
  * with every change to the generator, which is exactly what a map nobody drew
  * is for.
  *
- * The work happens in passes, and the order is the design: the ground first,
- * then water through it, then what stands on the land, then the roads that join
- * them, and finally a repair pass that fords whatever water still parts the
- * land. Every pass draws from the seed's own stream, so the map is a function
- * of the seed and of nothing else — and every number it writes down is an
- * integer, because the map is authoritative state and `serializeState` refuses
- * anything else (ADR-0006).
+ * The work happens in passes, and the order is the design: the land first,
+ * then water through it, then what stands on the terrain, then the roads that
+ * join them, and finally a repair pass that fords whatever water still parts
+ * the land. Every pass draws from the seed's own stream, so the map is a
+ * function of the seed and of nothing else — and every number it writes down is
+ * an integer, because the map is authoritative state and `serializeState`
+ * refuses anything else (ADR-0006).
  */
 import { makeRng, type Rng } from './rng.ts';
 
@@ -65,7 +65,7 @@ export const TILE_COUNT = MAP_WIDTH * MAP_HEIGHT;
  *
  * `river` is the only terrain a Squad may not stand on. `ford` is a river tile
  * one may cross — it carries the river's own gameplay meaning, the disorder of
- * crossing in the water — and `road` is the only terrain that exists because
+ * fording in the water — and `road` is the only terrain that exists because
  * something built it rather than because the land is like that.
  */
 export const TERRAIN = {
@@ -120,10 +120,10 @@ export const MIN_STRONGHOLD_DISTANCE = 56;
 /**
  * How many fords every river carries at least.
  *
- * Two, so that a river with a single crossing is not a river with a chokepoint
- * to camp: one ford can be watched, two have to be divided between. Fords are
- * also added wherever a road crosses water, and wherever the repair pass needs
- * one, so a river usually carries more than this.
+ * Two, so that a river with one ford is not a river with a chokepoint to camp:
+ * one ford can be watched, two have to be divided between. Fords are also added
+ * wherever a road fords water, and wherever the repair pass needs one, so a
+ * river usually carries more than this.
  */
 export const MIN_FORDS_PER_RIVER = 2;
 
@@ -176,8 +176,8 @@ export interface ResourceNode extends Site {
  * to the edge it leaves by, in order.
  *
  * A ford appears in the grid's terrain, not in this list: the ford is still the
- * river's tile — the crossing is part of the river — and which of a river's
- * tiles carry one is a question about the terrain grid.
+ * river's tile — a ford is part of the river — and which of a river's tiles
+ * carry one is a question about the terrain grid.
  */
 export interface River {
   readonly tiles: readonly number[];
@@ -319,7 +319,7 @@ export function isTerrain(value: number): value is Terrain {
 /**
  * Whether a Squad may stand on a terrain: everything but open water.
  *
- * A ford is walkable — that is what a crossing is for — and so is every other
+ * A ford is walkable — that is what a ford is for — and so is every other
  * terrain. Reachability on the map therefore means "not stopped by a river",
  * which is the question the invariant about one landmass asks.
  */
@@ -338,11 +338,41 @@ export function halfOf(map: MapGrid, x: number, y: number): Half {
   return halfBetween(rome, carthage, x, y);
 }
 
+/** How much of each resource one half of the theatre holds, by kind. */
+export type ResourceTotals = Readonly<Record<ResourceKind, number>>;
+
+/**
+ * How much of each resource each half of the theatre holds.
+ *
+ * Indexed by `Half`, so the two entries read side by side: the first is Rome's
+ * half, the second Carthage's. This is the quantity the resource-balance
+ * invariant is stated over and what a dump prints, which is why it belongs to
+ * the map rather than beside either reader — and why it goes through `halfOf`
+ * rather than comparing x to half the map's width: the halves are the two sides
+ * of the line between the Strongholds, not the map's left and right.
+ */
+export function resourceTotals(map: MapGrid): readonly [ResourceTotals, ResourceTotals] {
+  const rome = noResources();
+  const carthage = noResources();
+
+  for (const node of map.resources) {
+    const totals = halfOf(map, node.x, node.y) === 0 ? rome : carthage;
+    totals[node.kind] += node.amount;
+  }
+
+  return [rome, carthage];
+}
+
+/** The totals of a half nothing has been counted in yet. */
+function noResources(): Record<ResourceKind, number> {
+  return { [RESOURCE.grain]: 0, [RESOURCE.timber]: 0, [RESOURCE.stone]: 0, [RESOURCE.iron]: 0 };
+}
+
 /** How large a patch of hill or forest grows, in tiles. */
 const PATCH_MIN = 60;
 const PATCH_MAX = 140;
 
-/** How many patches of each kind of ground each side of the map is sown with. */
+/** How many patches of each kind of terrain each side of the map is sown with. */
 const PATCHES_PER_SIDE = 3;
 
 /** One tile in from every edge: a river's banks are its neighbours, and it wants two. */
@@ -372,7 +402,7 @@ interface Region {
   readonly maxY: number;
 }
 
-/** The western and eastern ends of the theatre, where the ground is sown. */
+/** The western and eastern ends of the theatre, where the terrain is sown. */
 const WEST: Region = { minX: 0, minY: 0, maxX: MAP_WIDTH / 2 - 1, maxY: MAP_HEIGHT - 1 };
 const EAST: Region = { minX: MAP_WIDTH / 2, minY: 0, maxX: MAP_WIDTH - 1, maxY: MAP_HEIGHT - 1 };
 
@@ -424,7 +454,7 @@ const NODES_BY_KIND: Readonly<Record<ResourceKind, NodeKind>> = {
  * Sows hills and forests, patch by patch, on both sides of the map.
  *
  * Both sides and not the map at large, so that neither half can come up short
- * of the ground its nodes need: stone and iron stand on hills and timber in
+ * of the terrain its nodes need: stone and iron stand on hills and timber in
  * forests, and a half with no hills is a half whose iron would have to be put
  * somewhere the map does not have. The patches themselves are grown from a
  * random tile in random directions, so the two sides are sown alike and look
@@ -434,11 +464,11 @@ function growPatches(terrain: Uint8Array, rng: Rng, marks: Uint32Array): void {
   let mark = 0;
 
   for (const side of [WEST, EAST]) {
-    for (const ground of [TERRAIN.hill, TERRAIN.forest]) {
+    for (const patchTerrain of [TERRAIN.hill, TERRAIN.forest]) {
       for (let patch = 0; patch < PATCHES_PER_SIDE; patch += 1) {
         mark += 1;
         const size = PATCH_MIN + rng.nextBelow(PATCH_MAX - PATCH_MIN + 1);
-        growBlob(terrain, rng, marks, mark, randomTileIn(side, rng), ground, size);
+        growBlob(terrain, rng, marks, mark, randomTileIn(side, rng), patchTerrain, size);
       }
     }
   }
@@ -455,8 +485,8 @@ function growPatches(terrain: Uint8Array, rng: Rng, marks: Uint32Array): void {
  *
  * `marks` is the caller's scratch array and `mark` this patch's own number, so
  * membership costs one comparison and no allocation. A patch grows over any of
- * the four ground terrains and nothing else, which is the rule that stops the
- * farmland grown later from burying a ford (`isGround`).
+ * the four terrains the land is made of and nothing else, which is the rule that
+ * stops the farmland grown later from burying a ford (`isOpenTerrain`).
  */
 function growBlob(
   terrain: Uint8Array,
@@ -464,43 +494,47 @@ function growBlob(
   marks: Uint32Array,
   mark: number,
   start: number,
-  ground: Terrain,
+  sown: Terrain,
   size: number,
 ): void {
   const frontier: number[] = [start];
   marks[start] = mark;
-  terrain[start] = ground;
+  terrain[start] = sown;
   let grown = 1;
 
   while (grown < size && frontier.length > 0) {
     const chosen = rng.nextBelow(frontier.length);
     const index = elementAt(frontier, chosen);
-    const last = frontier.pop();
-    if (last !== undefined) frontier[chosen] = last;
+
+    // The drawn tile leaves the bag, and the last tile takes its place before it
+    // does: swapping after popping would put the drawn tile back when it was the
+    // last one, and a bag that never shrinks is a loop that never ends.
+    frontier[chosen] = elementAt(frontier, frontier.length - 1);
+    frontier.pop();
 
     const x = tileX(index);
     const y = tileY(index);
-    if (x > 0) grown += spreadBlob(terrain, marks, mark, frontier, index - 1, ground);
-    if (x < MAP_WIDTH - 1) grown += spreadBlob(terrain, marks, mark, frontier, index + 1, ground);
-    if (y > 0) grown += spreadBlob(terrain, marks, mark, frontier, index - MAP_WIDTH, ground);
-    if (y < MAP_HEIGHT - 1) grown += spreadBlob(terrain, marks, mark, frontier, index + MAP_WIDTH, ground);
+    if (x > 0) grown += spreadBlob(terrain, marks, mark, frontier, index - 1, sown);
+    if (x < MAP_WIDTH - 1) grown += spreadBlob(terrain, marks, mark, frontier, index + 1, sown);
+    if (y > 0) grown += spreadBlob(terrain, marks, mark, frontier, index - MAP_WIDTH, sown);
+    if (y < MAP_HEIGHT - 1) grown += spreadBlob(terrain, marks, mark, frontier, index + MAP_WIDTH, sown);
   }
 }
 
-/** Grows a patch onto one neighbour, unless the patch has been there or the ground cannot be sown. */
+/** Grows a patch onto one neighbour, unless the patch has been there or the terrain cannot be sown. */
 function spreadBlob(
   terrain: Uint8Array,
   marks: Uint32Array,
   mark: number,
   frontier: number[],
   index: number,
-  ground: Terrain,
+  sown: Terrain,
 ): number {
   if (marks[index] === mark) return 0;
-  if (!isGround(elementAt(terrain, index))) return 0;
+  if (!isOpenTerrain(elementAt(terrain, index))) return 0;
 
   marks[index] = mark;
-  terrain[index] = ground;
+  terrain[index] = sown;
   frontier.push(index);
   return 1;
 }
@@ -587,37 +621,37 @@ function drift(rng: Rng): number {
 }
 
 /**
- * Crosses every river with fords, spread along its length.
+ * Plants the fords every river is crossed by, spread along its length.
  *
- * A ford is planted where the river can be crossed *straight over*: a tile with
- * two opposite neighbours already dry. That single test rules out the two tiles
+ * A ford is planted only where the river can be crossed *straight over*: a tile
+ * with two opposite neighbours already dry. That single test rules out the two tiles
  * that would be fords in name only — the ones beside a turn, where the river is
  * two tiles wide and stepping in gets you no further than the middle, and the
  * ones beside where two rivers meet, where every neighbour is water and a ford
  * would be a stepping stone with nowhere to step from.
  *
  * Evenly spread rather than drawn at random, so that two fords are never
- * neighbours: a pair of fords side by side is a single crossing with extra
- * steps, and the point of a second ford is a second way across. The spacing is
- * also what keeps a ford on each side of where two rivers cross, which is most
- * of what keeps the four quarters of such a map walkable to one another.
+ * neighbours: a pair of fords side by side is a single ford with extra steps,
+ * and the point of a second ford is a second way across. The spacing is also
+ * what keeps a ford on each side of where two rivers meet, which is most of
+ * what keeps the four quarters of such a map walkable to one another.
  */
 function plantFords(terrain: Uint8Array, rng: Rng, rivers: readonly River[]): void {
   for (const river of rivers) {
-    const crossings = river.tiles.filter((tile) => isStraightCrossing(terrain, tile));
-    if (crossings.length === 0) throw new Error('a river with no straight tile has nowhere to be forded');
+    const fords = river.tiles.filter((tile) => isStraightFord(terrain, tile));
+    if (fords.length === 0) throw new Error('a river with no straight tile has nowhere to be forded');
 
     const count = MIN_FORDS_PER_RIVER + rng.nextBelow(MAX_PLANTED_FORDS - MIN_FORDS_PER_RIVER + 1);
 
     for (let ford = 1; ford <= count; ford += 1) {
-      const at = Math.floor((ford * crossings.length) / (count + 1));
-      terrain[elementAt(crossings, at)] = TERRAIN.ford;
+      const at = Math.floor((ford * fords.length) / (count + 1));
+      terrain[elementAt(fords, at)] = TERRAIN.ford;
     }
   }
 }
 
 /** Whether a river tile can be crossed straight over: two opposite neighbours are already dry. */
-function isStraightCrossing(terrain: Uint8Array, tile: number): boolean {
+function isStraightFord(terrain: Uint8Array, tile: number): boolean {
   const x = tileX(tile);
   const y = tileY(tile);
   const west = x > 0 && isWalkable(elementAt(terrain, tile - 1));
@@ -633,21 +667,23 @@ function isStraightCrossing(terrain: Uint8Array, tile: number): boolean {
  *
  * The regions are what makes `MIN_STRONGHOLD_DISTANCE` true without a rejection
  * loop: Rome's is at most 18 tiles in from the western edge and Carthage's at
- * least 78 from it, so the two are never nearer than 60 tiles however the draws
+ * least 77 from it, so the two are never nearer than 59 tiles however the draws
  * fall — and no amount of retrying would be as easy to read as the arithmetic.
+ * The invariant the ticket states asks for fewer than that, which is the point:
+ * the margin is deliberate.
  */
 function chooseStrongholds(terrain: Uint8Array, rng: Rng): readonly [Site, Site] {
   return [strongholdIn(terrain, rng, ROME_END), strongholdIn(terrain, rng, CARTHAGE_END)];
 }
 
-/** A Stronghold drawn from one end of the theatre, on ground that will carry it. */
+/** A Stronghold drawn from one end of the theatre, on land that will carry it. */
 function strongholdIn(terrain: Uint8Array, rng: Rng, region: Region): Site {
   const candidates: number[] = [];
 
   for (let y = region.minY; y <= region.maxY; y += 1) {
     for (let x = region.minX; x <= region.maxX; x += 1) {
       const index = tileIndex(x, y);
-      if (isDryGround(terrain, index)) candidates.push(index);
+      if (isDryLand(terrain, index)) candidates.push(index);
     }
   }
 
@@ -686,7 +722,7 @@ function chooseSettlements(
       for (let x = 0; x < MAP_WIDTH; x += 1) {
         const index = tileIndex(x, y);
         if (blocked[index] === 1) continue;
-        if (!isDryGround(terrain, index)) continue;
+        if (!isDryLand(terrain, index)) continue;
         if (halves[index] !== half) continue;
         candidates.push(index);
       }
@@ -719,8 +755,8 @@ function blockAround(blocked: Uint8Array, x: number, y: number): void {
  *
  * Farmland is the one terrain that exists because somebody worked it, so it
  * belongs where the people are: a patch grown out from each settlement, over the
- * ground that is there, so a settlement sits in a landscape rather than on a
- * single tile of it. It is also where grain prefers to stand.
+ * the terrain that is there, so a settlement sits in a landscape rather than on
+ * a single tile of it. It is also where grain prefers to stand.
  */
 function spreadFarmland(terrain: Uint8Array, rng: Rng, sites: readonly Site[]): void {
   const marks = new Uint32Array(TILE_COUNT);
@@ -777,7 +813,7 @@ function placeResources(
  * Every tile one half of the theatre offers a resource node of a kind.
  *
  * The terrains the kind prefers come first, and a half that cannot supply that
- * many of them makes up the rest from whatever dry ground it has: the invariant
+ * many of them makes up the rest from whatever dry land it has: the invariant
  * is that a half gets its nodes, and a half whose hills the rivers and the
  * farmland took is a half that should still be able to mine. A tile that
  * already holds something is left out of the list rather than drawn and
@@ -797,11 +833,11 @@ function nodeTiles(
     for (let x = 0; x < MAP_WIDTH; x += 1) {
       const index = tileIndex(x, y);
       if (taken[index] === 1) continue;
-      if (!isDryGround(terrain, index)) continue;
+      if (!isDryLand(terrain, index)) continue;
       if (halves[index] !== half) continue;
 
-      const ground = elementAt(terrain, index);
-      if (isTerrain(ground) && nodeKind.terrain.includes(ground)) preferred.push(index);
+      const here = elementAt(terrain, index);
+      if (isTerrain(here) && nodeKind.terrain.includes(here)) preferred.push(index);
       else anywhere.push(index);
     }
   }
@@ -903,18 +939,18 @@ function layRoad(terrain: Uint8Array, rng: Rng, from: Site, to: Site): Road {
  * Lays the road across one tile.
  *
  * A river tile becomes a ford: a road that crosses water crosses it at a
- * crossing, which is both what a road would do and a second way across the
- * river for free. Ground the road can be laid over becomes road; a ford or
- * another road is already a way through and is left as it is.
+ * ford, which is both what a road would do and a second way across the river
+ * for free. Terrain the road can be laid over becomes road; a ford or another
+ * road is already a way through and is left as it is.
  */
 function layRoadTile(terrain: Uint8Array, tile: number): void {
-  const ground = elementAt(terrain, tile);
+  const here = elementAt(terrain, tile);
 
-  if (ground === TERRAIN.river) {
+  if (here === TERRAIN.river) {
     terrain[tile] = TERRAIN.ford;
     return;
   }
-  if (isGround(ground)) terrain[tile] = TERRAIN.road;
+  if (isOpenTerrain(here)) terrain[tile] = TERRAIN.road;
 }
 
 /**
@@ -1032,21 +1068,21 @@ function labelAt(labels: Int32Array, terrain: Uint8Array, x: number, y: number):
   return label === undefined ? -1 : label;
 }
 
-/** Whether a tile can carry something built on it: dry land, and not a crossing. */
-function isDryGround(terrain: Uint8Array, index: number): boolean {
-  const ground = elementAt(terrain, index);
-  return ground !== TERRAIN.river && ground !== TERRAIN.ford;
+/** Whether a tile can carry something built on it: dry land, and not a ford. */
+function isDryLand(terrain: Uint8Array, index: number): boolean {
+  const here = elementAt(terrain, index);
+  return here !== TERRAIN.river && here !== TERRAIN.ford;
 }
 
 /**
- * Whether a terrain is ground a patch may sow or a road may be laid over.
+ * Whether a terrain is one of the four the land itself is made of — plain,
+ * hill, forest, farmland — rather than water, a ford or a road.
  *
- * The four terrains the land itself is made of — plain, hill, forest, farmland
- * — and not water, a ford or a road. A ford is the one that matters: farmland
- * grows after the crossings are planted, and a patch that grew over one would
- * quietly take a river's way across away.
+ * What a patch may be sown over and a road may be laid on. A ford is the one
+ * that matters: farmland is spread after the fords are planted, and a patch
+ * that grew over one would quietly take a river's way across away.
  */
-function isGround(terrain: number): boolean {
+function isOpenTerrain(terrain: number): boolean {
   return (
     terrain === TERRAIN.plain ||
     terrain === TERRAIN.hill ||

@@ -24,11 +24,11 @@
  */
 import {
   generateMap,
-  halfOf,
   MAP_HEIGHT,
   MAP_WIDTH,
   RESOURCE,
   RESOURCE_KINDS,
+  resourceTotals,
   TERRAIN,
   TILE_COUNT,
   TILE_SIZE,
@@ -38,6 +38,7 @@ import {
   tileY,
   type MapGrid,
   type ResourceKind,
+  type ResourceTotals,
   type Site,
   type Terrain,
 } from '../sim/index.ts';
@@ -72,11 +73,43 @@ const RESOURCE_NAMES: Readonly<Record<ResourceKind, string>> = {
 /** The glyph Rome's and Carthage's Strongholds are drawn as, in `FACTIONS`' order. */
 const STRONGHOLD_GLYPHS: readonly [string, string] = ['R', 'C'];
 
-/** What the grid's glyphs mean, which a reader needs and the grid cannot say. */
+/** The glyph a minor settlement is drawn as. */
+const SETTLEMENT_GLYPH = 'o';
+
+/** The word each terrain is named by in the legend. */
+const TERRAIN_NAMES: Readonly<Record<Terrain, string>> = {
+  [TERRAIN.plain]: 'plain',
+  [TERRAIN.hill]: 'hill',
+  [TERRAIN.forest]: 'forest',
+  [TERRAIN.farmland]: 'farmland',
+  [TERRAIN.river]: 'river',
+  [TERRAIN.ford]: 'ford',
+  [TERRAIN.road]: 'road',
+};
+
+/** The terrains in the order the legend lists them: the ground first, then the water and the ways. */
+const TERRAIN_ORDER: readonly Terrain[] = [
+  TERRAIN.plain,
+  TERRAIN.hill,
+  TERRAIN.forest,
+  TERRAIN.farmland,
+  TERRAIN.river,
+  TERRAIN.ford,
+  TERRAIN.road,
+];
+
+/**
+ * What the grid's glyphs mean.
+ *
+ * Built from the very tables the grid is drawn from, so the legend cannot drift
+ * from the picture: a glyph that is changed above is changed here, and a terrain
+ * or a resource added above cannot be left out of the key a reader needs.
+ */
 const LEGEND: readonly string[] = [
-  'legend: . plain   ^ hill   f forest   , farmland   ~ river   = ford   - road',
-  "        R Rome's Stronghold   C Carthage's Stronghold   o minor settlement",
-  '        g grain   t timber   s stone   i iron',
+  `legend: ${TERRAIN_ORDER.map((terrain) => `${TERRAIN_GLYPHS[terrain]} ${TERRAIN_NAMES[terrain]}`).join('   ')}`,
+  `        ${STRONGHOLD_GLYPHS[0]} Rome's Stronghold   ${STRONGHOLD_GLYPHS[1]} Carthage's Stronghold   ` +
+    `${SETTLEMENT_GLYPH} minor settlement`,
+  `        ${RESOURCE_KINDS.map((kind) => `${RESOURCE_GLYPHS[kind]} ${RESOURCE_NAMES[kind]}`).join('   ')}`,
 ];
 
 /**
@@ -134,7 +167,7 @@ function grid(map: MapGrid): string[] {
     }
   }
 
-  for (const site of map.settlements) cells[tileIndex(site.x, site.y)] = 'o';
+  for (const site of map.settlements) cells[tileIndex(site.x, site.y)] = SETTLEMENT_GLYPH;
   for (const node of map.resources) cells[tileIndex(node.x, node.y)] = RESOURCE_GLYPHS[node.kind];
 
   const [rome, carthage] = map.strongholds;
@@ -151,24 +184,9 @@ function grid(map: MapGrid): string[] {
   return rows;
 }
 
-/** How much of each resource one half of the theatre holds, in `RESOURCE_KINDS` order. */
-function resourceTotals(map: MapGrid): readonly [readonly number[], readonly number[]] {
-  const rome: number[] = RESOURCE_KINDS.map(() => 0);
-  const carthage: number[] = RESOURCE_KINDS.map(() => 0);
-
-  for (const node of map.resources) {
-    const totals = halfOf(map, node.x, node.y) === 0 ? rome : carthage;
-    totals[node.kind] = (totals[node.kind] ?? 0) + node.amount;
-  }
-
-  return [rome, carthage];
-}
-
 /** One half's totals, as `grain 66, timber 48, …`. */
-function describeTotals(totals: readonly number[]): string {
-  return RESOURCE_KINDS.map((kind, index) => `${RESOURCE_NAMES[kind]} ${String(totals[index] ?? 0)}`).join(
-    ', ',
-  );
+function describeTotals(totals: ResourceTotals): string {
+  return RESOURCE_KINDS.map((kind) => `${RESOURCE_NAMES[kind]} ${String(totals[kind])}`).join(', ');
 }
 
 /** How many tiles apart two sites are, for a reader: the floor, so it never overstates. */

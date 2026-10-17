@@ -15,6 +15,7 @@ import {
   RESOURCE,
   TERRAIN,
   generateMap,
+  halfOf,
   tileIndex,
   type MapGrid,
 } from '../../src/sim/map';
@@ -104,6 +105,26 @@ describe('a generated map, written out for inspection', () => {
     for (const word of ['grain', 'timber', 'stone', 'iron']) {
       expect(dump).toContain(word);
     }
+
+    // Every glyph the grid can draw is in the key, beside the word it stands for:
+    // a picture whose legend has drifted from it is worse than no legend.
+    for (const [terrain, glyph] of Object.entries(TERRAIN_GLYPHS)) {
+      expect(dump).toContain(
+        `${glyph} ${['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road'][Number(terrain)] ?? ''}`,
+      );
+    }
+    for (const [kind, glyph] of Object.entries(RESOURCE_GLYPHS)) {
+      expect(dump).toContain(`${glyph} ${['grain', 'timber', 'stone', 'iron'][Number(kind)] ?? ''}`);
+    }
+  });
+
+  it('prints the resource totals the map really holds, half by half', () => {
+    const map = generateMap(SEED);
+    const dump = formatMap(SEED);
+    const totals = totalsOf(map);
+
+    expect(dump).toContain(`Rome      ${totals[0] ?? ''}`);
+    expect(dump).toContain(`Carthage  ${totals[1] ?? ''}`);
   });
 
   it('is the same bytes for the same seed, and another map for another seed', () => {
@@ -116,3 +137,27 @@ describe('a generated map, written out for inspection', () => {
     expect(formatMap(SEED).endsWith('\n')).toBe(true);
   });
 });
+
+/**
+ * The totals the dump should print, added up here rather than asked of `map.ts`.
+ *
+ * The dump prints `resourceTotals` from the module under the grid; a test that
+ * read the expected numbers back through that same function would agree with it
+ * whatever it did. This is the arithmetic written out a second time, so the dump
+ * and the query have to be right together.
+ */
+function totalsOf(map: MapGrid): readonly string[] {
+  const names = ['grain', 'timber', 'stone', 'iron'];
+  const amounts: number[][] = [names.map(() => 0), names.map(() => 0)];
+
+  for (const node of map.resources) {
+    const totals = amounts[halfOf(map, node.x, node.y)];
+    if (totals === undefined) continue;
+
+    totals[node.kind] = (totals[node.kind] ?? 0) + node.amount;
+  }
+
+  return amounts.map((totals) =>
+    names.map((name, kind) => `${name} ${String(totals[kind] ?? 0)}`).join(', '),
+  );
+}

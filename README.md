@@ -124,11 +124,13 @@ in review.
 
 A Match begins on a map nobody drew. `generateMap(seed)` — `src/sim/map.ts` —
 is a pure function of its seed, returning a 96×96 grid of 16×16 tiles: terrain,
-one or two rivers crossed by fords, resource nodes of grain, timber, stone and iron,
-four to six capturable minor settlements, a Stronghold for each Faction, and
-roads joining the nodes to one another. The map is integer state like everything
-else the world holds, so the tiles a Match starts on are covered by the state
-hash and a replay begins on the same ones (ADR-0006).
+one or two rivers crossed by fords, resource nodes of grain, timber, stone and
+iron, four to six capturable minor settlements, a Stronghold for each Faction,
+and roads joining the nodes to one another. The map is integer state like
+everything else the world will hold, so the day a Match's rules put it in
+`MatchState` the tiles it starts on are covered by the state hash and a replay
+begins on the same ones (ADR-0006); B6 and C1 are the tickets that do, and
+`src/sim/empty.ts` is still the world the CLI plays today.
 
 The theatre is **organic, not mirrored**: the two halves do not carry the same
 hills in the same places, and no pass reflects one side onto the other. Fairness
@@ -140,8 +142,9 @@ they are asserted:
 - the land is **one landmass**, and every Stronghold, minor settlement and
   resource node stands on it, so everything on the map is reachable from
   everywhere;
-- every river runs from one edge of the map to the other and carries at least
-  **two fords a Squad can cross**;
+- every river runs from one edge of the map to the other — a river that stopped
+  inside the map could seal a piece of land off — and carries at least **two
+  fords a Squad can cross**;
 - the two Strongholds stand at least **56 tiles apart**;
 - the two halves of the theatre — the two sides of the perpendicular bisector of
   the two Strongholds — hold the same number of nodes of each kind, and their
@@ -149,9 +152,11 @@ they are asserted:
 - the roads join every settlement and resource node to the network, and the
   network to the Strongholds, over tiles a Squad can walk on.
 
-`npm test` walks all of them over **a thousand seeds**, so a change to the
+`npm test` walks the invariants over **a thousand seeds**, so a change to the
 generator that breaks the world fails a test instead of failing a Match three
-game-years in. What is deliberately not an invariant is the look of the map:
+game-years in; the same file checks that a seed is the only thing the map is a
+function of, over a quarter of the thousand, because that check hashes every map
+it looks at. What is deliberately not an invariant is the look of the map:
 which hill stands where, how a river wiggles, where the forests grew.
 
 To look at a map without a browser — and B3, the ticket that draws one on
@@ -164,22 +169,22 @@ npm run match -- --seed 7 --map
 ```
 seed 7 — 96×96 tiles of 16×16 pixels
 
-Rome's Stronghold at (11, 21); Carthage's at (79, 60); 78 tiles apart
-5 minor settlements · 1 river, carrying 3 fords
+Rome's Stronghold at (14, 70); Carthage's at (88, 89); 76 tiles apart
+5 minor settlements · 2 rivers, carrying 9 and 4 fords
 
 resources, Rome's half against Carthage's — the two sides of the line between the Strongholds:
-  Rome      grain 64, timber 50, stone 21, iron 18
-  Carthage  grain 66, timber 50, stone 23, iron 18
+  Rome      grain 64, timber 48, stone 23, iron 17
+  Carthage  grain 65, timber 51, stone 23, iron 16
 
    012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345
- 0 .................,,................................~~....,,,,,,.................................
- 1 ................,,,,...............................~~...,,,,,,,,................................
- 2 ...............,,,,,,.............................~~...,,,,,,,,,................................
- 3 .........--------o,,,.............................~...,,,,,,,,,,,...............................
- 4 .........-.....,,,,,,,............................~....,,,o----------...........................
- 5 .........-......,,,,,.............................~....,,,,,,,,,,...-...........................
+ 0 ............fffff~fffffffff^^^.......................................ffffffffffffff.............
+ 1 ............fffff~fffffffff^^^.^^...................................fffffffffffffff.............
+ 2 .............ffff~ffffffff^^^^^^^^..................................fffffffffffffffff...........
+ 3 ..............fff~f-t-------------^..................................fffffffffffffffff..........
+ 4 ...............ff~ftffffff^^^^^^^-^^.................................ffffftfffffffffff..........
+ 5 .................~ffffffff^^^^^^^i^^^................................fffff-ffffffffff...........
    … ninety rows of map …
-95 ..............................................~......ffffffffff...............fffffffffffff.....
+95 ............~~..................................^^^^^^^^^-s.....................................
 legend: . plain   ^ hill   f forest   , farmland   ~ river   = ford   - road
         R Rome's Stronghold   C Carthage's Stronghold   o minor settlement
         g grain   t timber   s stone   i iron
