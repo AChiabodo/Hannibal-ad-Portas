@@ -82,11 +82,11 @@ Further modules from the plan's architecture (`content/`, `ai/`, `art/`,
 ### Deployment
 
 Pages serves `main` at `https://<owner>.github.io/<repo>/`; the workflow sets
-`PAGES_BASE` so Vite emits assets under that path.
+`PAGES_BASE` from the repository name so Vite emits its assets under that path.
 
-The deploy workflow needs Pages enabled for the repository with **GitHub Actions**
-as the source (Settings → Pages). Until that setting exists the workflow fails at
-`actions/configure-pages` and says so. On a private repository this also requires
+The workflow needs Pages enabled for the repository with **GitHub Actions** as the
+source (Settings → Pages) — so on a fork, it fails at `actions/configure-pages` and
+says so, rather than silently skipping the deploy. A private repository also needs
 a plan that includes Pages.
 
 ## Testing
