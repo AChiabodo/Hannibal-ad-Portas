@@ -16,6 +16,7 @@
  * quietly ignores a Command is worse than one that refuses to start.
  */
 import { createMatch, type MatchRules } from './match';
+import { requireTickCount } from './ticks';
 
 /** A Command a Controller emitted, stamped with the tick it takes effect on. */
 export interface LoggedCommand<Command> {
@@ -61,9 +62,9 @@ const NO_COMMANDS: readonly never[] = [];
  * @throws StateSerializationError when a tick leaves anything but integers in state.
  */
 export function replay<World, Command = unknown>(options: ReplayOptions<World, Command>): ReplayResult {
-  const ticks = requireTicks(options.ticks, 'ticks', 0);
+  const ticks = requireTickCount(options.ticks, 'ticks', 0);
   const everyTicks =
-    options.everyTicks === undefined ? 1 : requireTicks(options.everyTicks, 'everyTicks', 1);
+    options.everyTicks === undefined ? 1 : requireTickCount(options.everyTicks, 'everyTicks', 1);
   const schedule = scheduleByTick(options.log, ticks);
 
   const match = createMatch({ seed: options.seed, rules: options.rules });
@@ -86,7 +87,7 @@ function scheduleByTick<Command>(log: CommandLog<Command>, ticks: number): Map<n
   const schedule = new Map<number, Command[]>();
 
   for (const entry of log) {
-    const tick = requireTicks(entry.tick, 'a command log tick', 0);
+    const tick = requireTickCount(entry.tick, 'a command log tick', 0);
     if (tick >= ticks) {
       throw new RangeError(
         `the command log holds a command for tick ${tick}, but this replay runs ${ticks} tick(s)`,
@@ -99,15 +100,4 @@ function scheduleByTick<Command>(log: CommandLog<Command>, ticks: number): Map<n
   }
 
   return schedule;
-}
-
-/** @throws RangeError when a count is not a whole number of ticks at or above `minimum`. */
-function requireTicks(value: number, what: string, minimum: number): number {
-  if (!Number.isInteger(value) || value < minimum) {
-    throw new RangeError(
-      `${what} must be a whole number of ticks, ${minimum} or more, got ${String(value)}`,
-    );
-  }
-
-  return value;
 }

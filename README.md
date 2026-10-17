@@ -8,7 +8,9 @@ Everything on screen, in the speakers and on the HUD is produced by code: no
 image, audio or font file is ever committed (ADR-0002).
 
 Start with [docs/PLAN.md](docs/PLAN.md). Vocabulary lives in
-[GLOSSARY.md](GLOSSARY.md) and the decisions behind the plan in [docs/adr/](docs/adr/).
+[GLOSSARY.md](GLOSSARY.md), the control surface every Player is written against
+in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
+[docs/adr/](docs/adr/).
 
 ## Requirements
 
@@ -88,6 +90,33 @@ The tick rate and the hash are decisions, not accidents: the plan fixes the rate
 at 10 Hz, and a test records the hash of a fixed state so changing it is visible
 in review.
 
+## The seam
+
+One seam carries every decision in the game (PLAN §3, ADR-0003). A **Controller**
+reads an **Observation** and emits **Commands** — and the human input handler,
+the built-in AI, a scripted test driver and an external agent are all
+Controllers, differing in nothing else.
+
+- An **Observation** is the world filtered for one Faction, stamped with the
+  Faction and the tick being decided. It is the only thing a Controller is
+  handed, and reaching past it does not compile: a test in
+  `tests/sim/controller.test.ts` fails if Match state ever becomes readable
+  through one.
+- A **Command** is one of twelve, and the vocabulary is closed on
+  purpose: adding one means implementing it twice, once for a human clicking and
+  once for a machine emitting it. It is documented in
+  [docs/COMMANDS.md](docs/COMMANDS.md) — the document an external agent is
+  written from — and a test reads that document back, so the two cannot drift.
+- **`runMatch`** is the loop that ties them together: two Players, one seed, one
+  tick bound, a result, and the command log a replay is made of. What it drives
+  has no browser, no human and no AI anywhere in it, which is what makes an
+  AI-versus-AI Match a test rather than a demo.
+
+The seam is also where the two rules that keep a Match honest are enforced: what
+a Controller returns is validated against the vocabulary before anything is
+applied, and a Command addressed to the other Faction is refused outright. The
+driver never lets a rule defend against either.
+
 ## Layout
 
 ```
@@ -95,16 +124,23 @@ index.html          the page Playwright drives
 src/                application code
   sim/              the Match: map, economy, squads, combat, siege (no engine imports)
     clock.ts        the fixed tick and the one constant that sets its rate
+    ticks.ts        what a whole number of ticks is, refused in one place
     rng.ts          sfc32 seeded through xmur3, drawing integers
     state.ts        the canonical form of authoritative state, and what it refuses
     hash.ts         the state hash, over that canonical form
     match.ts        the tick: a clock, a world, a random cursor, a hash
     replay.ts       a seed plus a command log, run again and compared
+    faction.ts      the two Factions, as words rather than as state
+    command.ts      the closed Command vocabulary: constructors and a reader
+    observation.ts  everything a Controller may know, and nothing else
+    controller.ts   the one interface every mind implements, plus a scripted driver
+    driver.ts       two Controllers, one Match, a result and a command log
   render/           the only place `pixi.js` exists
 scripts/guard.mjs   the fences
 tests/              Vitest unit tests
 e2e/                Playwright browser tests
 docs/PLAN.md        the plan of record
+docs/COMMANDS.md    the Command vocabulary an external agent is written from
 ```
 
 Further modules from the plan's architecture (`content/`, `ai/`, `art/`,
