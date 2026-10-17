@@ -1,5 +1,6 @@
 import { readdirSync, statSync } from 'node:fs';
 import { basename, extname, join, relative, sep } from 'node:path';
+import ts from 'typescript';
 
 /** Human-readable source extensions. Anything else is an asset, not code. */
 export const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'];
@@ -69,6 +70,60 @@ export function collectSourceFiles(root, directories) {
  */
 export function toRepoPath(root, file) {
   return relative(root, file).split(sep).join('/');
+}
+
+/**
+ * Every import-like specifier in a parsed file: static imports, re-exports,
+ * dynamic `import()` and `require()`, type-only or not.
+ *
+ * It lives with the rest of the source-file plumbing because more than one
+ * fence reads imports and none of them owns "what an import looks like".
+ *
+ * @param {ts.SourceFile} source
+ * @returns {{ specifier: string, line: number, column: number }[]}
+ */
+export function importsOf(source) {
+  /** @type {{ specifier: string, line: number, column: number }[]} */
+  const found = [];
+
+  /**
+   * @param {ts.Node} node
+   * @param {string} specifier
+   */
+  const record = (node, specifier) => {
+    const { line, character } = source.getLineAndCharacterOfPosition(node.getStart(source));
+    found.push({ specifier, line: line + 1, column: character + 1 });
+  };
+
+  /** @param {ts.Node} node */
+  const visit = (node) => {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      record(node, node.moduleSpecifier.text);
+    } else if (
+      ts.isExportDeclaration(node) &&
+      node.moduleSpecifier !== undefined &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
+      record(node, node.moduleSpecifier.text);
+    } else if (ts.isCallExpression(node) && isImportOrRequire(node)) {
+      const [first] = node.arguments;
+      if (first !== undefined && ts.isStringLiteral(first)) record(node, first.text);
+    }
+
+    ts.forEachChild(node, visit);
+  };
+
+  visit(source);
+  return found;
+}
+
+/**
+ * @param {ts.CallExpression} node
+ * @returns {boolean}
+ */
+function isImportOrRequire(node) {
+  if (node.expression.kind === ts.SyntaxKind.ImportKeyword) return true;
+  return ts.isIdentifier(node.expression) && node.expression.text === 'require';
 }
 
 /**

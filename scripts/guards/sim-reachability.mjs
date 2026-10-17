@@ -1,19 +1,35 @@
 import { readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
 import ts from 'typescript';
-import { SOURCE_EXTENSIONS, collectSourceFiles, toRepoPath } from './source-files.mjs';
+import { SOURCE_EXTENSIONS, collectSourceFiles, importsOf, toRepoPath } from './source-files.mjs';
 
 /**
  * Where a fence starts: the simulation, and everything it can reach.
  *
- * Two fences need the same answer to "what can the simulation reach?" — the one
- * that bans the rendering engine and the one that bans arithmetic no engine
- * pins down — so the walk lives here once, and each fence decides what it is
- * looking for.
+ * Both reachability fences need the same answer to "what can the simulation
+ * reach?" — the one that bans the rendering engine and the one that bans
+ * arithmetic no engine pins down — so the walk lives here once, and each fence
+ * decides what it is looking for.
  */
 
-/** The simulation root every reachability fence starts from. */
-export const SIMULATION_ENTRY = 'src/sim';
+/**
+ * The simulation's roots, in walk order.
+ *
+ * `src/sim` is the Match itself. `src/ai` (D1) and `src/content` (B6) are the
+ * other two directories ADR-0001 and PLAN §3 count as the simulation, and they
+ * do not exist yet: the walk covers the ones that are there, so the day the AI
+ * or the content appears it is fenced without anyone remembering to add it —
+ * which is the whole point. PLAN §3's module boundary is unchanged: `ai/` still
+ * lives beside `sim/` and may reach only an Observation's types; the decision
+ * here is to widen the fence's entry, not to move the AI under `sim/`.
+ */
+export const SIMULATION_ENTRIES = ['src/sim', 'src/ai', 'src/content'];
+
+/**
+ * The one root that must exist: without the Match there is no simulation to
+ * fence, and a guard that quietly scanned nothing would be worse than none.
+ */
+export const REQUIRED_SIMULATION_ENTRY = 'src/sim';
 
 /** Extensions that are assets rather than code, and are therefore not followed. */
 const ASSET_EXTENSIONS = new Set(['.css', '.json', '.html', '.svg', '.wasm', '.png', '.txt']);
@@ -55,6 +71,60 @@ const JAVASCRIPT_TO_TYPESCRIPT = new Map([
  */
 
 /**
+ * The simulation roots that exist on disk, in `SIMULATION_ENTRIES` order.
+ *
+ * Absent roots are tolerated on purpose (see `SIMULATION_ENTRIES`). The guard
+ * CLI prints this list too, so it can name the roots it actually walked.
+ *
+ * @param {string} root Repository root.
+ * @returns {string[]}
+ */
+export function existingSimulationEntries(root) {
+  return SIMULATION_ENTRIES.filter((entry) => isDirectory(root, entry));
+}
+
+/**
+ * Whether a simulation root is there and is a directory.
+ *
+ * Only `ENOENT` — "not there yet", which is exactly what tolerating a future
+ * D1/B6 root means — is false. A path that exists but is a file, or that cannot
+ * be read, is an error rather than a root that is merely absent: the guard must
+ * not mistake either for "does not exist yet" and quietly leave it unfenced.
+ * `collectSourceFiles` takes the same stance for a missing scan root.
+ *
+ * @param {string} root Repository root.
+ * @param {string} entry Root-relative simulation root.
+ * @returns {boolean}
+ */
+function isDirectory(root, entry) {
+  /** @type {import('node:fs').Stats} */
+  let stats;
+  try {
+    stats = statSync(join(root, entry));
+  } catch (error) {
+    if (isMissing(error)) return false;
+    throw new Error(
+      `guard entry cannot be read: ${entry} (${error instanceof Error ? error.message : String(error)})`,
+      { cause: error },
+    );
+  }
+  if (!stats.isDirectory()) {
+    throw new Error(`guard entry is not a directory: ${entry}`);
+  }
+  return true;
+}
+
+/**
+ * Whether an error means "this path is not there", and only that.
+ *
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isMissing(error) {
+  return error instanceof Error && /** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT';
+}
+
+/**
  * Follows every module reachable from the simulation: the entry files first,
  * then whatever their relative imports reach.
  *
@@ -66,15 +136,15 @@ const JAVASCRIPT_TO_TYPESCRIPT = new Map([
  * @returns {ReachableSimulation}
  */
 export function reachableFromSimulation(root) {
-  /** @type {string[]} */
-  let entryFiles;
-  try {
-    entryFiles = collectSourceFiles(root, [SIMULATION_ENTRY]);
-  } catch {
-    throw new Error(`guard entry directory does not exist: ${SIMULATION_ENTRY}`);
+  const entries = existingSimulationEntries(root);
+  if (!entries.includes(REQUIRED_SIMULATION_ENTRY)) {
+    throw new Error(`guard entry directory does not exist: ${REQUIRED_SIMULATION_ENTRY}`);
   }
+
+  /** @type {string[]} */
+  const entryFiles = entries.flatMap((entry) => collectSourceFiles(root, [entry]));
   if (entryFiles.length === 0) {
-    throw new Error(`guard entry directory holds no source files: ${SIMULATION_ENTRY}`);
+    throw new Error(`guard entry directory holds no source files: ${REQUIRED_SIMULATION_ENTRY}`);
   }
 
   /** @type {ReachableImport[]} */
@@ -158,57 +228,6 @@ function isFile(path) {
   } catch {
     return false;
   }
-}
-
-/**
- * Every import-like specifier in a file: static imports, re-exports, dynamic
- * `import()` and `require()`, type-only or not.
- *
- * @param {ts.SourceFile} source
- * @returns {{ specifier: string, line: number, column: number }[]}
- */
-function importsOf(source) {
-  /** @type {{ specifier: string, line: number, column: number }[]} */
-  const found = [];
-
-  /**
-   * @param {ts.Node} node
-   * @param {string} specifier
-   */
-  const record = (node, specifier) => {
-    const { line, character } = source.getLineAndCharacterOfPosition(node.getStart(source));
-    found.push({ specifier, line: line + 1, column: character + 1 });
-  };
-
-  /** @param {ts.Node} node */
-  const visit = (node) => {
-    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
-      record(node, node.moduleSpecifier.text);
-    } else if (
-      ts.isExportDeclaration(node) &&
-      node.moduleSpecifier !== undefined &&
-      ts.isStringLiteral(node.moduleSpecifier)
-    ) {
-      record(node, node.moduleSpecifier.text);
-    } else if (ts.isCallExpression(node) && isImportOrRequire(node)) {
-      const [first] = node.arguments;
-      if (first !== undefined && ts.isStringLiteral(first)) record(node, first.text);
-    }
-
-    ts.forEachChild(node, visit);
-  };
-
-  visit(source);
-  return found;
-}
-
-/**
- * @param {ts.CallExpression} node
- * @returns {boolean}
- */
-function isImportOrRequire(node) {
-  if (node.expression.kind === ts.SyntaxKind.ImportKeyword) return true;
-  return ts.isIdentifier(node.expression) && node.expression.text === 'require';
 }
 
 /**

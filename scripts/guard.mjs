@@ -24,8 +24,9 @@
 import { GUARDED_ROOTS, collectSourceFiles } from './guards/source-files.mjs';
 import { findAmbientNondeterminismReachableFromSimulation } from './guards/ambient-globals.mjs';
 import { findMathRandomViolations } from './guards/find-math-random.mjs';
-import { SIMULATION_ENTRY } from './guards/sim-reachability.mjs';
+import { existingSimulationEntries } from './guards/sim-reachability.mjs';
 import { findRendererReachableFromSimulation } from './guards/simulation-boundary.mjs';
+import { RENDERER_ALLOWED_DIRECTORIES, findRendererOutsideRender } from './guards/render-boundary.mjs';
 import { findTranscendentalMathReachableFromSimulation } from './guards/transcendental-math.mjs';
 
 const USAGE = `Usage: node scripts/guard.mjs [--root <dir>] [--scan <dir>]...
@@ -80,17 +81,21 @@ try {
   const boundaryViolations = findRendererReachableFromSimulation(options.root);
   const transcendentalViolations = findTranscendentalMathReachableFromSimulation(options.root);
   const ambientViolations = findAmbientNondeterminismReachableFromSimulation(options.root);
+  const renderViolations = findRendererOutsideRender(options.root);
+  const entries = existingSimulationEntries(options.root).join(", ");
 
-  report('no Math.random', mathRandomViolations, `${mathRandomFiles.length} files scanned`);
-  report('simulation boundary', boundaryViolations, `entry ${SIMULATION_ENTRY}`);
-  report('no transcendental math', transcendentalViolations, `entry ${SIMULATION_ENTRY}`);
-  report('no ambient clock or entropy', ambientViolations, `entry ${SIMULATION_ENTRY}`);
+  report("no Math.random", mathRandomViolations, `${mathRandomFiles.length} files scanned`);
+  report("simulation boundary", boundaryViolations, `entry ${entries}`);
+  report("pixi.js outside render/", renderViolations, `allowed under ${RENDERER_ALLOWED_DIRECTORIES.join(", ")}`);
+  report("no transcendental math", transcendentalViolations, `entry ${entries}`);
+  report("no ambient clock or entropy", ambientViolations, `entry ${entries}`);
 
   const total =
     mathRandomViolations.length +
     boundaryViolations.length +
     transcendentalViolations.length +
-    ambientViolations.length;
+    ambientViolations.length +
+    renderViolations.length;
   if (total > 0) {
     console.error(`\nguard: ${total} violation(s) — the fences in docs/PLAN.md §3 do not hold`);
     process.exit(1);

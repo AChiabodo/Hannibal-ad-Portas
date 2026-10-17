@@ -34,14 +34,14 @@ Multiplayer; saves; diplomacy; naval warfare; a scripted historical campaign; se
 
 ### Modules and import rules
 
-Boundaries are enforced in CI, because they are what makes headless testing possible rather than a matter of taste.
+Boundaries are enforced in CI, because they are what makes headless testing possible rather than a matter of taste. The reachability fences start from every root the plan counts as the simulation — `sim/`, `ai/` and `content/` — because ADR-0001 counts the AI as part of the simulation even though it lives beside `sim/`; a root that does not exist yet is skipped, so the day it appears it is already fenced. A separate check allows `pixi.js` only under `render/`, which is what makes the `art/` and `render/` rules below true.
 
 - **`sim/`** — the Match: map, visibility, seasons, economy, Squads, combat, siege, victory. Pure TypeScript. Imports nothing from `render/`, `art/`, `ui/` or `ai/`, and never `pixi.js`.
-- **`content/`** — Factions, Squad types, buildings, costs, as typed TypeScript data. No runtime parsing, no fetching.
-- **`ai/`** — Controllers that reason. May import an Observation's *types*; never the internals of `sim/`.
-- **`art/`** — pure pixel generators: `PixelBuffer` in, `PixelBuffer` out. Never imports `pixi.js`.
+- **`content/`** — Factions, Squad types, buildings, costs, as typed TypeScript data. No runtime parsing, no fetching. Fenced as part of the simulation, on the same terms as `ai/`.
+- **`ai/`** — Controllers that reason. May import an Observation's *types*; never the internals of `sim/`. Fenced as part of the simulation: nothing reachable from here may import `pixi.js` or use arithmetic ECMA-262 leaves implementation-approximated.
+- **`art/`** — pure pixel generators: `PixelBuffer` in, `PixelBuffer` out. Never imports `pixi.js`, enforced by the render allow-list.
 - **`audio/`** — score and effects described as data, synthesized by a WebAudio adapter.
-- **`render/`** — the only place `pixi.js` exists. Converts `PixelBuffer` into `BufferImageSource`; owns camera, culling and picking.
+- **`render/`** — the only place `pixi.js` exists, enforced. Converts `PixelBuffer` into `BufferImageSource`; owns camera, culling and picking.
 - **`ui/`** — Italian HUD, string table, minimap.
 - **`cli/`** — headless runner and the external-agent protocol.
 
@@ -55,7 +55,7 @@ The Command vocabulary is closed: **Move, Attack-move, Attack, Hold, Garrison, W
 
 - Fixed **10 Hz** tick with an accumulator; the renderer interpolates. A headless Match runs about ten times faster than real time, which is what turns a balance tournament from an overnight job into a coffee break.
 - **Authoritative state is integers only.** Derived floats are fine as long as they never feed state or the hash.
-- **No `Math.sin`, `cos`, `exp`, `pow`, `log` or `**` in `sim/`** — ECMA-262 leaves them implementation-approximated, so they are not portable across engines; the operator is `Math.pow` under another spelling (`Number::exponentiate`) and is banned with no integer-exponent carve-out. Lookup tables and integer approximation where geometry is needed.
+- **No `Math.sin`, `cos`, `exp`, `pow`, `log` or `**` anywhere the simulation reaches (`sim/`, `ai/`, `content/`)** — ECMA-262 leaves them implementation-approximated, so they are not portable across engines; the operator is `Math.pow` under another spelling (`Number::exponentiate`) and is banned with no integer-exponent carve-out. Lookup tables and integer approximation where geometry is needed.
 - **`sfc32` seeded through `xmur3`.** `Math.random` is banned repository-wide.
 - **The state hash is part of the tick contract.** Changing it is a decision, never an accident.
 - A **replay is a seed plus a command log** — not a video. Free, given the above, and it is what lets CI reproduce a bug an agent reported.

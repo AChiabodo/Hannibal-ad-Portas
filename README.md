@@ -28,7 +28,7 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | `npm run preview`   | Serves the built site on `http://127.0.0.1:5174/`                      |
 | `npm run check`     | TypeScript in strict mode, all three projects, no emit                 |
 | `npm run lint`      | ESLint over the repository                                             |
-| `npm run guard`     | The fences: `pixi.js` reachability, `Math.random` and transcendentals  |
+| `npm run guard`     | The fences: `pixi.js` under `render/`, and no `Math.random`, transcendentals or ambient clock in the simulation |
 | `npm run match`     | One whole Match headless, as a JSON report, with no build step         |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
 | `npm run test:e2e`  | Browser tests (Playwright, headless Chromium, software WebGL)           |
@@ -39,50 +39,63 @@ with `--with-deps` in its own step.
 
 ## The fences
 
-Three architectural rules are cheap now and expensive later, so CI enforces them
+Five architectural rules are cheap now and expensive later, so CI enforces them
 on every push:
 
 1. **Nothing reachable from the simulation may import the rendering engine**
-   (`pixi.js`). `sim/` must run in Node so an agent can play a whole Match
-   headlessly (ADR-0001, ADR-0003).
-2. **Nothing anywhere may call `Math.random`, and nothing reachable from the
-   simulation may reach the ambient clock or entropy either** —
-   `crypto.getRandomValues`, `crypto.randomUUID`, `Date.now`,
-   `performance.now`. The simulation is seeded through `xmur3` into `sfc32`, a
-   replay is a seed plus a command log, and a Match's only time is its tick
-   counter (ADR-0006). The ambient four are simulation-scoped on purpose: a
-   test, a tool and the CLI's report may read a wall clock, a rule may not.
+   (`pixi.js`). "The simulation" is what `src/sim`, `src/ai` and
+   `src/content` can reach — ADR-0001 counts the AI as part of it even though
+   PLAN §3 places it beside `sim/` — and `sim/` must run in Node so an agent
+   can play a whole Match headlessly (ADR-0001, ADR-0003).
+2. **`pixi.js` stays under `render/`, with `e2e/` the one other place it may
+   appear.** No other file — not `art/`, not the CLI, not a test — may import
+   it: the engine has no headless Node path, and the code that has to run in Node
+   must not need it (PLAN §3, ADR-0001). `e2e/` is allowed because Playwright
+   drives a real browser.
+3. **Nothing anywhere may call `Math.random`.** The simulation is seeded through
+   `xmur3` into `sfc32`, and a replay is a seed plus a command log (ADR-0006).
+4. **Nothing reachable from the simulation may use `Math.sin`, `cos`, `exp`,
+   `pow`, `log` or their family, or the exponentiation operator `**`.** ECMA-262
+   leaves those implementation-approximated, so two engines may legitimately
+   disagree, and a Match that replays differently in another browser is not a
+   replay (ADR-0006). The operator is `Math.pow` under another spelling
+   (`Number::exponentiate`) and is banned with it — there is no integer-exponent
+   carve-out, because the approximation belongs to the operation — and
+   `Math.sqrt` is deliberately allowed.
+5. **Nothing reachable from the simulation may reach the ambient clock or
+   entropy** — `crypto.getRandomValues`, `crypto.randomUUID`, `Date.now`,
+   `performance.now`. A Match's only time is its tick counter, so a wall-clock
+   read is a Match that cannot be replayed (ADR-0006). The ambient four are
+   simulation-scoped on purpose: a test, a tool and the CLI's report may read a
+   wall clock; a rule may not.
 
-   The walk behind these checks is syntactic, and it says so instead of
-   pretending to be complete. It sees a global spelled out — `Math.random`,
-   `Math["random"]`, `Math?.random`, `const { random } = Math`, `Date.now()` —
-   and it does not see through an alias, a `globalThis`, or a name built at
-   runtime: `const M = Math; M.random()`, `globalThis.Math.random()`,
-   `Math['ran' + 'dom']()`, `const D = Date; D.now()` and `new Date()` all pass
-   the guard today. A green tick means the ordinary spellings are absent, not
-   that no other spelling exists; the transcendental fence reads the same walk
-   and has the same limit.
-3. **Nothing reachable from the simulation may use `Math.sin`, `cos`, `exp`,
-   `pow`, `log` or their family.** ECMA-262 leaves those
-   implementation-approximated, so two engines may legitimately disagree, and a
-   Match that replays differently in another browser is not a replay
-   (ADR-0006). `Math.sqrt` is deliberately allowed.
+The walk behind the `Math.random`, transcendental and ambient checks is
+syntactic, and it says so instead of pretending to be complete. It sees a global
+spelled out — `Math.random`, `Math["random"]`, `Math?.random`,
+`const { random } = Math`, `Date.now()` — and it does not see through an alias, a
+`globalThis`, or a name built at runtime: `const M = Math; M.random()`,
+`globalThis.Math.random()`, `Math['ran' + 'dom']()`, `const D = Date; D.now()`
+and `new Date()` all pass the guard today. A green tick means the ordinary
+spellings are absent, not that no other spelling exists.
 
-`npm run guard` walks all three fences. On a breach it prints the offending file,
-the line, and — for reachability — the chain that got there:
+`npm run guard` walks all five fences. On a breach it prints the offending file,
+the line, and — for reachability — the chain that got there. One file can breach
+two of them, which is why they stay separately labelled: naming the wrong rule is
+worse than reporting both.
 
 ```
-FAIL  guard: simulation boundary     1 violation(s), entry src/sim
+FAIL  guard: simulation boundary          1 violation(s), entry src/sim
         src/art/palette.ts:1:1  imports "pixi.js" — pixi.js must never be reachable from the simulation (ADR-0001)
           how: src/sim/index.ts → src/art/palette.ts → pixi.js
+FAIL  guard: pixi.js outside render/      1 violation(s), allowed under src/render/, e2e/
+        src/art/palette.ts:1:1  imports "pixi.js" — pixi.js exists only under src/render/ or e2e/ (PLAN §3, ADR-0001)
 ```
 
 The rules are deliberately crude and deliberately loud. A guard that cannot see
-through an import says so instead of staying quiet. Neither reachability fence
-goes *inside* a bare package import — the guard does not resolve
-`node_modules` — so today's simulation imports nothing but its own modules, and
-the day it imports a package, the fence sees the dependency rather than what is
-inside it.
+through an import says so instead of staying quiet. None of the fences walks
+*inside* a bare package import — the guard does not resolve `node_modules` — so
+today's simulation imports nothing but its own modules, and the day it imports a
+package, the fence sees the dependency rather than what is inside it.
 
 ## The deterministic core
 
@@ -209,10 +222,10 @@ src/                application code
     run.ts          playing one Match, and the hash invariant the CLI checks
     report.ts       the JSON report, ordered and free of anything that varies
     main.ts         the entry: standard output, standard error, exit codes
-  render/           the only place `pixi.js` exists
+  render/           the application's one PixiJS-aware layer
 scripts/guard.mjs   the fences
 tests/              Vitest unit tests
-e2e/                Playwright browser tests
+e2e/                Playwright browser tests (a real browser, so `pixi.js` is allowed)
 docs/PLAN.md        the plan of record
 docs/COMMANDS.md    the Command vocabulary an external agent is written from
 ```
