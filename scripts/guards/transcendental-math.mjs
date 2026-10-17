@@ -1,5 +1,6 @@
-import { findMathMemberViolations } from './math-members.mjs';
+import { EXPONENTIATION, findMemberViolations } from './forbidden-spellings.mjs';
 import { reachableFromSimulation } from './sim-reachability.mjs';
+import { withChain } from './violations.mjs';
 
 /**
  * Fence #3: the simulation may not reach arithmetic that ECMA-262 leaves
@@ -16,6 +17,14 @@ import { reachableFromSimulation } from './sim-reachability.mjs';
  * approximated itself or defined in terms of something that is. `Math.sqrt` is
  * deliberately absent: IEEE 754 pins it down, and the plan's own consequence is
  * that a `Math.sqrt` in the wrong place is a reviewer's call, not a guard's.
+ *
+ * `EXPONENTIATION` is in the list with no carve-out for integer exponents,
+ * although `x ** 2` is exact and `x ** 0.5` is not. The approximation belongs to
+ * the operation, not to a particular exponent, and a syntactic walk does not
+ * know an exponent's value: a carve-out would have to guess, and a fence that
+ * guesses is worse than one that is blunt. Writing the multiplication out says
+ * which one is meant. The name covers `**` and `**=` alike, because they are the
+ * same operation.
  */
 const FORBIDDEN_TRANSCENDENTALS = [
   'sin',
@@ -40,6 +49,7 @@ const FORBIDDEN_TRANSCENDENTALS = [
   'pow',
   'cbrt',
   'hypot',
+  EXPONENTIATION,
 ];
 
 /** @typedef {import('./violations.mjs').Violation} Violation */
@@ -49,12 +59,17 @@ const FORBIDDEN_TRANSCENDENTALS = [
  * @returns {string}
  */
 const message = (member) =>
-  `calls Math.${member} — ECMA-262 leaves it implementation-approximated, so two engines may disagree: ` +
-  'use lookup tables or integer arithmetic (docs/PLAN.md §3, ADR-0006)';
+  member === EXPONENTIATION
+    ? 'uses exponentiation (** or **=) — Number::exponentiate, the same operation as Math.pow, which ' +
+      'ECMA-262 leaves implementation-approximated, so two engines may disagree: write the ' +
+      'multiplication out, or use a lookup table (docs/PLAN.md §3, ADR-0006)'
+    : `calls Math.${member} — ECMA-262 leaves it implementation-approximated, so two engines may disagree: ` +
+      'use lookup tables or integer arithmetic (docs/PLAN.md §3, ADR-0006)';
 
 /**
- * Reports every forbidden `Math` member in a file the simulation can reach,
- * with the chain that reaches it, so the report says both what and how.
+ * Reports every forbidden `Math` member, and every exponentiation, in a file the
+ * simulation can reach, with the chain that reaches it, so the report says both
+ * what and how.
  *
  * @param {string} root Repository root.
  * @returns {Violation[]}
@@ -62,9 +77,10 @@ const message = (member) =>
 export function findTranscendentalMathReachableFromSimulation(root) {
   const { files, chains } = reachableFromSimulation(root);
 
-  return findMathMemberViolations(files, {
+  return findMemberViolations(files, {
+    object: 'Math',
     members: FORBIDDEN_TRANSCENDENTALS,
     message,
     root,
-  }).map((violation) => ({ ...violation, chain: chains.get(violation.file) ?? [violation.file] }));
+  }).map((violation) => withChain(violation, chains));
 }

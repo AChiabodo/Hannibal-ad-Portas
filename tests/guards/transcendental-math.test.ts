@@ -47,6 +47,65 @@ describe('findTranscendentalMathReachableFromSimulation', () => {
     expect(violations[0]?.chain).toEqual(['src/sim/index.ts', 'src/art/noise.ts']);
   });
 
+  it('catches the exponentiation operator, which is Math.pow under another spelling', () => {
+    const violations = violationsOf({
+      'src/sim/geometry.ts':
+        'export const square = (x: number): number => x ** 2;\n' +
+        'export const root = (x: number): number => x ** 0.5;\n',
+    });
+
+    expect(violations.map((violation) => violation.line)).toEqual([1, 2]);
+    expect(violations[0]?.file).toBe('src/sim/geometry.ts');
+    expect(violations[0]?.message).toContain('**');
+    expect(violations[0]?.message).toContain('Math.pow');
+    expect(violations[0]?.message).toContain('lookup table');
+  });
+
+  it('catches the compound assignment, which reaches the same operation', () => {
+    const violations = violationsOf({
+      'src/sim/geometry.ts':
+        'export const halve = (x: number): number => {\n  x **= 0.5;\n  return x;\n};\n',
+    });
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({ file: 'src/sim/geometry.ts', line: 2 });
+    expect(violations[0]?.message).toContain('**=');
+    expect(violations[0]?.message).toContain('lookup table');
+  });
+
+  it('follows reachability to the operator and shows the chain', () => {
+    const violations = violationsOf({
+      'src/sim/index.ts': "export * from '../art/curve';\n",
+      'src/art/curve.ts': 'export const bend = (t: number): number => t ** 3;\n',
+    });
+
+    expect(violations.map((violation) => violation.file)).toEqual(['src/art/curve.ts']);
+    expect(violations[0]?.chain).toEqual(['src/sim/index.ts', 'src/art/curve.ts']);
+  });
+
+  it('names the chain to the compound assignment the way it names the operator', () => {
+    const violations = violationsOf({
+      'src/sim/index.ts': "export * from '../art/curve';\n",
+      'src/art/curve.ts':
+        'export const bend = (t: number): number => {\n  t **= 3;\n  return t;\n};\n',
+    });
+
+    expect(violations.map((violation) => violation.file)).toEqual(['src/art/curve.ts']);
+    expect(violations[0]?.line).toBe(2);
+    expect(violations[0]?.chain).toEqual(['src/sim/index.ts', 'src/art/curve.ts']);
+  });
+
+  it('does not police exponentiation in a file the simulation cannot reach', () => {
+    const violations = violationsOf({
+      'src/sim/index.ts': 'export const ready = true;\n',
+      'src/render/zoom.ts':
+        'export const zoom = (x: number): number => x ** 2;\n' +
+        'export const scale = (x: number): number => {\n  x **= 2;\n  return x;\n};\n',
+    });
+
+    expect(violations).toEqual([]);
+  });
+
   it('counts every spelling of the member, as the Math.random fence does', () => {
     const violations = violationsOf({
       'src/sim/bracket.ts': 'export const a = (x: number): number => Math["log"](x);\n',

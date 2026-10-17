@@ -55,7 +55,7 @@ The Command vocabulary is closed: **Move, Attack-move, Attack, Hold, Garrison, W
 
 - Fixed **10 Hz** tick with an accumulator; the renderer interpolates. A headless Match runs about ten times faster than real time, which is what turns a balance tournament from an overnight job into a coffee break.
 - **Authoritative state is integers only.** Derived floats are fine as long as they never feed state or the hash.
-- **No `Math.sin`, `cos`, `exp`, `pow` or `log` in `sim/`** — ECMA-262 leaves them implementation-approximated, so they are not portable across engines. Lookup tables and integer approximation where geometry is needed.
+- **No `Math.sin`, `cos`, `exp`, `pow`, `log` or `**` in `sim/`** — ECMA-262 leaves them implementation-approximated, so they are not portable across engines; the operator is `Math.pow` under another spelling (`Number::exponentiate`) and is banned with no integer-exponent carve-out. Lookup tables and integer approximation where geometry is needed.
 - **`sfc32` seeded through `xmur3`.** `Math.random` is banned repository-wide.
 - **The state hash is part of the tick contract.** Changing it is a decision, never an accident.
 - A **replay is a seed plus a command log** — not a video. Free, given the above, and it is what lets CI reproduce a bug an agent reported.

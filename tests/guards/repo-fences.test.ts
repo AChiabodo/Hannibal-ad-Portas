@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { findAmbientNondeterminismReachableFromSimulation } from '../../scripts/guards/ambient-globals.mjs';
 import { findMathRandomViolations } from '../../scripts/guards/find-math-random.mjs';
 import { findRendererReachableFromSimulation } from '../../scripts/guards/simulation-boundary.mjs';
 import { findTranscendentalMathReachableFromSimulation } from '../../scripts/guards/transcendental-math.mjs';
@@ -23,5 +24,6 @@ describe('the repository itself', () => {
     expect(findMathRandomViolations(files, { root: REPO_ROOT })).toEqual([]);
     expect(findRendererReachableFromSimulation(REPO_ROOT)).toEqual([]);
     expect(findTranscendentalMathReachableFromSimulation(REPO_ROOT)).toEqual([]);
+    expect(findAmbientNondeterminismReachableFromSimulation(REPO_ROOT)).toEqual([]);
   });
 });

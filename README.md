@@ -45,8 +45,23 @@ on every push:
 1. **Nothing reachable from the simulation may import the rendering engine**
    (`pixi.js`). `sim/` must run in Node so an agent can play a whole Match
    headlessly (ADR-0001, ADR-0003).
-2. **Nothing anywhere may call `Math.random`.** The simulation is seeded through
-   `xmur3` into `sfc32`, and a replay is a seed plus a command log (ADR-0006).
+2. **Nothing anywhere may call `Math.random`, and nothing reachable from the
+   simulation may reach the ambient clock or entropy either** —
+   `crypto.getRandomValues`, `crypto.randomUUID`, `Date.now`,
+   `performance.now`. The simulation is seeded through `xmur3` into `sfc32`, a
+   replay is a seed plus a command log, and a Match's only time is its tick
+   counter (ADR-0006). The ambient four are simulation-scoped on purpose: a
+   test, a tool and the CLI's report may read a wall clock, a rule may not.
+
+   The walk behind these checks is syntactic, and it says so instead of
+   pretending to be complete. It sees a global spelled out — `Math.random`,
+   `Math["random"]`, `Math?.random`, `const { random } = Math`, `Date.now()` —
+   and it does not see through an alias, a `globalThis`, or a name built at
+   runtime: `const M = Math; M.random()`, `globalThis.Math.random()`,
+   `Math['ran' + 'dom']()`, `const D = Date; D.now()` and `new Date()` all pass
+   the guard today. A green tick means the ordinary spellings are absent, not
+   that no other spelling exists; the transcendental fence reads the same walk
+   and has the same limit.
 3. **Nothing reachable from the simulation may use `Math.sin`, `cos`, `exp`,
    `pow`, `log` or their family.** ECMA-262 leaves those
    implementation-approximated, so two engines may legitimately disagree, and a
