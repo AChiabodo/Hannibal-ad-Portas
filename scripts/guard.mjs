@@ -3,9 +3,10 @@
  * The fences CI leans on (PLAN §3, §6):
  *
  *   1. the simulation cannot reach the rendering engine (ADR-0001);
- *   2. nothing anywhere calls `Math.random` (ADR-0006).
+ *   3. the simulation cannot reach arithmetic ECMA-262 leaves
+ *      implementation-approximated, so two engines may disagree (ADR-0006).
  *
- * Both are crude on purpose and loud on purpose: they name the offending file.
+ * All three are crude on purpose and loud on purpose: they name the offending file.
  *
  * Usage: node scripts/guard.mjs [--root <dir>] [--scan <dir>]...
  *
@@ -16,10 +17,9 @@
  */
 import { GUARDED_ROOTS, collectSourceFiles } from './guards/source-files.mjs';
 import { findMathRandomViolations } from './guards/find-math-random.mjs';
-import {
-  SIMULATION_ENTRY,
-  findRendererReachableFromSimulation,
-} from './guards/simulation-boundary.mjs';
+import { SIMULATION_ENTRY } from './guards/sim-reachability.mjs';
+import { findRendererReachableFromSimulation } from './guards/simulation-boundary.mjs';
+import { findTranscendentalMathReachableFromSimulation } from './guards/transcendental-math.mjs';
 
 const USAGE = `Usage: node scripts/guard.mjs [--root <dir>] [--scan <dir>]...
 
@@ -70,11 +70,14 @@ try {
   const mathRandomFiles = collectSourceFiles(options.root, options.scan);
   const mathRandomViolations = findMathRandomViolations(mathRandomFiles, { root: options.root });
   const boundaryViolations = findRendererReachableFromSimulation(options.root);
+  const transcendentalViolations = findTranscendentalMathReachableFromSimulation(options.root);
 
   report('no Math.random', mathRandomViolations, `${mathRandomFiles.length} files scanned`);
   report('simulation boundary', boundaryViolations, `entry ${SIMULATION_ENTRY}`);
+  report('no transcendental math', transcendentalViolations, `entry ${SIMULATION_ENTRY}`);
 
-  const total = mathRandomViolations.length + boundaryViolations.length;
+  const total =
+    mathRandomViolations.length + boundaryViolations.length + transcendentalViolations.length;
   if (total > 0) {
     console.error(`\nguard: ${total} violation(s) — the fences in docs/PLAN.md §3 do not hold`);
     process.exit(1);

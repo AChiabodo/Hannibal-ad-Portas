@@ -25,7 +25,7 @@ Start with [docs/PLAN.md](docs/PLAN.md). Vocabulary lives in
 | `npm run preview`   | Serves the built site on `http://127.0.0.1:5174/`                      |
 | `npm run check`     | TypeScript in strict mode, all three projects, no emit                 |
 | `npm run lint`      | ESLint over the repository                                             |
-| `npm run guard`     | The two fences: import guard and `Math.random` guard                   |
+| `npm run guard`     | The fences: `pixi.js` reachability, `Math.random` and transcendentals  |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
 | `npm run test:e2e`  | Browser tests (Playwright, headless Chromium, software WebGL)           |
 | `npm run verify`    | Lint, check, guard, unit tests and build in one go                      |
@@ -35,17 +35,22 @@ with `--with-deps` in its own step.
 
 ## The fences
 
-Two architectural rules are cheap now and expensive later, so CI enforces them on
-every push:
+Three architectural rules are cheap now and expensive later, so CI enforces them
+on every push:
 
 1. **Nothing reachable from the simulation may import the rendering engine**
    (`pixi.js`). `sim/` must run in Node so an agent can play a whole Match
    headlessly (ADR-0001, ADR-0003).
 2. **Nothing anywhere may call `Math.random`.** The simulation is seeded through
    `xmur3` into `sfc32`, and a replay is a seed plus a command log (ADR-0006).
+3. **Nothing reachable from the simulation may use `Math.sin`, `cos`, `exp`,
+   `pow`, `log` or their family.** ECMA-262 leaves those
+   implementation-approximated, so two engines may legitimately disagree, and a
+   Match that replays differently in another browser is not a replay
+   (ADR-0006). `Math.sqrt` is deliberately allowed.
 
-`npm run guard` walks both fences. On a breach it prints the offending file, the
-line, and — for reachability — the chain that got there:
+`npm run guard` walks all three fences. On a breach it prints the offending file,
+the line, and — for reachability — the chain that got there:
 
 ```
 FAIL  guard: simulation boundary     1 violation(s), entry src/sim
@@ -54,7 +59,34 @@ FAIL  guard: simulation boundary     1 violation(s), entry src/sim
 ```
 
 The rules are deliberately crude and deliberately loud. A guard that cannot see
-through an import says so instead of staying quiet.
+through an import says so instead of staying quiet. Neither reachability fence
+goes *inside* a bare package import — the guard does not resolve
+`node_modules` — so today's simulation imports nothing but its own modules, and
+the day it imports a package, the fence sees the dependency rather than what is
+inside it.
+
+## The deterministic core
+
+The tick contract every later wave is built on (PLAN §3, ADR-0006):
+
+- **Time is whole ticks**, `TICK_HZ` in `src/sim/clock.ts` — one constant, and
+  everything else about time derives from it. A Match never sees a variable
+  delta, which is half of what makes it reproducible.
+- **State is integers only.** `serializeState` writes a state down canonically
+  or throws, so a float in state fails a test instead of quietly changing the
+  hash; `hashState` is the fingerprint a replay is compared by, and it covers
+  the clock, the world and the random cursor together.
+- **Randomness is seeded**: `makeRng(seed)` is `sfc32` through `xmur3`, drawing
+  integers. The cursor is part of the state, so a diverging draw diverges the
+  hash at the tick it happens.
+- **A replay is a seed plus a command log** (`src/sim/replay.ts`), hashed at
+  checkpoints — not a video. `createMatch({ seed, rules })` is the engine; the
+  game rules own the `world` and receive it as a value, so they cannot move the
+  clock or reseed the generator by accident.
+
+The tick rate and the hash are decisions, not accidents: the plan fixes the rate
+at 10 Hz, and a test records the hash of a fixed state so changing it is visible
+in review.
 
 ## Layout
 
@@ -62,6 +94,12 @@ through an import says so instead of staying quiet.
 index.html          the page Playwright drives
 src/                application code
   sim/              the Match: map, economy, squads, combat, siege (no engine imports)
+    clock.ts        the fixed tick and the one constant that sets its rate
+    rng.ts          sfc32 seeded through xmur3, drawing integers
+    state.ts        the canonical form of authoritative state, and what it refuses
+    hash.ts         the state hash, over that canonical form
+    match.ts        the tick: a clock, a world, a random cursor, a hash
+    replay.ts       a seed plus a command log, run again and compared
   render/           the only place `pixi.js` exists
 scripts/guard.mjs   the fences
 tests/              Vitest unit tests

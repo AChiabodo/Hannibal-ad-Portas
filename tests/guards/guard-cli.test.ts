@@ -33,7 +33,18 @@ describe('guard CLI', () => {
 
     expect(output).toContain('no Math.random');
     expect(output).toContain('simulation boundary');
+    expect(output).toContain('no transcendental math');
     expect(status).toBe(0);
+  });
+
+  it('fails loudly when the simulation reaches arithmetic no engine pins down', () => {
+    const { status, output } = runGuard({
+      'src/sim/rng.ts': 'export const spread = (x: number): number => Math.pow(x, 2);\n',
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain('src/sim/rng.ts:1');
+    expect(output).toContain('Math.pow');
   });
 
   it('fails loudly and names the file that calls the global generator', () => {
