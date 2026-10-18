@@ -81,6 +81,7 @@ const VISIBLE: EconomyVisible = {
       engaged: true,
       payroll: 3,
       unpaid: 1,
+      garrison: null,
       home: 0,
     },
     {
@@ -101,6 +102,7 @@ const VISIBLE: EconomyVisible = {
       engaged: false,
       payroll: 4,
       unpaid: 0,
+      garrison: null,
       home: 0,
     },
   ],
@@ -409,6 +411,7 @@ describe('the HUD on screen', () => {
         engaged: false,
         payroll: 3,
         unpaid: 0,
+        garrison: null,
         home: 0,
       })),
     };

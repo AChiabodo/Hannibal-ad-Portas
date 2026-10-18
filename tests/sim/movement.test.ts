@@ -815,6 +815,7 @@ describe('what a Faction is shown of its Squads', () => {
       engaged: false,
       payroll: 3,
       unpaid: 0,
+      garrison: null,
       home: 0,
     });
 

@@ -140,8 +140,10 @@ export function toyOutcome(world: ToyMatchWorld): Outcome | null {
   const carthage = world.squads.some((squad) => squad.owner === CARTHAGE);
 
   if (rome && carthage) return null;
-  if (rome) return { kind: 'victory', winner: 'rome' };
-  if (carthage) return { kind: 'victory', winner: 'carthage' };
+  const reason = { kind: 'annihilation' } as const;
+
+  if (rome) return { kind: 'victory', winner: 'rome', reason };
+  if (carthage) return { kind: 'victory', winner: 'carthage', reason };
 
   return { kind: 'draw' };
 }

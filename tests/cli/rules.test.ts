@@ -344,6 +344,44 @@ describe('the roster Match, which is what CI gates the two rosters with', () => 
   });
 });
 
+describe('a whole Match won headless, once by Assault and once by Blockade', () => {
+  it('storms Carthage’s Stronghold with the ram, and the result names the Stronghold', () => {
+    const run = RULES.assault.play(1, 9000);
+
+    expect(run.result).toMatchObject({
+      kind: 'victory',
+      winner: 'rome',
+      reason: { kind: 'stronghold', stronghold: 1, path: 'assault' },
+    });
+    // A Match decided by the rules, not by the bound.
+    expect(run.result.tick).toBeLessThan(9000);
+    expect(run.log.map((entry) => entry.command.kind)).toEqual(['assault', 'garrison']);
+  });
+
+  it('starves the same Stronghold into surrender, and the result says so', () => {
+    const run = RULES.blockade.play(1, 9000);
+
+    expect(run.result).toMatchObject({
+      kind: 'victory',
+      winner: 'rome',
+      reason: { kind: 'stronghold', stronghold: 1, path: 'blockade' },
+    });
+    expect(run.result.tick).toBeLessThan(9000);
+    // A Blockade is the slow path: it takes Seasons where an Assault takes a
+    // fight, which is the asymmetry the ticket is about.
+    expect(run.result.tick).toBeGreaterThan(RULES.assault.play(1, 9000).result.tick);
+  });
+
+  it('plays each path again from the same seed, hash for hash', () => {
+    expect(RULES.assault.play(1, 9000).hash).toBe(RULES.assault.play(1, 9000).hash);
+    expect(RULES.blockade.play(1, 9000).hash).toBe(RULES.blockade.play(1, 9000).hash);
+  });
+
+  it('is two genuinely different Matches, not one procedure with different numbers', () => {
+    expect(RULES.assault.play(1, 9000).hash).not.toBe(RULES.blockade.play(1, 9000).hash);
+  });
+});
+
 describe('the names of the Matches the command line ships', () => {
   it('names the Matches it ships, and nothing else', () => {
     expect(isRulesName('economy')).toBe(true);
@@ -353,6 +391,8 @@ describe('the names of the Matches the command line ships', () => {
     expect(isRulesName('fog')).toBe(true);
     expect(isRulesName('march')).toBe(true);
     expect(isRulesName('roster')).toBe(true);
+    expect(isRulesName('assault')).toBe(true);
+    expect(isRulesName('blockade')).toBe(true);
     expect(isRulesName(DEFAULT_RULES)).toBe(true);
 
     for (const value of ['', 'Empty', 'empty ', 'draws\n', 'anything else']) {

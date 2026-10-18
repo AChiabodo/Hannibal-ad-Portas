@@ -27,7 +27,7 @@
  * processor allows, which is what makes a hundred Matches a routine command
  * rather than an afternoon, and the only bound is the one the caller sets.
  */
-import { validateCommand, type Command } from './command.ts';
+import { validateCommand, type Command, type SiegePath } from './command.ts';
 import type { Player, Players } from './controller.ts';
 import type { Faction } from './faction.ts';
 import { createMatch, type Match, type MatchRules } from './match.ts';
@@ -91,21 +91,50 @@ export class ObservationProjectionError extends Error {
 }
 
 /**
+ * Why the rules ended a Match: what fell, and how it fell.
+ *
+ * A sentence would be the report's job and a code would say too little, so a
+ * reason is a small tagged record: the winner is in the `Outcome`, the tick is
+ * the run's, and this is the one thing left — what happened. C5 is the first
+ * system that can name one, and the union grows with the reasons a later rule
+ * decides rather than with the report's vocabulary.
+ */
+export type VictoryReason =
+  | {
+      /** An enemy Stronghold fell: the Match is over (GLOSSARY: Stronghold). */
+      readonly kind: 'stronghold';
+      /** The settlement id of the Stronghold that fell. */
+      readonly stronghold: number;
+      /** Which path of the Siege took it (ADR-0008). */
+      readonly path: SiegePath;
+    }
+  | {
+      /** The enemy has neither settlements nor Squads left. */
+      readonly kind: 'annihilation';
+    };
+
+/**
  * What the rules say about a Match that has ended: who won, or that nobody did.
  *
- * Deliberately thin. The *reason* — a Stronghold fallen, an army annihilated —
- * belongs to the rules that decided it (C5), and arrives as more of this union
- * when there is a reason to name. A Match the rules never decide ends by the
- * clock instead, which is a fact about the run and not about the world, so it
- * is `MatchResult`'s to carry.
+ * The *reason* — a Stronghold fallen, an army annihilated — is the rules' to
+ * name, because only they saw what happened; C5 is where a Match first ends
+ * sooner than its bound, and the reason is what makes "why did I lose" a
+ * question with an answer. A Match the rules never decide ends by the clock
+ * instead, which is a fact about the run and not about the world, so it is
+ * `MatchResult`'s to carry.
  */
 export type Outcome =
-  | { readonly kind: 'victory'; readonly winner: Faction }
+  | { readonly kind: 'victory'; readonly winner: Faction; readonly reason: VictoryReason }
   | { readonly kind: 'draw' };
 
 /** How a Match ended: what the rules decided, or that it ran out of ticks. */
 export type MatchResult =
-  | { readonly kind: 'victory'; readonly winner: Faction; readonly tick: number }
+  | {
+      readonly kind: 'victory';
+      readonly winner: Faction;
+      readonly reason: VictoryReason;
+      readonly tick: number;
+    }
   | { readonly kind: 'draw'; readonly tick: number }
   | { readonly kind: 'clock'; readonly tick: number };
 

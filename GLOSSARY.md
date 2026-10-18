@@ -75,6 +75,21 @@ A capturable settlement that is not a Stronghold. Four to six stand on every map
 _UI_: Insediamento minore
 _Avoid_: Village, town, city, outpost
 
+**Walls**:
+The stretches of stone round a Stronghold, four of them, one to a side, each with its own hit points and each able to be broken on its own. A minor settlement has none, which is why it is taken by holding its centre.
+_UI_: Mura
+_Avoid_: Fortification (that is the walls and the gate together), rampart, defences
+
+**Gate**:
+The opening in a Stronghold's walls, and the one piece of them the ram is aimed at. It is a structure like the walls: it takes its own damage, and a broken gate is a breach.
+_UI_: Porta
+_Avoid_: Door, entrance
+
+**Breach**:
+Any one structure of a settlement's fortification broken — a gate or a stretch of wall. A breach is what lets an Assault storm the place, and what lets its centre be held.
+_UI_: Breccia
+_Avoid_: Gap, hole, breakthrough
+
 **Road**:
 A path laid between settlements and resource nodes when the map is generated: it carries a Squad faster, and it crosses water only at a ford.
 _UI_: Strada
@@ -167,6 +182,16 @@ _Avoid_: Logistics, upkeep, in-supply/out-of-supply as a noun
 What a Squad has left to fight with, and the primary resource of a fight: it is what decides whether a Squad stands or breaks, as against its strength, which only decides how many men are still standing. Moved by the fight itself, by flanking and rear attacks, by fatigue, by Supply, and by Payroll.
 _UI_: Morale
 _Avoid_: Health, hit points, spirit, resolve
+
+**Ram**:
+The siege engine an Assault needs. Rome's alone, laid down at the walls it is aimed at, paid for from the treasury, slow to build and vulnerable to the garrison, and aimed at the gate. Carthage has none (ADR-0008).
+_UI_: Ariete
+_Avoid_: Battering ram, siege engine (that is the kind; the ram is the one v1 has), siege tower
+
+**Garrison**:
+The Squads a Faction puts inside a settlement's walls instead of in the field. A garrison is a posture of an ordinary Squad: it mans the walls, it is not fought by the contact rules, it is fed by the settlement's granary, and it surrenders rather than routing when a storm breaks it.
+_UI_: Guarnigione
+_Avoid_: Defender (any Squad defending is not necessarily a garrison), reserve, stack
 
 **Rout**:
 What a Squad does when its morale is gone: it runs for the nearest settlement its Faction holds, strikes weakly, and is not butchered while it has somewhere to run. Automatic, and not a state a Player can order.

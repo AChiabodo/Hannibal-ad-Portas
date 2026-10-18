@@ -57,8 +57,10 @@
  *
  * Only a settlement a Faction owns runs an economy: an unowned minor settlement
  * holds people and a stock but produces nothing until it is taken, and taking
- * one is C6's. Combat, walls and the fall of a Stronghold (C5) and Attrition
- * outside friendly Territory (C6) are deliberately absent.
+ * one is C5's. The walls and the fall of a Stronghold are C5's too, and live in
+ * `siege.ts`; the one thing this module gives it is `Supplied`, the predicate a
+ * Season's production already needed — a blockaded settlement works nothing and
+ * eats what its granary holds. Attrition outside friendly Territory is C6's.
  */
 import {
   amountOf,
@@ -152,6 +154,20 @@ export const MORALE_LOSS_PER_UNPAID_SEASON = 2;
 
 /** How much morale a paid Squad recovers in a Season, up to the most its type comes with. */
 export const MORALE_RECOVERY = 1;
+
+/**
+ * Whether a settlement is drawing supply: a blockaded one produces nothing (C5).
+ *
+ * The economy knows that production follows supply; *who* is cut off is the
+ * Siege's answer, handed in as this predicate rather than imported, because
+ * `siege.ts` reads the economy and the economy must not read it back. A Match
+ * with no Siege in it passes nothing and every settlement is supplied, which is
+ * why the other Matches are byte-identical without it.
+ */
+export type Supplied = (settlement: Settlement) => boolean;
+
+/** The predicate of a world where nothing is besieged: every settlement is fed. */
+export const ALWAYS_SUPPLIED: Supplied = () => true;
 
 /**
  * A work, standing or being built: one building in one settlement.
@@ -510,14 +526,27 @@ export function harvestYield(allocation: Allocation): number {
  * `onAutumn` hook (`harvest`), so a Season's ordinary work and the harvest are
  * two things a reader can see apart.
  */
-export function produceSeason(map: MapGrid, economy: Economy, season: Season): void {
+export function produceSeason(
+  map: MapGrid,
+  economy: Economy,
+  season: Season,
+  supplied: Supplied = ALWAYS_SUPPLIED,
+): void {
   for (const settlement of economy.settlements) {
     if (!isHeld(settlement)) continue;
 
+    const fed = supplied(settlement);
     const allocation = allocate(settlement, landCapacity(map, settlement));
-    addStock(settlement, seasonYield(settlement, allocation, season));
-    feedAndGrow(settlement);
-    earn(settlement, allocation, economy);
+
+    // A cut-off settlement is not a settlement that skipped a Season: it works
+    // nothing, sells nothing, and eats what its granary holds until it is empty.
+    // The order is the year's own — produce, eat, tax the people still there —
+    // and it is the same order whether the fields were cut or not.
+    if (fed) addStock(settlement, seasonYield(settlement, allocation, season));
+
+    feedAndGrow(settlement, fed);
+
+    if (fed) earn(settlement, allocation, economy);
   }
 }
 
@@ -529,9 +558,14 @@ export function produceSeason(map: MapGrid, economy: Economy, season: Season): v
  * the harvest is a distinct number a test can read rather than a multiplier
  * buried in `seasonYield`.
  */
-export function harvest(map: MapGrid, economy: Economy): void {
+export function harvest(
+  map: MapGrid,
+  economy: Economy,
+  supplied: Supplied = ALWAYS_SUPPLIED,
+): void {
   for (const settlement of economy.settlements) {
     if (!isHeld(settlement)) continue;
+    if (!supplied(settlement)) continue;
 
     const allocation = allocate(settlement, landCapacity(map, settlement));
     addStock(settlement, [harvestYield(allocation), 0, 0, 0]);
@@ -731,8 +765,14 @@ function isStaffed(work: Work, allocation: Allocation, index: number): boolean {
   return building !== undefined && (allocation.works[index] ?? -1) === building.labour;
 }
 
-/** The people eat, and grow when there is enough left over; a settlement that cannot feed them starves. */
-function feedAndGrow(settlement: Settlement): void {
+/**
+ * The people eat, and grow when there is enough left over and the fields are
+ * theirs; a settlement that cannot feed them starves.
+ *
+ * `mayGrow` is false for a settlement whose supply is cut: a blockaded town does
+ * not raise more mouths on a granary it is emptying.
+ */
+function feedAndGrow(settlement: Settlement, mayGrow: boolean): void {
   const needed = Math.max(1, Math.floor(settlement.population / GRAIN_PER_HEAD));
   const held = stockAt(settlement.stocks, RESOURCE.grain);
 
@@ -745,7 +785,7 @@ function feedAndGrow(settlement: Settlement): void {
   settlement.stocks[RESOURCE.grain] = held - needed;
 
   const surplus = held - needed;
-  if (settlement.population < housingCapacity(settlement) && surplus >= needed) {
+  if (mayGrow && settlement.population < housingCapacity(settlement) && surplus >= needed) {
     settlement.population += POPULATION_GROWTH;
   }
 }

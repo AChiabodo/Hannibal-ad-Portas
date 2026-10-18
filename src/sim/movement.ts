@@ -18,13 +18,14 @@
  * - `formation` sets the shape the Squad holds, which is a property of the Squad
  *   (ADR-0004) rather than of anybody arranging men.
  *
- * Everything else in the vocabulary is left alone here: `garrison`,
- * `build`, `recruit`, `assault`, `blockade` and `group` belong to the tickets
- * that own them — `build` and `recruit` are the economy's, and are applied
- * beside this — and a rule that quietly half-implemented one of them would be
- * worse than one that does nothing at all. `attack` and `withdraw` are combat's
- * and are applied beside this too (`combat.ts`), because closing with an enemy
- * and falling back are one rule and not two. A Command naming a Squad the
+ * Everything else in the vocabulary is left alone here: `garrison`, `build`,
+ * `recruit`, `assault`, `blockade` and `group` belong to the modules that own
+ * them — `build` and `recruit` are the economy's, `assault`, `blockade` and
+ * `garrison` the Siege's (`siege.ts`), and all of them are applied beside this
+ * — and a rule that quietly half-implemented one of them would be worse than one
+ * that does nothing at all. `attack` and `withdraw` are combat's and are applied
+ * beside this too (`combat.ts`), because closing with an enemy and falling back
+ * are one rule and not two. A Command naming a Squad the
  * Faction does not own is ignored for the same reason: the seam guarantees the
  * *Command* came from the right Player, and this is where the Squad is asked
  * whether it belongs to them.
@@ -83,6 +84,7 @@ import {
 import {
   FACING,
   facingCode,
+  FIELD,
   formationCode,
   isRouting,
   standingAt,
@@ -212,9 +214,10 @@ export function applyMovementCommands(
         }
         break;
 
-      // Every other Command belongs to a ticket that owns it: attack, garrison,
-      // withdraw, assault, blockade and group have not landed, and build and
-      // recruit are the economy's, applied beside this one.
+      // Every other Command belongs to a module that owns it: `attack` and
+      // `withdraw` are combat's, `build` and `recruit` the economy's, `assault`,
+      // `blockade` and `garrison` the Siege's, and `group` the Player's — each
+      // applied beside this one, in the same tick.
       default:
         break;
     }
@@ -342,6 +345,10 @@ export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: Route
 
   squad.steps = [...route.steps];
   squad.refused = NO_REFUSAL;
+  // An order puts a garrison back in the field: a Squad inside a settlement that
+  // is told to march is told to come out of it (C5). A refused order above
+  // changed nothing, so it did not take the Squad out of anything either.
+  squad.garrison = FIELD;
   faceTheWay(squad);
 
   // Only a route entering a different tile re-prices the step.

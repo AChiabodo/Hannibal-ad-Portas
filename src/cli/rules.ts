@@ -47,6 +47,7 @@ import {
   factionOf,
   fogMatchOutcome,
   fogMatchRules,
+  garrison,
   idleController,
   isWalkable,
   MAP_HEIGHT,
@@ -57,10 +58,17 @@ import {
   observeEmptyMatch,
   observeFogMatch,
   observeSeasonMatch,
+  observeSiege,
+  assault,
+  blockade,
   runMatch,
   scriptedController,
   seasonMatchOutcome,
   seasonMatchRules,
+  siegeMatchOutcome,
+  siegeMatchRules,
+  createSiegeWorld,
+  settlementIdAt,
   terrainAt,
   type Command,
   type CommandLog,
@@ -78,6 +86,9 @@ import {
   type Players,
   type SeasonMatchVisible,
   type SeasonMatchWorld,
+  type SiegePath,
+  type SiegeVisible,
+  type SiegeWorld,
   type Site,
 } from '../sim/index.ts';
 import { squadTypesOf } from '../content/index.ts';
@@ -447,11 +458,11 @@ function squadIdsOf(world: EconomyWorld, faction: Faction): readonly number[] {
  * Stronghold is, and a reading order that a reader can hold in their head is
  * worth more here than a tidier shape.
  */
-function groundNear(map: MapGrid, site: Site, count: number): readonly Site[] {
+function groundNear(map: MapGrid, site: Site, count: number, spread = MARCH_SPREAD): readonly Site[] {
   const ground: Site[] = [];
 
-  for (let y = site.y - MARCH_SPREAD; y <= site.y + MARCH_SPREAD; y += 1) {
-    for (let x = site.x - MARCH_SPREAD; x <= site.x + MARCH_SPREAD; x += 1) {
+  for (let y = site.y - spread; y <= site.y + spread; y += 1) {
+    for (let x = site.x - spread; x <= site.x + spread; x += 1) {
       if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) continue;
       if (!isWalkable(terrainAt(map, x, y))) continue;
       if (ground.length === count) return ground;
@@ -468,6 +479,128 @@ function groundNear(map: MapGrid, site: Site, count: number): readonly Site[] {
 }
 
 /**
+ * How many Squads Rome puts at the walls in a Siege Match: enough to storm a
+ * breach, and few enough that Payroll does not empty the treasury before the
+ * walls come down.
+ */
+const SIEGE_SQUADS = 3;
+
+/** The type Rome's army is made of: the steady line, which is what stands a siege. */
+const SIEGE_TYPE = 'principes';
+
+/** The type Carthage mans its walls with. */
+const GARRISON_TYPE = 'libyan-spear';
+
+/** The tick a Siege Match's orders are given on: the first, so the whole run is the siege. */
+const SIEGE_TICK = 0;
+
+/**
+ * The world a Siege Match begins on: a Roman army at Carthage's gate, and a
+ * Carthaginian garrison inside.
+ *
+ * Both forces are mustered rather than recruited, which is what the harness
+ * does everywhere: the point of the Match is the siege, not the twelve Seasons
+ * of economy that would otherwise have to pass before a tier-2 army could be
+ * raised. What is *not* faked is the Siege: the garrison goes in through the
+ * `garrison` Command and the army storms through `assault` or starves through
+ * `blockade`, all of them in the log and all of them through the same rules a
+ * Player's Commands go through.
+ *
+ * @throws Error when the theatre has fewer walkable tiles at Carthage's walls
+ *   than the army needs — which no generated map is, and which is worth saying
+ *   rather than quietly fielding a smaller army than the Match is about.
+ */
+export function siegeWorld(seed: number): SiegeWorld {
+  const world = createSiegeWorld(seed);
+  const [, carthage] = world.map.strongholds;
+
+  for (const site of wallsOf(world.map, carthage, SIEGE_SQUADS)) {
+    musterSquad(world.economy, world.map, {
+      faction: 'rome',
+      squadType: SIEGE_TYPE,
+      x: site.x,
+      y: site.y,
+    });
+  }
+
+  musterSquad(world.economy, world.map, {
+    faction: 'carthage',
+    squadType: GARRISON_TYPE,
+    x: carthage.x,
+    y: carthage.y,
+  });
+
+  return world;
+}
+
+/**
+ * The Commands a Siege Match is played by: Carthage mans its walls, and Rome lays
+ * one of the two Sieges against its Stronghold.
+ *
+ * The two orders are one list read once, so the garrison and the army cannot
+ * come to disagree about which settlement is being fought over.
+ */
+export function siegeLog(world: SiegeWorld, path: SiegePath): CommandLog<Command> {
+  const [, carthage] = world.map.strongholds;
+  const target = settlementIdAt(world.economy, carthage);
+
+  const orders: Command[] = [
+    garrison('carthage', squadIdsOf(world, 'carthage'), target),
+    path === 'assault'
+      ? assault('rome', squadIdsOf(world, 'rome'), target)
+      : blockade('rome', squadIdsOf(world, 'rome'), target),
+  ];
+
+  return orders.map((command) => ({ tick: SIEGE_TICK, command }));
+}
+
+/**
+ * Plays a Siege Match to its end: one of the two paths of the Siege, and the
+ * Stronghold's fall that ends the Match (`siegeMatchOutcome`).
+ *
+ * The bound is the caller's, but the Match is expected to decide before it: a
+ * harness whose golden hash is the fall of a Stronghold is a harness that proves
+ * a whole Match can be won headless, which is the ticket's last criterion.
+ */
+function playSiege(seed: number, ticks: number, path: SiegePath): MatchRun {
+  const world = siegeWorld(seed);
+  const log = siegeLog(world, path);
+
+  return runMatch<SiegeWorld, SiegeVisible>({
+    seed,
+    rules: { createWorld: () => world, step: siegeMatchRules.step },
+    observe: observeSiege,
+    outcome: siegeMatchOutcome,
+    players: [
+      { faction: 'rome', controller: scriptedController<SiegeVisible>(log) },
+      { faction: 'carthage', controller: scriptedController<SiegeVisible>(log) },
+    ],
+    ticks,
+  });
+}
+
+/**
+ * Walkable tiles at a Stronghold's walls: the ring a tile deep, in reading order.
+ *
+ * The square `groundNear` gives, less the centre: a besieging army has to be
+ * *at* the walls — `SIEGE_RADIUS` is one tile — for the Siege to be laid at all,
+ * and the centre tile is where the garrison stands.
+ */
+function wallsOf(map: MapGrid, site: Site, count: number): readonly Site[] {
+  const ring = groundNear(map, site, count + 1, 1).filter(
+    (tile) => tile.x !== site.x || tile.y !== site.y,
+  );
+
+  if (ring.length < count) {
+    throw new Error(
+      `the theatre has only ${String(ring.length)} tiles at a Stronghold's walls to stand a force on`,
+    );
+  }
+
+  return ring.slice(0, count);
+}
+
+/**
  * The names `--rules` accepts, in the order `--help` lists them.
  *
  * Where `RulesName` is read from, and where the menu's order comes from: the
@@ -476,7 +609,17 @@ function groundNear(map: MapGrid, site: Site, count: number): readonly Site[] {
  * a use that fails at whatever hour CI runs. `DEFAULT_RULES` spells `economy` a
  * second time, and its type is this list's, so the two cannot disagree.
  */
-export const RULES_NAMES = ['economy', 'seasons', 'empty', 'fog', 'draws', 'march', 'roster'] as const;
+export const RULES_NAMES = [
+  'economy',
+  'seasons',
+  'empty',
+  'fog',
+  'draws',
+  'march',
+  'roster',
+  'assault',
+  'blockade',
+] as const;
 
 /** A name `--rules` accepts, which is also the only thing the table below is keyed by. */
 export type RulesName = (typeof RULES_NAMES)[number];
@@ -535,6 +678,16 @@ export const RULES = {
   roster: {
     description: 'both rosters on the theatre, elephants included, sent at each other',
     play: playRoster,
+  },
+
+  assault: {
+    description: "a Roman army storms Carthage's Stronghold with the ram, and the Match is won",
+    play: (seed: number, ticks: number) => playSiege(seed, ticks, 'assault'),
+  },
+
+  blockade: {
+    description: "Carthage's Stronghold is starved into surrender, and the Match is won",
+    play: (seed: number, ticks: number) => playSiege(seed, ticks, 'blockade'),
   },
 } as const satisfies Readonly<Record<RulesName, RulesEntry>>;
 

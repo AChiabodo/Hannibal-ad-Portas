@@ -355,7 +355,7 @@ npm run match -- --seed 1 --ticks 600 --rules march
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 2,
-  "hash": "2df7aaf9e293a20c"
+  "hash": "dcc3c947981d98f7"
 }
 ```
 
@@ -384,7 +384,7 @@ npm run match -- --seed 1 --ticks 600 --rules roster
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 2,
-  "hash": "42d7da0c83e94227"
+  "hash": "d77285a51c049c74"
 }
 ```
 
@@ -516,6 +516,109 @@ directions and all six frames, so the Carthaginian roster is looked at exactly
 the way the Roman one is — and `tests/art/figures.test.ts` tells every pair of
 the nine apart in greyscale, by luminance and by pixels of ink, rather than
 trusting the palette.
+
+## Siege
+
+The other way a Match ends (C5). A settlement falls either to an **Assault** —
+fast, expensive, and needing the ram, which only Rome can build — or to a
+**Blockade**, which is slow and cheap in lives, starves the place into surrender,
+and is broken by the besieged Faction's field army. The two are alternatives and
+not stages, and Carthage has no siege engine at all, which is the historical
+asymmetry and the plan's largest balance risk (ADR-0008, ADR-0018).
+
+| path | pace | costs | broken by |
+| --- | --- | --- | --- |
+| Assault | a fight: a round a second, under a minute to the Stronghold | denarii for the ram, men and nerve under the walls, the ram itself | a garrison strong enough to break the ram, and the wall |
+| Blockade | Seasons: about three to an empty granary, ten minutes of Match time | almost nothing in lives | the besieged Faction's field army, within `RELIEF_RADIUS` |
+
+**Walls are structures, not a health bar** (`src/sim/siege.ts`). A Stronghold
+carries a **gate** and four stretches of **wall**, one to a side, each with its
+own hit points, and a **breach** is any one of them broken. The ram goes for the
+gate; the men under the walls work at a wall too, at about a third of the speed,
+and the walls cost them lives and nerve while they do it. That is the whole of
+"an assault without a breach is possible but punishing": an assault can be issued
+before anything is broken, waiting for the breach is the sane order of business,
+and a ram the garrison has wrecked pays for itself in blood. Walls do not repair,
+so a failed assault leaves the place weaker for the next one.
+
+**The ram** is laid down on the spot, paid out of the Faction's one treasury,
+built over `RAM_BUILD_TICKS`, and it is the only thing that shields an assault —
+while it is still being built the walls cost men and morale every round, and once
+it is at work they cost nothing. It is also **vulnerable**: the garrison's files
+take it apart at `RAM_FILES_PER_BLOW`: one Squad's twelve files need twenty
+rounds to break a ram and the gate needs eight, but three Squads break it in
+seven and the gate stands — so a manned Stronghold turns an assault into an
+escalade that pays for itself in blood. `canAssault` is the whole of "Rome's
+alone", and ADR-0008's escape hatch — *give Carthage a ram* — is that one
+function.
+
+**A garrison is a posture, not a second army.** A Squad told to `garrison` stands
+at its settlement's centre but is *inside* the walls: the contact rules skip it
+(`Block.garrison`), so an enemy at the gate fights the wall and not the men
+behind it, while the settlement's own supply, Payroll and eyes still cover it. A
+move order takes it out again, which is the whole of how a garrison sallies. A
+garrison that breaks in the storm **surrenders** rather than running through the
+men who just came over the wall, and one that is starved sheds nerve each Season
+until it slips away in the night.
+
+**A blockade uses the settlement's own granary.** The Siege supplies the
+predicate the economy already needed — `produceSeason` and `harvest` take a
+`Supplied`, and a blockaded settlement works no land, earns no tax and grows no
+people. What its granary holds is what it lives on, and every Season of blockade
+spoils `BLOCKADE_GRAIN_LOSS` of grain and takes `BLOCKADE_POPULATION_LOSS` of its
+people; a town with no grain and nobody left on its walls opens its gates. A
+*field* army of the besieged Faction within `RELIEF_RADIUS` lifts the ring — the
+garrison is the thing being starved, so only men outside it can threaten the
+besiegers — and the besieger has to close the ring again.
+
+**A minor settlement is taken by holding its centre**, and nothing is razed. An
+open settlement has no wall to break and nothing to starve: a Squad that stands on
+its tile, uncontested, for `CAPTURE_HOLDS` checks takes it, and its people, its
+works and its stocks stay. Only a Stronghold's fall ends the Match, and the result
+names it as the reason:
+
+```
+npm run match -- --seed 1 --ticks 9000 --rules assault
+{
+  "seed": 1,
+  "ticks": 251,
+  "outcome": "victory",
+  "winner": "rome",
+  "reason": "rome won the Match: the carthage Stronghold fell to an assault",
+  "commands": 2,
+  "hash": "f854cb39e4a9e78d"
+}
+```
+
+`--rules blockade` is the same Match won the other way, in Seasons rather than in
+a fight, and its reason says so:
+
+```
+npm run match -- --seed 1 --ticks 9000 --rules blockade
+{
+  "seed": 1,
+  "ticks": 6300,
+  "outcome": "victory",
+  "winner": "rome",
+  "reason": "rome won the Match: the carthage Stronghold fell to a blockade",
+  "commands": 2,
+  "hash": "9f77bb70706b1b68"
+}
+```
+
+Two whole Matches won headless, one by each path, with the fall of a Stronghold as
+the golden hash: a change to the walls, the ram, the starvation or the verdict
+moves those numbers and has to be a decision in review. The blockade's 6300 ticks
+against the assault's 251 is the asymmetry the ticket is about, in one pair of
+numbers — three Seasons of siege to twenty-five seconds of storm.
+
+**What C5 does not own.** No siege towers, multiple ladders, mines or artillery:
+the plan excludes them from v1. No decision about when to assault and when to
+blockade, which is D5's; `observeSiege` carries the walls, the breach, the ram,
+the hold and the garrison for it to decide with, and nothing more. The page still
+plays the economy Match, so a wall is something the CLI and the tests exercise
+rather than something drawn on screen yet: putting the walls in the interface is
+B7's and E4's, and `observeSiege` is the projection they will read.
 
 ## The first pixels
 
@@ -944,9 +1047,12 @@ the default Match over its whole three-year bound, the clock's own `seasons`
 Match, B4's `fog` Match — B1's theatre with both Factions' memory of it in state
 — the engine-only `empty` Match, C1's `march` Match — a dozen Squads walking a
 whole theatre — C4's `roster` Match, both Factions' whole rosters sent at each
-other — and one that draws on every tick. The economy, the clock, the fog,
-pathfinding and marching, the two rosters, the seed expansion and the draw loop
-are each gated rather than inferred from the others.
+other — C5's `assault` and `blockade` Matches, each a whole Match won headless by
+one path of the Siege — and one that draws on every tick. The economy, the clock,
+the fog, pathfinding and marching, the two rosters, both ways a Stronghold falls,
+the seed expansion and the draw loop are each gated rather than inferred from the
+others. C5 put a Squad's garrison posture into state, so the `march` and `roster`
+goldens moved with it, and that was a decision rather than a drift.
 
 The exit codes are the same three `npm run guard` uses: **0** the Match ran,
 **1** a game invariant was violated — a hash that is not the expected one, a
@@ -954,18 +1060,20 @@ Command outside the vocabulary, a float where state must be integers — and **2
 the command line was misused. A violated hash still prints the report first: the
 interesting number is the one the Match ended on.
 
-Today the Match has a theatre, a clock, an economy and Squads that walk on it
-(B1, B5, B6, C1): its world is the map the seed generated, the calendar, the
-settlements standing on it and the Squads those settlements raise, and the tick
-bound is what ends the run (`src/sim/economy-match.ts`). `--rules` chooses which
-harness Match the CLI plays: `economy` is the default, `seasons` is the clock on
-its own, `fog` is B1's theatre with B4's two fogs in state, `march` is a dozen
-Squads ordered across the theatre, `roster` is both Factions' whole rosters sent
-at each other, `empty` is the engine and the seam alone, and `draws` plays one
-whose rules draw from the seed on every tick, so the golden
-hash in CI covers the draw loop as well as the seed expansion
-(`src/cli/rules.ts`). The harness around it is the point, and the waves that
-build the world change what is inside it rather than how it is driven.
+Today the Match has a theatre, a clock, an economy, Squads that walk and fight
+on it and a Siege that can end it (B1, B5, B6, C1, C3, C5): its world is the map
+the seed generated, the calendar, the settlements standing on it, the Squads
+those settlements raise and the walls they can hide behind, and either the fall
+of a Stronghold or the tick bound ends the run (`src/sim/siege.ts`,
+`src/sim/economy-match.ts`). `--rules` chooses which harness Match the CLI plays:
+`economy` is the default, `seasons` is the clock on its own, `fog` is B1's
+theatre with B4's two fogs in state, `march` is a dozen Squads ordered across the
+theatre, `roster` is both Factions' whole rosters sent at each other, `assault`
+and `blockade` are whole Matches won by the two paths of the Siege, `empty` is
+the engine and the seam alone, and `draws` plays one whose rules draw from the
+seed on every tick, so the golden hash in CI covers the draw loop as well as the
+seed expansion (`src/cli/rules.ts`). The harness around it is the point, and the
+waves that build the world change what is inside it rather than how it is driven.
 
 The command needs no build step. Node strips the types and runs `src/cli/main.ts`
 as it stands, which is why every relative import under `src/` names its extension
@@ -1002,6 +1110,7 @@ src/                application code
     squad.ts        the block a Squad is: its facings, its formations, and where its men stand
     movement.ts     the moving half of a Squad: routes, refused orders, and the Commands obeyed
     combat.ts       the fight: contact, the matchup, flanking, fatigue, missiles, rout and rally
+    siege.ts        walls, the Roman ram, the assault, the blockade and the fall of a Stronghold
     residue.ts      the dead, kept beside the Match because they fade and never enter a hash
   content/          the typed tables the rules read: resources, Squad types, arms, buildings
     arms.ts         the five arms, and the matchup matrix: a cycle, not a ladder

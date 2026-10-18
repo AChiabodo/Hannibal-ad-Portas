@@ -125,6 +125,18 @@
  * `strength` is the staying power that figure is worth — and the Observation
  * carries it beside the men (ADR-0016). The fight reads `strength` and knows
  * nothing about either.
+ *
+ * C5 is where a Match first ends sooner than its bound (ADR-0008, ADR-0018):
+ *
+ * - `siege.ts` — the walls of every settlement as structures with their own hit
+ *   points, the Roman ram built on the spot and vulnerable to the garrison, the
+ *   Assault through a breach, the Blockade that cuts a settlement's supply and
+ *   starves it, the minor settlement taken by holding its centre, and the fall of
+ *   a Stronghold that ends the Match and says why. A garrison is a posture of an
+ *   ordinary Squad (`Block.garrison`), so there is no second kind of army.
+ * - `siegeMatchRules`, `observeSiege` and `siegeMatchOutcome` are the Match that
+ *   joins all of it: the economy's tick with the blockaded settlements cut out
+ *   of production, the Siege's own Commands and clocks, and the verdict.
  */
 export { TICK_HZ, TICK_MS } from './clock.ts';
 export { requireTickCount } from './ticks.ts';
@@ -179,13 +191,14 @@ export type {
   HoldCommand,
   MoveCommand,
   RecruitCommand,
+  SiegePath,
   WithdrawCommand,
 } from './command.ts';
 export type { Observation } from './observation.ts';
 export { scriptedController, idleController } from './controller.ts';
 export type { Controller, Player, Players } from './controller.ts';
 export { ForeignCommandError, ObservationProjectionError, runMatch } from './driver.ts';
-export type { MatchResult, MatchRun, MatchSetup, Outcome } from './driver.ts';
+export type { MatchResult, MatchRun, MatchSetup, Outcome, VictoryReason } from './driver.ts';
 export { emptyMatchOutcome, emptyMatchRules, observeEmptyMatch } from './empty.ts';
 export type { EmptyMatchVisible, EmptyMatchWorld } from './empty.ts';
 
@@ -220,6 +233,7 @@ export type {
 export {
   advanceConstruction,
   allocate,
+  ALWAYS_SUPPLIED,
   applyEconomyCommand,
   BASE_HOUSING,
   BASE_LAND_CAPACITY,
@@ -250,9 +264,9 @@ export {
   TREASURY_CAP,
   UNOWNED,
 } from './economy.ts';
-export type { Allocation, Economy, Settlement, Squad, Work } from './economy.ts';
+export type { Allocation, Economy, Settlement, Squad, Supplied, Work } from './economy.ts';
 
-export { economyMatchOutcome, economyMatchRules, eyesOfEconomy, observeEconomy } from './economy-match.ts';
+export { economyMatchOutcome, economyMatchRules, eyesOfEconomy, observeEconomy, stepEconomyWorld } from './economy-match.ts';
 export type {
   EconomyVisible,
   EconomyWorld,
@@ -282,6 +296,7 @@ export {
   facingCode,
   facingOf,
   FATIGUE_MAX,
+  FIELD,
   FORMATION,
   formationCode,
   formationOf,
@@ -343,8 +358,9 @@ export {
   SUPPLY_MORALE_LOSS,
   SUPPLY_RADIUS,
   VOLLEY_SHOCK,
+  woundsOf,
 } from './combat.ts';
-export type { Aspect, Exchange, Ratio } from './combat.ts';
+export type { Aspect, Exchange, Ratio, Wound } from './combat.ts';
 
 export {
   CORPSE_FADE_TICKS,
@@ -414,3 +430,57 @@ export type { EnemyInSight, Eye, Fog, FogView, Knowledge, LastKnownContact } fro
 
 export { createFogMatchWorld, eyesOf, fogMatchOutcome, fogMatchRules, observeFogMatch } from './fog-match.ts';
 export type { FogMatchVisible, FogMatchWorld } from './fog-match.ts';
+
+export {
+  applySiegeCommand,
+  ASSAULT_TICKS,
+  besiege,
+  BLOCKADE_GRAIN_LOSS,
+  BLOCKADE_MORALE_LOSS,
+  BLOCKADE_POPULATION_LOSS,
+  breached,
+  canAssault,
+  CAPTURE_HOLDS,
+  CAPTURE_TICKS,
+  createSiege,
+  createSiegeWorld,
+  ESCALADE_DAMAGE,
+  frontAt,
+  GATE_HP,
+  gateOf,
+  garrisonOf,
+  isBlockaded,
+  isWalled,
+  observeSiege,
+  RAM_BUILD_TICKS,
+  RAM_COST,
+  RAM_DAMAGE,
+  RAM_FILES_PER_BLOW,
+  RAM_HP,
+  RELIEF_RADIUS,
+  SIEGE,
+  SIEGE_RADIUS,
+  settlementIdAt,
+  siegeMatchOutcome,
+  siegeMatchRules,
+  starveBlockades,
+  STRUCTURE,
+  STRUCTURE_KINDS,
+  suppliedBy,
+  WALL_ASSAULT_LOSS,
+  WALL_HP,
+  WALL_SECTIONS,
+  WALL_SHOCK,
+} from './siege.ts';
+export type {
+  Front,
+  Siege,
+  SiegeCode,
+  SiegeVisible,
+  SiegeWorld,
+  Structure,
+  StructureKind,
+  VisibleFront,
+  VisibleRam,
+  VisibleStructure,
+} from './siege.ts';

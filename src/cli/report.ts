@@ -9,12 +9,12 @@
  * against today's and see only what actually changed (A4's acceptance criteria).
  *
  * The *reason* is a sentence rather than a code because the outcome and the
- * winner are already codes. Today the rules cannot name a reason — nothing can
- * lose a Stronghold yet — so the reason is the driver's outcome written out,
- * and C5 makes it specific ("the Roman ram breached the walls at tick 4312")
- * when there is something specific to say.
+ * winner are already codes. C5 made it specific: a Match now ends when a
+ * Stronghold falls or a Faction is annihilated, and the sentence says which, and
+ * by which path of the Siege.
  */
-import type { MatchResult, MatchRun } from '../sim/driver.ts';
+import type { SiegePath } from '../sim/command.ts';
+import type { MatchResult, MatchRun, VictoryReason } from '../sim/driver.ts';
 import type { Faction } from '../sim/faction.ts';
 
 /** The report of one finished Match, in the order it is written to standard output. */
@@ -66,7 +66,7 @@ interface Verdict {
 function verdictOf(result: MatchResult): Verdict {
   switch (result.kind) {
     case 'victory':
-      return { outcome: 'victory', winner: result.winner, reason: `${result.winner} won the Match` };
+      return { outcome: 'victory', winner: result.winner, reason: victoryOf(result.winner, result.reason) };
     case 'draw':
       return { outcome: 'draw', winner: null, reason: 'the rules called the Match a draw' };
     case 'clock':
@@ -75,6 +75,29 @@ function verdictOf(result: MatchResult): Verdict {
         winner: null,
         reason: `the Match reached its tick bound of ${result.tick} ticks without a decision`,
       };
+  }
+}
+
+/** How a Siege's two paths read in a sentence. */
+const PATH_WORD: Readonly<Record<SiegePath, string>> = {
+  assault: 'an assault',
+  blockade: 'a blockade',
+};
+
+/**
+ * A victory said in one sentence, from the reason the rules gave.
+ *
+ * The Faction that lost is the other one, so it is derived rather than passed:
+ * two Factions and one winner leaves no third answer to get wrong.
+ */
+function victoryOf(winner: Faction, reason: VictoryReason): string {
+  const loser = winner === 'rome' ? 'carthage' : 'rome';
+
+  switch (reason.kind) {
+    case 'stronghold':
+      return `${winner} won the Match: the ${loser} Stronghold fell to ${PATH_WORD[reason.path]}`;
+    case 'annihilation':
+      return `${winner} won the Match: the ${loser} has neither settlements nor Squads left`;
   }
 }
 

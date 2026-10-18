@@ -87,7 +87,7 @@ jobs:
       # to a fight moves this line and has to be a decision in review
       # (ADR-0006, ADR-0015).
       - name: March a dozen Squads across the theatre, and let them fight, headless
-        run: npm run match -- --seed 1 --ticks 600 --rules march --expect-hash 2df7aaf9e293a20c
+        run: npm run match -- --seed 1 --ticks 600 --rules march --expect-hash dcc3c947981d98f7
 
       # C4's Match: both Factions' whole rosters, the six Carthaginian types
       # including the elephant, mustered on their own ground and sent at each
@@ -95,7 +95,24 @@ jobs:
       # change to a roster's numbers moves this line and has to be a decision in
       # review (ADR-0006).
       - name: March both rosters across the theatre, headless
-        run: npm run match -- --seed 1 --ticks 600 --rules roster --expect-hash 42d7da0c83e94227
+        run: npm run match -- --seed 1 --ticks 600 --rules roster --expect-hash d77285a51c049c74
+
+      # C5's first whole Match: Rome storms Carthage's Stronghold with the ram.
+      # The hash is the state the Match ended on, and the Match ended because a
+      # Stronghold fell — so this line gates the walls as structures, the ram's
+      # build and vulnerability, the storm, the capture and the verdict that
+      # names the reason (ADR-0006, ADR-0008, ADR-0018). The hash is the state of
+      # a Match the rules decided, so a Match that only ran out its bound could
+      # not match it; the unit tests also assert the tick it ended on is inside
+      # the bound.
+      - name: Win a Match by Assault, headless
+        run: npm run match -- --seed 1 --ticks 9000 --rules assault --expect-hash f854cb39e4a9e78d
+
+      # And the second path: the same Stronghold starved into surrender, over
+      # Seasons rather than over a fight. Its hash covers the blockade's supply
+      # cut, the starvation, the garrison's nerve and the surrender.
+      - name: Win a Match by Blockade, headless
+        run: npm run match -- --seed 1 --ticks 9000 --rules blockade --expect-hash 9f77bb70706b1b68
 
   guards:
     name: "Fences (six: import boundaries, engine allow-list, Math.random, transcendentals, ambient clock, no committed assets)"

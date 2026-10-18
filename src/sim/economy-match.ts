@@ -15,8 +15,9 @@
  * 1. **Applies the Commands.** `build` and `recruit` are the economy's
  *    (`economy.ts`); `move`, `attackMove`, `hold` and `formation` are the
  *    movement's (`movement.ts`); `attack` and `withdraw` are combat's
- *    (`combat.ts`). Each ignores the kinds the others own, and the rest of the
- *    vocabulary belongs to tickets that have not landed.
+ *    (`combat.ts`). Each ignores the kinds the others own; `assault`, `blockade`
+ *    and `garrison` are the Siege's, and `siegeMatchRules` applies them before
+ *    handing the tick to this function.
  * 2. **Moves the Squads one step along their routes** (`march`), once the tile
  *    each is crossing has been paid for.
  * 3. **Resolves the round of contact**, on the ticks a round falls on: the men
@@ -32,10 +33,11 @@
  *    the harvest on top of it — the clock is advanced once, and the same report
  *    is handed to the one subscriber that cares.
  *
- * A Match on this world still cannot be won or lost: nothing takes a settlement
- * (C5), so the rules never decide one and the bound ends it;
- * `economyMatchOutcome` returns `null` and says so. What a fight can do here is
- * wear an army down and break it.
+ * A Match on this world still cannot be won or lost on its own: this Match has no
+ * Siege in it, so `economyMatchOutcome` returns `null` and the bound ends the
+ * run. C5's `siegeMatchRules` is the same tick with a Siege beside it, and its
+ * `siegeMatchOutcome` is where a Stronghold's fall decides a Match. What a fight
+ * can do here is wear an army down and break it.
  *
  * The Observation is where B7 and D2 will read the economy from: the settlements
  * a Faction holds and where they stand, what is in their stocks, what they are
@@ -57,6 +59,7 @@ import {
 } from './combat.ts';
 import {
   advanceConstruction,
+  ALWAYS_SUPPLIED,
   applyEconomyCommand,
   allocate,
   chargePayroll,
@@ -67,6 +70,7 @@ import {
   type Economy,
   type Settlement,
   type Squad,
+  type Supplied,
 } from './economy.ts';
 import { factionCode, type Faction } from './faction.ts';
 import { eyeOf, SETTLEMENT_VISION, SQUAD_VISION, type Eye } from './fog.ts';
@@ -74,7 +78,7 @@ import { generateMap, type MapGrid, type Site } from './map.ts';
 import { applyMovementCommands, goalOf, march, routeCacheFor } from './movement.ts';
 import { refusalOf, type RouteRefusal } from './route.ts';
 import { fadeResidue, recordCasualties } from './residue.ts';
-import { facingOf, formationOf, isRouting, type Facing } from './squad.ts';
+import { facingOf, FIELD, formationOf, isRouting, type Facing } from './squad.ts';
 import type { MatchRules } from './match.ts';
 import type { MatchSetup } from './driver.ts';
 import {
@@ -84,6 +88,7 @@ import {
   startCalendar,
   type Season,
   type SeasonCalendar,
+  type SeasonChange,
 } from './season.ts';
 
 /** The theatre, the clock and the economy: everything the rules of this Match own. */
@@ -217,6 +222,9 @@ export interface VisibleSquad {
   /** Seasons in a row it has gone unpaid. */
   readonly unpaid: number;
 
+  /** The settlement it is garrisoning, or `null` when it is in the field (C5). */
+  readonly garrison: number | null;
+
   /** The settlement that raised it. */
   readonly home: number;
 }
@@ -262,43 +270,68 @@ export const economyMatchRules: MatchRules<EconomyWorld, Command> = {
   },
 
   step: (world, _rng, tick, commands) => {
-    // The Commands first, in the order they arrived: the economy's own (build
-    // and recruit), the movement's (move, attackMove, hold, formation) and
-    // combat's (attack, withdraw), each ignoring the kinds the others own. Then
-    // the ground the Squads cover, then the round of contact they fight, and
-    // then the works and the calendar, which do not depend on where anybody is.
-    for (const command of commands) applyEconomyCommand(world.economy, command);
-    applyMovementCommands(world.economy, world.map, commands, routeCacheFor(world.map));
-    applyCombatCommands(world.economy, world.map, commands, routeCacheFor(world.map));
-    march(world.economy, world.map);
-
-    // The dead are the one product of a fight that is not state: they are laid
-    // on the field for a drawing code and swept off it, and the world's hash
-    // covers neither (`sim/residue.ts`).
-    const fallen = fight(world.economy, world.map, tick, routeCacheFor(world.map));
-    recordCasualties(world.economy, fallen, tick);
-    fadeResidue(world.economy, tick);
-
-    advanceConstruction(world.map, world.economy);
-
-    const changes = advanceCalendar(world.calendar, tick);
-    announceSeasons(changes, {
-      onSeason: (change) => {
-        produceSeason(world.map, world.economy, change.season);
-        chargePayroll(world.economy);
-        supplyMorale(world.economy);
-        resupply(world.economy);
-      },
-      onAutumn: () => {
-        harvest(world.map, world.economy);
-        world.autumns += 1;
-      },
-      onWinter: () => {
-        world.winters += 1;
-      },
-    });
+    stepEconomyWorld(world, tick, commands);
   },
 };
+
+/**
+ * One tick of the economy's Match, and the Season boundaries it crossed.
+ *
+ * Exported because a Match that stands on this one — C5's Siege — has to run the
+ * same tick in the same order and add its own work to it, rather than play a
+ * second, subtly different economy beside this one. `supplied` is the one thing
+ * another system can change about it: a blockaded settlement works nothing, and
+ * the Siege is the one that knows which settlements those are (`economy.ts`'s
+ * `Supplied`).
+ *
+ * The boundaries are returned, not merely announced, so that a caller can do its
+ * own Season work on the same clock: the economy's work lands first, and a
+ * blockade starves the town after it has eaten.
+ */
+export function stepEconomyWorld(
+  world: EconomyWorld,
+  tick: number,
+  commands: readonly Command[],
+  supplied: Supplied = ALWAYS_SUPPLIED,
+): readonly SeasonChange[] {
+  // The Commands first, in the order they arrived: the economy's own (build and
+  // recruit), the movement's (move, attackMove, hold, formation) and combat's
+  // (attack, withdraw), each ignoring the kinds the others own. Then the ground
+  // the Squads cover, then the round of contact they fight, and then the works
+  // and the calendar, which do not depend on where anybody is.
+  for (const command of commands) applyEconomyCommand(world.economy, command);
+  applyMovementCommands(world.economy, world.map, commands, routeCacheFor(world.map));
+  applyCombatCommands(world.economy, world.map, commands, routeCacheFor(world.map));
+  march(world.economy, world.map);
+
+  // The dead are the one product of a fight that is not state: they are laid on
+  // the field for a drawing code and swept off it, and the world's hash covers
+  // neither (`sim/residue.ts`).
+  const fallen = fight(world.economy, world.map, tick, routeCacheFor(world.map));
+  recordCasualties(world.economy, fallen, tick);
+  fadeResidue(world.economy, tick);
+
+  advanceConstruction(world.map, world.economy);
+
+  const changes = advanceCalendar(world.calendar, tick);
+  announceSeasons(changes, {
+    onSeason: (change) => {
+      produceSeason(world.map, world.economy, change.season, supplied);
+      chargePayroll(world.economy);
+      supplyMorale(world.economy);
+      resupply(world.economy);
+    },
+    onAutumn: () => {
+      harvest(world.map, world.economy, supplied);
+      world.autumns += 1;
+    },
+    onWinter: () => {
+      world.winters += 1;
+    },
+  });
+
+  return changes;
+}
 
 /**
  * What one Faction may see of the economy: its own settlements and Squads, its
@@ -389,15 +422,17 @@ function visibleSquad(economy: Economy, squad: Squad): VisibleSquad {
     engaged: engagedWith(economy, squad) !== undefined,
     payroll: type?.payroll ?? 0,
     unpaid: squad.unpaid,
+    garrison: squad.garrison === FIELD ? null : squad.garrison,
     home: squad.home,
   };
 }
 
 /**
- * The verdict of a Match with an economy and no war: none, ever.
+ * The verdict of a Match with an economy and no Siege: none, ever.
  *
- * Nothing can be lost in a world where no one can fight or take a settlement, so
- * C5 is where a Match learns to end sooner than its bound; until then the bound
- * is the ending, and it is always reached.
+ * Nothing can be lost in this world — no settlement can change hands, because the
+ * walls and the Commands that take one are `siege.ts`'s and this Match has none
+ * of them — so the bound is the ending, and it is always reached. A Match that
+ * can be won is `siegeMatchOutcome`.
  */
 export const economyMatchOutcome: MatchSetup<EconomyWorld, EconomyVisible>['outcome'] = () => null;

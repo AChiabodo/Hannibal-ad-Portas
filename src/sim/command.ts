@@ -158,6 +158,16 @@ export interface BlockadeCommand extends CommandBase {
   readonly settlement: number;
 }
 
+/**
+ * The two paths of a Siege (GLOSSARY: Siege, ADR-0008).
+ *
+ * A Siege is one or the other and never both, and the words are the Command
+ * kinds because choosing a path is exactly issuing one of them: `assault`
+ * breaks the walls with the ram, and `blockade` starves the settlement into
+ * surrender. The two are alternatives rather than stages.
+ */
+export type SiegePath = 'assault' | 'blockade';
+
 /** Set the shape the Squads hold: their frontage and depth (PLAN §4). */
 export interface FormationCommand extends CommandBase {
   readonly kind: 'formation';

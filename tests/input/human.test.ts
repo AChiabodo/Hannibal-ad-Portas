@@ -37,6 +37,7 @@ function squadOf(id: number): VisibleSquad {
     engaged: false,
     payroll: 3,
     unpaid: 0,
+    garrison: null,
     home: 0,
   };
 }

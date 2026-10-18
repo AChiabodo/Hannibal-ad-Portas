@@ -84,7 +84,7 @@ import { TERRAIN, terrainAt, type MapGrid, type Site } from './map.ts';
 import { orderedSquads, orderSquadTo } from './movement.ts';
 import type { RouteCache } from './route.ts';
 import type { Fallen } from './residue.ts';
-import { FATIGUE_MAX, facingOf, frontage, isRouting, ROUTING, type Facing } from './squad.ts';
+import { FATIGUE_MAX, facingOf, FIELD, frontage, isRouting, ROUTING, type Facing } from './squad.ts';
 
 /**
  * How many ticks a round of contact takes: half a second at the 10 Hz clock.
@@ -304,6 +304,15 @@ export interface Exchange {
   readonly morale: number;
 }
 
+/** What a round of blows costs one Squad: the men it loses and the nerve it loses with them. */
+export interface Wound {
+  /** Men the blows kill. */
+  men: number;
+
+  /** Morale the blows cost, counted towards breaking. */
+  morale: number;
+}
+
 /**
  * What `attacker` does to `defender` in one round, as the state stands now.
  *
@@ -388,7 +397,7 @@ export function moraleCeiling(squad: Squad): number {
 /** Every pair of enemy Squads in contact, in the economy's own order. */
 export function engagedPairs(economy: Economy): readonly (readonly [Squad, Squad])[] {
   const pairs: [Squad, Squad][] = [];
-  const squads = economy.squads;
+  const squads = economy.squads.filter(inTheField);
 
   for (let first = 0; first < squads.length; first += 1) {
     for (let second = first + 1; second < squads.length; second += 1) {
@@ -403,11 +412,24 @@ export function engagedPairs(economy: Economy): readonly (readonly [Squad, Squad
   return pairs;
 }
 
-/** The enemy Squad this one is in contact with, if any: the first in the economy's order. */
+/**
+ * The enemy Squad this one is in contact with, if any: the first in the economy's
+ * order.
+ *
+ * A garrison is not in the field: it neither fights nor is fought by the contact
+ * rules, because what stands between it and the enemy is the wall (C5).
+ */
 export function engagedWith(economy: Economy, squad: Squad): Squad | undefined {
+  if (!inTheField(squad)) return undefined;
+
   return economy.squads.find(
-    (other) => other.owner !== squad.owner && inContact(squad, other),
+    (other) => other.owner !== squad.owner && inTheField(other) && inContact(squad, other),
   );
+}
+
+/** Whether a Squad is out in the field rather than inside a settlement's walls. */
+function inTheField(squad: Squad): boolean {
+  return squad.garrison === FIELD;
 }
 
 /** The nearest enemy Squad within `radius` tiles, or `undefined` when there is none. */
@@ -417,6 +439,8 @@ export function enemyWithin(economy: Economy, squad: Squad, radius: number): Squ
 
   for (const other of economy.squads) {
     if (other.owner === squad.owner) continue;
+    // A garrison is behind a wall, and does not keep a beaten Squad running (C5).
+    if (!inTheField(other)) continue;
 
     const away = Math.max(Math.abs(other.x - squad.x), Math.abs(other.y - squad.y));
     if (away < closest) {
@@ -550,11 +574,23 @@ export function fight(
   return fallen;
 }
 
-/** Every blow a round contains, both directions of every engagement, from the state as it was. */
-function applyExchanges(economy: Economy, map: MapGrid): readonly Fallen[] {
-  const wounds = new Map<Squad, { men: number; morale: number }>();
+/**
+ * Every blow a round of contact contains, gathered per Squad it lands on.
+ *
+ * Computed from the state as the round *began*, so the answer does not depend on
+ * which pair the list happened to walk first: two Squads that hit each other in
+ * the same round both hit with the strength they had when it started. Exported
+ * because a Siege's storm is the same arithmetic between the men who came
+ * through a breach and the men who man it (C5), and a second copy of it would be
+ * a second place for the fight to change.
+ */
+export function woundsOf(
+  pairs: readonly (readonly [Squad, Squad])[],
+  map: MapGrid,
+): ReadonlyMap<Squad, Wound> {
+  const wounds = new Map<Squad, Wound>();
 
-  for (const [first, second] of engagedPairs(economy)) {
+  for (const [first, second] of pairs) {
     for (const exchange of [exchangeOf(first, second, map), exchangeOf(second, first, map)]) {
       const wound = wounds.get(exchange.defender) ?? { men: 0, morale: 0 };
       wound.men += exchange.men;
@@ -562,6 +598,13 @@ function applyExchanges(economy: Economy, map: MapGrid): readonly Fallen[] {
       wounds.set(exchange.defender, wound);
     }
   }
+
+  return wounds;
+}
+
+/** Every blow a round contains, both directions of every engagement, from the state as it was. */
+function applyExchanges(economy: Economy, map: MapGrid): readonly Fallen[] {
+  const wounds = woundsOf(engagedPairs(economy), map);
 
   const fallen: Fallen[] = [];
   const standing: Squad[] = [];

@@ -29,11 +29,14 @@
  * how hard the Squad hits and how wide a front it offers (C3).
  *
  * The one thing here that is state rather than derivation is `Block`: where a
- * Squad stands, the shape it holds, the way it faces and the route it is
- * walking, which is C1's half of the Squad B6's economy carries the other half
- * of. Its geometry is still derived — `frontage`, `depth` and `menOf` read the
- * shape and the men, never a stored frontage — so a Squad cannot be moved into
- * a shape its own numbers disagree with.
+ * Squad stands, the shape it holds, the way it faces, the route it is walking
+ * and the posture it holds, which is C1's half of the Squad B6's economy carries
+ * the other half of. Its geometry is still derived — `frontage`, `depth` and
+ * `menOf` read the shape and the men, never a stored frontage — so a Squad
+ * cannot be moved into a shape its own numbers disagree with. C3 added the
+ * fight's three numbers (fatigue, ammunition and the routing flag) and C5 added
+ * `garrison`, because a Squad that is inside a settlement rather than in the
+ * field is a posture of the same entity and no system owns a second Squad.
  */
 import { FORMATIONS, type Formation } from './command.ts';
 import { NO_REFUSAL } from './route.ts';
@@ -101,6 +104,14 @@ export function formationOf(code: number): Formation {
 
   return formation;
 }
+
+/**
+ * The settlement a Squad is not garrisoning: it is in the field (C5).
+ *
+ * The sentinel of `Block.garrison`, and a number no settlement id can be, for
+ * the same reason `UNOWNED` is one no Faction can be (`economy.ts`).
+ */
+export const FIELD = -1;
 
 /**
  * How tired a Squad can get: the top of the fatigue scale (C3).
@@ -340,6 +351,18 @@ export interface Block extends Shape {
 
   /** Why the last move Command it was given could not be carried out, or `NO_REFUSAL` (`route.ts`). */
   refused: number;
+
+  /**
+   * The settlement it is garrisoning, or `FIELD` when it is in the field (C5).
+   *
+   * A garrison is a posture and not a place: a garrisoned Squad stands at its
+   * settlement's centre but is *inside* it, so the fight's contact rules skip it
+   * (`combat.ts`) — the walls, not the men, are what an enemy at the gate is
+   * facing — while the settlement's own eyes, supply and Payroll still cover it.
+   * Any order that puts it on the road takes it out of the garrison again
+   * (`movement.ts`), which is the whole of how a garrison sallies.
+   */
+  garrison: number;
 }
 
 /**
@@ -370,5 +393,6 @@ export function standingAt(x: number, y: number, strength: number, ammunition = 
     steps: [],
     wait: 0,
     refused: NO_REFUSAL,
+    garrison: FIELD,
   };
 }
