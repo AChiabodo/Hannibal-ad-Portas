@@ -1,5 +1,6 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Behaviour, Candidate } from './registry.ts';
+import { planningContacts, type Contact } from './scouting.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 
 type Faction = Observation<unknown>['faction'];
@@ -14,11 +15,6 @@ interface SiegeSquad extends Site {
   readonly routing: boolean;
   readonly garrison: number | null;
   readonly goal: Site | null;
-}
-
-interface KnownContact extends Site {
-  readonly kind: 'squad' | 'settlement' | 'stronghold';
-  readonly id: number;
 }
 
 interface VisibleSiegeFront {
@@ -37,7 +33,7 @@ export interface SiegeObservation {
   readonly treasury: number;
   readonly squads: readonly SiegeSquad[];
   readonly enemies: readonly (Site & { readonly type: string })[];
-  readonly contacts: readonly KnownContact[];
+  readonly contacts: readonly Contact[];
   readonly fronts: readonly VisibleSiegeFront[];
 }
 
@@ -53,6 +49,8 @@ export interface SiegeContent {
   readonly reliefRadius: number;
   /** One unknown garrison's worth of power, for a front whose walls have not been seen. */
   readonly garrisonEstimate: number;
+  /** The tick rate the age limits are counted in, shared with the other planning policies. */
+  readonly ticksPerSecond: number;
   /** The public roster: nominal strength and morale, for pricing an observed enemy. */
   readonly squadTypes: readonly { readonly id: string; readonly strength: number; readonly morale: number }[];
 }
@@ -77,7 +75,10 @@ function distance(a: Site, b: Site): number {
  * how much power the observed garrison and any relieving army can put up. It is
  * never made on hidden state: the garrison is what the front reports, the relief
  * is what ordinary vision shows, and a Stronghold nobody
- * has seen is not a target at all.
+ * has seen is not a target at all. The target is drawn from the same
+ * age-limited contact memory the other planning policies read, not from the raw
+ * fog list: a sighting that has aged out is history, and no longer grounds for a
+ * march. Every decision states how old the sighting it acted on is.
  *
  * A committed siege is re-issued as it stands so the order survives a clock
  * boundary; the route is the same tile, so re-issuing costs the marchers no step
@@ -105,10 +106,15 @@ export function createSiegeBehaviour(
     id: 'siege',
     tactical: ({ observation }) => {
       const { visible, faction } = observation;
-      const target = visible.contacts.find((contact) => contact.kind === 'stronghold');
+      const contacts = planningContacts(visible.contacts, observation.tick, content.ticksPerSecond);
+      const target = contacts.find((contact) => contact.kind === 'stronghold');
       if (target === undefined) return [];
       const front = visible.fronts.find((candidate) => candidate.settlement === target.id);
       const place = { x: target.x, y: target.y };
+      const age = observation.tick - target.seen;
+      const sighting = `The Stronghold sighting is ${String(age)} ticks old.`;
+      /** Every reason ends with the age of the sighting it acted on: the grounds, stated. */
+      const stated = (reason: string) => `${reason} ${sighting}`;
 
       const relief = visible.enemies.filter((enemy) => distance(enemy, place) <= content.reliefRadius);
       const reliefPower = relief.reduce((sum, enemy) => sum + nominal(enemy.type), 0);
@@ -127,14 +133,14 @@ export function createSiegeBehaviour(
       const besieging = committed.length > 0 || front?.besieger === faction;
 
       if (besieging && !holds(totalPower)) {
-        return [candidate('abandon', `Abandon settlement ${String(target.id)}: relief of ${String(reliefPower)} power ` +
-          `answers our ${String(committedPower)} and no reserve can match it; withdraw rather than feed it.`,
+        return [candidate('abandon', stated(`Abandon settlement ${String(target.id)}: relief of ${String(reliefPower)} power ` +
+          `answers our ${String(committedPower)} and no reserve can match it; withdraw rather than feed it.`),
         [{ kind: 'withdraw', faction, squads: committed.map((squad) => squad.id) }])];
       }
 
       if (besieging && !holds(committedPower) && willing([...committed, ...reserve]).length > 0) {
-        return [candidate('reinforce', `Reinforce settlement ${String(target.id)}: relief of ${String(reliefPower)} power ` +
-          `answers our ${String(committedPower)}, so the ${String(reserve.length)}-Squad reserve joins the ring.`,
+        return [candidate('reinforce', stated(`Reinforce settlement ${String(target.id)}: relief of ${String(reliefPower)} power ` +
+          `answers our ${String(committedPower)}, so the ${String(reserve.length)}-Squad reserve joins the ring.`),
         [siege(assaultPath(), faction, willing([...committed, ...reserve]), target.id)])];
       }
 
@@ -146,8 +152,8 @@ export function createSiegeBehaviour(
       const ids = besieging ? committedWilling : willing(field);
       if (ids.length === 0) return [];
 
-      return [candidate(assaulting ? 'assault' : 'blockade', grounds(assaulting, target.id,
-        committedPower + (besieging ? 0 : reserve.reduce((sum, squad) => sum + power(squad), 0)), threat),
+      return [candidate(assaulting ? 'assault' : 'blockade', stated(grounds(assaulting, target.id,
+        committedPower + (besieging ? 0 : reserve.reduce((sum, squad) => sum + power(squad), 0)), threat)),
       [siege(assaulting, faction, ids, target.id)])];
       /** Whether this Faction's one path to a walled settlement is the ram. */
       function assaultPath(): boolean {

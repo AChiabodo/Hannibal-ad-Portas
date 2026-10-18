@@ -5,7 +5,7 @@ import { createSiegeBehaviour, type SiegeCommand, type SiegeObservation } from '
 import { createBehaviourRegistry } from '../../src/ai/registry.ts';
 
 const CONTENT = { canAssault: (faction: string) => faction === 'rome',
-  ramCost: 15, siegeRadius: 1, reliefRadius: 3, garrisonEstimate: 1200,
+  ramCost: 15, siegeRadius: 1, reliefRadius: 3, garrisonEstimate: 1200, ticksPerSecond: 10,
   squadTypes: [{ id: 'hastati', strength: 120, morale: 10 },
     { id: 'gaul', strength: 140, morale: 6 }, { id: 'triarii', strength: 100, morale: 14 }] };
 
@@ -24,7 +24,7 @@ function squad(id: number, x: number, y: number, overrides: Partial<Squad> = {})
     routing: false, garrison: null, goal: null, ...overrides };
 }
 
-const STRONGHOLD = { kind: 'stronghold', id: 1, x: 80, y: 80 } as const;
+const STRONGHOLD = { kind: 'stronghold', id: 1, x: 80, y: 80, seen: 0, type: null } as const;
 
 function observation(overrides: Partial<SiegeObservation> = {}): SiegeObservation {
   return {
@@ -35,9 +35,10 @@ function observation(overrides: Partial<SiegeObservation> = {}): SiegeObservatio
   };
 }
 
-function decide(faction: 'rome' | 'carthage', visible: SiegeObservation, level: keyof typeof DIFFICULTY = 'centurio') {
+function decide(faction: 'rome' | 'carthage', visible: SiegeObservation,
+  level: keyof typeof DIFFICULTY = 'centurio', tick = 0) {
   const ai = controller(level);
-  const commands = ai.decide({ faction, tick: 0, visible });
+  const commands = ai.decide({ faction, tick, visible });
   return { commands, selected: ai.readLog().find((entry) => entry.layer === 'tactical')!.selected.id,
     reason: ai.readLog().find((entry) => entry.layer === 'tactical')!
       .candidates.find((candidate) => candidate.id === ai.readLog().find((entry) => entry.layer === 'tactical')!.selected.id)!.reason };
@@ -48,6 +49,26 @@ describe('the siege Controller', () => {
     const { commands, selected } = decide('rome', observation({ contacts: [] }));
     expect(selected).toBe('idle');
     expect(commands).toEqual([]);
+  });
+
+  it('does not make a Stronghold sighting older than the age limit a siege target', () => {
+    const { commands, selected } = decide('rome', observation(), 'centurio', 6000);
+    expect(selected).toBe('idle');
+    expect(commands).toEqual([]);
+  });
+
+  it('keeps a Stronghold sighting refreshed inside the age limit as a target', () => {
+    const visible = observation({ contacts: [{ ...STRONGHOLD, seen: 1 }] });
+    const { commands, selected } = decide('rome', visible, 'centurio', 6000);
+    expect(selected).toBe('assault');
+    expect(commands).toContainEqual({ kind: 'assault', faction: 'rome', squads: [1, 2, 3], settlement: 1 });
+  });
+
+  it('states the age of the sighting it acted on in the log', () => {
+    const visible = observation({ contacts: [{ ...STRONGHOLD, seen: 4 }] });
+    const { reason } = decide('rome', visible, 'centurio', 100);
+    expect(reason).toMatch(/ram/i);
+    expect(reason).toMatch(/sighting is 96 ticks old/i);
   });
 
   it('chooses Assault for Rome on the ram it can pay for, with the grounds in the log', () => {
@@ -65,8 +86,9 @@ describe('the siege Controller', () => {
   });
 
   it('blockades rather than assaults when it cannot pay for a ram', () => {
-    const { selected } = decide('rome', observation({ treasury: 5 }));
+    const { selected, reason } = decide('rome', observation({ treasury: 5 }));
     expect(selected).toBe('blockade');
+    expect(reason).toMatch(/no ram at the walls|starve it instead/i);
   });
 
   it('reinforces a siege with the reserve when a relieving army approaches', () => {
@@ -104,8 +126,9 @@ describe('the siege Controller', () => {
         squad(3, 10, 10)],
       fronts: [{ settlement: 1, breached: true, besieger: 'rome', ram: null, garrison: 0 }],
     });
-    const { commands, selected } = decide('rome', visible);
+    const { commands, selected, reason } = decide('rome', visible);
     expect(selected).toBe('assault');
+    expect(reason).toMatch(/breached/i);
     expect(commands).toContainEqual({ kind: 'assault', faction: 'rome', squads: [1, 2], settlement: 1 });
   });
 });

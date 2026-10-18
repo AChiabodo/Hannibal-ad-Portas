@@ -18,6 +18,15 @@ function runOf(seed: number, ticks: number, name: DifficultyName = 'centurio'): 
   return runs.get(key)!;
 }
 
+/** A Match's own Command log, replayed through scripted Controllers: it must reach the same hash. */
+function replayOf(seed: number, name: DifficultyName = 'centurio'): string {
+  const run = runOf(seed, HEADLESS_TICKS, name);
+  return runMatch({ seed, ticks: HEADLESS_TICKS, rules: siegeMatchRules, observe: observeSiege,
+    outcome: siegeMatchOutcome,
+    players: [{ faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
+      { faction: 'carthage', controller: scriptedController<SiegeVisible>(run.log) }] }).hash;
+}
+
 describe('the shipped siege AI in a headless Match', () => {
   it('takes the enemy Stronghold by Assault in a Match played entirely without a human', () => {
     const run = runOf(1, HEADLESS_TICKS, 'centurio');
@@ -40,14 +49,32 @@ describe('the shipped siege AI in a headless Match', () => {
   }, 60000);
 
   it('replays its Command log to the same hash without running the AI', () => {
-    const run = runOf(7, HEADLESS_TICKS, 'centurio');
-    const replay = runMatch({ seed: 7, ticks: HEADLESS_TICKS, rules: siegeMatchRules, observe: observeSiege,
-      outcome: siegeMatchOutcome,
-      players: [{ faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
-        { faction: 'carthage', controller: scriptedController<SiegeVisible>(run.log) }],
-    });
-    expect(replay.hash).toBe(run.hash);
+    expect(replayOf(7, 'centurio')).toBe(runOf(7, HEADLESS_TICKS, 'centurio').hash);
   }, 60000);
+
+  /**
+   * The whole army still finishes the war at every other level too: a Match
+   * ends with a Stronghold fallen — Rome by Assault, Carthage by Blockade — and
+   * its Command log still replays to the same hash. Centurio is the pair above;
+   * each level's seed is one its generals actually take the Stronghold on.
+   */
+  const levelMatches = [
+    { level: 'tiro', seed: 13, winner: 'rome', path: 'assault' },
+    { level: 'tiro', seed: 7, winner: 'carthage', path: 'blockade' },
+    { level: 'imperator', seed: 12, winner: 'rome', path: 'assault' },
+    { level: 'imperator', seed: 7, winner: 'carthage', path: 'blockade' },
+  ] as const;
+
+  for (const { level, seed, winner, path } of levelMatches) {
+    it(`still ends with a Stronghold fallen at ${level}: ${winner} by ${path}, and the log replays`, () => {
+      const run = runOf(seed, HEADLESS_TICKS, level);
+      expect(run.result.kind).toBe('victory');
+      if (run.result.kind !== 'victory') return;
+      expect(run.result.winner).toBe(winner);
+      expect(run.result.reason).toMatchObject({ kind: 'stronghold', path });
+      expect(replayOf(seed, level)).toBe(run.hash);
+    }, 240000);
+  }
 
   it('commits to a Stronghold the same way whichever hidden army is elsewhere', () => {
     function decide(hiddenX: number) {

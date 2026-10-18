@@ -248,9 +248,13 @@ keep their previous shape.
 ## Siege policy (D5)
 
 `createSiegeBehaviour` (`src/ai/siege.ts`) chooses a path to a settlement and
-commits an army to it. Its target is a Stronghold the Faction has actually seen:
-a remembered `stronghold` contact and nothing else. With no contact there is no
-siege candidate at all, and the field and its patrols decide as before.
+commits an army to it. Its target is a Stronghold the Faction has actually seen,
+still inside the age limit: the siege draws on the same `planningContacts`
+memory the field and its patrols plan against, so a sighting that has aged out
+is history and not grounds for a march. With no fresh contact there is no siege
+candidate at all, and the field and its patrols decide as before. Every siege
+decision states how old the sighting it acted on is, so a reader can see the
+grounds rather than infer them.
 
 The choice between Assault and Blockade is stated in the decision log with the
 numbers it read:
@@ -307,11 +311,13 @@ level's registry and supplies the matching Controller clock; `playAiMatch`
 remains available for an independent registry.
 
 `tests/ai/siege.test.ts` checks the assault-versus-blockade grounds, the
-Carthaginian blockade, reinforcement and abandonment through the Controller.
+Carthaginian blockade, reinforcement, abandonment and the age limit through the
+Controller.
 `tests/ai/difficulty.test.ts` checks the four axes, the operational clock, and
 that every level sees the same rule-filtered Observation. `tests/ai/siege-match.test.ts`
 plays whole Matches with no human: Rome takes the Stronghold by Assault on seed 1
-and Carthage by Blockade on seed 7, the Command log replays to the same hash, the
+and Carthage by Blockade on seed 7, a Stronghold still falls at Tiro and
+Imperator, the Command log replays to the same hash, the
 decisions do not move when a hidden army moves, and the three levels' decision
 logs are distinguishable on one seed. These are deterministic policy checks, not
 tournament balance: the balance numbers are E3's and F1's.

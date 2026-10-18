@@ -35,7 +35,7 @@ const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, 
 const garrisonEstimate = Math.max(...SQUAD_TYPES.filter((type) => type.tier === 1)
   .map((type) => type.strength * type.morale));
 const siegeContent = { canAssault, ramCost: RAM_COST, siegeRadius: SIEGE_RADIUS, reliefRadius: RELIEF_RADIUS,
-  garrisonEstimate, squadTypes: SQUAD_TYPES };
+  garrisonEstimate, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES };
 
 /** The strongest candidate of a layer; a tie keeps the first, as the proposals arrive. */
 function strongest<T>(candidates: readonly Candidate<T>[]): Candidate<T> | undefined {
