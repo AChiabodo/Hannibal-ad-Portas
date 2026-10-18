@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_RULES,
+  attritionLog,
+  attritionWorld,
   drawsRules,
   isRulesName,
   marchLog,
@@ -17,6 +19,7 @@ import { factionCode } from '../../src/sim/faction';
 import { isWalkable, terrainAt } from '../../src/sim/map';
 import { createMatch, type Match } from '../../src/sim/match';
 import type { RngState } from '../../src/sim/rng';
+import { holdsTerritory, inCamp, territoryOf } from '../../src/sim/territory';
 import { HEADLESS_TICKS } from '../../src/sim/season';
 import type { EconomyVisible, EconomyWorld } from '../../src/sim/economy-match';
 import { SQUAD_TYPES, squadTypeOf, squadTypesOf } from '../../src/content';
@@ -382,6 +385,81 @@ describe('a whole Match won headless, once by Assault and once by Blockade', () 
   });
 });
 
+describe('the Attrition Match, where the country an army stands in is the whole rule', () => {
+  /** The world the Attrition Match begins on, played for a bound, as the CLI plays it. */
+  function played(seed: number, ticks: number): EconomyWorld {
+    const world = attritionWorld(seed);
+    const log = attritionLog(world);
+
+    runMatch<EconomyWorld, EconomyVisible>({
+      seed,
+      rules: { createWorld: () => world, step: economyMatchRules.step },
+      observe: observeEconomy,
+      outcome: economyMatchOutcome,
+      players: [
+        { faction: 'rome', controller: scriptedController<EconomyVisible>(log) },
+        { faction: 'carthage', controller: scriptedController<EconomyVisible>(log) },
+      ],
+      ticks,
+    });
+
+    return world;
+  }
+
+  it('stands one army in Rome’s own country and one in nobody’s', () => {
+    const world = attritionWorld(1);
+    const [roman, carthaginian] = world.economy.squads;
+    if (roman === undefined || carthaginian === undefined) {
+      throw new Error('the Attrition Match fields two armies');
+    }
+
+    expect(world.economy.squads).toHaveLength(2);
+    expect([roman.owner, carthaginian.owner]).toEqual([factionCode('rome'), factionCode('carthage')]);
+
+    // Rome's army is in its own Territory and Carthage's is in the open field
+    // between the Strongholds, which is nobody's (C6).
+    const territory = territoryOf(world.economy);
+
+    expect(holdsTerritory(territory, 0, roman)).toBe(true);
+    expect(holdsTerritory(territory, 1, carthaginian)).toBe(false);
+  });
+
+  it('winters Rome under the camp it raised, and charges Carthage for the field', () => {
+    const world = played(1, 9000);
+    const roman = world.economy.squads.find((squad) => squad.owner === factionCode('rome'));
+    const carthaginian = world.economy.squads.find((squad) => squad.owner === factionCode('carthage'));
+    if (roman === undefined || carthaginian === undefined) {
+      throw new Error('the Attrition Match fields two armies');
+    }
+
+    // Four Season boundaries: summer, autumn, winter and spring. The army in its
+    // own country behind a camp pays none of it; the one in the field loses two
+    // men in summer, two in autumn, six for the winter and two in spring — a
+    // hundred and twenty men down to a hundred and eight.
+    expect(world.winters).toBe(1);
+    expect(world.autumns).toBe(1);
+    expect(roman.strength).toBe(120);
+    expect(inCamp(world.economy, roman)).toBe(true);
+    expect(carthaginian.strength).toBe(108);
+    expect(inCamp(world.economy, carthaginian)).toBe(false);
+  });
+
+  it('plays the same attrition again from the same seed and bound, hash for hash', () => {
+    const first = RULES.attrition.play(1, 9000);
+    const second = RULES.attrition.play(1, 9000);
+
+    expect(first.hash).toBe(second.hash);
+    expect(first.hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(first.result).toEqual({ kind: 'clock', tick: 9000 });
+    expect(first.log).toEqual(attritionLog(attritionWorld(1)));
+  });
+
+  it('is a Match of its own: two armies on a theatre nothing else in the harness fields', () => {
+    expect(RULES.attrition.play(1, 9000).hash).not.toBe(RULES.march.play(1, 600).hash);
+    expect(RULES.attrition.play(1, 9000).hash).not.toBe(RULES.economy.play(1, 9000).hash);
+  });
+});
+
 describe('the names of the Matches the command line ships', () => {
   it('names the Matches it ships, and nothing else', () => {
     expect(isRulesName('economy')).toBe(true);
@@ -393,6 +471,7 @@ describe('the names of the Matches the command line ships', () => {
     expect(isRulesName('roster')).toBe(true);
     expect(isRulesName('assault')).toBe(true);
     expect(isRulesName('blockade')).toBe(true);
+    expect(isRulesName('attrition')).toBe(true);
     expect(isRulesName(DEFAULT_RULES)).toBe(true);
 
     for (const value of ['', 'Empty', 'empty ', 'draws\n', 'anything else']) {

@@ -210,12 +210,14 @@ Time has a shape. A game year is four **Seasons** of three and a half minutes
 each — `SEASON_TICKS` in `src/sim/season.ts` — and the calendar is integer state
 like everything else, so the state hash covers it and two replays cross the same
 boundaries on the same ticks. Spring and summer are the campaign season, autumn
-brings the harvest and winter brings Attrition; those last two are the **only
-hooks another system needs**, so no system counts the year for itself:
+brings the harvest and winter is the Season whose own rules a system may want to
+single out; every Season is announced to every subscriber, and autumn and winter
+have a hook of their own on top of that, so **no system counts the year for
+itself** (ADR-0010, ADR-0011):
 
 ```ts
 const changes = advanceCalendar(world.calendar, tick); // once per tick
-announceSeasons(changes, economy.seasons, attrition.seasons);
+announceSeasons(changes, economy.seasons, attritionSeasons(world.economy));
 ```
 
 `advanceCalendar` is handed the tick being *left* — the same argument a rule's
@@ -436,10 +438,12 @@ corpse on a tile nobody has an eye on is a fact about the enemy the Faction has
 not paid for.
 
 **What C3 does not own.** No generals or heroes; no ram, which is siege (C5); no
-manual rallying. Being cut off is read for now as "no settlement the Faction
-holds within `SUPPLY_RADIUS`", charged with Payroll at the Season boundary — C6
-replaces that inference with real Territory and per-Season Attrition, and
-`inSupply` is the one function that moves when it does.
+manual rallying. Being cut off was read as "no settlement the Faction holds
+within thirty-two tiles", charged with Payroll at the Season boundary — a
+stand-in C3 named and rejected for itself. C6 has replaced that inference with
+real Territory: `inSupply` asks `territory.ts` whether a Squad stands in its own
+country, and Attrition charges the men of the ones that do not at the same
+boundary.
 
 The Observation carries the fight to the Faction that is in it: `morale`,
 `fatigue`, `ammunition`, whether the Squad has `routed` and whether it is
@@ -602,7 +606,7 @@ npm run match -- --seed 1 --ticks 9000 --rules blockade
   "winner": "rome",
   "reason": "rome won the Match: the carthage Stronghold fell to a blockade",
   "commands": 2,
-  "hash": "9f77bb70706b1b68"
+  "hash": "fa7cc9b8808efefd"
 }
 ```
 
@@ -610,7 +614,10 @@ Two whole Matches won headless, one by each path, with the fall of a Stronghold 
 the golden hash: a change to the walls, the ram, the starvation or the verdict
 moves those numbers and has to be a decision in review. The blockade's 6300 ticks
 against the assault's 251 is the asymmetry the ticket is about, in one pair of
-numbers — three Seasons of siege to twenty-five seconds of storm.
+numbers — three Seasons of siege to twenty-five seconds of storm. The blockade's
+hash moved when C6 landed, because the Roman army at those walls now winters
+outside its own country and Attrition takes its men: ADR-0006 says a moved hash is
+a decision in review, and that was the decision.
 
 **What C5 does not own.** No siege towers, multiple ladders, mines or artillery:
 the plan excludes them from v1. No decision about when to assault and when to
@@ -619,6 +626,65 @@ the hold and the garrison for it to decide with, and nothing more. The page stil
 plays the economy Match, so a wall is something the CLI and the tests exercise
 rather than something drawn on screen yet: putting the walls in the interface is
 B7's and E4's, and `observeSiege` is the projection they will read.
+
+## Territory and Attrition
+
+Supply is a **place on the map** (C6, ADR-0005). A Faction's **Territory** is
+inferred from the settlements it holds — there is no boundary to draw and no
+supply line to cut — and a Squad standing outside its own country loses men to
+**Attrition** every Season, worst in winter. Taking a village redraws the
+Territory on the tick the village falls, so a campaign rewrites the map of
+supply as it advances (GLOSSARY: Territory, Attrition, Supply).
+
+**Territory is the ground within `TERRITORY_RADIUS` of a Faction's settlements**
+(`src/sim/territory.ts`), twelve tiles of country each way, measured Chebyshev in
+whole tiles, as the land a settlement works is (`LAND_RADIUS`). Two Factions' squares may overlap, and
+a contested tile goes to the settlement nearer it — a tile exactly halfway goes
+to the Faction the economy holds first, which is Rome's Stronghold by its id, so
+the same position always draws the same boundary on every engine (ADR-0006).
+Nothing stores the grid: it is inferred from who owns what, remembered until an
+ownership changes, and handed to a Faction's Observation as its own country — the
+far half of the theatre reads as nobody's, because whose settlements feed a
+distant tile is that Faction's business.
+
+**Attrition is charged at the Season boundary** and takes men rather than nerve:
+`applyAttrition` runs on the same clock that pays Payroll and, since C6,
+`inSupply` — C3's own being-cut-off rule — asks the same Territory rather than a
+radius of thirty-two tiles. Two men in a hundred for a Season outside the
+ground, three times that for a winter outside it, and two for wintering in the
+open *inside* it with no roof over the army:
+
+| where the Squad stands | spring, summer, autumn | winter |
+| --- | --- | --- |
+| its own Territory, in quarters | — | — |
+| its own Territory, in the field | — | 2% of its men |
+| outside its own Territory | 2% of its men | 6% of its men |
+
+The cost is a share of the men a Squad is counted as, never less than one, rather
+than a fixed number: a tax of one man a Season would be invisible in a line of a
+hundred and twenty and ruinous to an elephant of twenty-four, and it would never
+wear anything out. A share compounds — a third of an army is gone after three
+years in the field — and a Squad worn to nobody leaves the list, so overextending
+without supply costs the force it was overextended with.
+
+**The Roman Castrum is what makes the field a place to winter.** A Squad is in
+**quarters** when it is garrisoned in one of its Faction's settlements or
+standing on its centre, and one that is holding position within `CAMP_RADIUS` of
+a settlement with a standing `castrum` is in a **camp**: the open ground round
+the camp counts as quarters, so a Roman army winters in the field without paying
+for it. Carthage cannot — the Castrum is Rome's alone (`content/buildings.ts`), a
+Carthaginian Faction cannot build one, and an open settlement cannot be
+garrisoned at all — so Hannibal's army pays for every winter it spends in Italy,
+which is the plan's asymmetry (PLAN §1) as a rule rather than a statistic. It is
+read off the Faction and not off the ground (`canCamp`), so the camp a Roman
+village holds is still Rome's when Carthage storms the village: nothing is razed
+on capture, and the camp stands there unusable until Rome takes it back.
+
+**What C6 does not own.** No supply lines, convoys or depots, and no naval supply
+of any kind: ADR-0005 settled supply as Territory. Nothing draws the boundary on
+screen yet — `observeEconomy` carries it for B7 and E4 to read — and the numbers
+above are the second thing F1's balance pass measures, `TERRITORY_RADIUS` and the
+three percentages all in one file.
 
 ## The first pixels
 
@@ -1048,11 +1114,15 @@ Match, B4's `fog` Match — B1's theatre with both Factions' memory of it in sta
 — the engine-only `empty` Match, C1's `march` Match — a dozen Squads walking a
 whole theatre — C4's `roster` Match, both Factions' whole rosters sent at each
 other — C5's `assault` and `blockade` Matches, each a whole Match won headless by
-one path of the Siege — and one that draws on every tick. The economy, the clock,
-the fog, pathfinding and marching, the two rosters, both ways a Stronghold falls,
-the seed expansion and the draw loop are each gated rather than inferred from the
-others. C5 put a Squad's garrison posture into state, so the `march` and `roster`
-goldens moved with it, and that was a decision rather than a drift.
+one path of the Siege — C6's `attrition` Match, two armies in the field through
+the Seasons with only one of them in a camp — and one that draws on every tick.
+The economy, the clock, the fog, pathfinding and marching, the two rosters, both
+ways a Stronghold falls, the country a Faction holds and what a Season outside it
+costs, the seed expansion and the draw loop are each gated rather than inferred
+from the others. C5 put a Squad's garrison posture into state, so the `march` and
+`roster` goldens moved with it; C6 put Attrition on the Season boundary, so the
+`blockade` golden moved — Rome's besieging army now winters in the field — and
+both were decisions rather than drifts.
 
 The exit codes are the same three `npm run guard` uses: **0** the Match ran,
 **1** a game invariant was violated — a hash that is not the expected one, a
@@ -1069,10 +1139,11 @@ of a Stronghold or the tick bound ends the run (`src/sim/siege.ts`,
 `economy` is the default, `seasons` is the clock on its own, `fog` is B1's
 theatre with B4's two fogs in state, `march` is a dozen Squads ordered across the
 theatre, `roster` is both Factions' whole rosters sent at each other, `assault`
-and `blockade` are whole Matches won by the two paths of the Siege, `empty` is
-the engine and the seam alone, and `draws` plays one whose rules draw from the
-seed on every tick, so the golden hash in CI covers the draw loop as well as the
-seed expansion (`src/cli/rules.ts`). The harness around it is the point, and the
+and `blockade` are whole Matches won by the two paths of the Siege, `attrition`
+is two armies through the Seasons with only one of them in a camp, `empty` is the
+engine and the seam alone, and `draws` plays one whose rules draw from the seed on
+every tick, so the golden hash in CI covers the draw loop as well as the seed
+expansion (`src/cli/rules.ts`). The harness around it is the point, and the
 waves that build the world change what is inside it rather than how it is driven.
 
 The command needs no build step. Node strips the types and runs `src/cli/main.ts`
@@ -1111,6 +1182,7 @@ src/                application code
     movement.ts     the moving half of a Squad: routes, refused orders, and the Commands obeyed
     combat.ts       the fight: contact, the matchup, flanking, fatigue, missiles, rout and rally
     siege.ts        walls, the Roman ram, the assault, the blockade and the fall of a Stronghold
+    territory.ts    the country a Faction's settlements give it, and what a Season outside it costs
     residue.ts      the dead, kept beside the Match because they fade and never enter a hash
   content/          the typed tables the rules read: resources, Squad types, arms, buildings
     arms.ts         the five arms, and the matchup matrix: a cycle, not a ladder

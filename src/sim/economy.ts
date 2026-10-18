@@ -279,7 +279,7 @@ export interface Economy {
  * Pure in the map, which is pure in the seed, so two Matches on one seed open
  * the same settlements with the same people and the same empty stocks (ADR-0006).
  * The two Strongholds are Rome's and Carthage's, in the order `MapGrid` keeps
- * them; every minor settlement belongs to nobody until C6 says who took it.
+ * them; every minor settlement belongs to nobody until a Faction takes it (C5).
  */
 export function createEconomy(map: MapGrid): Economy {
   const settlements: Settlement[] = [];

@@ -148,9 +148,13 @@ export interface SeasonChange {
  * tells it, and a system still never counts the year itself.
  *
  * Autumn and winter have their own hooks because they mean something specific
- * on top of the Season: autumn is the harvest, winter is Attrition and winter
- * quarters. A subscriber that handles both gets `onSeason` first, so the
- * Season's ordinary work lands before the harvest it belongs to.
+ * on top of the Season: autumn is the harvest, and winter is the Season whose
+ * own consequences a system may want to single out. A subscriber that handles
+ * both gets `onSeason` first, so the Season's ordinary work lands before the
+ * harvest it belongs to. C6's Attrition is deliberately *not* on `onWinter`: it
+ * is charged every Season and reads the Season it is handed, so its hook is
+ * `onSeason` like the economy's and a winter is the same call with another word
+ * in it (`territory.ts`'s `attritionSeasons`).
  *
  * A hook must not change the calendar: it is handed the boundary that has
  * already been written, and the clock moves on its own. One subscriber object
@@ -159,13 +163,20 @@ export interface SeasonChange {
  * than merely intended.
  */
 export interface SeasonHooks {
-  /** Any Season has begun: the economy's ordinary production, population and Payroll (B6). */
+  /**
+   * Any Season has begun: the economy's ordinary production, population and
+   * Payroll (B6), and the Attrition a Squad pays for the Season it has spent
+   * where it stands (C6).
+   */
   readonly onSeason?: (change: SeasonChange) => void;
 
   /** Autumn has begun: the harvest (B6 gives it a yield). */
   readonly onAutumn?: (change: SeasonChange) => void;
 
-  /** Winter has begun: Attrition outside friendly Territory, and the defender is favoured (C6). */
+  /**
+   * Winter has begun: the Season a system may want a rule of its own for. C6's
+   * Attrition reads every Season it is handed, so it subscribes to `onSeason`.
+   */
   readonly onWinter?: (change: SeasonChange) => void;
 }
 

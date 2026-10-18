@@ -28,15 +28,19 @@ import {
 import { SQUAD_VISION, SETTLEMENT_VISION } from '../../src/sim/fog';
 import { musterSquad } from '../../src/sim/movement';
 import { createMatch } from '../../src/sim/match';
-import { RESOURCE, RESOURCE_KINDS } from '../../src/sim/map';
+import { RESOURCE, RESOURCE_KINDS, tileIndex, type MapGrid } from '../../src/sim/map';
 import {
   HEADLESS_TICKS,
   HEADLESS_YEARS,
   SEASON_TICKS,
   YEAR_TICKS,
+  startCalendar,
   type Season,
 } from '../../src/sim/season';
-import { blockOf, squadTypeId } from './economy-fixtures';
+import { CAMP_RADIUS, TERRITORY_RADIUS } from '../../src/sim/territory';
+import { createEconomy } from '../../src/sim/economy';
+
+import { blockOf, CARTHAGE, ROME, squadTypeId, strongholdStage, work } from './economy-fixtures';
 
 /** The two Players a Match on this world runs on unless a test says otherwise. */
 function idlePlayers(): readonly [Player<EconomyVisible>, Player<EconomyVisible>] {
@@ -125,6 +129,65 @@ describe('what a Faction reads of the economy', () => {
     const works = observeEconomy(world, 'rome').settlements[0]?.works ?? [];
 
     expect(works).toEqual([{ building: 'lumber-camp', remaining: 12, standing: false }]);
+  });
+});
+
+describe('the country a Faction reads, and who is standing in it', () => {
+  /** A world on a painted theatre, where every tile is the one the test put there. */
+  function worldOn(map: MapGrid): EconomyWorld {
+    return {
+      map,
+      calendar: startCalendar(),
+      economy: createEconomy(map),
+      autumns: 0,
+      winters: 0,
+    };
+  }
+
+  it('shows a Faction the tiles its own Territory covers, and the other’s as nobody’s', () => {
+    const world = worldOn(strongholdStage());
+    const rome = observeEconomy(world, 'rome');
+    const carthage = observeEconomy(world, 'carthage');
+
+    expect(rome.territory[tileIndex(ROME.x, ROME.y)]).toBe(1);
+    expect(rome.territory[tileIndex(ROME.x, ROME.y + TERRITORY_RADIUS)]).toBe(1);
+    expect(rome.territory[tileIndex(ROME.x, ROME.y + TERRITORY_RADIUS + 1)]).toBe(0);
+
+    // The far side of the theatre is Carthage's country, and Rome reads it as
+    // nobody's: whose settlements feed a distant tile is that Faction's business.
+    expect(rome.territory[tileIndex(CARTHAGE.x, CARTHAGE.y)]).toBe(0);
+    expect(carthage.territory[tileIndex(CARTHAGE.x, CARTHAGE.y)]).toBe(1);
+    expect(carthage.territory[tileIndex(ROME.x, ROME.y)]).toBe(0);
+  });
+
+  it('tells a Faction which of its Squads are in supply, and which have a camp over them', () => {
+    const map = strongholdStage();
+    const world = worldOn(map);
+
+    musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: ROME.x, y: ROME.y });
+    musterSquad(world.economy, world.map, {
+      faction: 'rome',
+      squadType: 'hastati',
+      x: ROME.x,
+      y: ROME.y + TERRITORY_RADIUS + 1,
+    });
+    const camped = musterSquad(world.economy, world.map, {
+      faction: 'rome',
+      squadType: 'hastati',
+      x: ROME.x + CAMP_RADIUS,
+      y: ROME.y,
+    });
+    world.economy.settlements[0]?.works.push(work('castrum'));
+
+    const seen = observeEconomy(world, 'rome').squads;
+
+    expect(seen[0]).toMatchObject({ inTerritory: true, inCamp: false });
+    expect(seen[1]).toMatchObject({ inTerritory: false, inCamp: false });
+    expect(seen[2]).toMatchObject({ inTerritory: true, inCamp: true });
+
+    // It is a posture and not a place: a Squad under way is not in camp.
+    camped.steps = [0];
+    expect(observeEconomy(world, 'rome').squads[2]).toMatchObject({ inCamp: false });
   });
 });
 

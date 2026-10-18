@@ -60,6 +60,8 @@ function squadOf(options: {
     unpaid: 0,
     garrison: null,
     home: 0,
+    inTerritory: true,
+    inCamp: false,
   };
 }
 

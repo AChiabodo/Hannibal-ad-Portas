@@ -11,8 +11,8 @@
  * to hand the driver a Match the CLI can play, so that CI can record the state
  * hash it ends on and fail when that hash moves (ADR-0003, ADR-0006).
  *
- * There are seven names. The **economy** Match is the one the command plays by
- * default: B1's theatre, B5's clock and B6's economy in one world, so the seed,
+ * Each name is a Match, and each is a gate. The **economy** Match is the one the
+ * command plays by default: B1's theatre, B5's clock and B6's economy in one world, so the seed,
  * the tick loop, the calendar and the settlements are exercised together and the
  * golden hash moves when any of them does. The **seasons** Match is the clock on
  * its own, kept as the narrower gate it has always been. The **fog** Match is
@@ -28,7 +28,12 @@
  * C3's: a dozen Squads of two types, ordered across a theatre where they meet and
  * fight. The **roster** Match is C4's: every type of both rosters, elephants
  * included, so one headless run covers the whole of both — and a change to a
- * type's strength, morale, arm or pace moves its hash.
+ * type's strength, morale, arm or pace moves its hash. The **attrition** Match
+ * is C6's: two armies in the field through the Seasons, one of them under a
+ * Roman camp, so the hash covers the Territory they are inferred to stand in,
+ * what a Season outside it costs them and what a camp saves them. The
+ * **assault** and **blockade** Matches are C5's, each a whole Match won headless
+ * by one path of the Siege.
  *
  * The rules here hold integers only, for the ordinary reason: they are
  * authoritative state, `serializeState` accepts nothing else, and the hash is
@@ -61,6 +66,8 @@ import {
   observeSiege,
   assault,
   blockade,
+  build,
+  CAMP_RADIUS,
   runMatch,
   scriptedController,
   seasonMatchOutcome,
@@ -479,6 +486,112 @@ function groundNear(map: MapGrid, site: Site, count: number, spread = MARCH_SPRE
 }
 
 /**
+ * The type each Faction's army in the Attrition Match is made of: the tier-1
+ * line on its own roster, so neither side is the stronger by its arms.
+ */
+const ATTRITION_TYPES: Readonly<Record<Faction, string>> = {
+  rome: 'hastati',
+  carthage: 'libyan-spear',
+};
+
+/** The tick the Attrition Match's one order is given on: the first, so the camp is begun at once. */
+const ATTRITION_TICK = 0;
+
+/** How far round the midpoint of the two Strongholds the open field is looked for, in tiles. */
+const FIELD_SPREAD = 4;
+
+/**
+ * The world the Attrition Match begins on: a Roman army in the ground its camp
+ * will cover, and a Carthaginian one in the open field between the Strongholds,
+ * which is nobody's country (C6).
+ *
+ * The two armies are the whole of the Match, and the point of it is that they end
+ * it differently: the Roman one winters under a camp and the Carthaginian one
+ * does not, because Carthage can neither raise a Castrum nor make a camp of
+ * anything else. Both are mustered rather than recruited, as the harness
+ * everywhere musters them — the Seasons of economy before a tier-1 settlement
+ * could pay for a line of hastati are not what this Match is about.
+ *
+ * @throws Error when the theatre has nowhere near a Stronghold, or near the
+ *   midpoint of the two, to stand a force on — which no generated map is, and
+ *   which is worth saying rather than quietly fielding fewer armies than the
+ *   Match is about.
+ */
+export function attritionWorld(seed: number): EconomyWorld {
+  const world = economyMatchRules.createWorld(seed);
+  const [rome, carthage] = world.map.strongholds;
+
+  // One tile inside the camp's own reach, and in Rome's country: a Squad holding
+  // position there is what a Castrum is for.
+  const inCampGround = groundNear(world.map, rome, 1, CAMP_RADIUS)[0];
+  const inTheField = groundNear(world.map, midpoint(rome, carthage), 1, FIELD_SPREAD)[0];
+  if (inCampGround === undefined || inTheField === undefined) {
+    throw new Error('the theatre has nowhere to stand the two armies of the Attrition Match');
+  }
+
+  musterSquad(world.economy, world.map, {
+    faction: 'rome',
+    squadType: ATTRITION_TYPES.rome,
+    x: inCampGround.x,
+    y: inCampGround.y,
+  });
+  musterSquad(world.economy, world.map, {
+    faction: 'carthage',
+    squadType: ATTRITION_TYPES.carthage,
+    x: inTheField.x,
+    y: inTheField.y,
+  });
+
+  return world;
+}
+
+/**
+ * The Commands the Attrition Match is played by: Rome raises the camp it winters in.
+ *
+ * One order, and Rome's own: the Castrum is raised through the `build` Command
+ * every Player builds with, paid for out of the settlement's stock and standing
+ * once its labour has counted its ticks down — so the camp the Match turns on is
+ * a real building and not one the harness put there.
+ */
+export function attritionLog(world: EconomyWorld): CommandLog<Command> {
+  const [rome] = world.map.strongholds;
+
+  return [{ tick: ATTRITION_TICK, command: build('rome', settlementIdAt(world.economy, rome), 'castrum') }];
+}
+
+/**
+ * Plays the Attrition Match: the economy's own rules, two armies in the field,
+ * and the Seasons that charge them for standing where they stand.
+ *
+ * Nothing here is a rule either. What the hash it ends on covers is C6 in one
+ * number: the Territory each army is inferred to be in or out of, the men a
+ * Season outside it costs and the winter that costs more, the quarters a camp in
+ * a Faction's own ground gives an army in the open, and Rome's alone being the
+ * one that has them (ADR-0005, ADR-0006).
+ */
+function playAttrition(seed: number, ticks: number): MatchRun {
+  const world = attritionWorld(seed);
+  const log = attritionLog(world);
+
+  return runMatch<EconomyWorld, EconomyVisible>({
+    seed,
+    rules: { createWorld: () => world, step: economyMatchRules.step },
+    observe: observeEconomy,
+    outcome: economyMatchOutcome,
+    players: [
+      { faction: 'rome', controller: scriptedController<EconomyVisible>(log) },
+      { faction: 'carthage', controller: scriptedController<EconomyVisible>(log) },
+    ],
+    ticks,
+  });
+}
+
+/** The tile between two sites: where an army stands in nobody's country (C6). */
+function midpoint(from: Site, to: Site): Site {
+  return { x: Math.floor((from.x + to.x) / 2), y: Math.floor((from.y + to.y) / 2) };
+}
+
+/**
  * How many Squads Rome puts at the walls in a Siege Match: enough to storm a
  * breach, and few enough that Payroll does not empty the treasury before the
  * walls come down.
@@ -619,6 +732,7 @@ export const RULES_NAMES = [
   'roster',
   'assault',
   'blockade',
+  'attrition',
 ] as const;
 
 /** A name `--rules` accepts, which is also the only thing the table below is keyed by. */
@@ -688,6 +802,11 @@ export const RULES = {
   blockade: {
     description: "Carthage's Stronghold is starved into surrender, and the Match is won",
     play: (seed: number, ticks: number) => playSiege(seed, ticks, 'blockade'),
+  },
+
+  attrition: {
+    description: 'two armies in the field through the Seasons, and only one of them in a camp',
+    play: playAttrition,
   },
 } as const satisfies Readonly<Record<RulesName, RulesEntry>>;
 

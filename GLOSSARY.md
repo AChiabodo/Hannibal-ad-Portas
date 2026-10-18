@@ -29,7 +29,7 @@ _UI_: Roccaforte
 _Avoid_: Capital, base, HQ, mother city
 
 **Season**:
-One quarter of a Match's game year, and the Match's strategic clock: harvest in autumn, attrition and winter quarters in winter.
+One quarter of a Match's game year, and the Match's strategic clock: harvest in autumn, Attrition every Season and worst in winter, and winter quarters in winter.
 _UI_: Stagione
 _Avoid_: Turn, phase, cycle
 
@@ -149,7 +149,7 @@ _Avoid_: Speed (reserve "speed" for the three settings a Match runs at), rate, v
 ### War
 
 **Territory**:
-The stretch of map a Faction draws supply from, inferred from the settlements it holds. A Squad outside its own Territory suffers Attrition.
+The stretch of map a Faction draws supply from, inferred from the settlements it holds: the ground within reach of them, and nothing drawn by hand. A Squad outside its own Territory suffers Attrition.
 _UI_: Territorio
 _Avoid_: Borders, land, zone of control, influence
 
@@ -169,12 +169,22 @@ _UI_: Blocco
 _Avoid_: Encirclement, investment, starvation
 
 **Attrition**:
-The per-Season loss a Squad suffers for being outside its Faction's Territory, or for wintering in the field without a camp.
+The per-Season loss of men a Squad suffers for being outside its Faction's Territory, or for wintering in the field without a camp. Worst in winter, a share of the men rather than a fixed number, and charged at the Season boundary.
 _UI_: Attrito
 _Avoid_: Decay, drain, penalty
 
+**Quarters**:
+Where a Squad winters under cover: inside one of its Faction's settlements — garrisoned in it, or standing on its centre — or in a camp. A Squad in quarters pays no Attrition for the winter; one in the open does.
+_UI_: Quartieri d'inverno
+_Avoid_: Shelter, base, barracks
+
+**Camp**:
+The open ground round a settlement that holds a standing Castrum, which counts as quarters for the Squads holding position in it. Rome's alone, because the Castrum is (PLAN §1) and a Roman army's alone, so a camp that changes hands with the village it stands in is not the new holder's.
+_UI_: Castrum
+_Avoid_: Bivouac, fort, encampment (the camp is the ground, not the building)
+
 **Supply**:
-Whether a Squad can draw on its Faction's country where it stands: a Squad with no friendly settlement in reach is cut off, and being cut off costs it morale each Season. Not the four resources, and not a line drawn on the map — that is Territory, which C6 builds.
+Whether a Squad can draw on its Faction's country where it stands: a Squad standing outside its own Territory is cut off, and being cut off costs it morale each Season. Not the four resources, and not a line drawn on the map — that is Territory.
 _UI_: Rifornimenti
 _Avoid_: Logistics, upkeep, in-supply/out-of-supply as a noun
 

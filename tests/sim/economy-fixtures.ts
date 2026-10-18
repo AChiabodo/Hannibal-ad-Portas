@@ -48,6 +48,22 @@ export function testMap(
   };
 }
 
+/**
+ * Rome's Stronghold, and Carthage's, on the hand-built stages a test paints: far
+ * enough apart that each Faction's Territory is its own, with wilderness between
+ * them to be cut off in (C6).
+ */
+export const ROME: Site = { x: 10, y: 10 };
+export const CARTHAGE: Site = { x: 70, y: 10 };
+
+/**
+ * The stage the economy's and Territory's tests share: both Strongholds on plain
+ * ground, and whatever settlements the test asks for.
+ */
+export function strongholdStage(sites: readonly Site[] = []): MapGrid {
+  return testMap({ strongholds: [ROME, CARTHAGE], settlements: sites });
+}
+
 /** A settlement a test can shape field by field, with the defaults the rules open one on. */
 export function testSettlement(overrides: Partial<Settlement> = {}): Settlement {
   return {

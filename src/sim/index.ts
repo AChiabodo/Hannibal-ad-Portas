@@ -137,6 +137,19 @@
  * - `siegeMatchRules`, `observeSiege` and `siegeMatchOutcome` are the Match that
  *   joins all of it: the economy's tick with the blockaded settlements cut out
  *   of production, the Siege's own Commands and clocks, and the verdict.
+ *
+ * C6 makes supply a place on the map (ADR-0005):
+ *
+ * - `territory.ts` — the country a Faction's settlements give it, inferred
+ *   afresh from who holds what and handed to an Observation as a grid of its
+ *   own; the Attrition a Season outside that country takes off a Squad's men;
+ *   and the quarters that shield it — a settlement's walls, its centre, or the
+ *   ground a standing Castrum makes into a camp — Rome's alone, and still Rome's
+ *   when the village it stands in changes hands (`canCamp`). It
+ *   subscribes to the Season boundary beside the economy (`attritionSeasons`),
+ *   and C3's `inSupply` asks the same question rather than guessing it from a
+ *   radius, so a Squad's nerve and its men are cut off by one boundary and not
+ *   two.
  */
 export { TICK_HZ, TICK_MS } from './clock.ts';
 export { requireTickCount } from './ticks.ts';
@@ -356,7 +369,6 @@ export {
   supplyMorale,
   STRIKE,
   SUPPLY_MORALE_LOSS,
-  SUPPLY_RADIUS,
   VOLLEY_SHOCK,
   woundsOf,
 } from './combat.ts';
@@ -430,6 +442,25 @@ export type { EnemyInSight, Eye, Fog, FogView, Knowledge, LastKnownContact } fro
 
 export { createFogMatchWorld, eyesOf, fogMatchOutcome, fogMatchRules, observeFogMatch } from './fog-match.ts';
 export type { FogMatchVisible, FogMatchWorld } from './fog-match.ts';
+
+export {
+  applyAttrition,
+  ATTRITION_FIELD_WINTER_PERCENT,
+  attritionSeasons,
+  ATTRITION_PERCENT,
+  ATTRITION_WINTER_PERCENT,
+  attritionPercent,
+  CAMP_RADIUS,
+  canCamp,
+  holdsTerritory,
+  inCamp,
+  inQuarters,
+  territoryAt,
+  territoryOf,
+  territoryView,
+  TERRITORY_RADIUS,
+} from './territory.ts';
+export type { Territory } from './territory.ts';
 
 export {
   applySiegeCommand,

@@ -35,6 +35,7 @@ import {
   type SiegeWorld,
 } from '../../src/sim/siege';
 import { testMap } from './economy-fixtures';
+import { territoryAt, territoryOf } from '../../src/sim/territory';
 
 /** The two Strongholds every stage stands on, far apart as a generated map's are. */
 const ROME: Site = { x: 10, y: 10 };
@@ -447,6 +448,30 @@ describe('a minor settlement, and nothing razed', () => {
 
     expect(world.economy.settlements[2]?.owner).toBe(UNOWNED);
     expect(defenders.some((squad) => squad.strength > 0)).toBe(true);
+  });
+
+  it('redraws both Factions’ Territory when it changes hands (C6)', () => {
+    // Eight tiles from Carthage's Stronghold, so its writ covers the village
+    // ground — and the village is nearer than the Stronghold for the ground
+    // round it, which is what changes hands with it.
+    const village: Site = { x: CARTHAGE.x - 8, y: CARTHAGE.y };
+    const world = stage({ minor: village });
+
+    expect(territoryAt(territoryOf(world.economy), village.x, village.y)).toBe(1);
+
+    muster(world, 'rome', 'principes', village, 2);
+    run(matchOn(world), CAPTURE_TICKS * (CAPTURE_HOLDS + 1));
+
+    expect(world.economy.settlements[2]?.owner).toBe(0);
+
+    // Rome's now, tile by tile, and Carthage has lost the ground that went with
+    // it while keeping its own Stronghold: two Territories moved, not one.
+    const territory = territoryOf(world.economy);
+
+    expect(territoryAt(territory, village.x, village.y)).toBe(0);
+    expect(territoryAt(territory, village.x - 1, village.y)).toBe(0);
+    expect(territoryAt(territory, CARTHAGE.x, CARTHAGE.y)).toBe(1);
+    expect(territoryAt(territory, CARTHAGE.x - 1, CARTHAGE.y)).toBe(1);
   });
 });
 

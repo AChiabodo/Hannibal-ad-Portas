@@ -29,9 +29,10 @@
  * 5. **Advances the calendar and announces the boundary.** The economy
  *    subscribes to `onSeason` for its ordinary production, Payroll, the morale a
  *    Squad cut off from its country loses and the resupply of the ones that are
- *    not, and to `onAutumn` for
- *    the harvest on top of it — the clock is advanced once, and the same report
- *    is handed to the one subscriber that cares.
+ *    not, and to `onAutumn` for the harvest on top of it — the clock is advanced
+ *    once, and the same report is handed to every subscriber: the economy's
+ *    hooks, and C6's Attrition beside them, which charges the men a Season
+ *    outside the Faction's own Territory costs.
  *
  * A Match on this world still cannot be won or lost on its own: this Match has no
  * Siege in it, so `economyMatchOutcome` returns `null` and the bound ends the
@@ -44,9 +45,11 @@
  * building for, how their people are divided, its treasury and its Squads — each
  * Squad where it stands, what shape it holds and where it is walking, beside the
  * Payroll, the morale, the fatigue, the missiles it has left and whether it has
- * broken (C3). An enemy's settlement and its Squads are not in it, which is the
- * one filtering this Match can do without fog: ownership is the economy's own
- * secret and it keeps it.
+ * broken (C3). C6 adds the country itself: the tiles the Faction's Territory
+ * covers, and whether each Squad is in it and in a camp (`territory.ts`). An
+ * enemy's settlement and its Squads are not in it, which is the one filtering
+ * this Match can do without fog: ownership is the economy's own secret and it
+ * keeps it.
  */
 import { buildingOf, figuresOf, namedStock, squadTypeOf, type ResourceAmounts } from '../content/index.ts';
 import type { Command, Formation } from './command.ts';
@@ -79,6 +82,14 @@ import { applyMovementCommands, goalOf, march, routeCacheFor } from './movement.
 import { refusalOf, type RouteRefusal } from './route.ts';
 import { fadeResidue, recordCasualties } from './residue.ts';
 import { facingOf, FIELD, formationOf, isRouting, type Facing } from './squad.ts';
+import {
+  attritionSeasons,
+  holdsTerritory,
+  inCamp,
+  territoryOf,
+  territoryView,
+  type Territory,
+} from './territory.ts';
 import type { MatchRules } from './match.ts';
 import type { MatchSetup } from './driver.ts';
 import {
@@ -227,6 +238,24 @@ export interface VisibleSquad {
 
   /** The settlement that raised it. */
   readonly home: number;
+
+  /**
+   * Whether it stands in its own Faction's Territory, and so draws supply (C6).
+   *
+   * One tile is all it takes to be cut off, which is what the country on this
+   * Observation is for: a Controller can read where the boundary is and see
+   * which of its Squads are the wrong side of it.
+   */
+  readonly inTerritory: boolean;
+
+  /**
+   * Whether it is in a camp: holding position in the ground a standing Castrum
+   * makes into quarters (C6).
+   *
+   * Never true for Carthage: `canCamp` is Rome's alone, and a Roman camp that
+   * changed hands with the village it stands in is not Carthage's to winter in.
+   */
+  readonly inCamp: boolean;
 }
 
 /** Everything a Faction may know of the economy: its own, and nothing of the other's. */
@@ -236,6 +265,17 @@ export interface EconomyVisible {
 
   /** The game year, counted from one. */
   readonly year: number;
+
+  /**
+   * The tiles its Territory covers, one to a tile of the theatre: `1` where the
+   * Faction draws supply and `0` everywhere else (C6).
+   *
+   * Indexed the way the theatre is (`tileIndex(x, y)`), so the boundary a
+   * Controller reads is the same shape of ground the map is. It holds its own
+   * country and nothing of the other Faction's: whose settlements give a distant
+   * tile its supply is that Faction's business.
+   */
+  readonly territory: Uint8Array;
 
   /** Its denarii: one treasury per Faction. */
   readonly treasury: number;
@@ -328,7 +368,7 @@ export function stepEconomyWorld(
     onWinter: () => {
       world.winters += 1;
     },
-  });
+  }, attritionSeasons(world.economy));
 
   return changes;
 }
@@ -343,17 +383,19 @@ export function stepEconomyWorld(
  */
 export const observeEconomy: MatchSetup<EconomyWorld, EconomyVisible>['observe'] = (world, faction) => {
   const owner = factionCode(faction);
+  const territory = territoryOf(world.economy);
 
   return {
     season: seasonOf(world.calendar),
     year: world.calendar.year,
+    territory: territoryView(territory, owner),
     treasury: world.economy.treasuries[owner] ?? 0,
     settlements: world.economy.settlements
       .filter((settlement) => settlement.owner === owner)
       .map((settlement) => visibleSettlement(world.map, settlement)),
     squads: world.economy.squads
       .filter((squad) => squad.owner === owner)
-      .map((squad) => visibleSquad(world.economy, squad)),
+      .map((squad) => visibleSquad(world.economy, territory, squad)),
   };
 };
 
@@ -401,7 +443,7 @@ function visibleSettlement(map: MapGrid, settlement: Settlement): VisibleSettlem
 }
 
 /** A Squad, as its owner reads it: where it stands, what it costs to keep, and how the fight is going. */
-function visibleSquad(economy: Economy, squad: Squad): VisibleSquad {
+function visibleSquad(economy: Economy, territory: Territory, squad: Squad): VisibleSquad {
   const type = squadTypeOf(squad.type);
 
   return {
@@ -424,6 +466,8 @@ function visibleSquad(economy: Economy, squad: Squad): VisibleSquad {
     unpaid: squad.unpaid,
     garrison: squad.garrison === FIELD ? null : squad.garrison,
     home: squad.home,
+    inTerritory: holdsTerritory(territory, squad.owner, squad),
+    inCamp: inCamp(economy, squad),
   };
 }
 

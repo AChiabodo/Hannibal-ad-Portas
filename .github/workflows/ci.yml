@@ -108,11 +108,22 @@ jobs:
       - name: Win a Match by Assault, headless
         run: npm run match -- --seed 1 --ticks 9000 --rules assault --expect-hash f854cb39e4a9e78d
 
-      # And the second path: the same Stronghold starved into surrender, over
+      # C5's second path: the same Stronghold starved into surrender, over
       # Seasons rather than over a fight. Its hash covers the blockade's supply
-      # cut, the starvation, the garrison's nerve and the surrender.
+      # cut, the starvation, the garrison's nerve and the surrender — and, since
+      # C6, the Attrition the besieging army pays for wintering outside its own
+      # country. The hash moved when C6 landed, and ADR-0006 says a moved hash is
+      # a decision in review.
       - name: Win a Match by Blockade, headless
-        run: npm run match -- --seed 1 --ticks 9000 --rules blockade --expect-hash 9f77bb70706b1b68
+        run: npm run match -- --seed 1 --ticks 9000 --rules blockade --expect-hash fa7cc9b8808efefd
+
+      # C6's Match: two armies in the field through four Season boundaries, one
+      # of them holding position in a Roman camp and one in nobody's country. The
+      # hash covers the Territory each is inferred to stand in, the men a Season
+      # outside it costs and the winter that costs six percent where autumn costs
+      # two, and the camp that saves Rome's army from both (ADR-0006, ADR-0005).
+      - name: Winter two armies in the field, one of them in a camp, headless
+        run: npm run match -- --seed 1 --ticks 9000 --rules attrition --expect-hash a97e17ca99526aa7
 
   guards:
     name: "Fences (six: import boundaries, engine allow-list, Math.random, transcendentals, ambient clock, no committed assets)"

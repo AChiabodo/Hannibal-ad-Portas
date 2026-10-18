@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import { attackMove, formation, group, hold, move, withdraw } from '../../src/sim/command';
 import type { EconomyVisible, VisibleSquad } from '../../src/sim/economy-match';
-import { MAP_HEIGHT, MAP_WIDTH } from '../../src/sim/map';
+import { MAP_HEIGHT, MAP_WIDTH, TILE_COUNT } from '../../src/sim/map';
 import type { Observation } from '../../src/sim/observation';
 import { createHuman, type HumanController } from '../../src/input/human';
 import { NOTHING_SELECTED } from '../../src/input/selection';
@@ -39,6 +39,8 @@ function squadOf(id: number): VisibleSquad {
     unpaid: 0,
     garrison: null,
     home: 0,
+    inTerritory: true,
+    inCamp: false,
   };
 }
 
@@ -50,6 +52,7 @@ function observationWith(squads: readonly number[], settlements: readonly number
     visible: {
       season: 'spring',
       year: 1,
+      territory: new Uint8Array(TILE_COUNT),
       treasury: 20,
       settlements: settlements.map((id) => ({
         id,

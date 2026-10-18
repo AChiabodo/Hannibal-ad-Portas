@@ -30,7 +30,7 @@ import {
 } from '../../src/ui/hud.ts';
 import { inspectionView } from '../../src/sim/fog.ts';
 import { MINIMAP_PLATE_HEIGHT, MINIMAP_PLATE_WIDTH, minimapPlate } from '../../src/ui/minimap.ts';
-import { generateMap } from '../../src/sim/map.ts';
+import { generateMap, TILE_COUNT } from '../../src/sim/map.ts';
 import { translate } from '../../src/ui/strings.ts';
 
 const SIZE: HudSize = { width: 640, height: 480 };
@@ -39,6 +39,7 @@ const SIZE: HudSize = { width: 640, height: 480 };
 const VISIBLE: EconomyVisible = {
   season: 'spring',
   year: 1,
+  territory: new Uint8Array(TILE_COUNT),
   treasury: 20,
   settlements: [
     {
@@ -83,6 +84,8 @@ const VISIBLE: EconomyVisible = {
       unpaid: 1,
       garrison: null,
       home: 0,
+      inTerritory: true,
+      inCamp: false,
     },
     {
       id: 2,
@@ -104,6 +107,8 @@ const VISIBLE: EconomyVisible = {
       unpaid: 0,
       garrison: null,
       home: 0,
+      inTerritory: true,
+      inCamp: false,
     },
   ],
 };
@@ -413,6 +418,8 @@ describe('the HUD on screen', () => {
         unpaid: 0,
         garrison: null,
         home: 0,
+        inTerritory: true,
+        inCamp: false,
       })),
     };
     const model = hudModel(crowded, STRONGHOLDS, null);

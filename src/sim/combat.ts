@@ -69,12 +69,13 @@
  *
  * ## What C3 does not own
  *
- * No generals, no heroes, no ram, no siege — and no Territory. Being cut off is
- * read here the only way a Match without Territory can read it: a Squad more
- * than `SUPPLY_RADIUS` tiles from every settlement its Faction holds is out of
- * Supply, and loses morale at every Season boundary (`supplyMorale`). C6
- * replaces that inference with real Territory and per-Season Attrition; when it
- * does, the `inSupply` below is the one function that changes.
+ * No generals, no heroes, no ram, no siege, and no Territory. C3 inferred being
+ * cut off from distance — a Squad more than thirty-two tiles from every
+ * settlement its Faction held was out of Supply — and said where the real
+ * answer would come from. C6 has built it: `inSupply` asks `territory.ts`
+ * whether a Squad stands in its own country, and Attrition charges the men of
+ * the ones that do not, at the same Season boundary this module's own Supply
+ * charges their nerve.
  */
 import { matchupOf, squadTypeOf, type Advantage, type Arm } from '../content/index.ts';
 import type { Command } from './command.ts';
@@ -85,6 +86,7 @@ import { orderedSquads, orderSquadTo } from './movement.ts';
 import type { RouteCache } from './route.ts';
 import type { Fallen } from './residue.ts';
 import { FATIGUE_MAX, facingOf, FIELD, frontage, isRouting, ROUTING, type Facing } from './squad.ts';
+import { holdsTerritory, territoryOf } from './territory.ts';
 
 /**
  * How many ticks a round of contact takes: half a second at the 10 Hz clock.
@@ -221,9 +223,6 @@ export const RALLY_MORALE = 2;
 /** How close an enemy has to be to keep a routed Squad running: tiles, Chebyshev. */
 export const RALLY_RADIUS = 6;
 
-/** How far a Faction's grip reaches for Supply: tiles, Chebyshev (C6 owns the real Territory). */
-export const SUPPLY_RADIUS = 32;
-
 /**
  * How much morale being cut off costs a Squad in a Season: two, the same weight
  * as a Season of going unpaid.
@@ -232,7 +231,8 @@ export const SUPPLY_RADIUS = 32;
  * is a fact about where an army is *campaigning*, not about the second it is
  * standing in — and because a per-tick drain would break an army in a minute and
  * leave the player no time to do anything about it. C6's Attrition lands on the
- * same boundary, which is where the two will meet.
+ * same boundary, on the men rather than on the nerve, which is where the two
+ * meet.
  */
 export const SUPPLY_MORALE_LOSS = 2;
 
@@ -453,20 +453,17 @@ export function enemyWithin(economy: Economy, squad: Squad, radius: number): Squ
 }
 
 /**
- * Whether a Squad is drawing on its Faction's country: a settlement its Faction
- * holds within `SUPPLY_RADIUS`.
+ * Whether a Squad is drawing on its Faction's country: standing inside its own
+ * Territory (C6).
  *
- * The stand-in for Territory until C6 builds it (see the module notes): a Squad
- * with no friendly settlement in reach is cut off, and being cut off costs
- * morale — which is what connects the map a player is holding to the fight a
- * Squad is having.
+ * C3 inferred this from a radius of thirty-two tiles around every settlement the
+ * Faction held, and said so: being cut off was a fact about distance, and C6
+ * owned the real Territory. It does now — the ground a Faction's settlements
+ * give it, in `territory.ts` — so a Squad is in supply exactly when it stands in
+ * its own country, and a tile past the boundary is a tile past it.
  */
 export function inSupply(economy: Economy, squad: Squad): boolean {
-  return economy.settlements.some(
-    (settlement) =>
-      settlement.owner === squad.owner &&
-      Math.max(Math.abs(settlement.x - squad.x), Math.abs(settlement.y - squad.y)) <= SUPPLY_RADIUS,
-  );
+  return holdsTerritory(territoryOf(economy), squad.owner, squad);
 }
 
 /**
@@ -694,9 +691,9 @@ function run(economy: Economy, map: MapGrid, squad: Squad, routes: RouteCache): 
  * Charges every Squad cut off from its Faction's country the morale a Season
  * away from home costs.
  *
- * Called at the Season boundary beside Payroll: a Squad with no friendly
- * settlement within `SUPPLY_RADIUS` loses `SUPPLY_MORALE_LOSS`, and one that is
- * already broken stays broken. A Squad that cannot be paid *and* is cut off
+ * Called at the Season boundary beside Payroll: a Squad standing outside its own
+ * Territory loses `SUPPLY_MORALE_LOSS` (`territory.ts`, since C6 — a radius of
+ * thirty-two tiles before it), and one that is already broken stays broken. A Squad that cannot be paid *and* is cut off
  * loses both, which is what makes a campaign fought far from home a decision
  * rather than a free march.
  */

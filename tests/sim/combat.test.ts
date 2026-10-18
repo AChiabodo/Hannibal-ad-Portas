@@ -45,6 +45,7 @@ import { march, musterSquad, orderSquadTo, routeCacheFor, type Placement } from 
 import { createMatch } from '../../src/sim/match';
 import { SEASON_TICKS, startCalendar } from '../../src/sim/season';
 import { FATIGUE_MAX, ROUTING, type Facing } from '../../src/sim/squad';
+import { TERRITORY_RADIUS } from '../../src/sim/territory';
 import { paintedMap } from './test-map';
 
 /**
@@ -533,6 +534,16 @@ describe('the economy on the battlefield', () => {
 
     expect(cutOff.morale).toBe(10 - SUPPLY_MORALE_LOSS);
     expect(atHome.morale).toBe(10);
+  });
+
+  it('is cut off a tile past its own Territory, which is C6’s country and not a radius', () => {
+    const world = worldOf();
+    const [home] = world.map.strongholds;
+    const edge = muster(world, { x: home.x, y: home.y + TERRITORY_RADIUS });
+    const past = muster(world, { x: home.x, y: home.y + TERRITORY_RADIUS + 1 });
+
+    expect(inSupply(world.economy, edge)).toBe(true);
+    expect(inSupply(world.economy, past)).toBe(false);
   });
 
   it('is charged for being cut off at a Season boundary, as one rule with Payroll', () => {
