@@ -33,7 +33,7 @@ import {
   YEAR_TICKS,
   type Season,
 } from '../../src/sim/season';
-import { squadTypeId } from './economy-fixtures';
+import { blockOf, squadTypeId } from './economy-fixtures';
 
 /** The two Players a Match on this world runs on unless a test says otherwise. */
 function idlePlayers(): readonly [Player<EconomyVisible>, Player<EconomyVisible>] {
@@ -48,9 +48,10 @@ function worldOf(seed: number): EconomyWorld {
   return economyMatchRules.createWorld(seed);
 }
 
-/** One Squad of a type Rome can raise, with the id and morale a test asks for. */
+/** One Squad of a type Rome can raise, standing on its own tile, with the id and morale a test asks for. */
 function squad(overrides: Partial<Squad> = {}): Squad {
   return {
+    ...blockOf('hastati'),
     id: 1,
     owner: 0,
     type: squadTypeId('hastati'),

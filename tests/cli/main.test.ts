@@ -103,6 +103,14 @@ describe('a Match that draws, played from the command line', () => {
     );
   });
 
+  it('plays the march Match, which walks a dozen Squads across the seeded theatre', () => {
+    const ran = match('--seed', '1', '--ticks', '600', '--rules', 'march');
+
+    expect(ran.status).toBe(0);
+    expect(ran.stderr).toBe('');
+    expect(reportOf(ran)).toMatchObject({ seed: 1, ticks: 600, outcome: 'clock', commands: 2 });
+  });
+
   it('exits 1 on a mismatch for the drawing Match too, and prints the report first', () => {
     const ran = match(
       '--seed',

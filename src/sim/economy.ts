@@ -78,6 +78,7 @@ import { factionCode } from './faction.ts';
 import { RESOURCE, RESOURCE_KINDS, MAP_HEIGHT, MAP_WIDTH, TERRAIN, terrainAt, type MapGrid, type Site } from './map.ts';
 import type { BuildCommand, Command, RecruitCommand } from './command.ts';
 import type { Season } from './season.ts';
+import { standingAt, type Block } from './squad.ts';
 
 /**
  * The owner a settlement nobody holds has.
@@ -170,15 +171,22 @@ export interface Work {
 }
 
 /**
- * A Squad, as the economy knows it: the terms Payroll is charged on.
+ * A Squad: the terms Payroll is charged on, and the block that walks.
  *
- * This is the economic half of the Squad. Where it stands, how many men are left
- * in it and how strong it fights are the map's and combat's (C1, C3); what it
- * costs to keep and whether it has been paid are the economy's, and they live
- * here. `morale` is folded in because Payroll is the first thing that moves it
- * and "unpaid Squads lose morale and eventually desert" is this ticket's.
+ * The two halves of one entity, and the split is deliberate. What it costs to
+ * keep, what type it is, where it was raised and whether it has been paid are
+ * the economy's; **where it stands, how many men are left in it, what shape it
+ * holds, the way it faces and the route it is walking are C1's** — the `Block`
+ * `squad.ts` defines, which says of itself that it is the half of a Squad the
+ * economy carries the other half of. `morale` is folded in here because Payroll
+ * is the first thing that moves it and "unpaid Squads lose morale and eventually
+ * desert" is this ticket's.
+ *
+ * C3 takes men off `strength` and moves `morale` in a fight; C1 moves the block;
+ * none of them owns a Squad of its own, which is the point of the two halves
+ * being one interface.
  */
-export interface Squad {
+export interface Squad extends Block {
   /** What a Command names it by, and what an Observation reports: an id is never reused. */
   readonly id: number;
 
@@ -671,6 +679,10 @@ function applyRecruit(economy: Economy, command: RecruitCommand): boolean {
 
   for (let raised = 0; raised < command.count; raised += 1) {
     economy.squads.push({
+      // A Squad leaves the settlement it was raised in, standing where it is
+      // with the men its type is counted as: from there it is C1's block, and
+      // the first order it is given moves it off the square.
+      ...standingAt(settlement.x, settlement.y, type.strength),
       id: economy.nextSquadId,
       owner: factionCode(command.faction),
       type: code,
