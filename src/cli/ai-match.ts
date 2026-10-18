@@ -1,6 +1,10 @@
 import { createAi, type AiDecision } from '../ai/controller.ts';
-import type { BehaviourRegistry } from '../ai/registry.ts';
+import { createEconomyBehaviour } from '../ai/economy.ts';
+import { createBehaviourRegistry, type BehaviourRegistry } from '../ai/registry.ts';
+import { BUILDINGS } from '../content/buildings.ts';
+import { SQUAD_TYPES } from '../content/squads.ts';
 import { TICK_HZ } from '../sim/clock.ts';
+import { BASE_HOUSING, GRAIN_PER_HEAD, TAX_PER_DENARIUS } from '../sim/economy.ts';
 import type { Command } from '../sim/command.ts';
 import { runMatch, type MatchRun } from '../sim/driver.ts';
 import { observeSiege, siegeMatchOutcome, siegeMatchRules, type SiegeVisible } from '../sim/siege.ts';
@@ -10,15 +14,20 @@ export interface AiMatchRun extends MatchRun {
   readonly decisions: readonly AiDecision<Command>[];
 }
 
+export const economyRegistry = createBehaviourRegistry<SiegeVisible, Command>([
+  createEconomyBehaviour({ buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
+    grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, taxPerDenarius: TAX_PER_DENARIUS }),
+]);
+
 /**
  * The composition root owns simulation values and concrete types; ai/ owns
  * neither. Behaviours can be composed here without changing the AI registry.
- * No behaviours are installed by D1: D2–D4 supply those independent modules.
+ * D2 installs the economy; callers can still supply an independent registry.
  */
 export function playAiMatch(
   seed: number,
   ticks: number,
-  registry?: BehaviourRegistry<SiegeVisible, Command>,
+  registry: BehaviourRegistry<SiegeVisible, Command> = economyRegistry,
 ): AiMatchRun {
   const rome = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry });
   const carthage = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry });

@@ -1,7 +1,7 @@
 # AI Controllers
 
-D1 supplies the clocks, utility selection and registration seam. Economy,
-military and scouting policies belong to D2–D4; none is installed by default.
+D1 supplies the clocks, utility selection and registration seam. D2 installs
+the economy policy in the headless AI harness; military and scouting belong to D3–D4.
 
 `createAi` (`src/ai/controller.ts`) is structurally a Controller: `decide` reads
 an `Observation<Visible>` and returns Commands. Create a fresh instance for each
@@ -72,8 +72,43 @@ npm run match -- --rules ai --seed 1 --ticks 2101
 
 The default bound remains three game years. This harness runs two fresh AIs
 against the complete Siege Match rules and their existing filtered projections.
-With no policies installed it ends at the bound, with no Commands. This tests
-the foundation, not balance or a competent opponent.
+The default registry installs the economy policy. An explicitly empty registry
+still runs the foundation alone, ending at the bound without Commands.
+
+## Economy policy (D2)
+
+`createEconomyBehaviour` receives the building and Squad catalogues and economic
+constants from the composition root, outside `ai/`. It reads only owned economic
+facts and observed fronts; it never imports the rules, world or hidden map.
+
+Rome's growth posture puts its Villa first. Carthage's commerce posture puts a
+Market first, then grows the labour pool and production needed for a Villa.
+Both pursue Tier 2 deliberately. A second Market waits until that Tier exists
+so it cannot consume the labour needed to reach it. Housing follows population
+pressure; resource producers follow measured stock shortages and winter food
+needs, with utilities and reasons in the decision log.
+
+Labour allocation remains automatic: there is no assignment Command (ADR-0005).
+The policy changes the demand by choosing which work to raise, waits for current
+construction, and rejects works it cannot staff. It keeps hands on land unless
+grain works can feed the population. This is the same allocation every Controller
+uses, with no AI-only production rule.
+
+Every operational decision recomputes recurring tax and staffed, standing Market
+income. Unfinished or unstaffed works and blockaded settlements contribute no
+Market income; blockaded settlements contribute no tax either. Recruitment emits
+one Squad at a time, requires total Payroll no greater than recurring income,
+retains two Seasons of the proposed Payroll plus six denarii, and leaves three
+Seasons of population food in stock. Unpaid Squads suspend recruitment and put
+the next strategic plan into recovery posture. Externally imposed bankruptcy
+still follows the ordinary morale and desertion rules; there is no rescue grant.
+
+`tests/ai/economy.test.ts` checks priorities and budgets through the Controller.
+`tests/ai/economy-match.test.ts` plays three Years on seeds 1, 7 and 42, observes
+Tier 2, at least two paid Squads per Faction and a final Treasury in [6, 100),
+and replays seed 7 to the same hash. A separate bankrupt fixture observes unpaid
+elephants disappearing by id. These are headless economic checks, not military
+balance or browser rendering evidence.
 
 The JSON report adds `decisions`, sorted by tick, Rome before Carthage, and then
 strategic, operational, tactical. Each record names the Faction, tick, observed

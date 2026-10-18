@@ -112,8 +112,9 @@ package, the fence sees the dependency rather than what is inside it.
 `npm run match -- --rules ai --seed 1 --ticks 2101` runs two AI Controllers
 headlessly across a Season boundary. Its JSON report includes every strategic,
 operational and tactical decision, all candidate utilities and reasons, and the
-selected candidate. The foundation installs no behaviours: economy, military
-and scouting plug into an independent registry in D2–D4. See
+selected candidate. The economy policy grows settlements and recruits against
+recurring Payroll capacity; military and scouting plug into the independent
+registry in D3–D4. See
 [docs/AI.md](docs/AI.md) for clocks, registration and log interpretation.
 
 ## The deterministic core

@@ -36,7 +36,7 @@ describe('two AI Controllers in a headless Match', () => {
   });
 
   it('survives the full three-year bound with no registered behaviours and records every clock', () => {
-    const run = playAiMatch(1, HEADLESS_TICKS);
+    const run = playAiMatch(1, HEADLESS_TICKS, createBehaviourRegistry());
     expect(run.result).toEqual({ kind: 'clock', tick: 25_200 });
     expect(run.log).toEqual([]);
     expect(run.decisions.filter((entry) => entry.layer === 'strategic')).toHaveLength(24);
