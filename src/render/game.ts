@@ -46,10 +46,11 @@ import {
   type EconomyWorld,
 } from '../sim/economy-match.ts';
 import type { Faction } from '../sim/faction.ts';
+import { knows, type FogView, type Knowledge } from '../sim/fog.ts';
+import { MAP_HEIGHT, MAP_WIDTH } from '../sim/map.ts';
 import { createMatch, type Match } from '../sim/match.ts';
 import type { Observation } from '../sim/observation.ts';
 import { createPacing, type Speed } from '../sim/pacing.ts';
-import { LAND_RADIUS } from '../sim/economy.ts';
 import { requireTickCount } from '../sim/ticks.ts';
 import {
   hudLayout,
@@ -60,7 +61,7 @@ import {
   type RowRect,
   type Selection,
 } from '../ui/hud.ts';
-import { knowledgeOf, minimapPlate, type Fog, type FogGrid, type ViewportRect } from '../ui/minimap.ts';
+import { minimapPlate, type ViewportRect } from '../ui/minimap.ts';
 import { createHudLayer, type HudLayer } from './hud.ts';
 import type { PixelPoint, Stage } from './stage.ts';
 
@@ -76,17 +77,6 @@ export const PLAYER_FACTION: Faction = 'rome';
  * panel is a live panel and not a fixture.
  */
 export const OPENING_ORDER = { settlement: 0, squadType: 'hastati', count: 1 } as const;
-
-/**
- * How far from a settlement the page admits to seeing: the reach of its land.
- *
- * The interim until B4's visibility grid arrives, and deliberately not a new
- * number: the ground a settlement works is the ground its Faction is standing
- * on, so the page borrows the economy's own radius rather than inventing one.
- * Named here as a stand-in so that the day the visibility grid lands, this is
- * the line that reads it instead of guessing.
- */
-const KNOWLEDGE_RADIUS = LAND_RADIUS;
 
 /** The longest a single frame may pay for: a background tab does not owe the Match an hour. */
 const FRAME_BUDGET_MS = 250;
@@ -120,7 +110,7 @@ export interface GameHooks {
   /** The generated minimap, sampled in the same currency the frame is. */
   minimapSamples(points: readonly PixelPoint[]): readonly Rgba[];
   /** The fog the minimap is drawn through, one state per tile, row-major. */
-  fog(): readonly Fog[];
+  knowledge(): readonly Knowledge[];
 }
 
 /** The running game: its hooks, and the two calls that redraw it. */
@@ -143,6 +133,13 @@ export interface GameOptions {
   readonly size: HudSize;
   /** What the camera is showing, in stage pixels, read fresh on every redraw. */
   readonly viewport: () => ViewportRect;
+  /**
+   * What the Faction knows of the theatre, read fresh on every redraw.
+   *
+   * B4's own fog, which the page owns and refreshes: the HUD is a second drawing
+   * of the object the theatre is veiled with, and not a second opinion about it.
+   */
+  readonly fog: () => FogView;
 }
 
 /**
@@ -203,7 +200,16 @@ export function createGame(options: GameOptions): Game {
       pacing.setSpeed(speed);
     },
     minimapSamples: (points) => points.map(([x, y]) => pixelAt(minimap, x, y)),
-    fog: () => Array.from(readFog().cells, (state) => state as Fog),
+    knowledge: () => {
+      const fog = options.fog();
+      const states: Knowledge[] = [];
+
+      for (let y = 0; y < MAP_HEIGHT; y += 1) {
+        for (let x = 0; x < MAP_WIDTH; x += 1) states.push(knows(fog, x, y));
+      }
+
+      return states;
+    },
   };
 
   return {
@@ -293,17 +299,9 @@ export function createGame(options: GameOptions): Game {
     return hudModel(window, strongholdIds(window), selection);
   }
 
-  /** The ground this Faction knows: around the settlements it holds, and nowhere else. */
-  function readFog(): FogGrid {
-    return knowledgeOf(
-      visible().settlements.map((settlement) => ({ x: settlement.x, y: settlement.y })),
-      KNOWLEDGE_RADIUS,
-    );
-  }
-
-  /** The minimap, through the fog, with the camera marked. */
+  /** The minimap, through the fog the page owns, with the camera marked. */
   function readMinimap(): ReturnType<typeof minimapPlate> {
-    return minimapPlate(match.state.world.map, readFog(), options.viewport());
+    return minimapPlate(match.state.world.map, options.fog(), options.viewport());
   }
 
   /** Both plates, and a frame drawn. */

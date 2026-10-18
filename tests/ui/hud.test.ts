@@ -28,7 +28,8 @@ import {
   renderPanels,
   type HudSize,
 } from '../../src/ui/hud.ts';
-import { MINIMAP_PLATE_HEIGHT, MINIMAP_PLATE_WIDTH, minimapPlate, allVisible } from '../../src/ui/minimap.ts';
+import { inspectionView } from '../../src/sim/fog.ts';
+import { MINIMAP_PLATE_HEIGHT, MINIMAP_PLATE_WIDTH, minimapPlate } from '../../src/ui/minimap.ts';
 import { generateMap } from '../../src/sim/map.ts';
 import { translate } from '../../src/ui/strings.ts';
 
@@ -156,7 +157,7 @@ describe('the HUD model', () => {
 
 describe('the HUD on screen', () => {
   const MAP = generateMap(7);
-  const MINIMAP = minimapPlate(MAP, allVisible(), null);
+  const MINIMAP = minimapPlate(MAP, inspectionView(MAP), null);
 
   it('is the size of the viewport, and leaves the theatre visible where it draws nothing', () => {
     const model = hudModel(VISIBLE, STRONGHOLDS, null);

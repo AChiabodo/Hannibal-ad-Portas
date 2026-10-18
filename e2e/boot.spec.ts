@@ -1,13 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { SpqrDebugHooks } from '../src/debug';
-import { pixelAt, type PixelBuffer } from '../src/art/pixel-buffer';
+import { blit, pixelAt, type PixelBuffer } from '../src/art/pixel-buffer';
+import { createFog, refreshVision, viewOf } from '../src/sim/fog';
+import { eyesOf } from '../src/sim/fog-match';
 import { MAP_HEIGHT, MAP_WIDTH, generateMap } from '../src/sim/map';
 import type { ViewState } from '../src/render/boot';
-import { DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
+import { renderFog } from '../src/render/fog';
+import { VIEWED_FACTION, DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
 import { renderTerrain, THEATRE_PIXELS } from '../src/render/terrain';
 import { screenToStage, stageToScreen } from '../src/render/camera';
-import { describeView, hudRects, samples } from './hooks';
 import type { Rect } from '../src/ui/hud';
+import { describeView, hudRects, samples } from './hooks';
 
 /**
  * The theatre on screen (ticket B3).
@@ -23,13 +26,33 @@ import type { Rect } from '../src/ui/hud';
  * completely (every sampled point matches, including the corners of the theatre),
  * pans and zooms across all 96×96 tiles, and stays exactly in step with the
  * generator at every zoom level.
+ *
+ * B4 put the fog over the map (see `fog.spec.ts` for the fog itself), so the
+ * image these tests compare against is the theatre *under the fog the page opens
+ * with*: the player's Faction sees the ground around its Stronghold and nothing
+ * else. B7 put the interface over both, so points the HUD covers are dropped
+ * rather than compared — the rectangles come from the page's own layout, so the
+ * exclusion is the interface's idea of where it stands and not a second one kept
+ * here.
  */
 
-/** The theatre the page is showing, computed in Node. */
-const THEATRE: PixelBuffer = renderTerrain(generateMap(DEFAULT_SEED));
-
 /** The map as the page will describe it, so a test can check the two agree. */
-const MAP = { seed: DEFAULT_SEED, mapWidth: MAP_WIDTH, mapHeight: MAP_HEIGHT, mapPixels: THEATRE_PIXELS };
+const DESCRIBED = { seed: DEFAULT_SEED, mapWidth: MAP_WIDTH, mapHeight: MAP_HEIGHT, mapPixels: THEATRE_PIXELS };
+
+/** The theatre B1 generates for the page's seed, and the ground under the fog drawn over it. */
+const GRID = generateMap(DEFAULT_SEED);
+const THEATRE: PixelBuffer = foggedByThePlayer();
+
+/** The theatre rendered, with the fog the page opens with drawn over it. */
+function foggedByThePlayer(): PixelBuffer {
+  const fog = createFog();
+  refreshVision(fog, GRID, eyesOf(GRID, VIEWED_FACTION));
+
+  const frame = renderTerrain(GRID);
+  blit(frame, renderFog(viewOf(fog)), 0, 0);
+
+  return frame;
+}
 
 /**
  * Canvas points that show the theatre, and the theatre pixel each one should show.
@@ -70,9 +93,8 @@ function visiblePoints(view: ViewState): { points: [number, number][]; expected:
  * Asserts that every canvas point shows the theatre pixel the camera says it should.
  *
  * Points the interface covers are dropped rather than compared: since B7 the
- * frame is the theatre *and* the HUD over it, and a panel is deliberately not
- * the map. The rectangles come from the page's own layout, so the exclusion is
- * the interface's idea of where it stands and not a second one kept here.
+ * frame is the theatre, the fog and the HUD over both, and a panel is
+ * deliberately not the map.
  */
 async function expectTheatrePixels(page: Page, view: ViewState, context: string): Promise<void> {
   const rects = await hudRects(page);
@@ -147,8 +169,11 @@ test('boots in a real browser and draws the generated theatre through software W
   expect(view.height).toBe(VIEWPORT_HEIGHT);
   expect(view.camera.zoom).toBe(DEFAULT_ZOOM);
   expect({ seed: view.seed, mapWidth: view.mapWidth, mapHeight: view.mapHeight, mapPixels: view.mapPixels }).toEqual(
-    MAP,
+    DESCRIBED,
   );
+  // The page opens in the player's fog, not with the whole map revealed.
+  expect(view.inspection).toBe(false);
+  expect(view.watch).toBe(null);
   expect(view.camera.x).toBe(Math.floor(THEATRE_PIXELS / 2 - VIEWPORT_WIDTH / (2 * DEFAULT_ZOOM)));
   expect(view.camera.y).toBe(Math.floor(THEATRE_PIXELS / 2 - VIEWPORT_HEIGHT / (2 * DEFAULT_ZOOM)));
 

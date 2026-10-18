@@ -3,14 +3,15 @@ import type { Rgba } from '../src/art/pixel-buffer';
 import type { AtelierLayout } from '../src/render/atelier-layout';
 import type { ViewState } from '../src/render/boot';
 import type { HudModel, Rect, RowRect, Selection } from '../src/ui/hud';
+import type { Knowledge } from '../src/sim/fog';
 
 /**
  * Reading the page's debug hooks from a test.
  *
- * Both pages publish the same shape (ADR-0003): one of `view` and `atelier` is
- * filled and the other is null, and both offer the same `samples` call over the
- * renderer's own pixels. One place reads it, so a change to the hook shape fails
- * here rather than in two spec files that drifted apart.
+ * Both pages publish the same shape (ADR-0003): the game page fills `view` and
+ * `game` and the Atelier fills `atelier`, and the others are null. One place
+ * reads it, so a change to the hook shape fails here rather than in three spec
+ * files that drifted apart.
  *
  * What crosses the bridge is *data*, not the hooks themselves: a function is not
  * serialisable, so a test asks the page to call its own hook and answer with the
@@ -106,13 +107,13 @@ export async function advance(page: Page, ticks: number): Promise<void> {
   await page.evaluate((count) => window.__SPQR.game?.advance(count), ticks);
 }
 
-/** The fog the minimap is drawn through: one state per tile, row-major. */
-export async function fog(page: Page): Promise<readonly number[]> {
+/** What the Faction knows of each tile, row-major: B4's three states, as the page reads them. */
+export async function knowledge(page: Page): Promise<readonly Knowledge[]> {
   return page.evaluate(() => {
     const game = window.__SPQR.game;
     if (game === null) throw new Error('the page published no game hooks');
 
-    return game.fog();
+    return game.knowledge();
   });
 }
 

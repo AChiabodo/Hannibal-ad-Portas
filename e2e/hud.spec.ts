@@ -10,20 +10,23 @@
  *
  * The page's own hooks are the observation surface, so nothing here reaches into
  * the page's internals: `hud()` is the model, `hudRows()` is where the rows
- * stand, `fog()` is what the Faction knows, and `minimapSamples` reads the plate
- * the page generated. The map itself is regenerated in Node from the seed the
- * page reports, so "the minimap matches the map" is a comparison and not a
- * smoke test.
+ * stand, `knowledge()` is what the Faction knows, and `minimapSamples` reads the
+ * plate the page generated. The map and the fog are regenerated in Node from the
+ * seed the page reports, so "the minimap matches the map" is a comparison and
+ * not a smoke test.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { BASE } from '../src/art/palette';
-import { MAP_HEIGHT, MAP_WIDTH, generateMap, tileIndex, terrainAt, type MapGrid } from '../src/sim/map';
-import { DEFAULT_SEED } from '../src/render/view';
+import { pixelAt } from '../src/art/pixel-buffer';
+import { MAP_HEIGHT, MAP_WIDTH, generateMap, type MapGrid } from '../src/sim/map';
+import { KNOWLEDGE, createFog, knows, refreshVision, viewOf, type FogView } from '../src/sim/fog';
+import { eyesOf } from '../src/sim/fog-match';
+import { DEFAULT_SEED, VIEWED_FACTION } from '../src/render/view';
 import {
-  FOG,
   MINIMAP_CAMERA,
-  MINIMAP_COLOUR,
   MINIMAP_PADDING,
+  MINIMAP_PLATE_HEIGHT,
+  MINIMAP_PLATE_WIDTH,
+  minimapPlate,
   settlementColour,
   viewportRectOnMinimap,
 } from '../src/ui/minimap';
@@ -31,10 +34,10 @@ import { translate } from '../src/ui/strings';
 import {
   advance,
   describeView,
-  fog,
   hud,
   hudRects,
   hudRows,
+  knowledge,
   minimapSamples,
   samples,
   select,
@@ -42,12 +45,13 @@ import {
 
 const MAP: MapGrid = generateMap(DEFAULT_SEED);
 
-/** Every tile a settlement or a resource node stands on, which a marker paints over. */
-const OCCUPIED = new Set<number>([
-  ...MAP.strongholds.map((site) => tileIndex(site.x, site.y)),
-  ...MAP.settlements.map((site) => tileIndex(site.x, site.y)),
-  ...MAP.resources.map((node) => tileIndex(node.x, node.y)),
-]);
+/** The fog the page opens with, composed here exactly as the page composes it. */
+function openingFog(): FogView {
+  const fog = createFog();
+  refreshVision(fog, MAP, eyesOf(MAP, VIEWED_FACTION));
+
+  return viewOf(fog);
+}
 
 /**
  * Boots the page and stops the real-time clock, so a test reads one state.
@@ -129,53 +133,50 @@ test('selects the row a Player clicks', async ({ page }) => {
   expect(await page.evaluate(() => window.__SPQR.game?.selection() ?? null)).toBeNull();
 });
 
-test('draws the minimap from the map, and blanks what the Faction has not seen', async ({ page }) => {
+test('draws the minimap from the map, through the fog the Faction actually has', async ({ page }) => {
   await boot(page);
   await advance(page, 1);
 
-  const knowledge = await fog(page);
-  expect(knowledge.length).toBe(MAP_WIDTH * MAP_HEIGHT);
+  // What the page says it knows is what the rules say it knows, tile for tile.
+  const states = await knowledge(page);
+  const fog = openingFog();
+  expect(states.length).toBe(MAP_WIDTH * MAP_HEIGHT);
+  expect(states).toEqual(
+    Array.from({ length: MAP_WIDTH * MAP_HEIGHT }, (_, tile) =>
+      knows(fog, tile % MAP_WIDTH, Math.floor(tile / MAP_WIDTH)),
+    ),
+  );
 
+  // Both states are actually on the plate, or the check is about a map with
+  // nothing to be honest about: the Stronghold's vision is a neighbourhood, and
+  // most of the theatre is not in it.
+  expect(states.filter((state) => state === KNOWLEDGE.unexplored).length).toBeGreaterThan(1000);
+  expect(states.filter((state) => state === KNOWLEDGE.visible).length).toBeGreaterThan(100);
+
+  // And the plate is the generator's, pixel for pixel: the same map, the same
+  // fog, the same camera, composed in Node.
   const view = await describeView(page);
-  const cameraRect = viewportRectOnMinimap({
+  const viewport = {
     x: view.camera.x,
     y: view.camera.y,
     width: Math.floor(view.width / view.camera.zoom),
     height: Math.floor(view.height / view.camera.zoom),
-  });
+  };
+  const expected = minimapPlate(MAP, fog, viewport);
 
   const points: [number, number][] = [];
-  const wanted: (readonly [number, number, number, number])[] = [];
-  let unseen = 0;
-  let visible = 0;
-
-  for (let y = 0; y < MAP_HEIGHT; y += 1) {
-    for (let x = 0; x < MAP_WIDTH; x += 1) {
-      if (OCCUPIED.has(tileIndex(x, y))) continue;
-
-      const at = { x: MINIMAP_PADDING + x, y: MINIMAP_PADDING + y };
-      if (onCameraOutline(cameraRect, at.x, at.y)) continue;
-
-      const state = knowledge[tileIndex(x, y)];
-      if (state === FOG.unseen) unseen += 1;
-      else visible += 1;
-
-      points.push([at.x, at.y]);
-      wanted.push(state === FOG.unseen ? BASE.night : MINIMAP_COLOUR[terrainAt(MAP, x, y)]);
-    }
+  for (let y = 0; y < MINIMAP_PLATE_HEIGHT; y += 1) {
+    for (let x = 0; x < MINIMAP_PLATE_WIDTH; x += 1) points.push([x, y]);
   }
-
-  // Both states are actually on screen, or the check is about a plate with
-  // nothing to be honest about.
-  expect(unseen).toBeGreaterThan(1000);
-  expect(visible).toBeGreaterThan(100);
 
   const drawn = await minimapSamples(page, points);
   let wrong = 0;
   for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
     const got = drawn[index];
-    const want = wanted[index];
-    if (got === undefined || want === undefined) continue;
+    if (point === undefined || got === undefined) continue;
+
+    const want = pixelAt(expected, point[0], point[1]);
     if (got[0] !== want[0] || got[1] !== want[1] || got[2] !== want[2]) wrong += 1;
   }
 
@@ -239,18 +240,3 @@ test('moves the camera mark on the minimap with the camera', async ({ page }) =>
   expect(await minimapSamples(page, [[moved.x, moved.y]])).toEqual([MINIMAP_CAMERA]);
   expect(await minimapSamples(page, [[rect.x, rect.y]])).not.toEqual([MINIMAP_CAMERA]);
 });
-
-/** Whether a plate point is on the camera rectangle's one-pixel outline. */
-function onCameraOutline(
-  rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
-  x: number,
-  y: number,
-): boolean {
-  const onHorizontal = y === rect.y || y === rect.y + rect.height;
-  const onVertical = x === rect.x || x === rect.x + rect.width;
-
-  return (
-    (onHorizontal && x >= rect.x && x <= rect.x + rect.width) ||
-    (onVertical && y >= rect.y && y <= rect.y + rect.height)
-  );
-}

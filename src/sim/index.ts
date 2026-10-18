@@ -43,7 +43,20 @@
  *   function of the seed, and the map is integer state like everything else
  *   (ADR-0006), so the Match that eventually runs on it replays exactly.
  *
- * B5 gave the Match its strategic clock, which is the Match the CLI plays today:
+ * B4 made the Observation's promise a fact rather than a hope:
+ *
+ * - `fog.ts` — the fog of war: a visibility grid per Faction with three states
+ *   (unexplored, remembered, in view), vision by radius from the Faction's own
+ *   eyes, the terrain memory that outlives them, the last known enemy contacts,
+ *   and the view a Controller may read. Memory is *state* — who saw what decides
+ *   what can be decided — so it is hashed and replayed like everything else
+ *   (ADR-0013). `inspectionView` is the debugging mode: the whole map known, and
+ *   deliberately not a Player.
+ * - `fog-match.ts` — the theatre, both Factions' memory of it, and the
+ *   Observation built from that memory, recomputed on every tick from the
+ *   settlements the Faction holds.
+ *
+ * B5 gave the Match its strategic clock, which the CLI plays today:
  *
  * - `season.ts` — the calendar: four Seasons to a game year, autumn and winter
  *   as the only two hooks another system needs, and a Season Match whose
@@ -124,7 +137,7 @@ export type {
 export type { Observation } from './observation.ts';
 export { scriptedController, idleController } from './controller.ts';
 export type { Controller, Player, Players } from './controller.ts';
-export { ForeignCommandError, runMatch } from './driver.ts';
+export { ForeignCommandError, ObservationProjectionError, runMatch } from './driver.ts';
 export type { MatchResult, MatchRun, MatchSetup, Outcome } from './driver.ts';
 export { emptyMatchOutcome, emptyMatchRules, observeEmptyMatch } from './empty.ts';
 export type { EmptyMatchVisible, EmptyMatchWorld } from './empty.ts';
@@ -236,3 +249,24 @@ export type {
   Site,
   Terrain,
 } from './map.ts';
+
+export {
+  believedTerrain,
+  createFog,
+  createFogs,
+  eyeOf,
+  forgetContacts,
+  inspectionView,
+  KNOWLEDGE,
+  knows,
+  observeContacts,
+  refreshVision,
+  requireTile,
+  SETTLEMENT_VISION,
+  UNSEEN,
+  viewOf,
+} from './fog.ts';
+export type { EnemyInSight, Eye, Fog, FogView, Knowledge, LastKnownContact } from './fog.ts';
+
+export { createFogMatchWorld, eyesOf, fogMatchOutcome, fogMatchRules, observeFogMatch } from './fog-match.ts';
+export type { FogMatchVisible, FogMatchWorld } from './fog-match.ts';

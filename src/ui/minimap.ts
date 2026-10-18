@@ -6,16 +6,14 @@
  * than merely legible. It is a picture of the map — one pixel per tile — and a
  * picture of a map the Player has not seen is a leak: an unexplored Stronghold
  * showing through the fog is the failure a Player notices first and forgives
- * last. So the module takes a **fog grid** as an argument and nothing else: a
- * tile the Faction has never seen is drawn in the night colour whatever the map
- * holds underneath it, and there is no code path that can paint it otherwise.
+ * last. So the module takes **B4's fog** as an argument and nothing else: a tile
+ * the Faction has never seen is drawn in the night colour whatever the map holds
+ * underneath it, and there is no code path that can paint it otherwise.
  *
- * Fog of war itself is B4's. What B7 fixes is the *contract* — three states per
- * tile, `unseen`, `explored` and `visible` — so that the day B4's visibility
- * grid lands, this module already obeys it and the page has only to hand it
- * over. Until then the page composes a grid out of what it is allowed to know
- * (`revealWithin` around its own settlements), which is honest about the same
- * thing at a smaller scale.
+ * It is the *same* `FogView` the theatre is veiled with (`render/fog.ts`), not a
+ * second grid that agrees with it: what the corner of the screen shows and what
+ * the map under the camera shows are two drawings of one object, so they cannot
+ * drift apart into two opinions about what the Faction knows.
  *
  * ## Why one pixel per tile, and what that costs
  *
@@ -35,49 +33,20 @@ import { BASE, RAMPS, shade, shadeAt } from '../art/palette.ts';
 import { createPixelBuffer, setPixel, strokeRect, type PixelBuffer, type Rgba } from '../art/pixel-buffer.ts';
 import { UNOWNED } from '../sim/economy.ts';
 import { factionCode } from '../sim/faction.ts';
+import { KNOWLEDGE, believedTerrain, knows, type FogView, type Knowledge } from '../sim/fog.ts';
 import {
   MAP_HEIGHT,
   MAP_WIDTH,
   RESOURCE,
   TERRAIN,
+  TILE_COUNT,
   TILE_SIZE,
   terrainAt,
-  tileIndex,
   type MapGrid,
   type ResourceKind,
   type Site,
   type Terrain,
 } from '../sim/map.ts';
-
-/**
- * How much of the map a Faction knows about one tile.
- *
- * Three states and not a boolean, because the middle one is the whole point of
- * fog with memory: ground a Squad has walked is remembered after the Squad
- * leaves, and ground nobody has been to is not. `unseen` reveals nothing,
- * `explored` shows the terrain dimmed, `visible` shows it as it is.
- */
-export const FOG = {
-  /** Never observed: the tile is blank, and the map underneath it stays a secret. */
-  unseen: 0,
-  /** Observed once and remembered: the terrain shows, dimmed. */
-  explored: 1,
-  /** In view now: the terrain shows as it is. */
-  visible: 2,
-} as const;
-
-/** One of the three states of a tile. */
-export type Fog = (typeof FOG)[keyof typeof FOG];
-
-/** How well a Faction knows the theatre: one state per tile, row-major. */
-export interface FogGrid {
-  /** Width in tiles. */
-  readonly width: number;
-  /** Height in tiles. */
-  readonly height: number;
-  /** One `Fog` per tile, at `tileIndex(x, y)`. */
-  readonly cells: Uint8Array;
-}
 
 /** Blank margin between the map and the plate's edge, in pixels: the frame's thickness. */
 export const MINIMAP_PADDING = 2;
@@ -132,6 +101,15 @@ export const MINIMAP_MARKER: Readonly<Record<ResourceKind, Rgba>> = {
   [RESOURCE.stone]: shadeAt(RAMPS.stone, 6),
   [RESOURCE.iron]: shadeAt(RAMPS.stone, 1),
 };
+
+/**
+ * What the last known position of an enemy looks like.
+ *
+ * Blood, and not the shade Carthage's own settlements are drawn in: a contact is
+ * something an enemy *had* standing somewhere, and a Player has to be able to
+ * tell it from a place the enemy still holds.
+ */
+export const MINIMAP_CONTACT: Rgba = shadeAt(RAMPS.blood, 3);
 
 /** A rectangle on the plate, in plate pixels. */
 export interface PlateRect {
@@ -192,12 +170,12 @@ export function viewportRectOnMinimap(viewport: ViewportRect): PlateRect {
  * with no camera on it — a test that wants to read the map without a rectangle
  * over it, and a page that has not decided where it is looking yet.
  *
- * @throws RangeError when the fog grid does not describe this map: a grid of
- *   another size is a caller that has lost track of which map it is looking at,
- *   and answering it with a half-painted plate would hide that.
+ * @throws RangeError when the fog is not over this theatre: a view of another
+ *   size is a caller that has lost track of which map it is looking at, and
+ *   answering it with a half-painted plate would hide that.
  */
-export function minimapPlate(map: MapGrid, fog: FogGrid, viewport: ViewportRect | null): PixelBuffer {
-  requireFogOfMap(fog);
+export function minimapPlate(map: MapGrid, fog: FogView, viewport: ViewportRect | null): PixelBuffer {
+  requireTheatre(fog);
 
   const plate = createPixelBuffer(MINIMAP_PLATE_WIDTH, MINIMAP_PLATE_HEIGHT, BASE.night);
   strokeRect(
@@ -211,18 +189,21 @@ export function minimapPlate(map: MapGrid, fog: FogGrid, viewport: ViewportRect 
 
   for (let y = 0; y < MAP_HEIGHT; y += 1) {
     for (let x = 0; x < MAP_WIDTH; x += 1) {
-      const knowledge = fogAt(fog, x, y);
-      if (knowledge === FOG.unseen) continue;
+      const knowledge = knows(fog, x, y);
+      if (knowledge === KNOWLEDGE.unexplored) continue;
 
-      const colour = fogged(MINIMAP_COLOUR[terrainAt(map, x, y)], knowledge);
+      // The terrain the Faction *believes*, not the terrain the map holds: they
+      // are the same today, because nothing redraws a tile, and the day
+      // something does, a remembered tile must show what was seen (B4).
+      const ground = believedTerrain(fog, x, y) ?? terrainAt(map, x, y);
       const at = minimapPointOf(x, y);
-      setPixel(plate, at.x, at.y, colour);
+      setPixel(plate, at.x, at.y, fogged(MINIMAP_COLOUR[ground], knowledge));
     }
   }
 
-  // Landmarks after the ground, and only where the Faction can see the ground
-  // they stand on: a settlement in the fog is the leak this module exists to
-  // prevent, so the fog is consulted again rather than assumed.
+  // Landmarks after the ground, and only where the Faction knows the ground they
+  // stand on: a settlement in the fog is the leak this module exists to prevent,
+  // so the fog is consulted again rather than assumed.
   for (const [owner, site] of map.strongholds.entries()) {
     paintSite(plate, fog, site, settlementColour(owner));
   }
@@ -231,6 +212,12 @@ export function minimapPlate(map: MapGrid, fog: FogGrid, viewport: ViewportRect 
   }
   for (const node of map.resources) {
     paintSite(plate, fog, node, MINIMAP_MARKER[node.kind]);
+  }
+
+  // And the enemy last seen: a contact is remembered at the tile it stood on, so
+  // it is drawn where the Faction believes it is rather than tracked live.
+  for (const contact of fog.contacts) {
+    paintSite(plate, fog, contact, MINIMAP_CONTACT);
   }
 
   if (viewport !== null) {
@@ -243,70 +230,25 @@ export function minimapPlate(map: MapGrid, fog: FogGrid, viewport: ViewportRect 
   return plate;
 }
 
-/** A grid with every tile in one state. */
-export function fogGrid(width: number, height: number, fill: Fog = FOG.unseen): FogGrid {
-  return { width, height, cells: new Uint8Array(width * height).fill(fill) };
-}
-
-/** The grid a Faction that can see everything would have. A debug view, and the tests. */
-export function allVisible(): FogGrid {
-  return fogGrid(MAP_WIDTH, MAP_HEIGHT, FOG.visible);
-}
-
-/** One tile's state, with a grid that does not reach it reading as unseen rather than as a hole. */
-export function fogAt(fog: FogGrid, x: number, y: number): Fog {
-  if (x < 0 || y < 0 || x >= fog.width || y >= fog.height) return FOG.unseen;
-
-  return (fog.cells[tileIndex(x, y)] ?? FOG.unseen) as Fog;
-}
-
-/**
- * Marks a square of tiles as in view, clipped to the map.
- *
- * This is what the page uses to say what a Faction knows until B4's visibility
- * grid says it properly: the ground around the settlements it holds.
- */
-export function revealWithin(fog: FogGrid, x: number, y: number, radius: number): void {
-  for (let ty = y - radius; ty <= y + radius; ty += 1) {
-    for (let tx = x - radius; tx <= x + radius; tx += 1) {
-      if (tx < 0 || ty < 0 || tx >= fog.width || ty >= fog.height) continue;
-
-      fog.cells[tileIndex(tx, ty)] = FOG.visible;
-    }
-  }
-}
-
-/** A grid holding the ground around a Faction's sites, and nothing else. */
-export function knowledgeOf(sites: readonly Site[], radius: number): FogGrid {
-  const fog = fogGrid(MAP_WIDTH, MAP_HEIGHT, FOG.unseen);
-
-  for (const site of sites) revealWithin(fog, site.x, site.y, radius);
-
-  return fog;
-}
-
 /** The colour a tile shows at one state of knowledge. */
-function fogged(colour: Rgba, knowledge: Fog): Rgba {
-  return knowledge === FOG.explored ? shade(colour, MINIMAP_DIM) : colour;
+function fogged(colour: Rgba, knowledge: Knowledge): Rgba {
+  return knowledge === KNOWLEDGE.remembered ? shade(colour, MINIMAP_DIM) : colour;
 }
 
 /** One tile's landmark, if the Faction knows the ground it stands on. */
-function paintSite(plate: PixelBuffer, fog: FogGrid, site: Site, colour: Rgba): void {
-  const knowledge = fogAt(fog, site.x, site.y);
-  if (knowledge === FOG.unseen) return;
+function paintSite(plate: PixelBuffer, fog: FogView, site: Site, colour: Rgba): void {
+  const knowledge = knows(fog, site.x, site.y);
+  if (knowledge === KNOWLEDGE.unexplored) return;
 
   const at = minimapPointOf(site.x, site.y);
   setPixel(plate, at.x, at.y, fogged(colour, knowledge));
 }
 
-/** The rectangle the camera is showing, as a one-pixel outline. */
-
-/** @throws RangeError when the grid describes another map. */
-function requireFogOfMap(fog: FogGrid): void {
-  if (fog.width !== MAP_WIDTH || fog.height !== MAP_HEIGHT) {
+/** @throws RangeError when the view is not over this project's theatre. */
+function requireTheatre(fog: FogView): void {
+  if (fog.terrain.length !== TILE_COUNT || fog.visible.length !== TILE_COUNT) {
     throw new RangeError(
-      `the fog grid is ${String(fog.width)}×${String(fog.height)} and the map is ` +
-        `${String(MAP_WIDTH)}×${String(MAP_HEIGHT)}`,
+      `the fog is over ${String(fog.terrain.length)} tiles, and this theatre has ${String(TILE_COUNT)}`,
     );
   }
 }

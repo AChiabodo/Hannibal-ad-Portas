@@ -85,6 +85,16 @@ One of the two sides of the perpendicular bisector of the two Strongholds: the t
 _UI_: —
 _Avoid_: Side, half of the map
 
+**Fog of war**:
+What one Faction has seen of the theatre, in three states: unexplored — no eye has ever covered the tile; remembered — an eye covered it once, and the ground it had then is still known; visible — an eye covers it now. Vision is a radius around the Faction's own Squads and settlements, and the fog is *memory*: ground stays known after the Squad that saw it marches away.
+_UI_: Nebbia di guerra
+_Avoid_: Shroud, blackout, visibility mask, using "fog" for the unexplored state alone
+
+**Last known contact**:
+Where an enemy thing was standing when the Faction last saw it, kept after it marches out of view. The place is a memory and not a live position, and how stale that memory is matters.
+_UI_: Ultimo contatto noto
+_Avoid_: Blip, tracker, calling a thing the rules can see right now a "contact" (that is an enemy in sight; only the fog's *memory* of one is a last known contact)
+
 ### Command
 
 **Controller**:
@@ -92,7 +102,7 @@ Whichever mind drives a Faction: the human input handler, the built-in AI, a scr
 _Avoid_: Player, input handler, brain
 
 **Observation**:
-Everything a Controller is allowed to know: the Match state filtered through its Faction's visibility. No Controller ever reads Match state outside its own Observation.
+Everything a Controller is allowed to know: the Match state filtered through its Faction's fog of war. No Controller ever reads Match state outside its own Observation.
 _UI_: —
 _Avoid_: View, state (the raw Match state is not an Observation)
 
@@ -188,11 +198,6 @@ _UI_: Selezione
 _Avoid_: Focus, target, highlight
 
 **Minimap**:
-The theatre at one pixel per tile, drawn through the Faction's fog: it shows what the Faction knows and nothing more.
+The theatre at one pixel per tile, drawn through the Faction's Fog of war: it shows what the Faction knows and nothing more.
 _UI_: Mappa
 _Avoid_: Overview, radar, small map
-
-**Fog**:
-What a Faction knows of one tile: never seen, seen and remembered, or in view. The visibility grid is B4's; the minimap obeys it.
-_UI_: —
-_Avoid_: Shroud, blackout, unexplored (that is one of its three states)

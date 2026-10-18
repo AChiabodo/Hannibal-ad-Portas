@@ -62,6 +62,35 @@ export class ForeignCommandError extends Error {
 }
 
 /**
+ * The rules returned a projection the core cannot carry to a Controller.
+ *
+ * The seam's contract on `observe` is structured-cloneable plain data (see
+ * `MatchSetup.observe`), and this is the failure of that contract: a function, a
+ * proxy, or anything else `structuredClone` refuses to copy. It is a sim-owned
+ * error rather than the clone's own `DataCloneError` for the ordinary reason —
+ * it is a failure of a rule, and a reader of it should not have to know which
+ * primitive noticed. The clone's own refusal is kept as `cause`, so nothing
+ * about *why* it could not be carried is lost by naming the seam.
+ *
+ * Nothing but the hand-over can raise it: the copy is made once per Player per
+ * tick, before the Controller sees anything and before the tick is stepped.
+ */
+export class ObservationProjectionError extends Error {
+  /** The Faction the projection was built for. */
+  readonly faction: Faction;
+
+  constructor(faction: Faction, cause: unknown) {
+    super(
+      `observe returned a projection for ${faction} that the driver cannot carry to its Controller: ` +
+        'a projection must be structured-cloneable plain data',
+      { cause },
+    );
+    this.name = 'ObservationProjectionError';
+    this.faction = faction;
+  }
+}
+
+/**
  * What the rules say about a Match that has ended: who won, or that nobody did.
  *
  * Deliberately thin. The *reason* — a Stronghold fallen, an army annihilated —
@@ -155,9 +184,9 @@ export interface MatchRun {
  *   a Command in the vocabulary.
  * @throws ForeignCommandError when a Controller emits a Command for the other
  *   Faction.
- * @throws DOMException named `DataCloneError` when `observe` returns a
- *   projection that is not structured-cloneable plain data — a function or a
- *   proxy, which `structuredClone` refuses rather than copies.
+ * @throws ObservationProjectionError when `observe` returns a projection that is
+ *   not structured-cloneable plain data — a function or a proxy, which
+ *   `structuredClone` refuses rather than copies.
  * @throws StateSerializationError when a tick leaves anything but integers in state.
  */
 export function runMatch<World, Visible>(setup: MatchSetup<World, Visible>): MatchRun {
@@ -203,8 +232,9 @@ function decide<World, Visible>(
       // a projection must be structured-cloneable plain data, and nothing it
       // holds may rely on prototype identity, accessors, symbol keys or
       // non-enumerable fields. Only what the clone cannot carry at all — a
-      // function, a proxy — is refused, with `DataCloneError`.
-      visible: structuredClone(setup.observe(world, player.faction)),
+      // function, a proxy — is refused, and that refusal is the seam's own
+      // (`ObservationProjectionError`), naming the Faction it was built for.
+      visible: projectionOf(setup, world, player.faction),
     };
 
     for (const emitted of player.controller.decide(observation)) {
@@ -219,6 +249,30 @@ function decide<World, Visible>(
   }
 
   return entries;
+}
+
+/**
+ * What one Faction may see of the world, copied so that the Controller owns it.
+ *
+ * A rules bug that throws from `observe` keeps its own error: only the copy is
+ * the driver's to explain, and a failure of the copy is exactly the one the seam
+ * has something useful to say about.
+ *
+ * @throws ObservationProjectionError when the projection is not
+ *   structured-cloneable plain data.
+ */
+function projectionOf<World, Visible>(
+  setup: MatchSetup<World, Visible>,
+  world: World,
+  faction: Faction,
+): Visible {
+  const projected = setup.observe(world, faction);
+
+  try {
+    return structuredClone(projected);
+  } catch (error) {
+    throw new ObservationProjectionError(faction, error);
+  }
 }
 
 /** The end of the Match, as the run reports it. */

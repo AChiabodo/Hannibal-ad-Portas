@@ -4,12 +4,12 @@ import { translate } from './ui/strings.ts';
 
 /**
  * Boots the game: the theatre B1 generated, on one texture under B2's camera,
- * the economy Match of B6 running behind B7's Italian interface, with the debug
- * hooks published.
+ * B4's fog over it, and the economy Match of B6 running behind B7's Italian
+ * interface, with the debug hooks published.
  *
- * The war is not part of this page yet — B4 brings fog, C1 movement, C2 the
- * Squads a player commands — and what B7 puts here is the window a Player will
- * watch all of it through.
+ * The war is not part of this page yet — C1 brings movement, C2 the Squads a
+ * player commands — and what B7 puts here is the window a Player will watch all
+ * of it through.
  */
 async function boot(): Promise<void> {
   const view = await bootRenderer(requireMount('app'));

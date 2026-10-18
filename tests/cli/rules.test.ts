@@ -131,12 +131,29 @@ describe('the Match on the theatre and the economy, which is the one the command
   });
 });
 
+describe('a Match on the theatre and the fog', () => {
+  it('plays the fog Match again from the same seed, hash for hash, and ends by the clock', () => {
+    const first = RULES.fog.play(1, 600);
+    const second = RULES.fog.play(1, 600);
+
+    expect(first.hash).toBe(second.hash);
+    expect(first.hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(first.result).toEqual({ kind: 'clock', tick: 600 });
+    expect(first.log).toEqual([]);
+  });
+
+  it('gives the fog Match a different hash from the empty Match: the map and what each Faction knows are in state', () => {
+    expect(RULES.fog.play(1, 600).hash).not.toBe(RULES.empty.play(1, 600).hash);
+  });
+});
+
 describe('the names of the Matches the command line ships', () => {
   it('names the Matches it ships, and nothing else', () => {
     expect(isRulesName('economy')).toBe(true);
     expect(isRulesName('seasons')).toBe(true);
     expect(isRulesName('empty')).toBe(true);
     expect(isRulesName('draws')).toBe(true);
+    expect(isRulesName('fog')).toBe(true);
     expect(isRulesName(DEFAULT_RULES)).toBe(true);
 
     for (const value of ['', 'Empty', 'empty ', 'draws\n', 'anything else']) {

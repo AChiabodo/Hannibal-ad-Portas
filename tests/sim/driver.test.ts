@@ -9,7 +9,7 @@ import {
   type Command,
 } from '../../src/sim/command';
 import { idleController, scriptedController, type Controller } from '../../src/sim/controller';
-import { ForeignCommandError, runMatch, type MatchRun } from '../../src/sim/driver';
+import { ForeignCommandError, ObservationProjectionError, runMatch, type MatchRun } from '../../src/sim/driver';
 import type { Observation } from '../../src/sim/observation';
 import { replay, type CommandLog } from '../../src/sim/replay';
 import { ONE_OF_EACH } from './one-of-each';
@@ -326,7 +326,7 @@ describe('the Observation a Controller is handed', () => {
     expect(cheated.run.hash).toBe(honest.run.hash);
   });
 
-  it('refuses a projection the clone cannot carry at all, before the Match runs: the error is the clone\'s own, not a sim error', () => {
+  it('refuses a projection the clone cannot carry at all, before the Match runs, naming observe and the Faction', () => {
     const steps: number[] = [];
     let refused: unknown;
 
@@ -338,8 +338,9 @@ describe('the Observation a Controller is handed', () => {
           step: () => steps.push(1),
         },
         // A function is not data, so `structuredClone` refuses it rather than
-        // copying it — and the driver does not rescue the refusal into one of
-        // the seam's own errors.
+        // copying it — and the refusal arrives as a failure of the seam, naming
+        // what was refused and for whom, rather than as a `DataCloneError` a
+        // reader would have to trace back to `observe` themselves.
         observe: () => ({ squads: [], secretTotal: 0, spy: () => 0 }),
         outcome: () => null,
         players: [
@@ -352,8 +353,14 @@ describe('the Observation a Controller is handed', () => {
       refused = error;
     }
 
-    expect(refused).toBeInstanceOf(DOMException);
-    expect((refused as DOMException).name).toBe('DataCloneError');
+    expect(refused).toBeInstanceOf(ObservationProjectionError);
+    expect((refused as ObservationProjectionError).faction).toBe('rome');
+    expect((refused as Error).message).toContain('observe');
+    expect((refused as Error).message).toContain('rome');
+    // The clone's own refusal is kept as the cause, so nothing about why it
+    // could not be carried is thrown away by naming the seam that carried it.
+    expect((refused as Error).cause).toBeInstanceOf(DOMException);
+    expect(((refused as Error).cause as DOMException).name).toBe('DataCloneError');
     // And the refusal happens at the hand-over, before a single tick is stepped.
     expect(steps).toEqual([]);
   });

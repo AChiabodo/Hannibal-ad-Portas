@@ -42,6 +42,20 @@ export function rgba(hex: number, alpha = 255): Rgba {
 }
 
 /**
+ * The same colour at another alpha: a veil, a shade of something the palette
+ * already names, rather than the same channels written down a second time.
+ *
+ * @throws RangeError when the alpha is not an integer in [0, 255].
+ */
+export function withAlpha(colour: Rgba, alpha: number): Rgba {
+  if (!Number.isInteger(alpha) || alpha < 0 || alpha > 255) {
+    throw new RangeError(`an alpha channel must be an integer in [0, 255], got ${String(alpha)}`);
+  }
+
+  return [colour[0], colour[1], colour[2], alpha];
+}
+
+/**
  * The bases every other colour is derived from.
  *
  * `night`, `parchment` and `neutral` are surfaces and inks: the page, the words

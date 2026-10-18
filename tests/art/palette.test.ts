@@ -6,7 +6,7 @@
  * would pass whatever it did.
  */
 import { describe, expect, it } from 'vitest';
-import { BASE, RAMP_NAMES, RAMP_SHADES, RAMPS, ramp, rgba, shade } from '../../src/art/palette';
+import { BASE, RAMP_NAMES, RAMP_SHADES, RAMPS, ramp, rgba, shade, withAlpha } from '../../src/art/palette';
 
 describe('a colour written down as a number', () => {
   it('splits the channels and defaults to opaque', () => {
@@ -22,6 +22,20 @@ describe('a colour written down as a number', () => {
     }
     for (const alpha of [-1, 256, 0.5]) {
       expect(() => rgba(0x000000, alpha)).toThrow(RangeError);
+    }
+  });
+});
+
+describe('the same colour at another alpha', () => {
+  it('keeps the channels it was given, and takes the alpha it was asked for', () => {
+    expect(withAlpha(BASE.ink, 160)).toEqual([BASE.ink[0], BASE.ink[1], BASE.ink[2], 160]);
+    expect(withAlpha([10, 20, 30, 255], 0)).toEqual([10, 20, 30, 0]);
+    expect(withAlpha([10, 20, 30, 128], 255)).toEqual([10, 20, 30, 255]);
+  });
+
+  it('refuses an alpha that is not a channel', () => {
+    for (const alpha of [-1, 256, 0.5, Number.NaN]) {
+      expect(() => withAlpha(BASE.ink, alpha)).toThrow(RangeError);
     }
   });
 });
