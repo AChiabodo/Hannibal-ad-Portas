@@ -48,12 +48,15 @@ describe('the command line', () => {
     );
   });
 
-  it('plays the Match on the strategic clock by default, and takes which rules to play by name', () => {
+  it('plays the economy Match by default, and takes which rules to play by name', () => {
     expect(parseArguments([])).toEqual(run());
-    expect(run().options.rules).toBe('seasons');
+    expect(run().options.rules).toBe('economy');
     expect(parseArguments(['--rules', 'draws'])).toEqual(run({ rules: 'draws' }));
     expect(parseArguments(['--rules', 'seasons', '--seed', '3'])).toEqual(
       run({ seed: 3, rules: 'seasons' }),
+    );
+    expect(parseArguments(['--rules', 'economy', '--seed', '3'])).toEqual(
+      run({ seed: 3, rules: 'economy' }),
     );
     expect(parseArguments(['--rules', 'empty', '--seed', '3'])).toEqual(
       run({ seed: 3, rules: 'empty' }),

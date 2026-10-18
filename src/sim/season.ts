@@ -3,11 +3,12 @@
  *
  * A game year is four Seasons, and the calendar is the Match's only clock:
  * spring and summer are the campaign season, autumn brings the harvest and
- * winter brings Attrition, and every system that cares is told when autumn or
- * winter begins instead of counting the year itself. That is the whole
- * interface — one clock, advanced once per tick, announced to every subscriber —
- * and it is what keeps a Season meaning the same thing in the economy, in supply
- * and in the AI.
+ * winter brings Attrition, and every system that cares is told when a Season
+ * begins instead of counting the year itself — the economy on every boundary,
+ * and the harvest and Attrition on the two that mean something extra. That is
+ * the whole interface — one clock, advanced once per tick, announced to every
+ * subscriber — and it is what keeps a Season meaning the same thing in the
+ * economy, in supply and in the AI.
  *
  * Three rules shape the module:
  *
@@ -31,7 +32,9 @@
  *
  * Harvest yields and winter Attrition values are deliberately *not* here: B6
  * owns the economy and C6 owns Attrition, and both arrive as hooks rather than
- * as numbers the clock would have to know about.
+ * as numbers the clock would have to know about. The economy's hook is
+ * `onSeason`, because production and Payroll are a Season's ordinary work; the
+ * harvest is `onAutumn` on top of it.
  */
 import type { Command } from './command.ts';
 import { TICK_HZ } from './clock.ts';
@@ -136,11 +139,18 @@ export interface SeasonChange {
 /**
  * What other systems are told when a Season begins.
  *
- * Only two transitions are hooks, and that is the point: spring and summer begin
- * a campaign season nobody has to react to, while autumn is the harvest and
- * winter is Attrition and winter quarters. A system registers here and is told;
- * it never counts the year itself, so no two systems can disagree about when a
- * Season started.
+ * `onSeason` is every Season — spring, summer, autumn and winter alike — and it
+ * is what the economy subscribes to: production, the people who eat it and
+ * Payroll are a Season's ordinary work, not a harvest or an attrition event.
+ * B6 is why it exists; B5 wrote this seam expecting it (`docs/adr/0010`), and the
+ * ADR's rejection of a hook per Season was about spring and summer opening a
+ * campaign season *nothing* had to react to. Something does now, so the clock
+ * tells it, and a system still never counts the year itself.
+ *
+ * Autumn and winter have their own hooks because they mean something specific
+ * on top of the Season: autumn is the harvest, winter is Attrition and winter
+ * quarters. A subscriber that handles both gets `onSeason` first, so the
+ * Season's ordinary work lands before the harvest it belongs to.
  *
  * A hook must not change the calendar: it is handed the boundary that has
  * already been written, and the clock moves on its own. One subscriber object
@@ -149,6 +159,9 @@ export interface SeasonChange {
  * than merely intended.
  */
 export interface SeasonHooks {
+  /** Any Season has begun: the economy's ordinary production, population and Payroll (B6). */
+  readonly onSeason?: (change: SeasonChange) => void;
+
   /** Autumn has begun: the harvest (B6 gives it a yield). */
   readonly onAutumn?: (change: SeasonChange) => void;
 
@@ -227,6 +240,7 @@ export function announceSeasons(
 ): void {
   for (const change of changes) {
     for (const subscriber of subscribers) {
+      subscriber.onSeason?.(change);
       if (change.season === 'autumn') subscriber.onAutumn?.(change);
       else if (change.season === 'winter') subscriber.onWinter?.(change);
     }

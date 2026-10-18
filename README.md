@@ -129,9 +129,10 @@ iron, four to six capturable minor settlements, a Stronghold for each Faction,
 and roads joining the nodes to one another. The map is integer state like
 everything else the world will hold, so the day a Match's rules put it in
 `MatchState` the tiles it starts on are covered by the state hash and a replay
-begins on the same ones (ADR-0006); B6 and C1 are the tickets that do. The
-world the CLI plays today is the clock (`src/sim/season.ts`), which is the piece
-of the Match B5 could put in `MatchState` before the map moved in.
+begins on the same ones (ADR-0006); **B6 put it there**, in `economyMatchRules`,
+with the settlements standing on it, and C1 adds the Squads that walk on it. The
+world the CLI played before that was the clock (`src/sim/season.ts`), which is the
+piece of the Match B5 could put in `MatchState` without the map.
 
 The theatre is **organic, not mirrored**: the two halves do not carry the same
 hills in the same places, and no pass reflects one side onto the other. Fairness
@@ -230,8 +231,61 @@ idempotent, and the time spent paused is not banked and then replayed as a burst
 A human Match has no time limit. A **headless Match is bound to three game
 years** — `HEADLESS_TICKS`, 25 200 ticks, 42 minutes of Match time — because a
 Match that can never end is a test that can never finish (ADR-0010). The CLI's
-default bound is exactly that, and its default Match is the one with the clock in
-it.
+default bound is exactly that, and its default Match is the one with the theatre
+and the economy in it.
+
+## The economy
+
+A real economy with nobody to click (B6, ADR-0005). There are no worker units
+and no supply lines: a **settlement** holds a pool of **population**, and the
+pool is *allocated* — staffed onto the settlement's **works** in the order it
+raised them, and whatever is left onto its **land**. Production follows that
+allocation and nothing else, which is why a work nobody can staff neither builds
+nor yields.
+
+```ts
+const allocation = allocate(settlement, landCapacity(map, settlement));
+const produced = seasonYield(settlement, allocation, season); // + harvest in autumn
+```
+
+- **Four resources, held per settlement.** Grain, timber, stone and iron
+  accumulate in the settlement that produced them, up to what it can store; there
+  is no shared national pool. A settlement's land is the ground around it —
+  farmland feeds, forest yields timber, hill yields stone — and the **resource
+  nodes** the map put there add their own amount on top, which is what makes a
+  node worth marching to. Iron has no terrain of its own, so above the base it
+  comes from a node or from a mine.
+- **Denarii, held once per Faction.** One treasury, taxed from the people a
+  Faction's settlements hold and from its markets, and capped like a war chest.
+- **Construction is a labour allocation plus a timer.** Starting a building pays
+  its cost out of the settlement's stock and appends a work; the work is staffed
+  out of the population and counts its ticks down, and when the timer runs out it
+  stands and produces. There is no construction scene, on purpose (ADR-0005).
+- **Three tiers, and no technology tree.** `villa` raises a settlement to its
+  second tier and `forum` to its third, and a Squad type states the tier it
+  needs: a tier-2 Squad cannot be recruited in a tier-1 settlement. The
+  progression is the tiers.
+- **Payroll every Season.** A Faction owes its Squads' Payroll each Season out of
+  its treasury; a Squad it cannot pay loses morale and, after enough Seasons
+  owed, **deserts**. A paid Squad recovers a little of what it lost, so a rough
+  patch is survivable and a permanent one is not.
+- **The autumn harvest is a peak.** Ordinary production runs every Season
+  (`onSeason`); the harvest arrives on top of it on the autumn boundary
+  (`onAutumn`), so the grain it brings in is a number a reader can see apart from
+  the Season's own work.
+
+`economyMatchRules` joins B1's map, B5's clock and B6's economy in one
+`MatchState` — the first Match whose hash covers the tiles it begins on — and
+`observeEconomy` is what a Faction reads of it: its settlements and where they
+stand, their tier, people, stocks, land and works, its treasury, and its Squads
+with the Payroll terms they are charged on. An enemy's settlement is not in the
+Observation, which is the one filtering B6 can do before fog (B4) arrives.
+
+The plan's own test of the thing is a Match left alone: over three game years an
+idle economy neither **stalls** — production in year three is still real — nor
+becomes **infinite** — every population, stock and treasury stays inside its
+ceiling. That is asserted end to end in `tests/sim/economy-match.test.ts`, and
+its three years are what the CLI's golden hash covers by default.
 
 ## The seam
 
@@ -277,7 +331,7 @@ npm run match -- --seed 1 --ticks 600
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 0,
-  "hash": "61afacff3b33a793"
+  "hash": "3aaaf501674cafe1"
 }
 ```
 
@@ -290,10 +344,11 @@ harness Match to play, `--expect-hash` requires it to end on a hash you
 recorded, and `--help` describes the lot.
 
 CI plays that very command, with the hash above as its `--expect-hash`: a change
-that moves the hash is a decision in review (ADR-0006). It plays three more: the
-default Match over its whole three-year bound, the engine-only `empty` Match, and
-one that draws on every tick, so the clock, the seed expansion and the draw loop
-are each gated rather than inferred from the others.
+that moves the hash is a decision in review (ADR-0006). It plays four more: the
+default Match over its whole three-year bound, the clock's own `seasons` Match,
+the engine-only `empty` Match, and one that draws on every tick, so the economy,
+the clock, the seed expansion and the draw loop are each gated rather than
+inferred from the others.
 
 The exit codes are the same three `npm run guard` uses: **0** the Match ran,
 **1** a game invariant was violated — a hash that is not the expected one, a
@@ -301,13 +356,15 @@ Command outside the vocabulary, a float where state must be integers — and **2
 the command line was misused. A violated hash still prints the report first: the
 interesting number is the one the Match ended on.
 
-Today the Match has a clock and nothing else (B5): its world is the calendar, so
-the tick bound is what ends the run (`src/sim/season.ts`). `--rules` chooses
-which harness Match the CLI plays: `seasons` is the default, `empty` is the
-engine and the seam alone, and `draws` plays one whose rules draw from the seed
-on every tick, so the golden hash in CI covers the draw loop as well as the seed
-expansion (`src/cli/rules.ts`). The harness around it is the point, and the waves
-that build the world change what is inside it rather than how it is driven.
+Today the Match has a theatre, a clock and an economy (B1, B5, B6): its world is
+the map the seed generated, the calendar, and the settlements standing on it, and
+the tick bound is what ends the run (`src/sim/economy-match.ts`). `--rules`
+chooses which harness Match the CLI plays: `economy` is the default, `seasons` is
+the clock on its own, `empty` is the engine and the seam alone, and `draws` plays
+one whose rules draw from the seed on every tick, so the golden hash in CI covers
+the draw loop as well as the seed expansion (`src/cli/rules.ts`). The harness
+around it is the point, and the waves that build the world change what is inside
+it rather than how it is driven.
 
 The command needs no build step. Node strips the types and runs `src/cli/main.ts`
 as it stands, which is why every relative import under `src/` names its extension
@@ -332,9 +389,12 @@ src/                application code
     controller.ts   the one interface every mind implements, plus an idle and a scripted one
     driver.ts       two Controllers, one Match, a result and a command log
     empty.ts        the Match with no systems in it: the engine and the seam alone
-    season.ts       the strategic clock, its two hooks, and the Match the CLI plays
+    season.ts       the strategic clock, its Season hooks, and the season Match
     pacing.ts       three speeds, a pause, and the orders a pause holds
     map.ts          the theatre a seed generates, and the invariants it satisfies
+    economy.ts      settlements, labour, the four resources, tiers and Payroll
+    economy-match.ts  the Match that joins the map, the clock and the economy
+  content/          the typed tables the rules read: resources, Squad types, buildings
   cli/              the headless Match as a command
     arguments.ts    what the command line means, and what it refuses
     rules.ts        the Matches a run can play, by name, and what each draws
@@ -350,8 +410,8 @@ docs/PLAN.md        the plan of record
 docs/COMMANDS.md    the Command vocabulary an external agent is written from
 ```
 
-Further modules from the plan's architecture (`content/`, `ai/`, `art/`,
-`audio/`, `ui/`) arrive with the tickets that need them, under `src/`.
+Further modules from the plan's architecture (`ai/`, `art/`, `audio/`, `ui/`)
+arrive with the tickets that need them, under `src/`.
 
 ## Continuous integration
 

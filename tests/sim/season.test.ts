@@ -142,6 +142,25 @@ describe('the strategic clock', () => {
     expect(changes).toHaveLength(HEADLESS_YEARS * 4);
   });
 
+  it('hears every Season on `onSeason`, and the harvest on top of the Season it belongs to', () => {
+    const fired: string[] = [];
+    const changes = runClock(HEADLESS_TICKS, {
+      onSeason: (change) => fired.push(`season ${change.season} ${change.year}`),
+      onAutumn: (change) => fired.push(`harvest ${change.year}`),
+      onWinter: (change) => fired.push(`winter ${change.year}`),
+    });
+
+    // Three whole game years: twelve Seasons, and the harvest and winter on the
+    // three of each that mean something extra.
+    expect(changes).toHaveLength(HEADLESS_YEARS * 4);
+    expect(fired.filter((line) => line.startsWith('season'))).toHaveLength(HEADLESS_YEARS * 4);
+    expect(fired.filter((line) => line.startsWith('harvest'))).toHaveLength(HEADLESS_YEARS);
+
+    // The Season's ordinary work lands before the specific hook for the same boundary.
+    expect(fired[fired.indexOf('season autumn 1') + 1]).toBe('harvest 1');
+    expect(fired[fired.indexOf('season winter 1') + 1]).toBe('winter 1');
+  });
+
   it('delivers a boundary once: a second reading of the same tick reports nothing and fires no hook again', () => {
     const calendar = startCalendar();
     let autumns = 0;

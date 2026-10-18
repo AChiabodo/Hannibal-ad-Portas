@@ -94,9 +94,9 @@ describe('a Match that draws, played from the command line', () => {
     );
   });
 
-  it('plays the seasons Match when no rules are named, byte for byte the same command', () => {
+  it('plays the economy Match when no rules are named, byte for byte the same command', () => {
     expect(match('--seed', '1', '--ticks', '600').stdout).toBe(
-      match('--seed', '1', '--ticks', '600', '--rules', 'seasons').stdout,
+      match('--seed', '1', '--ticks', '600', '--rules', 'economy').stdout,
     );
     expect(match('--seed', '1', '--ticks', '600').stdout).not.toBe(
       match('--seed', '1', '--ticks', '600', '--rules', 'empty').stdout,
