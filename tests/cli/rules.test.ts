@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_RULES, drawsRules, isRulesName, RULES, type DrawsWorld } from '../../src/cli/rules';
+import {
+  DEFAULT_RULES,
+  drawsRules,
+  isRulesName,
+  marchLog,
+  marchWorld,
+  RULES,
+  type DrawsWorld,
+} from '../../src/cli/rules';
 import type { Command } from '../../src/sim/command';
+import { scriptedController } from '../../src/sim/controller';
+import { runMatch } from '../../src/sim/driver';
+import { economyMatchOutcome, economyMatchRules, observeEconomy } from '../../src/sim/economy-match';
+import { factionCode } from '../../src/sim/faction';
+import { isWalkable, terrainAt } from '../../src/sim/map';
 import { createMatch, type Match } from '../../src/sim/match';
 import type { RngState } from '../../src/sim/rng';
 import { HEADLESS_TICKS } from '../../src/sim/season';
+import type { EconomyVisible, EconomyWorld } from '../../src/sim/economy-match';
 
 /** The cursor of a Match, copied, so a later draw cannot rewrite what was read. */
 function cursor(match: Match<DrawsWorld, Command>): RngState {
@@ -147,6 +161,85 @@ describe('a Match on the theatre and the fog', () => {
   });
 });
 
+describe('the march Match, which is what CI gates movement with', () => {
+  /** The world the march Match begins on, played for a bound, as the CLI plays it. */
+  function played(seed: number, ticks: number): EconomyWorld {
+    const world = marchWorld(seed);
+    const log = marchLog(world);
+
+    runMatch<EconomyWorld, EconomyVisible>({
+      seed,
+      rules: { createWorld: () => world, step: economyMatchRules.step },
+      observe: observeEconomy,
+      outcome: economyMatchOutcome,
+      players: [
+        { faction: 'rome', controller: scriptedController<EconomyVisible>(log) },
+        { faction: 'carthage', controller: scriptedController<EconomyVisible>(log) },
+      ],
+      ticks,
+    });
+
+    return world;
+  }
+
+  it('musters a dozen Squads onto the theatre, six each, all of them on ground they can walk off', () => {
+    const world = marchWorld(1);
+    const owners = world.economy.squads.map((squad) => squad.owner);
+
+    expect(world.economy.squads).toHaveLength(12);
+    expect(owners.filter((owner) => owner === factionCode('rome'))).toHaveLength(6);
+    expect(owners.filter((owner) => owner === factionCode('carthage'))).toHaveLength(6);
+
+    for (const squad of world.economy.squads) {
+      expect(isWalkable(terrainAt(world.map, squad.x, squad.y))).toBe(true);
+    }
+  });
+
+  it('stands each Faction up at its own Stronghold, and sends it to the other one', () => {
+    const world = marchWorld(1);
+    const [rome, carthage] = world.map.strongholds;
+    const log = marchLog(world);
+
+    expect(log).toEqual([
+      { tick: 0, command: { kind: 'move', faction: 'rome', squads: [1, 2, 3, 4, 5, 6], ...carthage } },
+      { tick: 0, command: { kind: 'move', faction: 'carthage', squads: [7, 8, 9, 10, 11, 12], ...rome } },
+    ]);
+
+    const squares = world.economy.settlements.slice(0, 2).map((settlement) => ({ x: settlement.x, y: settlement.y }));
+    expect(squares).toEqual([rome, carthage]);
+  });
+
+  it('marches every one of them across: after the bound they stand on the other Stronghold', () => {
+    const [rome, carthage] = marchWorld(1).map.strongholds;
+    const world = played(1, 600);
+
+    expect(world.economy.squads).toHaveLength(12);
+    for (const squad of world.economy.squads) {
+      const target = squad.owner === factionCode('rome') ? carthage : rome;
+
+      expect({ x: squad.x, y: squad.y }).toEqual({ x: target.x, y: target.y });
+      expect(squad.steps).toEqual([]);
+    }
+  });
+
+  it('plays the same march again from the same seed and bound, hash for hash', () => {
+    const first = RULES.march.play(1, 600);
+    const second = RULES.march.play(1, 600);
+
+    expect(first.result).toEqual({ kind: 'clock', tick: 600 });
+    expect(first.log).toHaveLength(2);
+    expect(first.hash).toBe(second.hash);
+    expect(first.hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('is a Match of its own: not the economy Match, and not the empty one', () => {
+    const march = RULES.march.play(1, 600).hash;
+
+    expect(march).not.toBe(RULES.economy.play(1, 600).hash);
+    expect(march).not.toBe(RULES.empty.play(1, 600).hash);
+  });
+});
+
 describe('the names of the Matches the command line ships', () => {
   it('names the Matches it ships, and nothing else', () => {
     expect(isRulesName('economy')).toBe(true);
@@ -154,6 +247,7 @@ describe('the names of the Matches the command line ships', () => {
     expect(isRulesName('empty')).toBe(true);
     expect(isRulesName('draws')).toBe(true);
     expect(isRulesName('fog')).toBe(true);
+    expect(isRulesName('march')).toBe(true);
     expect(isRulesName(DEFAULT_RULES)).toBe(true);
 
     for (const value of ['', 'Empty', 'empty ', 'draws\n', 'anything else']) {

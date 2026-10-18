@@ -78,6 +78,23 @@
  * - `economy-match.ts` — the Match that joins B1's map, B5's clock and B6's
  *   economy: the first world whose hash covers the tiles a Match begins on.
  *   `content/` is where the buildings and Squad types it reads are written down.
+ *
+ * C1 added the half of the Squad that walks, to the Squad B6 had already put in
+ * the world: the economy held where a Squad stands and what it costs to keep
+ * apart on purpose (`economy.ts` says so), and the two halves are one entity now,
+ * moving on the tiles the economy's Match already carries.
+ *
+ * - `route.ts` — what crossing a tile costs, A* over the grid to find the
+ *   cheapest way to another, a reason when there is none, and a per-theatre
+ *   memory of the routes already worked out.
+ * - `squad.ts` — the block a Squad is: the four facings and the two formations as
+ *   state holds them, and the frontage, the depth and the places of its men
+ *   derived from the formation it holds and the men it has left, never stored.
+ * - `movement.ts` — the moving half of the Squad: the route it walks, what a
+ *   refused order says, and the `move`, `attackMove`, `hold` and `formation`
+ *   Commands `economyMatchRules` obeys. Recruitment puts a Squad on its
+ *   settlement's tile, and `observeEconomy` reports where it stands beside what
+ *   it costs to keep.
  */
 export { TICK_HZ, TICK_MS } from './clock.ts';
 export { requireTickCount } from './ticks.ts';
@@ -96,8 +113,8 @@ export type {
   StateCheckpoint,
 } from './replay.ts';
 
-export { FACTIONS, isFaction } from './faction.ts';
-export type { Faction } from './faction.ts';
+export { FACTIONS, factionCode, factionOf, isFaction } from './faction.ts';
+export type { Faction, FactionCode } from './faction.ts';
 export {
   assault,
   attack,
@@ -214,6 +231,42 @@ export type {
   VisibleStocks,
   VisibleWork,
 } from './economy-match.ts';
+
+export {
+  createRouteCache,
+  findRoute,
+  moveCost,
+  NO_REFUSAL,
+  refusalCode,
+  refusalOf,
+  ROUTE_CACHE_LIMIT,
+  ROUTE_REFUSALS,
+} from './route.ts';
+export type { Route, RouteCache, RouteRefusal } from './route.ts';
+
+export {
+  depth,
+  FACING,
+  FACINGS,
+  facingCode,
+  facingOf,
+  FORMATION,
+  formationCode,
+  formationOf,
+  frontage,
+  menOf,
+  standingAt,
+} from './squad.ts';
+export type { Block, Facing, Man, Shape } from './squad.ts';
+
+export {
+  applyMovementCommands,
+  goalOf,
+  march,
+  musterSquad,
+  routeCacheFor,
+} from './movement.ts';
+export type { Placement } from './movement.ts';
 
 export {
   generateMap,

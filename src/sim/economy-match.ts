@@ -1,20 +1,26 @@
 /**
- * The Match whose world is the theatre and the economy: B5's clock and B6's
- * settlements in one `MatchState` (PLAN §4).
+ * The Match whose world is the theatre, the economy and the Squads that walk on
+ * it: B5's clock, B6's settlements and C1's movement in one `MatchState`
+ * (PLAN §4).
  *
- * This is the ticket after B5's clock and B1's map, and it is the first Match
- * whose world holds both: the theatre a seed generated, the calendar, and the
- * economy standing on the theatre. A replay therefore begins on the same tiles,
- * crosses the same Season boundaries and pays the same Payroll, because all
- * three are integer state the hash covers (ADR-0006).
+ * This is the Match that joins the world's systems so far, and the first whose
+ * world holds all of them: the theatre a seed generated, the calendar, the
+ * economy standing on the theatre, and the Squads the economy raises, which move
+ * on the tiles the map laid down. A replay therefore begins on the same tiles,
+ * crosses the same Season boundaries, pays the same Payroll and marches the same
+ * route, because all of it is integer state the hash covers (ADR-0006).
  *
- * The tick does three things, in this order:
+ * The tick does four things, in this order:
  *
- * 1. **Applies the Commands.** Only `build` and `recruit` are the economy's;
- *    everything else belongs to the tickets that own it and is left alone.
- * 2. **Counts the works down.** Construction is a timer plus the labour the
+ * 1. **Applies the Commands.** `build` and `recruit` are the economy's
+ *    (`economy.ts`); `move`, `attackMove`, `hold` and `formation` are the
+ *    movement's (`movement.ts`). Each ignores the kinds the other owns, and the
+ *    rest of the vocabulary belongs to tickets that have not landed.
+ * 2. **Moves the Squads one step along their routes** (`march`), once the tile
+ *    each is crossing has been paid for.
+ * 3. **Counts the works down.** Construction is a timer plus the labour the
  *    allocation already gives it (ADR-0005).
- * 3. **Advances the calendar and announces the boundary.** The economy
+ * 4. **Advances the calendar and announces the boundary.** The economy
  *    subscribes to `onSeason` for its ordinary production and Payroll, and to
  *    `onAutumn` for the harvest on top of it — the clock is advanced once, and
  *    the same report is handed to the one subscriber that cares.
@@ -25,12 +31,14 @@
  *
  * The Observation is where B7 and D2 will read the economy from: the settlements
  * a Faction holds and where they stand, what is in their stocks, what they are
- * building for, how their people are divided, its treasury and its Squads. An
- * enemy's settlement is not in it, which is the one filtering this ticket can
- * do without fog: ownership is the economy's own secret and it keeps it.
+ * building for, how their people are divided, its treasury and its Squads — each
+ * Squad where it stands, what shape it holds and where it is walking, beside the
+ * Payroll and the morale. An enemy's settlement and its Squads are not in it,
+ * which is the one filtering this Match can do without fog: ownership is the
+ * economy's own secret and it keeps it.
  */
 import { buildingOf, namedStock, squadTypeOf, type ResourceAmounts } from '../content/index.ts';
-import type { Command } from './command.ts';
+import type { Command, Formation } from './command.ts';
 import {
   advanceConstruction,
   applyEconomyCommand,
@@ -45,7 +53,10 @@ import {
   type Squad,
 } from './economy.ts';
 import { factionCode } from './faction.ts';
-import { generateMap, type MapGrid } from './map.ts';
+import { generateMap, type MapGrid, type Site } from './map.ts';
+import { applyMovementCommands, goalOf, march, routeCacheFor } from './movement.ts';
+import { refusalOf, type RouteRefusal } from './route.ts';
+import { facingOf, formationOf, type Facing } from './squad.ts';
 import type { MatchRules } from './match.ts';
 import type { MatchSetup } from './driver.ts';
 import {
@@ -117,13 +128,34 @@ export interface VisibleSettlement {
   readonly works: readonly VisibleWork[];
 }
 
-/** What a Faction sees of one Squad it keeps: the terms Payroll is charged on. */
+/** What a Faction sees of one Squad it keeps: what it is, where it stands and what it costs to keep. */
 export interface VisibleSquad {
   /** Its id, as a Command names it. */
   readonly id: number;
 
   /** Its type, by the id a Recruit Command would name. */
   readonly type: string;
+
+  /** The tile it stands on (C1). */
+  readonly x: number;
+
+  /** The tile it stands on, downwards. */
+  readonly y: number;
+
+  /** How many men are left in it: what a drawing code thins out as they fall (C1, C3). */
+  readonly men: number;
+
+  /** The shape it holds. */
+  readonly formation: Formation;
+
+  /** The way it faces. */
+  readonly facing: Facing;
+
+  /** The tile it is still walking to, or `null` when it has nowhere left to walk (C1). */
+  readonly goal: Site | null;
+
+  /** Why the last move Command it was given could not be carried out, or `null` (C1). */
+  readonly refused: RouteRefusal | null;
 
   /** What it has left to fight with. */
   readonly morale: number;
@@ -179,7 +211,13 @@ export const economyMatchRules: MatchRules<EconomyWorld, Command> = {
   },
 
   step: (world, _rng, tick, commands) => {
+    // The Commands first, in the order they arrived: the economy's own (build
+    // and recruit) and the movement's (move, attackMove, hold, formation), each
+    // ignoring the kinds the other owns. Then the ground the Squads cover, and
+    // then the works and the calendar, which do not depend on where anybody is.
     for (const command of commands) applyEconomyCommand(world.economy, command);
+    applyMovementCommands(world.economy, world.map, commands, routeCacheFor(world.map));
+    march(world.economy, world.map);
 
     advanceConstruction(world.map, world.economy);
 
@@ -244,13 +282,20 @@ function visibleSettlement(map: MapGrid, settlement: Settlement): VisibleSettlem
   };
 }
 
-/** A Squad, as its owner reads it: what it costs to keep, and whether it has been paid. */
+/** A Squad, as its owner reads it: where it stands, and what it costs to keep. */
 function visibleSquad(squad: Squad): VisibleSquad {
   const type = squadTypeOf(squad.type);
 
   return {
     id: squad.id,
     type: type?.id ?? 'unknown',
+    x: squad.x,
+    y: squad.y,
+    men: squad.strength,
+    formation: formationOf(squad.formation),
+    facing: facingOf(squad.facing),
+    goal: goalOf(squad),
+    refused: refusalOf(squad.refused),
     morale: squad.morale,
     payroll: type?.payroll ?? 0,
     unpaid: squad.unpaid,

@@ -27,7 +27,7 @@ import {
   type Squad,
 } from '../../src/sim/economy';
 import { generateMap, RESOURCE, TERRAIN, tileIndex, type ResourceKind, type ResourceNode } from '../../src/sim/map';
-import { buildingId, squadTypeId, testMap, testSettlement, work } from './economy-fixtures';
+import { blockOf, buildingId, squadTypeId, testMap, testSettlement, work } from './economy-fixtures';
 
 /** A node of one resource at one place, in the quantity the map would have put there. */
 function node(kind: ResourceKind, x: number, y: number, amount: number): ResourceNode {
@@ -440,9 +440,10 @@ function economyWith(squads: readonly Squad[], denarii = 10): Economy {
   };
 }
 
-/** One Squad of a type Rome can raise, with the id and morale a test asks for. */
+/** One Squad of a type Rome can raise, standing on its own tile, with the id and morale a test asks for. */
 function squad(overrides: Partial<Squad> = {}): Squad {
   return {
+    ...blockOf('hastati'),
     id: 1,
     owner: 0,
     type: squadTypeId('hastati'),

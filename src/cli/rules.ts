@@ -40,29 +40,41 @@ import {
   economyMatchRules,
   emptyMatchOutcome,
   emptyMatchRules,
+  factionOf,
   fogMatchOutcome,
   fogMatchRules,
   idleController,
+  isWalkable,
+  MAP_HEIGHT,
+  MAP_WIDTH,
+  move,
+  musterSquad,
   observeEconomy,
   observeEmptyMatch,
   observeFogMatch,
   observeSeasonMatch,
   runMatch,
+  scriptedController,
   seasonMatchOutcome,
   seasonMatchRules,
+  terrainAt,
   type Command,
+  type CommandLog,
   type EconomyVisible,
   type EconomyWorld,
   type EmptyMatchVisible,
   type EmptyMatchWorld,
+  type Faction,
   type FogMatchVisible,
   type FogMatchWorld,
+  type MapGrid,
   type MatchRules,
   type MatchRun,
   type MatchSetup,
   type Players,
   type SeasonMatchVisible,
   type SeasonMatchWorld,
+  type Site,
 } from '../sim/index.ts';
 
 /**
@@ -221,6 +233,167 @@ function playDraws(seed: number, ticks: number): MatchRun {
 }
 
 /**
+ * How many Squads each Faction puts in the field for the march Match: six, so
+ * that both together are the dozen the ticket's last criterion is about.
+ */
+const MARCH_SQUADS_PER_FACTION = 6;
+
+/** The type each Faction musters: the tier-1 infantry on its own roster (C4). */
+const MARCH_TYPES: Readonly<Record<Faction, string>> = {
+  rome: 'hastati',
+  carthage: 'libyan-spear',
+};
+
+/** How far from its Stronghold a Faction's Squads are stood up, in tiles. */
+const MARCH_SPREAD = 4;
+
+/** The tick both Factions are ordered on: the first, so the whole run is the march. */
+const MARCH_TICK = 0;
+
+/**
+ * The world the march Match begins on: the seed's theatre and economy, with both
+ * Factions' forces mustered near their own Strongholds.
+ *
+ * Exported because it is what the harness Match is made of, and what a test
+ * reads to see that the Squads it orders across the theatre are a dozen, six
+ * each, standing on ground they can walk off — and that they are real Squads of
+ * real types, whose Payroll and morale ride with them as they go.
+ *
+ * @throws Error when the theatre has nowhere near a Stronghold to stand a force
+ *   up — which no generated map is, and which is worth saying rather than
+ *   quietly fielding fewer Squads than the Match is about.
+ */
+export function marchWorld(seed: number): EconomyWorld {
+  const world = economyMatchRules.createWorld(seed);
+
+  for (const side of marchSides(world.map)) {
+    for (const site of groundNear(world.map, side.from, MARCH_SQUADS_PER_FACTION)) {
+      musterSquad(world.economy, world.map, {
+        faction: side.faction,
+        squadType: MARCH_TYPES[side.faction],
+        x: site.x,
+        y: site.y,
+      });
+    }
+  }
+
+  return world;
+}
+
+/**
+ * The Commands the march Match is played by: one `move` a Faction, on the first
+ * tick, sending every Squad it owns to the other Faction's Stronghold.
+ *
+ * One Command a Faction rather than one a Squad, because the vocabulary names a
+ * list of Squads for exactly this reason, and because it is the shape a Player's
+ * order really has. The destination is a tile: what a Stronghold means is C5's.
+ */
+export function marchLog(world: EconomyWorld): CommandLog<Command> {
+  return marchSides(world.map).map(({ faction, to }) => ({
+    tick: MARCH_TICK,
+    command: move(faction, squadIdsOf(world, faction), to.x, to.y),
+  }));
+}
+
+/**
+ * Plays the march Match: the economy's own rules on the economy's own world, a
+ * dozen Squads mustered onto it, and the orders that send them across it.
+ *
+ * Nothing here is a rule: it is `musterSquad` and two `move` Commands, played
+ * through the same driver a human and an AI use. What the hash it ends on covers
+ * is therefore the whole of C1 in one number — the map in state, the routes
+ * worked out over it, the terrain costs walked, the turns taken — with the
+ * economy's half of every Squad beside it.
+ */
+function playMarch(seed: number, ticks: number): MatchRun {
+  const world = marchWorld(seed);
+  const log: CommandLog<Command> = marchLog(world);
+
+  return runMatch<EconomyWorld, EconomyVisible>({
+    seed,
+    // The world is already in hand — the Commands were read off it — and a Match
+    // plays on the world its seed builds, which is this one.
+    rules: { createWorld: () => world, step: economyMatchRules.step },
+    observe: observeEconomy,
+    outcome: economyMatchOutcome,
+    players: [
+      { faction: 'rome', controller: scriptedController<EconomyVisible>(log) },
+      { faction: 'carthage', controller: scriptedController<EconomyVisible>(log) },
+    ],
+    ticks,
+  });
+}
+
+/**
+ * One Faction's share of the march Match: the Stronghold it sets out from, and
+ * the one it marches on.
+ */
+interface MarchSide {
+  /** The Faction whose share this is. */
+  readonly faction: Faction;
+
+  /** Its own Stronghold: where its Squads are mustered. */
+  readonly from: Site;
+
+  /** The other Faction's Stronghold: where its Squads are ordered to. */
+  readonly to: Site;
+}
+
+/**
+ * The two Factions of the march Match, each with the Stronghold it starts at and
+ * the one it marches on.
+ *
+ * One list, read twice — once to muster the forces and once to write the
+ * Commands — so that the two cannot come apart. Mustering each force at the
+ * Stronghold the *other* one marches on is the failure that rules out: it leaves
+ * every Squad in the Match walking the eight tiles to the doorstep it started
+ * next to, and arriving, and looking for all the world like a march.
+ */
+function marchSides(map: MapGrid): readonly MarchSide[] {
+  const [rome, carthage] = map.strongholds;
+
+  return [
+    { faction: 'rome', from: rome, to: carthage },
+    { faction: 'carthage', from: carthage, to: rome },
+  ];
+}
+
+/** The ids of every Squad a Faction owns, in the order the economy holds them. */
+function squadIdsOf(world: EconomyWorld, faction: Faction): readonly number[] {
+  return world.economy.squads
+    .filter((squad) => factionOf(squad.owner) === faction)
+    .map((squad) => squad.id);
+}
+
+/**
+ * Walkable tiles around a site, in the order the map reads them, up to `count`.
+ *
+ * A square around the Stronghold rather than a spiral or a ring, because the
+ * only thing being asked is that the force stands on land near where its
+ * Stronghold is, and a reading order that a reader can hold in their head is
+ * worth more here than a tidier shape.
+ */
+function groundNear(map: MapGrid, site: Site, count: number): readonly Site[] {
+  const ground: Site[] = [];
+
+  for (let y = site.y - MARCH_SPREAD; y <= site.y + MARCH_SPREAD; y += 1) {
+    for (let x = site.x - MARCH_SPREAD; x <= site.x + MARCH_SPREAD; x += 1) {
+      if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) continue;
+      if (!isWalkable(terrainAt(map, x, y))) continue;
+      if (ground.length === count) return ground;
+
+      ground.push({ x, y });
+    }
+  }
+
+  if (ground.length < count) {
+    throw new Error(`the theatre has only ${String(ground.length)} tiles near a Stronghold to stand a force on`);
+  }
+
+  return ground;
+}
+
+/**
  * The names `--rules` accepts, in the order `--help` lists them.
  *
  * Where `RulesName` is read from, and where the menu's order comes from: the
@@ -229,7 +402,7 @@ function playDraws(seed: number, ticks: number): MatchRun {
  * a use that fails at whatever hour CI runs. `DEFAULT_RULES` spells `economy` a
  * second time, and its type is this list's, so the two cannot disagree.
  */
-export const RULES_NAMES = ['economy', 'seasons', 'empty', 'fog', 'draws'] as const;
+export const RULES_NAMES = ['economy', 'seasons', 'empty', 'fog', 'draws', 'march'] as const;
 
 /** A name `--rules` accepts, which is also the only thing the table below is keyed by. */
 export type RulesName = (typeof RULES_NAMES)[number];
@@ -278,6 +451,11 @@ export const RULES = {
   draws: {
     description: 'a Match whose rules draw every tick, so CI gates the draw loop',
     play: playDraws,
+  },
+
+  march: {
+    description: 'a dozen Squads on the theatre, each Faction ordered across it',
+    play: playMarch,
   },
 } as const satisfies Readonly<Record<RulesName, RulesEntry>>;
 

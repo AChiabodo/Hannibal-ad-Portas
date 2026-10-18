@@ -137,7 +137,8 @@ and roads joining the nodes to one another. The map is integer state like
 everything else the world will hold, so the day a Match's rules put it in
 `MatchState` the tiles it starts on are covered by the state hash and a replay
 begins on the same ones (ADR-0006); **B6 put it there**, in `economyMatchRules`,
-with the settlements standing on it, and C1 adds the Squads that walk on it. The
+with the settlements standing on it, and **C1 put the Squads that walk on it**
+there beside them. The
 world the CLI played before that was the clock (`src/sim/season.ts`), which is the
 piece of the Match B5 could put in `MatchState` without the map.
 
@@ -293,6 +294,74 @@ idle economy neither **stalls** — production in year three is still real — n
 becomes **infinite** — every population, stock and treasury stays inside its
 ceiling. That is asserted end to end in `tests/sim/economy-match.test.ts`, and
 its three years are what the CLI's golden hash covers by default.
+
+## Movement
+
+A Squad is the atomic unit (ADR-0004): one entity, and one block of soldiers on
+one tile — the settlement that raises it pays for it (B6), and from there it
+walks, faces one of four ways and holds a formation. The two halves B6 left apart
+on purpose are one interface now: `economy.ts`'s `Squad` carries its type, its
+home, its Payroll and its morale, and the `Block` C1 gave it carries where it
+stands, how many men are left, what shape it holds, the way it faces and the
+route it is walking.
+
+The men inside it are drawing and nothing else — they are never simulated one at
+a time — and the block's frontage, its depth and the places its men stand are
+*derived* from the formation and the men left, so turning a Squad cannot
+rearrange it and losing a man loses the last one rather than shuffling the block
+(C2 draws exactly that list). A line is twelve files abreast and a column three,
+whatever the size of the Squad, and a Squad ordered somewhere turns to face the
+way it is about to go on the tick it is told.
+
+Three files carry the rest (`src/sim/route.ts`, `squad.ts` and `movement.ts`):
+
+- **What a tile costs.** Road 2 ticks a tile, plain 4, farmland 5, hill and
+  forest 8, a ford 10, and a river is not crossed at all. The same table is the
+  search's edge weight and the Squad's marching speed, and a tile is paid for
+  *before* it is entered, so a route costs exactly the ticks it was costed at —
+  the destination included — and the way chosen is the way that arrives first.
+- **The way there.** A* over the 96×96 grid, four-connected, with a Manhattan
+  heuristic times the cheapest tile — admissible and consistent, so a tile
+  leaving the frontier is settled. Every number is an integer and ties break on
+  the order tiles were queued, never on a heap's internal shape: the same
+  question has the same answer on every engine (ADR-0006).
+- **Routes are not worked out twice.** `createRouteCache(map)` remembers what it
+  searched on one theatre — a bounded memory, forgotten least-recently-first —
+  and an order to the tile a Squad is already walking to is not a new order at
+  all. The memory is derived rather than state, so whether a route happened to be
+  remembered cannot move a hash.
+
+A Squad ordered to a tile no way reaches walks nowhere, forgets nothing and
+remembers why: the order is refused with one of three reasons — the tile is not
+on the map, it is water, or the land does not reach it — and the next order that
+is taken clears it. `observeEconomy` reports the reason in words, which is what
+an interface shows a Player (`refused`), beside the tile the Squad is still
+walking to and where it stands.
+
+The CLI can play a harness Match that is nothing but movement — a dozen Squads,
+six a Faction, mustered at their own Stronghold and ordered across the theatre to
+the other one:
+
+```
+npm run match -- --seed 1 --ticks 600 --rules march
+{
+  "seed": 1,
+  "ticks": 600,
+  "outcome": "clock",
+  "winner": null,
+  "reason": "the Match reached its tick bound of 600 ticks without a decision",
+  "commands": 2,
+  "hash": "0cbe91ba1dacebcb"
+}
+```
+
+Two Commands, twelve Squads, and a hash CI gates: it covers the map in state,
+the routes worked out over it, the terrain costs walked, every turn taken and
+the economy's half of every Squad beside them, so a change to any of it is a
+decision in review rather than a silent one. `musterSquad` is a scenario's way
+in — recruitment is the economy's — and the `march` Match exists because a
+ticket that says "a dozen Squads moving at once" should be something the
+repository runs rather than something it claims.
 
 ## The first pixels
 
@@ -481,10 +550,12 @@ marches out of view: the memory is where it was, with the tick it was seen, and
 not a live position. The fog does the filtering, so a rule cannot hand a Faction
 knowledge its eyes never reached; the fog also never forgets on its own, because
 how long a stale contact is worth planning against is the AI's question (D4) and
-`forgetContacts` is how a rule says a contact is gone. Nothing stands on this
-theatre that belongs to a Faction yet, so no contact has been observed in a
-shipped Match — the memory is built and tested, and it is the rule that owns a
-Squad which owns the ids and hands the fog what it can see (C1, C3, D4).
+`forgetContacts` is how a rule says a contact is gone. Squads stand on the
+Faction's tiles since C1 and own their ids, so what a Faction *could* see of the
+enemy exists at last — but the fog and the Squads are still two world shapes
+(`fog-match.ts` and `economy-match.ts`), and joining them into one Match is C2's
+ticket: the eyes a Squad has, and the contact its marching makes, arrive with
+that join rather than with either half.
 
 **The debugging inspection mode is not a Player.** `inspectionView` answers with
 the whole theatre known, and with a `FogView` — which has no `decide`, so it
@@ -657,9 +728,10 @@ CI plays that very command, with the hash above as its `--expect-hash`: a change
 that moves the hash is a decision in review (ADR-0006). It plays more than one:
 the default Match over its whole three-year bound, the clock's own `seasons`
 Match, B4's `fog` Match — B1's theatre with both Factions' memory of it in state
-— the engine-only `empty` Match, and one that draws on every tick. The economy,
-the clock, the fog, the seed expansion and the draw loop are each gated rather
-than inferred from the others.
+— the engine-only `empty` Match, C1's `march` Match — a dozen Squads walking a
+whole theatre — and one that draws on every tick. The economy, the clock, the
+fog, pathfinding and marching, the seed expansion and the draw loop are each
+gated rather than inferred from the others.
 
 The exit codes are the same three `npm run guard` uses: **0** the Match ran,
 **1** a game invariant was violated — a hash that is not the expected one, a
@@ -667,15 +739,17 @@ Command outside the vocabulary, a float where state must be integers — and **2
 the command line was misused. A violated hash still prints the report first: the
 interesting number is the one the Match ended on.
 
-Today the Match has a theatre, a clock and an economy (B1, B5, B6): its world is
-the map the seed generated, the calendar, and the settlements standing on it, and
-the tick bound is what ends the run (`src/sim/economy-match.ts`). `--rules`
-chooses which harness Match the CLI plays: `economy` is the default, `seasons` is
-the clock on its own, `fog` is B1's theatre with B4's two fogs in state, `empty`
-is the engine and the seam alone, and `draws` plays one whose rules draw from the
-seed on every tick, so the golden hash in CI covers the draw loop as well as the
-seed expansion (`src/cli/rules.ts`). The harness around it is the point, and the
-waves that build the world change what is inside it rather than how it is driven.
+Today the Match has a theatre, a clock, an economy and Squads that walk on it
+(B1, B5, B6, C1): its world is the map the seed generated, the calendar, the
+settlements standing on it and the Squads those settlements raise, and the tick
+bound is what ends the run (`src/sim/economy-match.ts`). `--rules` chooses which
+harness Match the CLI plays: `economy` is the default, `seasons` is the clock on
+its own, `fog` is B1's theatre with B4's two fogs in state, `march` is a dozen
+Squads ordered across the theatre, `empty` is the engine and the seam alone, and
+`draws` plays one whose rules draw from the seed on every tick, so the golden
+hash in CI covers the draw loop as well as the seed expansion
+(`src/cli/rules.ts`). The harness around it is the point, and the waves that
+build the world change what is inside it rather than how it is driven.
 
 The command needs no build step. Node strips the types and runs `src/cli/main.ts`
 as it stands, which is why every relative import under `src/` names its extension
@@ -707,7 +781,10 @@ src/                application code
     fog.ts          what each Faction has seen, remembers and can see, and the inspection mode
     fog-match.ts    B1's theatre with both Factions' fogs in state, and the Observation built from one
     economy.ts      settlements, labour, the four resources, tiers and Payroll
-    economy-match.ts  the Match that joins the map, the clock and the economy
+    economy-match.ts  the Match that joins the map, the clock, the economy and the Squads
+    route.ts        what crossing a tile costs, A* to find a way, and routes not searched twice
+    squad.ts        the block a Squad is: its facings, its formations, and where its men stand
+    movement.ts     the moving half of a Squad: routes, refused orders, and the Commands obeyed
   content/          the typed tables the rules read: resources, Squad types, buildings
   art/              pure pixel generation: PixelBuffer in, PixelBuffer out (no engine imports)
     pixel-buffer.ts the one currency: RGBA bytes, the drawing primitives and the pixel hash
