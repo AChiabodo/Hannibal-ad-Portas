@@ -146,8 +146,11 @@ export const STRINGS = {
   'squad.principes': { it: 'Principi', en: 'Principes' },
   'squad.triarii': { it: 'Triarii', en: 'Triarii' },
   'squad.libyanSpear': { it: 'Lancieri libici', en: 'Libyan spearmen' },
+  'squad.gaul': { it: 'Galli', en: 'Gauls' },
   'squad.iberianSword': { it: 'Spade iberiche', en: 'Iberian swordsmen' },
+  'squad.balearicSlinger': { it: 'Frombolieri balearici', en: 'Balearic slingers' },
   'squad.numidianHorse': { it: 'Cavalleria numidica', en: 'Numidian horse' },
+  'squad.elephant': { it: 'Elefanti', en: 'Elephants' },
 } as const satisfies StringTable;
 
 /** Every key the table holds, in the order it was written. */
@@ -211,8 +214,11 @@ const SQUAD_KEYS: Readonly<Record<string, StringKey>> = {
   principes: 'squad.principes',
   triarii: 'squad.triarii',
   'libyan-spear': 'squad.libyanSpear',
+  gaul: 'squad.gaul',
   'iberian-sword': 'squad.iberianSword',
+  'balearic-slinger': 'squad.balearicSlinger',
   'numidian-horse': 'squad.numidianHorse',
+  elephant: 'squad.elephant',
 };
 
 /**

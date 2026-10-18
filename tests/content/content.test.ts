@@ -5,6 +5,7 @@ import {
   BUILDINGS,
   buildingCode,
   buildingOf,
+  figuresOf,
   SQUAD_TYPES,
   squadTypeCode,
   squadTypeOf,
@@ -53,6 +54,66 @@ describe('the Squad types content ships', () => {
       expect([...tiers].sort(), faction).toEqual([1, 2, 3]);
       expect(squadTypesOf(faction).every((type) => type.faction === faction)).toBe(true);
     }
+  });
+
+  it('raises the six Carthaginian types the ticket names, and no Roman stand-ins', () => {
+    expect(squadTypesOf('carthage').map((type) => type.id)).toEqual([
+      'libyan-spear',
+      'gaul',
+      'iberian-sword',
+      'balearic-slinger',
+      'numidian-horse',
+      'elephant',
+    ]);
+  });
+
+  it('gives every type a pace of a whole tile or more, and neither Faction a walker it cannot rout', () => {
+    for (const type of SQUAD_TYPES) {
+      expect(Number.isInteger(type.pace), type.id).toBe(true);
+      expect(type.pace, type.id).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('draws a body of men at its strength and a beast as one figure', () => {
+    for (const type of SQUAD_TYPES) {
+      const figures = figuresOf(type, type.strength);
+
+      expect(Number.isInteger(figures), type.id).toBe(true);
+      expect(figures, type.id).toBeGreaterThan(0);
+      expect(figures, type.id).toBeLessThanOrEqual(type.strength);
+      // A type that says nothing draws one figure per man it has left; the
+      // elephant is the one type whose one figure is worth a body of men.
+      if (type.id !== 'elephant') {
+        expect(figures, type.id).toBe(type.strength);
+        // And it thins as it is worn down, which is what visible attrition is.
+        expect(figuresOf(type, type.strength - 1), type.id).toBe(type.strength - 1);
+      } else {
+        expect(figuresOf(type, 5), type.id).toBe(1);
+      }
+    }
+
+    expect(squadTypeOf(squadTypeCode('elephant') ?? -1)?.figures).toBe(1);
+  });
+
+  it('makes the Numidian horse light, mobile cavalry rather than a line to hold', () => {
+    const horse = squadTypeOf(squadTypeCode('numidian-horse') ?? -1);
+    const romanPaces = squadTypesOf('rome').map((type) => type.pace);
+
+    expect(horse?.arm).toBe('cavalry');
+    // Faster than anything Rome fields, and carrying missiles rather than a
+    // shield wall: what "harasses and will not hold a line" is made of.
+    expect(horse?.pace).toBeGreaterThan(Math.max(...romanPaces));
+    expect(horse?.ammunition).toBeGreaterThan(0);
+    expect(horse?.strength).toBeLessThan(Math.min(...squadTypesOf('rome').map((type) => type.strength)));
+  });
+
+  it('gives the elephant one figure and a body of men\'s staying power, at the dearest Payroll', () => {
+    const elephant = squadTypeOf(squadTypeCode('elephant') ?? -1);
+
+    expect(elephant?.figures).toBe(1);
+    expect(elephant?.strength).toBeGreaterThan(1);
+    expect(elephant?.morale).toBeGreaterThan(Math.max(...squadTypesOf('rome').map((type) => type.morale)));
+    expect(elephant?.payroll).toBe(Math.max(...SQUAD_TYPES.map((type) => type.payroll)));
   });
 });
 

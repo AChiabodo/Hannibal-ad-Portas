@@ -24,7 +24,7 @@ import {
   type MapGrid,
   type Site,
 } from '../../src/sim/map';
-import { createRouteCache, findRoute, moveCost } from '../../src/sim/route';
+import { createRouteCache, findRoute, moveCost, paceCost } from '../../src/sim/route';
 import { costOf, neighboursOf, shortestCost } from './route-invariants';
 import { at, paintedMap, repeated } from './test-map';
 
@@ -82,6 +82,28 @@ describe('what crossing a tile costs a Squad', () => {
 
   it('refuses to price water: a river is not slow, it is not crossed', () => {
     expect(() => moveCost(TERRAIN.river)).toThrow(RangeError);
+  });
+
+  it('divides the ground’s cost by the walker’s pace, rounded up', () => {
+    for (const terrain of [
+      TERRAIN.plain,
+      TERRAIN.hill,
+      TERRAIN.forest,
+      TERRAIN.farmland,
+      TERRAIN.ford,
+      TERRAIN.road,
+    ]) {
+      expect(paceCost(terrain, 1), String(terrain)).toBe(moveCost(terrain));
+      expect(paceCost(terrain, 2), String(terrain)).toBe(Math.ceil(moveCost(terrain) / 2));
+      expect(paceCost(terrain, 3), String(terrain)).toBe(Math.ceil(moveCost(terrain) / 3));
+      expect(paceCost(terrain, 2), String(terrain)).toBeLessThanOrEqual(moveCost(terrain));
+    }
+  });
+
+  it('refuses a pace that is not a whole number of tiles of at least one', () => {
+    expect(() => paceCost(TERRAIN.plain, 0)).toThrow(RangeError);
+    expect(() => paceCost(TERRAIN.plain, 1.5)).toThrow(RangeError);
+    expect(() => findRoute(paintedMap([]), at(0, 0), at(2, 2), 0)).toThrow(RangeError);
   });
 });
 
@@ -172,6 +194,21 @@ describe('the way from one tile to another', () => {
 
     expect(findRoute(map, rome, carthage)).toEqual(findRoute(map, rome, carthage));
   });
+
+  it('is the same way on foot and on a horse across plain ground, and half the time on a horse', () => {
+    const map = paintedMap([]);
+    const onFoot = findRoute(map, at(2, 2), at(9, 6), 1);
+    const mounted = findRoute(map, at(2, 2), at(9, 6), 2);
+
+    expect(mounted).toEqual(onFoot);
+    if (onFoot.kind !== 'route' || mounted.kind !== 'route') throw new Error('both routes should be found');
+
+    const paced = mounted.steps.reduce(
+      (total, step) => total + paceCost(terrainAt(map, tileX(step), tileY(step)), 2),
+      0,
+    );
+    expect(paced).toBe(Math.ceil(costOf(map, onFoot.steps) / 2));
+  });
 });
 
 describe('a tile no way reaches', () => {
@@ -243,6 +280,20 @@ describe('routes a theatre has already worked out', () => {
     expect(cache.searches).toBe(2);
     expect(cache.route(at(0, 0), at(9, 9))).toEqual(findRoute(map, at(0, 0), at(9, 9)));
     expect(cache.hits).toBe(1);
+  });
+
+  it('remembers one route per pace, because a horse’s way is not a man’s', () => {
+    const map = generateMap(1);
+    const [rome, carthage] = map.strongholds;
+    const cache = createRouteCache(map);
+
+    const onFoot = cache.route(rome, carthage, 1);
+    const mounted = cache.route(rome, carthage, 2);
+
+    expect(cache.searches).toBe(2);
+    expect(cache.route(rome, carthage, 2)).toEqual(mounted);
+    expect(cache.route(rome, carthage, 1)).toEqual(onFoot);
+    expect(cache.hits).toBe(2);
   });
 
   it('remembers a refusal as well as a route: an unreachable tile is not searched for twice', () => {

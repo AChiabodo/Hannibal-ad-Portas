@@ -274,6 +274,27 @@ describe('a Squad ordered to a tile it can reach', () => {
     expect(shortSquad.x).toBe(14);
   });
 
+  it('marches a horse at its own pace: the same plain ground costs half the ticks', () => {
+    // Plain ground is four ticks a tile for a man on foot and two for the
+    // Numidian horse, whose type's speed is 2 (C4). The tick the order is
+    // applied on is one of them, so ten tiles is forty ticks and twenty.
+    const foot = worldOf();
+    const footSquad = place(foot, 'hastati', 5, 5);
+    marchTo(foot, footSquad, 15, 5, 39);
+
+    const horse = worldOf();
+    const horseSquad = place(horse, 'numidian-horse', 5, 5);
+    play({ world: horse, ticks: 19, carthage: script([0, move('carthage', [horseSquad.id], 15, 5)]) });
+
+    const arrived = worldOf();
+    const arrivedHorse = place(arrived, 'numidian-horse', 5, 5);
+    play({ world: arrived, ticks: 20, carthage: script([0, move('carthage', [arrivedHorse.id], 15, 5)]) });
+
+    expect(footSquad.x).toBe(14);
+    expect(horseSquad.x).toBe(14);
+    expect(arrivedHorse.x).toBe(15);
+  });
+
   it('charges the terrain it crosses, the tile it is about to enter paid for before it enters', () => {
     // Two tiles across a picture, the last one farmland: each tile is paid for
     // as the Squad waits to enter it, so the crossing costs what the two tiles
@@ -782,6 +803,7 @@ describe('what a Faction is shown of its Squads', () => {
       x: 5,
       y: 5,
       men: 120,
+      figures: 120,
       formation: 'line',
       facing: 'east',
       goal: { x: 20, y: 5 },
@@ -797,6 +819,22 @@ describe('what a Faction is shown of its Squads', () => {
     });
 
     expect(seen(world, 'carthage')).toMatchObject({ id: 2, type: 'libyan-spear', goal: null });
+  });
+
+  it('reports the figures a Squad is drawn as right now: men thin out, a beast stays one', () => {
+    const world = worldOf();
+    const hastati = place(world, 'hastati', 5, 5);
+    const elephant = place(world, 'elephant', 8, 5);
+
+    // A Squad of men is drawn one figure per man, so losing men thins the block
+    // on screen (the criterion C1 and C3 are read through).
+    hastati.strength = 100;
+    expect(seen(world)).toMatchObject({ men: 100, figures: 100 });
+
+    // An elephant is a Squad of a single figure whatever its strength has
+    // fallen to: its men are staying power, and one beast is still one beast.
+    elephant.strength = 5;
+    expect(observeEconomy(world, 'carthage').squads[0]).toMatchObject({ men: 5, figures: 1 });
   });
 
   it('keeps what a Squad is to the economy while it marches: one entity, two halves', () => {

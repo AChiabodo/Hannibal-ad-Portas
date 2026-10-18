@@ -21,6 +21,17 @@ const PLATE: PixelBuffer = cataloguePlate();
 /** The page's own layout, computed in Node from the same inputs. */
 const LAYOUT = atelierLayout(PLATE, ATELIER_ZOOMS);
 
+/**
+ * How far apart the lattice of plate pixels this page is checked against stands.
+ *
+ * Every fifth pixel and no sparser: the plate is the whole catalogue and the
+ * figures section is the tallest of it, so the test is tens of thousands of
+ * comparisons at every zoom and wants a longer bound than the default. C4 added
+ * the Carthaginian roster, which made the plate taller and this test slower; the
+ * bound below is what keeps it honest rather than the sampling.
+ */
+const SAMPLE_STEP = 5;
+
 
 
 test('renders the whole catalogue on one page, at several zoom levels', async ({ page }) => {
@@ -44,6 +55,7 @@ test('renders the whole catalogue on one page, at several zoom levels', async ({
 });
 
 test('shows every column as the catalogue plate magnified by exactly its zoom', async ({ page }) => {
+  test.setTimeout(180_000);
   await page.goto('/atelier.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
@@ -53,8 +65,8 @@ test('shows every column as the catalogue plate magnified by exactly its zoom', 
     const points: [number, number][] = [];
     const expected: [number, number][] = [];
 
-    for (let y = 0; y < PLATE.height; y += 5) {
-      for (let x = 0; x < PLATE.width; x += 5) {
+    for (let y = 0; y < PLATE.height; y += SAMPLE_STEP) {
+      for (let x = 0; x < PLATE.width; x += SAMPLE_STEP) {
         points.push([section.x + x * section.zoom, section.y + y * section.zoom]);
         expected.push([x, y]);
       }

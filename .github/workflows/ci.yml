@@ -89,6 +89,14 @@ jobs:
       - name: March a dozen Squads across the theatre, and let them fight, headless
         run: npm run match -- --seed 1 --ticks 600 --rules march --expect-hash 2df7aaf9e293a20c
 
+      # C4's Match: both Factions' whole rosters, the six Carthaginian types
+      # including the elephant, mustered on their own ground and sent at each
+      # other. The hash covers every type's strength, morale, arm and pace, so a
+      # change to a roster's numbers moves this line and has to be a decision in
+      # review (ADR-0006).
+      - name: March both rosters across the theatre, headless
+        run: npm run match -- --seed 1 --ticks 600 --rules roster --expect-hash 42d7da0c83e94227
+
   guards:
     name: "Fences (six: import boundaries, engine allow-list, Math.random, transcendentals, ambient clock, no committed assets)"
     runs-on: ubuntu-latest

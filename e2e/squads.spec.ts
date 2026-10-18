@@ -39,7 +39,7 @@ test('draws a Squad as the soldiers the generator composes, where the Match says
   const now = await tick(page);
 
   const block = (await squads(page)).find((squad) => {
-    const shape = { men: squad.men, formation: squad.formation, facing: squad.facing };
+    const shape = { men: squad.figures, formation: squad.formation, facing: squad.facing };
     const at = blockPlacement(tilePixel(squad.x, squad.y), shape);
     const onScreen = {
       x: (at.x - view.camera.x) * view.camera.zoom,
@@ -66,7 +66,7 @@ test('draws a Squad as the soldiers the generator composes, where the Match says
   expect(block, 'a Squad is drawn on screen and clear of the interface').toBeDefined();
   if (block === undefined) return;
 
-  const shape = { men: block.men, formation: block.formation, facing: block.facing };
+  const shape = { men: block.figures, formation: block.formation, facing: block.facing };
   const drawn = squadBlock(block, { faction: 'rome', tick: now });
   const at = blockPlacement(tilePixel(block.x, block.y), shape);
 
@@ -109,5 +109,5 @@ test('draws a Squad as the soldiers the generator composes, where the Match says
 
   // The key the layer rebuilds on names the shape that was drawn, so a Squad
   // that lost a man, turned or changed formation would have been re-composed.
-  expect(squadFrameKey(block, { faction: 'rome', tick: now })).toContain(`${String(block.men)}`);
+  expect(squadFrameKey(block, { faction: 'rome', tick: now })).toContain(`${String(block.figures)}`);
 });

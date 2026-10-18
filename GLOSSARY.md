@@ -116,6 +116,21 @@ The atomic unit that is ordered, moved and fought: one block of soldiers with ag
 _UI_: Reparto
 _Avoid_: Unit, regiment, formation, group
 
+**Figure**:
+One drawn soldier of a Squad's type — a man, a horse and rider, or a beast — in one direction and one frame. A Squad is drawn as its figures in formation, and a type that is a single creature is drawn as one figure whatever its strength.
+_UI_: —
+_Avoid_: Sprite, model, unit (the drawing code's `soldier()` is the entry point for every figure, a beast included)
+
+**Elephant**:
+A Squad of a single figure: one beast drawn in the same little box as a man, with the staying power of a body of men behind its strength. It is recruited, paid, ordered, flanked and routed like any other type; only its figure is extraordinary.
+_UI_: Elefante
+_Avoid_: War elephant, monster, beast (the beast is the figure, not the entity)
+
+**Pace**:
+The speed a Squad type marches at, as a whole number of tiles' worth of ground per tile's cost: 1 is a man on foot and 2 is a horse. A tile's ticks are the terrain's divided by the pace, and a route is planned in the walker's own pace.
+_UI_: —
+_Avoid_: Speed (reserve "speed" for the three settings a Match runs at), rate, velocity
+
 ### War
 
 **Territory**:

@@ -116,6 +116,15 @@
  * Faction's eyes — its settlements' watches and its marching Squads' — that the
  * page refreshes its fog from (ADR-0013). The Player's selection and control
  * groups are not here at all: they are `input/`'s, and not state (ADR-0014).
+ *
+ * C4 filled both rosters out, and what it added to the simulation is two numbers
+ * a type now states. `paceCost` (`route.ts`) divides a tile's cost by the
+ * walker's own `pace`, and the search and its cache are priced in that pace, so
+ * a horse is routed as a horse (ADR-0017). A type may also state how many
+ * `figures` a full-strength Squad of it is drawn as — one, for an elephant whose
+ * `strength` is the staying power that figure is worth — and the Observation
+ * carries it beside the men (ADR-0016). The fight reads `strength` and knows
+ * nothing about either.
  */
 export { TICK_HZ, TICK_MS } from './clock.ts';
 export { requireTickCount } from './ticks.ts';
@@ -258,6 +267,7 @@ export {
   findRoute,
   moveCost,
   NO_REFUSAL,
+  paceCost,
   refusalCode,
   refusalOf,
   ROUTE_CACHE_LIMIT,
@@ -291,6 +301,7 @@ export {
   orderedSquads,
   orderSquadTo,
   ownedSquads,
+  paceOf,
   routeCacheFor,
 } from './movement.ts';
 export type { Placement } from './movement.ts';

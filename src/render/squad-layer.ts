@@ -136,7 +136,7 @@ export function createSquadLayer(parent: Container): SquadLayer {
         const key = squadFrameKey(squad, { tick: field.tick, faction: field.faction, selected });
         const drawn = squads.get(squad.id);
         const at = blockPlacement(tilePixel(squad.x, squad.y), {
-          men: squad.men,
+          men: squad.figures,
           formation: squad.formation,
           facing: squad.facing,
         });

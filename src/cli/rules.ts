@@ -11,7 +11,7 @@
  * to hand the driver a Match the CLI can play, so that CI can record the state
  * hash it ends on and fail when that hash moves (ADR-0003, ADR-0006).
  *
- * There are five names. The **economy** Match is the one the command plays by
+ * There are seven names. The **economy** Match is the one the command plays by
  * default: B1's theatre, B5's clock and B6's economy in one world, so the seed,
  * the tick loop, the calendar and the settlements are exercised together and the
  * golden hash moves when any of them does. The **seasons** Match is the clock on
@@ -24,7 +24,11 @@
  * machines, and no proof at all about the draw loop, which is where `Math.imul`,
  * `| 0` and `>>> 0` live and where an implementation that disagreed between
  * engines would hide (A5 review, F5). The **drawing** Match below draws on every
- * tick, so the same gate covers `sfc32` itself.
+ * tick, so the same gate covers `sfc32` itself. The **march** Match is C1 and
+ * C3's: a dozen Squads of two types, ordered across a theatre where they meet and
+ * fight. The **roster** Match is C4's: every type of both rosters, elephants
+ * included, so one headless run covers the whole of both — and a change to a
+ * type's strength, morale, arm or pace moves its hash.
  *
  * The rules here hold integers only, for the ordinary reason: they are
  * authoritative state, `serializeState` accepts nothing else, and the hash is
@@ -76,6 +80,7 @@ import {
   type SeasonMatchWorld,
   type Site,
 } from '../sim/index.ts';
+import { squadTypesOf } from '../content/index.ts';
 
 /**
  * What the rules own in the drawing Match: integers, and nothing else.
@@ -328,6 +333,72 @@ function playMarch(seed: number, ticks: number): MatchRun {
 }
 
 /**
+ * The world the roster Match begins on: every type of both rosters, mustered on
+ * its own Faction's ground.
+ *
+ * The march Match fields a dozen Squads of one type each; this one fields the
+ * nine types of the two rosters, so a single headless run exercises every arm,
+ * every strength, every morale and both paces — the elephant included, which is
+ * the only Squad in the Match drawn as one figure. Exported because it is what
+ * the harness Match is made of, and what a test reads to see that both rosters
+ * are on the field.
+ *
+ * @throws Error when the theatre has nowhere near a Stronghold for a roster to
+ *   stand on — which no generated map is, and which is worth saying rather than
+ *   quietly fielding half a roster.
+ */
+export function rosterWorld(seed: number): EconomyWorld {
+  const world = economyMatchRules.createWorld(seed);
+
+  for (const side of marchSides(world.map)) {
+    const types = squadTypesOf(side.faction);
+    const tiles = groundNear(world.map, side.from, types.length);
+
+    types.forEach((type, index) => {
+      const site = tiles[index];
+      if (site === undefined) return;
+
+      musterSquad(world.economy, world.map, {
+        faction: side.faction,
+        squadType: type.id,
+        x: site.x,
+        y: site.y,
+      });
+    });
+  }
+
+  return world;
+}
+
+/**
+ * Plays the roster Match: the economy's own rules on a theatre with both
+ * rosters on it, and the orders that send them across it.
+ *
+ * The Commands are the march Match's own (`marchLog`): one `move` a Faction,
+ * naming every Squad it owns, to the other Faction's Stronghold. What the hash it
+ * ends on covers is therefore every type's place in the fight as well as its
+ * march — which arm it carries, how many men it is counted as, how fast it
+ * walks — so a change to a roster's numbers moves this Match and has to be a
+ * decision in review (ADR-0006).
+ */
+function playRoster(seed: number, ticks: number): MatchRun {
+  const world = rosterWorld(seed);
+  const log: CommandLog<Command> = marchLog(world);
+
+  return runMatch<EconomyWorld, EconomyVisible>({
+    seed,
+    rules: { createWorld: () => world, step: economyMatchRules.step },
+    observe: observeEconomy,
+    outcome: economyMatchOutcome,
+    players: [
+      { faction: 'rome', controller: scriptedController<EconomyVisible>(log) },
+      { faction: 'carthage', controller: scriptedController<EconomyVisible>(log) },
+    ],
+    ticks,
+  });
+}
+
+/**
  * One Faction's share of the march Match: the Stronghold it sets out from, and
  * the one it marches on.
  */
@@ -405,7 +476,7 @@ function groundNear(map: MapGrid, site: Site, count: number): readonly Site[] {
  * a use that fails at whatever hour CI runs. `DEFAULT_RULES` spells `economy` a
  * second time, and its type is this list's, so the two cannot disagree.
  */
-export const RULES_NAMES = ['economy', 'seasons', 'empty', 'fog', 'draws', 'march'] as const;
+export const RULES_NAMES = ['economy', 'seasons', 'empty', 'fog', 'draws', 'march', 'roster'] as const;
 
 /** A name `--rules` accepts, which is also the only thing the table below is keyed by. */
 export type RulesName = (typeof RULES_NAMES)[number];
@@ -459,6 +530,11 @@ export const RULES = {
   march: {
     description: 'a dozen Squads on the theatre, each Faction ordered across it',
     play: playMarch,
+  },
+
+  roster: {
+    description: 'both rosters on the theatre, elephants included, sent at each other',
+    play: playRoster,
   },
 } as const satisfies Readonly<Record<RulesName, RulesEntry>>;
 

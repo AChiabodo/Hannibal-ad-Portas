@@ -25,6 +25,7 @@ function squadOf(id: number): VisibleSquad {
     x: 10,
     y: 10,
     men: 120,
+    figures: 120,
     formation: 'line',
     facing: 'south',
     goal: null,

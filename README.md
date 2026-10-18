@@ -320,16 +320,20 @@ Three files carry the rest (`src/sim/route.ts`, `squad.ts` and `movement.ts`):
   search's edge weight and the Squad's marching speed, and a tile is paid for
   *before* it is entered, so a route costs exactly the ticks it was costed at —
   the destination included — and the way chosen is the way that arrives first.
+  The price is divided by the *walker's* pace (C4): a horse's tile is
+  `ceil(cost / pace)`, and the search weighs a route in the same currency, so a
+  fast Squad is not merely quicker along a footsoldier's road.
 - **The way there.** A* over the 96×96 grid, four-connected, with a Manhattan
   heuristic times the cheapest tile — admissible and consistent, so a tile
   leaving the frontier is settled. Every number is an integer and ties break on
   the order tiles were queued, never on a heap's internal shape: the same
   question has the same answer on every engine (ADR-0006).
 - **Routes are not worked out twice.** `createRouteCache(map)` remembers what it
-  searched on one theatre — a bounded memory, forgotten least-recently-first —
-  and an order to the tile a Squad is already walking to is not a new order at
-  all. The memory is derived rather than state, so whether a route happened to be
-  remembered cannot move a hash.
+  searched on one theatre — a bounded memory, forgotten least-recently-first,
+  and one route per *pace*, because a horse's quickest way is not always a
+  footsoldier's — and an order to the tile a Squad is already walking to is not a
+  new order at all. The memory is derived rather than state, so whether a route
+  happened to be remembered cannot move a hash.
 
 A Squad ordered to a tile no way reaches walks nowhere, forgets nothing and
 remembers why: the order is refused with one of three reasons — the tile is not
@@ -365,6 +369,24 @@ repository runs rather than something it claims. Since C3 the two forces meet in
 the middle of that theatre, so the hash covers the fight as well as the march:
 the survivors are the men who got through, and every one of them still stands on
 the Stronghold it was sent to.
+
+C4 adds a second harness Match, `--rules roster`, which fields both Factions'
+whole rosters — the nine types of `content/squads.ts`, the elephant included —
+and sends them at each other. Its hash is the one number that covers every
+strength, morale, arm and pace in the tables, so a balance change moves it:
+
+```
+npm run match -- --seed 1 --ticks 600 --rules roster
+{
+  "seed": 1,
+  "ticks": 600,
+  "outcome": "clock",
+  "winner": null,
+  "reason": "the Match reached its tick bound of 600 ticks without a decision",
+  "commands": 2,
+  "hash": "42d7da0c83e94227"
+}
+```
 
 ## Combat and morale
 
@@ -424,6 +446,76 @@ The Observation carries the fight to the Faction that is in it: `morale`,
 `engaged`. Contact is one tile, which is inside any Squad's own eyes, so the fog
 is not being spent by it. The HUD prints the figures, and reads a routed Squad as
 *In rotta* rather than naming an order it is not obeying.
+
+## The Carthaginian roster
+
+The other half of the game (C4). `content/squads.ts` now carries both rosters,
+and they are not two sets of numbers: Rome's three lines are disciplined,
+durable and slow to replace, and Carthage's six are a mercenary coalition —
+cheap to raise, brittle in morale, dearer to keep and, in the elephant, unlike
+anything Rome fields at all.
+
+| type | tier | men | arm | morale | volleys | pace | Payroll |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hastati` | 1 | 120 | sword | 10 | 4 | 1 | 3 |
+| `principes` | 2 | 120 | sword | 12 | 4 | 1 | 4 |
+| `triarii` | 3 | 100 | spear | 14 | 0 | 1 | 6 |
+| `libyan-spear` | 1 | 120 | spear | 9 | 0 | 1 | 3 |
+| `gaul` | 1 | 140 | sword | 6 | 0 | 1 | 2 |
+| `iberian-sword` | 2 | 120 | sword | 11 | 2 | 1 | 5 |
+| `balearic-slinger` | 2 | 90 | archers | 8 | 8 | 1 | 4 |
+| `numidian-horse` | 3 | 60 | cavalry | 10 | 6 | 2 | 4 |
+| `elephant` | 3 | 24 | cavalry | 16 | 0 | 2 | 8 |
+
+**A pace is a type's own.** `pace` is a whole number of tiles' worth of ground
+per tile's cost: `1` is a man on foot and `2` is a horse. `route.ts`'s
+`paceCost` divides the ground's ticks by it and rounds up, the search weighs
+every route with it, and the route cache remembers one answer per pace — so the
+Numidian horse and the elephant are quicker *and* routed as what they are. A
+faster Squad is the whole of "light mobile cavalry rather than a line to hold":
+the Numidians are faster than anything Rome fields, carry six volleys and are
+fewer men than any Roman line, so they harass and do not stand. The rest of the
+harassment — refusing a line, falling back before contact, keeping the last
+known enemy current — is what a Controller does with those numbers, and it is
+D3 and D4's; C4's half is the type that is worth doing it with.
+
+**Nine types, five arms.** A type's `arm` is its row and column in the matchup
+matrix, and more than one type may carry the same one: the Libyan spearman and
+the triarius are both `spear`, and the Numidian horse and the elephant are both
+`cavalry` — the mobile arm, which beats light troops and is broken by spears.
+The elephant's distinctness is not a matrix row of its own but its figure, its
+pace, its strength of staying power and its morale above every Roman line's;
+C4's criterion is that every type *has* a matchup behaviour, not that all nine
+differ, which five arms and nine types could not do.
+
+**A Squad of a single figure.** An elephant is one figure — `figures: 1` — whose
+`strength` of 24 is the staying power that figure is worth, which is what lets a
+single beast weather a round or two of a Roman line instead of dying to the
+first blow. `figuresOf(type)` is the one place the two numbers are tied, and the
+Observation carries both, so a drawing code lays out a beast as one figure and a
+body of men as one figure per man; `render/squads.ts` uses the figures and the
+fight uses the strength. Everything else about an elephant is an ordinary Squad:
+it is recruited, paid, ordered, flanked and routed like any other (the ticket's
+own "an ordinary Squad type with an extraordinary figure").
+
+**The silhouette is the design and the colour is the confirmation**, and C4 is
+where that rule is a criterion rather than a preference: every type has to be
+tellable from its Roman counterpart **in greyscale**. So the nine types have no
+shield in common — the parma, the scutum, the hoplon, the thureos, the
+little caetra, the tall gaulish wall, the two who carry none — and the weapon
+and the head say the same thing a second time: a pilum, a gladius, a hasta, a
+plain spear, a curved falcata, a longsword that reaches the top row, a sling, a
+fistful of javelins; a cap, a crest, a transverse crest, and a bare head. The
+rider is drawn on a horse under him, and the elephant is not a paper doll at all
+but a beast with a trunk, ears and a trapper in its Faction's cloth.
+
+**The whole roster is on the Atelier's plate.** `art/figures.ts` names both
+rosters (`FIGURE_NAMES`), gives each figure the Faction whose cloth it wears
+(`FIGURE_FACTION`), and `figureEntries()` composes every one of them in four
+directions and all six frames, so the Carthaginian roster is looked at exactly
+the way the Roman one is — and `tests/art/figures.test.ts` tells every pair of
+the nine apart in greyscale, by luminance and by pixels of ink, rather than
+trusting the palette.
 
 ## The first pixels
 
@@ -731,16 +823,20 @@ figure is a paper doll composed from parts — a helmet, a shield and a weapon,
 each one a kind rather than a sprite — so the three Roman lines are told apart by
 *shape* at the lowest zoom: the hastatus' little round parma and short pilum, the
 principes' wall of a scutum under a low crest, the triarius' great round hoplon
-with a spear that reaches over every other man's head. Four directions and four
-actions are drawn: two of the directions are authored (the front and the profile)
-and the other two are mirrors with the face painted out, and the frames are idle,
-walk and attack in two steps each and a death. The block is composed from the
-*simulation's own* list of men (`sim/squad.ts`'s `menOf`), so the formation on
-screen is the formation the rules hold, and it is anchored by the middle of its
-front rank's ground line, so a Squad that loses a rank loses the men at the back
-and nobody shuffles. One sprite per Squad, re-composed only when the shape it
-draws has changed, and the whole roster in every direction and frame is on the
-Atelier's plate beside the glyphs, the ramps and the terrain.
+with a spear that reaches over every other man's head. C4 draws the other roster
+the same way and equally unlike it: the Libyan's tall oval thureos, the Gaul's
+longsword behind a tall wall of a shield, the scutarius' little caetra and curved
+falcata, a slinger with no shield at all, a horseman with none and a fistful of
+javelins, and an elephant that is not a doll but a beast. Four directions and
+four actions are drawn: two of the directions are authored (the front and the
+profile) and the other two are mirrors with the face painted out, and the frames
+are idle, walk and attack in two steps each and a death. The block is composed
+from the *simulation's own* list of men (`sim/squad.ts`'s `menOf`), so the
+formation on screen is the formation the rules hold, and it is anchored by the
+middle of its front rank's ground line, so a Squad that loses a rank loses the
+men at the back and nobody shuffles. One sprite per Squad, re-composed only when
+the shape it draws has changed, and the whole of both rosters in every direction
+and frame is on the Atelier's plate beside the glyphs, the ramps and the terrain.
 
 **The Player is a Controller** (`input/`, ADR-0014). A click picks a Squad by the
 rectangle its men are drawn in, a drag picks every block it touches, and an order
@@ -847,9 +943,10 @@ that moves the hash is a decision in review (ADR-0006). It plays more than one:
 the default Match over its whole three-year bound, the clock's own `seasons`
 Match, B4's `fog` Match — B1's theatre with both Factions' memory of it in state
 — the engine-only `empty` Match, C1's `march` Match — a dozen Squads walking a
-whole theatre — and one that draws on every tick. The economy, the clock, the
-fog, pathfinding and marching, the seed expansion and the draw loop are each
-gated rather than inferred from the others.
+whole theatre — C4's `roster` Match, both Factions' whole rosters sent at each
+other — and one that draws on every tick. The economy, the clock, the fog,
+pathfinding and marching, the two rosters, the seed expansion and the draw loop
+are each gated rather than inferred from the others.
 
 The exit codes are the same three `npm run guard` uses: **0** the Match ran,
 **1** a game invariant was violated — a hash that is not the expected one, a
@@ -863,8 +960,9 @@ settlements standing on it and the Squads those settlements raise, and the tick
 bound is what ends the run (`src/sim/economy-match.ts`). `--rules` chooses which
 harness Match the CLI plays: `economy` is the default, `seasons` is the clock on
 its own, `fog` is B1's theatre with B4's two fogs in state, `march` is a dozen
-Squads ordered across the theatre, `empty` is the engine and the seam alone, and
-`draws` plays one whose rules draw from the seed on every tick, so the golden
+Squads ordered across the theatre, `roster` is both Factions' whole rosters sent
+at each other, `empty` is the engine and the seam alone, and `draws` plays one
+whose rules draw from the seed on every tick, so the golden
 hash in CI covers the draw loop as well as the seed expansion
 (`src/cli/rules.ts`). The harness around it is the point, and the waves that
 build the world change what is inside it rather than how it is driven.

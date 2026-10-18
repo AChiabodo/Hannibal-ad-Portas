@@ -5,6 +5,7 @@ import {
   isRulesName,
   marchLog,
   marchWorld,
+  rosterWorld,
   RULES,
   type DrawsWorld,
 } from '../../src/cli/rules';
@@ -18,6 +19,7 @@ import { createMatch, type Match } from '../../src/sim/match';
 import type { RngState } from '../../src/sim/rng';
 import { HEADLESS_TICKS } from '../../src/sim/season';
 import type { EconomyVisible, EconomyWorld } from '../../src/sim/economy-match';
+import { SQUAD_TYPES, squadTypeOf, squadTypesOf } from '../../src/content';
 
 /** The cursor of a Match, copied, so a later draw cannot rewrite what was read. */
 function cursor(match: Match<DrawsWorld, Command>): RngState {
@@ -258,6 +260,90 @@ describe('the march Match, which is what CI gates movement and combat with', () 
   });
 });
 
+describe('the roster Match, which is what CI gates the two rosters with', () => {
+  /** The world the roster Match begins on, played for a bound, as the CLI plays it. */
+  function played(seed: number, ticks: number): EconomyWorld {
+    const world = rosterWorld(seed);
+    const log = marchLog(world);
+
+    runMatch<EconomyWorld, EconomyVisible>({
+      seed,
+      rules: { createWorld: () => world, step: economyMatchRules.step },
+      observe: observeEconomy,
+      outcome: economyMatchOutcome,
+      players: [
+        { faction: 'rome', controller: scriptedController<EconomyVisible>(log) },
+        { faction: 'carthage', controller: scriptedController<EconomyVisible>(log) },
+      ],
+      ticks,
+    });
+
+    return world;
+  }
+
+  it('musters every type of both rosters onto the theatre, elephants included', () => {
+    const world = rosterWorld(1);
+    const ids = world.economy.squads.map((squad) => squadTypeOf(squad.type)?.id);
+
+    expect(world.economy.squads).toHaveLength(SQUAD_TYPES.length);
+    for (const faction of ['rome', 'carthage'] as const) {
+      expect(ids).toEqual(expect.arrayContaining(squadTypesOf(faction).map((type) => type.id)));
+    }
+    expect(ids.filter((id) => id === 'elephant')).toHaveLength(1);
+
+    for (const squad of world.economy.squads) {
+      expect(isWalkable(terrainAt(world.map, squad.x, squad.y))).toBe(true);
+    }
+  });
+
+  it('runs a headless Match between the two Factions to a result, using only these rosters', () => {
+    const run = RULES.roster.play(1, 600);
+
+    expect(run.result).toEqual({ kind: 'clock', tick: 600 });
+    expect(run.log).toHaveLength(2);
+    expect(run.hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('sends the two rosters at each other, and the fight costs both sides men', () => {
+    const world = rosterWorld(1);
+    const mustered = new Map(world.economy.squads.map((squad) => [squad.id, squad.strength]));
+
+    const after = played(1, 600);
+
+    expect(after.economy.squads.length).toBeGreaterThan(0);
+
+    // Everything left on the field is a type one of the two rosters raised.
+    const known = new Set(SQUAD_TYPES.map((type) => type.id));
+    for (const squad of after.economy.squads) {
+      expect(known.has(squadTypeOf(squad.type)?.id ?? '')).toBe(true);
+    }
+
+    // And the two armies met: the whole roster crossed the theatre, so both
+    // Factions have a Squad that lost men on the way (C3's fight, not a march).
+    for (const owner of [factionCode('rome'), factionCode('carthage')]) {
+      const hurt = after.economy.squads.filter(
+        (squad) => squad.owner === owner && squad.strength < (mustered.get(squad.id) ?? squad.strength),
+      );
+
+      expect(hurt.length, String(owner)).toBeGreaterThan(0);
+    }
+  });
+
+  it('plays the same rosters again from the same seed and bound, hash for hash', () => {
+    const first = RULES.roster.play(1, 600);
+    const second = RULES.roster.play(1, 600);
+
+    expect(first.hash).toBe(second.hash);
+  });
+
+  it('is a Match of its own: not the march, and not the economy', () => {
+    const roster = RULES.roster.play(1, 600).hash;
+
+    expect(roster).not.toBe(RULES.march.play(1, 600).hash);
+    expect(roster).not.toBe(RULES.economy.play(1, 600).hash);
+  });
+});
+
 describe('the names of the Matches the command line ships', () => {
   it('names the Matches it ships, and nothing else', () => {
     expect(isRulesName('economy')).toBe(true);
@@ -266,6 +352,7 @@ describe('the names of the Matches the command line ships', () => {
     expect(isRulesName('draws')).toBe(true);
     expect(isRulesName('fog')).toBe(true);
     expect(isRulesName('march')).toBe(true);
+    expect(isRulesName('roster')).toBe(true);
     expect(isRulesName(DEFAULT_RULES)).toBe(true);
 
     for (const value of ['', 'Empty', 'empty ', 'draws\n', 'anything else']) {

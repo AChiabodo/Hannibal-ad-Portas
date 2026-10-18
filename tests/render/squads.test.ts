@@ -29,12 +29,13 @@ import {
   type BlockShape,
 } from '../../src/render/squads';
 import { hashPixelBuffer, pixelAt, type PixelBuffer } from '../../src/art/pixel-buffer';
-import { FIGURE_HEIGHT, FIGURE_WIDTH } from '../../src/art/figures';
+import { FIGURE_HEIGHT, FIGURE_WIDTH, figureFrame, soldier } from '../../src/art/figures';
 
 /** A Squad with the fields a drawing code reads, and plausible answers for the rest. */
 function squadOf(options: {
   readonly type?: string;
   readonly men?: number;
+  readonly figures?: number;
   readonly formation?: 'line' | 'column';
   readonly facing?: 'north' | 'east' | 'south' | 'west';
   readonly goal?: { readonly x: number; readonly y: number } | null;
@@ -45,6 +46,7 @@ function squadOf(options: {
     x: 10,
     y: 10,
     men: options.men ?? 120,
+    figures: options.figures ?? options.men ?? 120,
     formation: options.formation ?? 'line',
     facing: options.facing ?? 'south',
     goal: options.goal ?? null,
@@ -166,6 +168,21 @@ describe('a block of men, drawn', () => {
     for (const type of SQUAD_TYPES) {
       expect(FIGURE_OF_SQUAD[type.id], type.id).toBeDefined();
     }
+  });
+
+  it('draws a Squad of a single figure as exactly one figure, whatever its strength', () => {
+    // An elephant is a Squad of one figure whose strength is the staying power
+    // that figure is worth (C4), so the block is the beast and nothing beside it.
+    const elephant = squadOf({ type: 'elephant', men: 24, figures: 1 });
+    const block = squadBlock(elephant);
+
+    expect({ width: block.width, height: block.height }).toEqual({
+      width: FIGURE_WIDTH,
+      height: FIGURE_HEIGHT,
+    });
+    expect(hashPixelBuffer(block)).toBe(
+      hashPixelBuffer(soldier('elephant', 'south', figureFrame('idle', 0), 'carthage')),
+    );
   });
 });
 

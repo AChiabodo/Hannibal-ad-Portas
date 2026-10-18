@@ -46,7 +46,7 @@
  * one filtering this Match can do without fog: ownership is the economy's own
  * secret and it keeps it.
  */
-import { buildingOf, namedStock, squadTypeOf, type ResourceAmounts } from '../content/index.ts';
+import { buildingOf, figuresOf, namedStock, squadTypeOf, type ResourceAmounts } from '../content/index.ts';
 import type { Command, Formation } from './command.ts';
 import {
   applyCombatCommands,
@@ -162,6 +162,16 @@ export interface VisibleSquad {
 
   /** How many men are left in it: what a drawing code thins out as they fall (C1, C3). */
   readonly men: number;
+
+  /**
+   * How many figures it is drawn as right now (C4).
+   *
+   * The men it has left, for a body of men, so a Squad thins on screen as it is
+   * worn down; one, for a type that is a Squad of a single figure — an elephant,
+   * whose `men` is the staying power that one figure is worth. A drawing code
+   * lays out this many figures, so a beast neither thins nor grows a rank.
+   */
+  readonly figures: number;
 
   /** The shape it holds. */
   readonly formation: Formation;
@@ -367,6 +377,7 @@ function visibleSquad(economy: Economy, squad: Squad): VisibleSquad {
     x: squad.x,
     y: squad.y,
     men: squad.strength,
+    figures: type === undefined ? squad.strength : figuresOf(type, squad.strength),
     formation: formationOf(squad.formation),
     facing: facingOf(squad.facing),
     goal: goalOf(squad),

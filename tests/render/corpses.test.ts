@@ -42,7 +42,8 @@ describe('a corpse on the field', () => {
   it('is drawn as the figure the Squad was, and never as a generic body', () => {
     expect(corpseFigure('hastati')).toBe('hastati');
     expect(corpseFigure('triarii')).toBe('triarii');
-    expect(corpseFigure('libyan-spear')).toBe('triarii');
+    expect(corpseFigure('libyan-spear')).toBe('libyan-spear');
+    expect(corpseFigure('elephant')).toBe('elephant');
     expect(corpseFigure('no-such-type')).toBe('hastati');
 
     expect(figureOf(corpse({ type: squadTypeCode('triarii') ?? 0 }))).toBe('triarii');

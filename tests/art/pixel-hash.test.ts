@@ -17,7 +17,7 @@ import { catalogue, cataloguePlate } from '../../src/art/catalogue';
 import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 
 /** The fingerprints recorded from the generators as accepted. */
-const PLATE_HASH = '7ae4db39cfbb0606';
+const PLATE_HASH = '7ac48ab2397a7363';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'glyph:U+0020': '19ce279ecc93e509',
@@ -51,6 +51,17 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'figure:hastati:west:idle': '86d3ae1c38343c17',
   'figure:principes:south:idle': '13763da87015a35e',
   'figure:triarii:south:idle': '9247c68e448e0b34',
+  // C4's Carthaginian roster: one hash per type's standing figure, so a shield,
+  // a weapon or a head that changes names itself — plus the elephant's charge
+  // and the horseman's march, which are the two drawings the roster exists for.
+  'figure:libyan-spear:south:idle': 'dbcff7db994d33a4',
+  'figure:gaul:south:idle': '8e9767edc980893c',
+  'figure:iberian-sword:south:idle': '33709a5cd986f259',
+  'figure:balearic-slinger:south:idle': '4b8ab0f882951281',
+  'figure:numidian-horse:south:idle': '000f94dab4dfd8ec',
+  'figure:numidian-horse:east:walk:0': '9923090e82ac63e7',
+  'figure:elephant:south:idle': 'e7ecfa834be92b5d',
+  'figure:elephant:south:attack:1': '480d980f6dc7b225',
 };
 
 describe('the generated output, as a fingerprint', () => {

@@ -41,6 +41,7 @@
  * line of one man and a column of forty level with each other.
  */
 import {
+  FIGURE_FACTION,
   FIGURE_HEIGHT,
   FIGURE_WIDTH,
   figureFrame,
@@ -71,13 +72,15 @@ import {
 } from '../sim/squad.ts';
 
 /**
- * Which soldier of the Roman roster each Squad type is drawn as.
+ * Which figure each Squad type is drawn as: both rosters, named for their types.
  *
- * C2 draws Rome. The three Carthaginian types are given the nearest Roman
- * silhouette in Carthaginian cloth so that a Carthaginian Squad is never a hole
- * in the world; **C4 owns their real silhouettes** — the elephants, the light
- * troops, the shapes that make the other roster tellable — and will replace the
- * three stand-ins on the right-hand side of this table.
+ * C2 drew Rome and gave the three Carthaginian types the nearest Roman
+ * silhouette in Carthaginian cloth; C4 replaced those stand-ins, and the table
+ * is now the roster itself — a type's id is the name of the figure that draws
+ * it, which is why a reader can ask for `figure:elephant:south:idle` and get the
+ * elephant of `elephant`. It is kept as an explicit table all the same, because
+ * the day a type is raised without an artist is a day a test should fail rather
+ * than a drawing code invent a soldier.
  *
  * A Squad type the table does not know is a type the content table has grown
  * without an artist, and the test that walks `SQUAD_TYPES` fails on it rather
@@ -87,9 +90,12 @@ export const FIGURE_OF_SQUAD: Readonly<Record<string, FigureName>> = {
   hastati: 'hastati',
   principes: 'principes',
   triarii: 'triarii',
-  'libyan-spear': 'triarii',
-  'iberian-sword': 'principes',
-  'numidian-horse': 'hastati',
+  'libyan-spear': 'libyan-spear',
+  gaul: 'gaul',
+  'iberian-sword': 'iberian-sword',
+  'balearic-slinger': 'balearic-slinger',
+  'numidian-horse': 'numidian-horse',
+  elephant: 'elephant',
 };
 
 /**
@@ -137,7 +143,11 @@ export interface BlockShape {
   /** The shape it holds. */
   readonly formation: Formation;
 
-  /** How many men are left in it. */
+  /**
+   * How many figures the block is drawn as: the men left in it, or the one
+   * figure of a type that is a Squad of a single one (C4). `VisibleSquad`
+   * carries both, and it is `figures` a drawing code passes here.
+   */
   readonly men: number;
 
   /** The way it faces. */
@@ -239,7 +249,11 @@ function turned(
 
 /** What a block is drawn on, and how: everything `squadBlock` needs that is not the shape. */
 export interface BlockOptions {
-  /** Which Faction's cloth its soldiers wear. The page's own Faction, in C2. */
+  /**
+   * Which Faction's cloth its soldiers wear. A figure's own Faction's unless a
+   * caller overrides it — a Carthaginian type is drawn in Carthaginian cloth
+   * whoever is looking at it, and the override is the Atelier's and a test's.
+   */
   readonly faction?: 'rome' | 'carthage';
 
   /** The tick the frame is chosen from: a walking block steps on alternate ticks. */
@@ -274,7 +288,7 @@ export function squadBlock(squad: VisibleSquad, options: BlockOptions = {}): Pix
   }
 
   const shape: BlockShape = {
-    men: squad.men,
+    men: squad.figures,
     formation: squad.formation,
     facing: squad.facing,
   };
@@ -283,6 +297,7 @@ export function squadBlock(squad: VisibleSquad, options: BlockOptions = {}): Pix
   const block = createPixelBuffer(size.width, size.height);
   const left = Math.min(...men.map((man) => man.x));
   const top = Math.min(...men.map((man) => man.y));
+  const faction = clothOf(figure, options.faction);
 
   if (options.selected === true) {
     ring(block, 0, 0, block.width, block.height);
@@ -292,7 +307,7 @@ export function squadBlock(squad: VisibleSquad, options: BlockOptions = {}): Pix
   // is painted in: a man behind another must not cover him.
   for (const man of [...men].reverse()) {
     const frame = frameFor(squad, man, options.tick ?? 0);
-    blit(block, soldier(figure, FIGURE_FACING_OF_FACING[squad.facing], frame, options.faction ?? 'rome'), man.x - left, man.y - top);
+    blit(block, soldier(figure, FIGURE_FACING_OF_FACING[squad.facing], frame, faction), man.x - left, man.y - top);
   }
 
   return block;
@@ -311,11 +326,27 @@ export function squadFrameKey(squad: VisibleSquad, options: BlockOptions = {}): 
     squad.type,
     squad.facing,
     squad.formation,
-    squad.men,
-    options.faction ?? 'rome',
+    squad.figures,
+    clothOf(FIGURE_OF_SQUAD[squad.type], options.faction),
     frameStepOf(squad, options.tick ?? 0),
     options.selected === true ? 'selected' : 'plain',
   ].join(':');
+}
+
+/**
+ * The cloth a block is drawn in: a caller's override, or the Faction that drew
+ * the figure.
+ *
+ * One reader for the one default, so the block a Squad is composed from and the
+ * key it is re-composed on cannot disagree about its colour. A figure the table
+ * does not know — which `squadBlock` refuses before it draws — falls back to
+ * Rome rather than to `undefined`, because a colour is not a thing this function
+ * is allowed to leave a hole in.
+ */
+function clothOf(figure: FigureName | undefined, override?: 'rome' | 'carthage'): 'rome' | 'carthage' {
+  if (override !== undefined) return override;
+
+  return figure === undefined ? 'rome' : FIGURE_FACTION[figure];
 }
 
 /**

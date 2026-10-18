@@ -12,9 +12,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   FIGURE_ACTIONS,
+  FIGURE_FACTION,
   FIGURE_FACINGS,
   FIGURE_FRAMES,
   FIGURE_HEIGHT,
+  FIGURE_LOOKS,
   FIGURE_NAMES,
   FIGURE_WIDTH,
   FRAMES_OF,
@@ -27,6 +29,7 @@ import {
   type FigureName,
 } from '../../src/art/figures';
 import { hashPixelBuffer, pixelAt, type PixelBuffer } from '../../src/art/pixel-buffer';
+import { SQUAD_TYPES } from '../../src/content/squads';
 
 /** The frame a test asks for most often: standing still. */
 const IDLE: FigureFrame = { action: 'idle', step: 0 };
@@ -246,6 +249,9 @@ describe('the figure catalogue', () => {
       'figure:hastati:south:idle',
       'figure:principes:east:attack:1',
       'figure:triarii:north:death',
+      'figure:libyan-spear:south:idle',
+      'figure:numidian-horse:north:walk:0',
+      'figure:elephant:east:attack:1',
     ]) {
       expect(names).toContain(expected);
     }
@@ -264,5 +270,155 @@ describe('the whole roster', () => {
     for (const { name, facing, frame } of everyFigure()) {
       expect(ink(soldier(name, facing, frame)), `${name} ${facing} ${frameName(frame)}`).toBeGreaterThan(20);
     }
+  });
+});
+
+/**
+ * A figure in greyscale: the luminance of every pixel, or `-1` where there is no
+ * ink at all.
+ *
+ * The ticket's criterion is that the two rosters are told apart **in greyscale**,
+ * so a test that compared hues would be testing the thing the criterion says not
+ * to rely on. Luminance is what survives a desaturated screenshot, and it is
+ * what a player at the lowest zoom actually reads.
+ */
+function greyscale(figure: FigureName): readonly number[] {
+  const drawn = soldier(figure, 'south', IDLE);
+  const shades: number[] = [];
+
+  for (let y = 0; y < FIGURE_HEIGHT; y += 1) {
+    for (let x = 0; x < FIGURE_WIDTH; x += 1) {
+      const pixel = pixelAt(drawn, x, y);
+      shades.push(pixel[3] === 0 ? -1 : Math.round((pixel[0] * 30 + pixel[1] * 59 + pixel[2] * 11) / 100));
+    }
+  }
+
+  return shades;
+}
+
+/** How many pixels of two greyscale drawings differ enough to be seen. */
+function tellableFrom(one: readonly number[], other: readonly number[]): number {
+  let differing = 0;
+
+  for (let index = 0; index < one.length; index += 1) {
+    const left = one[index] ?? -1;
+    const right = other[index] ?? -1;
+    if (left < 0 || right < 0) {
+      if (left !== right) differing += 1;
+      continue;
+    }
+    if (Math.abs(left - right) >= 24) differing += 1;
+  }
+
+  return differing;
+}
+
+/**
+ * A figure's silhouette alone: which pixels have ink, whatever colour they are.
+ *
+ * The greyscale comparison above still lets the Faction's cloth count — which is
+ * honest, a desaturated screenshot does differ — but the ticket's criterion is a
+ * difference of *shape and equipment*, so this is the same comparison with the
+ * palette taken out of it entirely.
+ */
+function silhouette(figure: FigureName): readonly boolean[] {
+  const drawn = soldier(figure, 'south', IDLE);
+  const ink: boolean[] = [];
+
+  for (let y = 0; y < FIGURE_HEIGHT; y += 1) {
+    for (let x = 0; x < FIGURE_WIDTH; x += 1) ink.push(pixelAt(drawn, x, y)[3] !== 0);
+  }
+
+  return ink;
+}
+
+describe('the two rosters', () => {
+  it('draws every Squad type the content table knows, in its own Faction’s cloth', () => {
+    for (const type of SQUAD_TYPES) {
+      expect(FIGURE_LOOKS[type.id as FigureName], type.id).toBeDefined();
+      expect(FIGURE_FACTION[type.id as FigureName], type.id).toBe(type.faction);
+    }
+  });
+
+  it('gives every type that carries a shield a kind of its own, and the two that carry none none', () => {
+    const kinds = FIGURE_NAMES.filter((name) => {
+      const look = FIGURE_LOOKS[name];
+      return look.kind === 'soldier' && look.shield !== 'none';
+    }).map((name) => {
+      const look = FIGURE_LOOKS[name];
+      return look.kind === 'soldier' ? look.shield : 'none';
+    });
+    const shieldless = FIGURE_NAMES.filter((name) => {
+      const look = FIGURE_LOOKS[name];
+      return look.kind === 'soldier' && look.shield === 'none';
+    });
+
+    expect(new Set(kinds).size).toBe(kinds.length);
+    expect(shieldless).toEqual(['balearic-slinger', 'numidian-horse']);
+    expect(FIGURE_LOOKS.elephant.kind).toBe('beast');
+  });
+
+  it('tells every pair of the two rosters apart in greyscale, by shape and equipment', () => {
+    for (let first = 0; first < FIGURE_NAMES.length; first += 1) {
+      for (let second = first + 1; second < FIGURE_NAMES.length; second += 1) {
+        const one = FIGURE_NAMES[first];
+        const other = FIGURE_NAMES[second];
+        if (one === undefined || other === undefined) continue;
+
+        // Two figures that no longer differ in a desaturated drawing are two
+        // figures a player cannot tell apart at the lowest zoom.
+        expect(tellableFrom(greyscale(one), greyscale(other)), `${one} vs ${other}`).toBeGreaterThanOrEqual(12);
+      }
+    }
+  });
+
+  it('does it by silhouette and equipment, with the palette taken out', () => {
+    for (let first = 0; first < FIGURE_NAMES.length; first += 1) {
+      for (let second = first + 1; second < FIGURE_NAMES.length; second += 1) {
+        const one = FIGURE_NAMES[first];
+        const other = FIGURE_NAMES[second];
+        if (one === undefined || other === undefined) continue;
+
+        const left = silhouette(one);
+        const right = silhouette(other);
+        let differing = 0;
+        for (let index = 0; index < left.length; index += 1) if (left[index] !== right[index]) differing += 1;
+
+        // Same ink and no ink are the only two colours here, so this is the
+        // shapes talking and nothing else.
+        expect(differing, `${one} vs ${other}`).toBeGreaterThanOrEqual(8);
+      }
+    }
+  });
+
+  it('puts a horse under the one mounted type, and no horse under any other', () => {
+    const mounted = FIGURE_NAMES.filter((name) => {
+      const look = FIGURE_LOOKS[name];
+      return look.kind === 'soldier' && look.mount === 'horse';
+    });
+
+    expect(mounted).toEqual(['numidian-horse']);
+
+    // The horse is a wider base than two feet: the bottom row of a horseman has
+    // more ink in it than the bottom row of a man on foot.
+    const bottomRow = (name: FigureName): number => {
+      const drawn = soldier(name, 'south', IDLE);
+      let painted = 0;
+      for (let x = 0; x < FIGURE_WIDTH; x += 1) if (pixelAt(drawn, x, FIGURE_HEIGHT - 1)[3] !== 0) painted += 1;
+      return painted;
+    };
+
+    expect(bottomRow('numidian-horse')).toBeGreaterThan(bottomRow('hastati'));
+  });
+
+  it('draws the elephant as one bulky beast, not a man with a shield', () => {
+    const elephant = soldier('elephant', 'south', IDLE);
+    const man = soldier('hastati', 'south', IDLE);
+
+    // Bulk is the beast's signature: it fills more of the same ten-by-fourteen
+    // box than a man does, and its death is a heap wider than it is tall.
+    expect(ink(elephant)).toBeGreaterThan(ink(man) * 1.4);
+    const fallen = extent(soldier('elephant', 'south', figureFrame('death', 0)));
+    expect(fallen.right - fallen.left).toBeGreaterThan(fallen.bottom - fallen.top);
   });
 });

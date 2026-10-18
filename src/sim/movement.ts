@@ -75,8 +75,8 @@ import {
 } from './map.ts';
 import {
   createRouteCache,
-  moveCost,
   NO_REFUSAL,
+  paceCost,
   refusalCode,
   type RouteCache,
 } from './route.ts';
@@ -325,7 +325,7 @@ export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: Route
     return;
   }
 
-  const route = routes.route({ x: squad.x, y: squad.y }, to);
+  const route = routes.route({ x: squad.x, y: squad.y }, to, paceOf(squad));
 
   if (route.kind === 'refused') {
     squad.refused = refusalCode(route.reason);
@@ -419,12 +419,30 @@ function faceTheWay(squad: Squad): void {
 
 /**
  * How many ticks the Squad must wait before entering the next tile of its route:
- * what that tile costs, or nothing at all when the route is walked.
+ * what that tile costs *at its own pace*, or nothing at all when the route is
+ * walked.
+ *
+ * The terrain's cost is the ground's, and the pace is the type's, so a horse and
+ * a man ordered across the same plain pay different ticks for it — which is the
+ * whole of what a type's `pace` means (`content/squads.ts`).
  */
 function costAhead(map: MapGrid, squad: Squad): number {
   const next = squad.steps[0];
 
-  return next === undefined ? 0 : moveCost(terrainAt(map, tileX(next), tileY(next)));
+  return next === undefined ? 0 : paceCost(terrainAt(map, tileX(next), tileY(next)), paceOf(squad));
+}
+
+/**
+ * The pace a Squad marches at: its type's `pace`, or the footsoldier's one when
+ * the code names no type at all.
+ *
+ * The fallback is deliberately the slowest pace there is: a Squad the content
+ * table cannot name is a Squad whose type went wrong, and walking it at a
+ * horse's pace would be this module inventing an answer for content that is
+ * missing.
+ */
+export function paceOf(squad: { readonly type: number }): number {
+  return squadTypeOf(squad.type)?.pace ?? 1;
 }
 
 /** The way a Squad faces after stepping from one tile to the next. */

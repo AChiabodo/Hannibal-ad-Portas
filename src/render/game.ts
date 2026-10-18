@@ -439,7 +439,9 @@ export function createGame(options: GameOptions): Game {
 
   /** The rectangle one Squad's block occupies, in theatre pixels. */
   function rectOf(squad: VisibleSquad): PickRect {
-    const shape = { men: squad.men, formation: squad.formation, facing: squad.facing };
+    // The block is drawn from the figures the Squad is drawn as, which is its
+    // strength for a body of men and one for a beast (C4).
+    const shape = { men: squad.figures, formation: squad.formation, facing: squad.facing };
     const at = blockPlacement(tilePixel(squad.x, squad.y), shape);
     const size = blockSize(shape);
 
