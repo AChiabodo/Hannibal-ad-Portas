@@ -1,13 +1,16 @@
 import { createAi, type AiDecision } from '../ai/controller.ts';
 import { createEconomyBehaviour } from '../ai/economy.ts';
+import { createMilitaryBehaviour, createMilitaryRecruitment } from '../ai/military.ts';
 import { createBehaviourRegistry, type BehaviourRegistry } from '../ai/registry.ts';
 import { BUILDINGS } from '../content/buildings.ts';
+import { MATCHUP } from '../content/arms.ts';
 import { SQUAD_TYPES } from '../content/squads.ts';
 import { TICK_HZ } from '../sim/clock.ts';
 import { BASE_HOUSING, GRAIN_PER_HEAD, TAX_PER_DENARIUS } from '../sim/economy.ts';
 import type { Command } from '../sim/command.ts';
 import { runMatch, type MatchRun } from '../sim/driver.ts';
 import { observeSiege, siegeMatchOutcome, siegeMatchRules, type SiegeVisible } from '../sim/siege.ts';
+import { FATIGUE_MAX } from '../sim/squad.ts';
 
 /** A headless AI run retains explanations beside the replayable Command log. */
 export interface AiMatchRun extends MatchRun {
@@ -19,15 +22,24 @@ export const economyRegistry = createBehaviourRegistry<SiegeVisible, Command>([
     grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, taxPerDenarius: TAX_PER_DENARIUS }),
 ]);
 
+const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX };
+
+export const militaryRegistry = createBehaviourRegistry<SiegeVisible, Command>([
+  createEconomyBehaviour({ buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
+    grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, taxPerDenarius: TAX_PER_DENARIUS,
+    recruitmentPreference: createMilitaryRecruitment(militaryContent) }),
+  createMilitaryBehaviour(militaryContent),
+]);
+
 /**
  * The composition root owns simulation values and concrete types; ai/ owns
  * neither. Behaviours can be composed here without changing the AI registry.
- * D2 installs the economy; callers can still supply an independent registry.
+ * D3 composes economy and military; callers can still supply an independent registry.
  */
 export function playAiMatch(
   seed: number,
   ticks: number,
-  registry: BehaviourRegistry<SiegeVisible, Command> = economyRegistry,
+  registry: BehaviourRegistry<SiegeVisible, Command> = militaryRegistry,
 ): AiMatchRun {
   const rome = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry });
   const carthage = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry });

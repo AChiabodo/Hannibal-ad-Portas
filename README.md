@@ -113,8 +113,9 @@ package, the fence sees the dependency rather than what is inside it.
 headlessly across a Season boundary. Its JSON report includes every strategic,
 operational and tactical decision, all candidate utilities and reasons, and the
 selected candidate. The economy policy grows settlements and recruits against
-recurring Payroll capacity; military and scouting plug into the independent
-registry in D3–D4. See
+recurring Payroll capacity; the military policy defends observed threats,
+chooses counters, commits reserves and withdraws beaten Squads. Scouting plugs
+into the independent registry in D4. See
 [docs/AI.md](docs/AI.md) for clocks, registration and log interpretation.
 
 ## The deterministic core

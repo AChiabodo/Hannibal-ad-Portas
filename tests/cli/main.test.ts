@@ -35,7 +35,7 @@ function reportOf(result: Ran): MatchReport {
 }
 
 describe('one command plays a Match end to end, with no browser anywhere', () => {
-  it('plays two economy AIs and prints every scored decision after the Match', () => {
+  it('plays two economy and military AIs and prints every scored decision after the Match', () => {
     const ran = match('--seed', '1', '--ticks', '301', '--rules', 'ai');
     expect(ran.status).toBe(0);
     expect(ran.stderr).toBe('');
@@ -47,8 +47,11 @@ describe('one command plays a Match end to end, with no browser anywhere', () =>
     ]);
     expect(report.decisions?.at(-1)).toMatchObject({
       faction: 'carthage', tick: 300, layer: 'tactical',
-      candidates: [{ id: 'idle', utility: 0, reason: 'Keep the current plan and emit no Commands.' }],
-      selected: { behaviour: null, id: 'idle' },
+      candidates: expect.arrayContaining([
+        expect.objectContaining({ id: 'idle', utility: 0, reason: 'Keep the current plan and emit no Commands.' }),
+        expect.objectContaining({ behaviour: 'military', id: 'threat-map' }),
+      ]),
+      selected: { behaviour: 'military', id: 'defend' },
     });
     expect(report.decisions?.[1]?.selected.behaviour).toBe('economy');
     expect(match('--seed', '1', '--ticks', '301', '--rules', 'ai').stdout).toBe(ran.stdout);

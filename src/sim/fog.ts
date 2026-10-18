@@ -234,6 +234,13 @@ export function eyeOf(site: Site, radius: number): Eye {
   return { x: site.x, y: site.y, radius };
 }
 
+/** The same disc for a visible enemy and for a tile of visible terrain. */
+export function eyeCovers(eye: Eye, site: Site): boolean {
+  const dx = site.x - eye.x;
+  const dy = site.y - eye.y;
+  return dx * dx + dy * dy <= eye.radius * eye.radius;
+}
+
 /**
  * Recomputes what one Faction can see this tick, and remembers what it saw.
  *
@@ -377,18 +384,14 @@ function remember(fog: Fog, contact: LastKnownContact): void {
 
 /** Paints one eye's disc into both grids: in view now, and remembered from here on. */
 function stamp(fog: Fog, map: MapGrid, eye: Eye): void {
-  const reach = eye.radius * eye.radius;
   const top = Math.max(0, eye.y - eye.radius);
   const bottom = Math.min(MAP_HEIGHT - 1, eye.y + eye.radius);
   const left = Math.max(0, eye.x - eye.radius);
   const right = Math.min(MAP_WIDTH - 1, eye.x + eye.radius);
 
   for (let y = top; y <= bottom; y += 1) {
-    const dy = y - eye.y;
-
     for (let x = left; x <= right; x += 1) {
-      const dx = x - eye.x;
-      if (dx * dx + dy * dy > reach) continue;
+      if (!eyeCovers(eye, { x, y })) continue;
 
       const tile = tileIndex(x, y);
       fog.visible[tile] = 1;

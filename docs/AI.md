@@ -1,7 +1,8 @@
 # AI Controllers
 
-D1 supplies the clocks, utility selection and registration seam. D2 installs
-the economy policy in the headless AI harness; military and scouting belong to D3–D4.
+D1 supplies the clocks, utility selection and registration seam. D2 supplies
+the economy policy; D3 composes it with military decisions in the headless AI
+harness. Scouting belongs to D4.
 
 `createAi` (`src/ai/controller.ts`) is structurally a Controller: `decide` reads
 an `Observation<Visible>` and returns Commands. Create a fresh instance for each
@@ -72,7 +73,8 @@ npm run match -- --rules ai --seed 1 --ticks 2101
 
 The default bound remains three game years. This harness runs two fresh AIs
 against the complete Siege Match rules and their existing filtered projections.
-The default registry installs the economy policy. An explicitly empty registry
+The default registry installs economy and military policies. `economyRegistry`
+remains available for isolated economic scenarios. An explicitly empty registry
 still runs the foundation alone, ending at the bound without Commands.
 
 ## Economy policy (D2)
@@ -109,6 +111,62 @@ Tier 2, at least two paid Squads per Faction and a final Treasury in [6, 100),
 and replays seed 7 to the same hash. A separate bankrupt fixture observes unpaid
 elephants disappearing by id. These are headless economic checks, not military
 balance or browser rendering evidence.
+
+## Military policy (D3)
+
+`createMilitaryBehaviour` receives the public Squad catalogue, matchup matrix
+and fatigue scale at composition. The complete Siege Observation now includes
+`enemies`: only enemy field Squads within the ordinary circular vision of owned
+settlements or Squads. Each record contains id, type and current tile; it carries
+no enemy treasury, stock, strength, morale or goal. Vision uses the same disc as
+terrain fog. Garrisons and enemies outside that disc are absent. There is no
+remembered contact in this policy, so losing sight stops pursuit; contact memory
+and scouting remain D4. This current-sight projection derives no fog memory.
+
+Every tactical decision rebuilds a sparse threat map of 16×16-tile regions from
+that Observation. Unoccupied regions have zero threat. Friendly power scales
+the Squad's remaining strength and morale, discounted up to half by fatigue.
+Enemy power uses the observed type's full nominal morale, since its actual
+condition is private; an unknown type gets a conservative default estimate.
+An owned settlement's region also includes enemies within twelve tiles of the
+settlement, including across region edges. Regions with the largest deficit
+between threat and friendly power receive defensive allocation first. The
+`threat-map` candidate logs the region totals and deficits on every tick.
+
+The highest-id ready, unengaged Squad is the reserve when at least two ready
+Squads are available.
+The line answers settlement threats first. It commits that reserve only when
+the remaining line cannot cover a defensible threat. It declines a defence
+whose observed enemy power exceeds all available ready power, rather than
+feeding in reinforcements. In the field, attacks require a quarter more ready
+power than the observed local enemy; a nearby reserve may provide that margin.
+Each Squad receives at most one military Command per tick. Commands and reasons
+are batched under `defend`, `commit-reserve` or `withdraw`; commitment reasons
+name the reserve and the enemy or settlement that needs it. Unassigned Squads
+hold the line instead of pursuing an unobserved target.
+
+A Squad at half nominal morale or strength, or facing greater local enemy power
+than its nearby support, leaves the ready pool. It withdraws from contact or a
+nearby threat, replacing an existing attack march when necessary. A march back
+to an owned settlement continues until arrival; it is not overwritten by the
+next allocation. Routed Squads and garrisons receive no field Commands.
+
+`createMilitaryRecruitment` supplies the economy's optional recruitment
+preference. Against the currently observed composition, the injected matchup
+matrix adds or subtracts up to thirty utility points; the economic tier and
+owned-type diversity preferences remain. No observation means no counter bonus.
+All Payroll, treasury, food, tier and resource gates still belong to D2. Rome
+cannot invent an arm outside its roster: at Tier 3 it prefers triarii against
+observed cavalry and avoids them against archers. Carthage can prefer its
+Balearic slingers against observed spears.
+
+`tests/ai/military.test.ts` checks defensive priorities, cross-region threats,
+counter recruitment, deliberate reserves, favourable field attacks, withdrawal
+and stopping pursuit through the Controller's Commands and decision log.
+`tests/ai/military-match.test.ts` checks the shipped registry, circular sight,
+hidden-world independence, actual withdrawal to quarters and Command replay to
+the same hash. These are deterministic policy checks, not tournament balance
+or siege-prosecution evidence. Neither scouting nor siege Commands are added.
 
 The JSON report adds `decisions`, sorted by tick, Rome before Carthage, and then
 strategic, operational, tactical. Each record names the Faction, tick, observed

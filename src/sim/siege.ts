@@ -68,13 +68,14 @@
  * still blockaded. `siegeMatchOutcome` is where a Match first ends sooner than
  * its bound: the fall of a Stronghold, and the reason it fell.
  */
-import { stockAt } from '../content/index.ts';
+import { stockAt, squadTypeOf } from '../content/index.ts';
 import { TICK_HZ } from './clock.ts';
 import type { Command, SiegePath } from './command.ts';
 import { BREAKING_MORALE, woundsOf } from './combat.ts';
 import type { MatchSetup, VictoryReason } from './driver.ts';
 import {
   economyMatchRules,
+  eyesOfEconomy,
   observeEconomy,
   stepEconomyWorld,
   type EconomyVisible,
@@ -82,6 +83,7 @@ import {
 } from './economy-match.ts';
 import { UNOWNED, type Economy, type Settlement, type Squad, type Supplied } from './economy.ts';
 import { factionCode, factionOf, type Faction } from './faction.ts';
+import { eyeCovers } from './fog.ts';
 import { RESOURCE, type MapGrid, type Site } from './map.ts';
 import type { MatchRules } from './match.ts';
 import { goalOf, orderedSquads, orderSquadTo, routeCacheFor } from './movement.ts';
@@ -315,6 +317,8 @@ export interface VisibleFront {
 
 /** What a Faction may know of a Siege: its own walls, and the ones it is at. */
 export interface SiegeVisible extends EconomyVisible {
+  /** Enemy field Squads currently in ordinary vision, with no private economic or combat facts. */
+  readonly enemies: readonly { readonly id: number; readonly type: string; readonly x: number; readonly y: number }[];
   /** The fronts this Faction holds or is besieging. */
   readonly fronts: readonly VisibleFront[];
 }
@@ -526,9 +530,13 @@ export function createSiegeWorld(seed: number): SiegeWorld {
 export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (world, faction) => {
   const seen = observeEconomy(world, faction);
   const owner = factionCode(faction);
+  const eyes = eyesOfEconomy(world, faction);
 
   return {
     ...seen,
+    enemies: world.economy.squads
+      .filter((squad) => squad.owner !== owner && squad.garrison === FIELD && eyes.some((eye) => eyeCovers(eye, squad)))
+      .map((squad) => ({ id: squad.id, type: squadTypeOf(squad.type)?.id ?? 'unknown', x: squad.x, y: squad.y })),
     fronts: world.siege.fronts
       .filter((front) => {
         const settlement = world.economy.settlements[front.settlement];

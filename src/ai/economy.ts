@@ -37,6 +37,7 @@ export interface EconomyObservation {
   readonly treasury: number;
   readonly settlements: readonly Settlement[];
   readonly squads: readonly { readonly payroll: number; readonly unpaid: number; readonly type: string }[];
+  readonly enemies?: readonly { readonly type: string }[];
   readonly fronts?: readonly { readonly settlement: number; readonly siege: string | null; readonly besieger: Faction | null }[];
 }
 
@@ -49,6 +50,9 @@ type EconomyCommand = {
 
 /** Content is supplied at composition; the AI has no path to simulation modules. */
 export function createEconomyBehaviour(content: {
+  readonly recruitmentPreference?: (observation: Observation<EconomyObservation>, type: string) => {
+    readonly utility: number; readonly reason: string;
+  };
   readonly buildings: readonly Building[];
   readonly grainPerHead: number;
   readonly baseHousing: number;
@@ -98,9 +102,10 @@ export function createEconomyBehaviour(content: {
               settlement.stocks.grain - type.cost.grain < food * 3 ||
               Object.entries(type.cost).some(([key, amount]) => settlement.stocks[key as keyof Resources] < amount)) continue;
             const count = observation.visible.squads.filter((squad) => squad.type === type.id).length;
+            const preference = content.recruitmentPreference?.(observation, type.id);
             candidates.push({ id: `recruit-${settlement.id}-${type.id}`,
-              utility: 45 + type.tier * 5 - count * 4,
-              reason: `Payroll ${payroll} is covered by income ${funds.income}; retain ${requiredReserve(payroll)} denarii.`,
+              utility: 45 + type.tier * 5 - count * 4 + (preference?.utility ?? 0),
+              reason: `Payroll ${payroll} is covered by income ${funds.income}; retain ${requiredReserve(payroll)} denarii.${preference === undefined ? '' : ` ${preference.reason}`}`,
               commands: [{ kind: 'recruit', faction: observation.faction, settlement: settlement.id, squadType: type.id, count: 1 }],
             });
           }
