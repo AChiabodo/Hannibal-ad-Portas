@@ -192,7 +192,7 @@ export function reachableFromSimulation(root) {
  * @param {string} specifier
  * @returns {string | undefined | null} A path, `null` for an asset import, `undefined` when nothing matched.
  */
-function resolveRelative(fromFile, specifier) {
+export function resolveRelative(fromFile, specifier) {
   const base = join(dirname(fromFile), specifier);
   const extension = extname(base);
 

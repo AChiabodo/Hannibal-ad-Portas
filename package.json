@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run guard && tsc -b && vite build",
     "preview": "vite preview",
     "check": "tsc -b",
     "lint": "eslint .",

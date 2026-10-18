@@ -24,11 +24,11 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | Command             | What it does                                                          |
 | ------------------- | --------------------------------------------------------------------- |
 | `npm run dev`       | Development server on `http://127.0.0.1:5173/`, with the Atelier on `/atelier.html` |
-| `npm run build`     | Type-checks, then builds the static site into `dist/`                  |
+| `npm run build`     | Checks the architectural fences and types, then builds into `dist/`   |
 | `npm run preview`   | Serves the built site on `http://127.0.0.1:5174/`                      |
 | `npm run check`     | TypeScript in strict mode, all three projects, no emit                 |
 | `npm run lint`      | ESLint over the repository                                             |
-| `npm run guard`     | The six fences: `pixi.js` under `render/`, no `Math.random`, transcendentals or ambient clock in the simulation, no committed asset |
+| `npm run guard`     | The seven fences: rendering boundaries, deterministic simulation, no committed asset, AI Observation imports |
 | `npm run match`     | One whole Match headless as a JSON report, or — with `--map` — the map a seed generates, with no build step |
 | `npm run bake`      | Writes the whole generated catalogue into `artifacts/` as PNGs, with the pixel hash of each, for inspection |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
@@ -40,7 +40,7 @@ with `--with-deps` in its own step.
 
 ## The fences
 
-Six architectural rules are cheap now and expensive later, so CI enforces them
+Seven architectural rules are cheap now and expensive later, so CI enforces them
 on every push:
 
 1. **Nothing reachable from the simulation may import the rendering engine**
@@ -75,6 +75,9 @@ on every push:
    generator the moment either changes (PLAN §2.1, ADR-0002). The fence reads file
    names, and says so: it does not look inside a file, and it cannot see an asset
    pasted into a source file as a string.
+7. **The AI may import only Observation types from the simulation.** The fence
+   follows local helpers and re-export barrels too, refuses unresolved imports,
+   and runs before every build. See [docs/AI.md](docs/AI.md) for the contract.
 
 The walk behind the `Math.random`, transcendental and ambient checks is
 syntactic, and it says so instead of pretending to be complete. It sees a global
@@ -85,7 +88,7 @@ spelled out — `Math.random`, `Math["random"]`, `Math?.random`,
 and `new Date()` all pass the guard today. A green tick means the ordinary
 spellings are absent, not that no other spelling exists.
 
-`npm run guard` walks all six fences. On a breach it prints the offending file,
+`npm run guard` walks all seven fences. On a breach it prints the offending file,
 the line, and — for reachability — the chain that got there. One file can breach
 two of them, which is why they stay separately labelled: naming the wrong rule is
 worse than reporting both.
@@ -103,6 +106,15 @@ through an import says so instead of staying quiet. None of the fences walks
 *inside* a bare package import — the guard does not resolve `node_modules` — so
 today's simulation imports nothing but its own modules, and the day it imports a
 package, the fence sees the dependency rather than what is inside it.
+
+## The AI foundation
+
+`npm run match -- --rules ai --seed 1 --ticks 2101` runs two AI Controllers
+headlessly across a Season boundary. Its JSON report includes every strategic,
+operational and tactical decision, all candidate utilities and reasons, and the
+selected candidate. The foundation installs no behaviours: economy, military
+and scouting plug into an independent registry in D2–D4. See
+[docs/AI.md](docs/AI.md) for clocks, registration and log interpretation.
 
 ## The deterministic core
 

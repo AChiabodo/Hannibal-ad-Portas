@@ -99,6 +99,7 @@ import {
   type Site,
 } from '../sim/index.ts';
 import { squadTypesOf } from '../content/index.ts';
+import { playAiMatch } from './ai-match.ts';
 
 /**
  * What the rules own in the drawing Match: integers, and nothing else.
@@ -723,6 +724,7 @@ function wallsOf(map: MapGrid, site: Site, count: number): readonly Site[] {
  * second time, and its type is this list's, so the two cannot disagree.
  */
 export const RULES_NAMES = [
+  'ai',
   'economy',
   'seasons',
   'empty',
@@ -759,6 +761,10 @@ interface RulesEntry {
  * so a name `--rules` accepts and a Match `playMatch` can play cannot disagree.
  */
 export const RULES = {
+  ai: {
+    description: 'two AI Controllers on the whole Match, with scored decision logs (no behaviours installed)',
+    play: playAiMatch,
+  },
   economy: {
     description: 'the Match on the theatre and the economy: map, seasons, settlements, Payroll',
     play: playEconomy,

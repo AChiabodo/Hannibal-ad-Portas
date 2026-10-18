@@ -10,9 +10,10 @@
  *      implementation-approximated, so two engines may disagree (ADR-0006);
  *   5. the simulation cannot reach the ambient clock or entropy — `crypto`,
  *      `Date.now`, `performance.now` (ADR-0006);
- *   6. no image, font or audio file is committed (PLAN §2.1, ADR-0002).
+ *   6. no image, font or audio file is committed (PLAN §2.1, ADR-0002);
+ *   7. AI imports only Observation types from the simulation (D1).
  *
- * All six are crude on purpose and loud on purpose: they name the offending file.
+ * All seven are crude on purpose and loud on purpose: they name the offending file.
  * The three that look for a member are syntactic, so they see a global spelled
  * out and not an alias of it; the README names the spellings a green tick does
  * not cover.
@@ -25,6 +26,7 @@
  * Exit codes: 0 fences hold, 1 a fence is broken, 2 the CLI was misused.
  */
 import { ASSET_EXTENSIONS, findAssetFiles } from './guards/asset-files.mjs';
+import { findAiSimulationImports } from './guards/ai-boundary.mjs';
 import { GUARDED_ROOTS, collectSourceFiles } from './guards/source-files.mjs';
 import { findAmbientNondeterminismReachableFromSimulation } from './guards/ambient-globals.mjs';
 import { findMathRandomViolations } from './guards/find-math-random.mjs';
@@ -87,9 +89,11 @@ try {
   const ambientViolations = findAmbientNondeterminismReachableFromSimulation(options.root);
   const renderViolations = findRendererOutsideRender(options.root);
   const assetViolations = findAssetFiles(options.root);
+  const aiViolations = findAiSimulationImports(options.root);
   const entries = existingSimulationEntries(options.root).join(", ");
 
   report("simulation boundary", boundaryViolations, `entry ${entries}`);
+  report('AI Observation imports', aiViolations, 'only type-only Observation imports from sim/');
   report("pixi.js outside render/", renderViolations, `allowed under ${RENDERER_ALLOWED_DIRECTORIES.join(", ")}`);
   report("no Math.random", mathRandomViolations, `${mathRandomFiles.length} files scanned`);
   report("no transcendental math", transcendentalViolations, `entry ${entries}`);
@@ -102,7 +106,8 @@ try {
     transcendentalViolations.length +
     ambientViolations.length +
     renderViolations.length +
-    assetViolations.length;
+    assetViolations.length +
+    aiViolations.length;
   if (total > 0) {
     console.error(`\nguard: ${total} violation(s) — the fences in docs/PLAN.md §3 do not hold`);
     process.exit(1);
