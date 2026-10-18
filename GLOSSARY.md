@@ -40,6 +40,16 @@ One square of the theatre's grid, 16×16 pixels, and the unit everything on the 
 _UI_: Casella
 _Avoid_: Cell, square, hex
 
+**Cell**:
+One square of the *rendering* grid, which is half a tile out of step with the theatre's: it covers the corner where four tiles meet, and each of its four quadrants is one of those tiles' nearest quarter. Autotiling chooses for a cell, not for a tile, so a coastline's or a riverbank's shape belongs to a cell.
+_UI_: —
+_Avoid_: using "cell" for a Tile
+
+**Resource marker**:
+The small pile drawn on a Resource node's tile — a sheaf of grain, logs, a heap of stone, a stack of iron — sized and shaped to be read at the lowest zoom. It is a marker standing on the Terrain, not a kind of Terrain.
+_UI_: —
+_Avoid_: Icon, badge, sprite
+
 **Terrain**:
 What a tile is made of — plain, hill, forest, farmland, river, ford, road — and the modifier it carries. Only a river stops a Squad outright; the rest are costs and effects.
 _UI_: Terreno

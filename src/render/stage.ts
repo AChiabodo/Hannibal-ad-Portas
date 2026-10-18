@@ -62,6 +62,8 @@ export interface FrameReport extends EngineReport {
 export interface Stage {
   /** Everything the stage draws hangs off this. */
   readonly root: Container;
+  /** The canvas the engine draws into, for whoever has to listen to a pointer. */
+  readonly canvas: HTMLCanvasElement;
   /** What the engine is, as it described itself when it started. */
   readonly renderer: EngineReport;
   /** The viewport's width in stage pixels. */
@@ -114,6 +116,7 @@ export async function createStage(mount: HTMLElement, options: StageOptions): Pr
 
   return {
     root: app.stage as Container,
+    canvas: app.canvas,
     renderer: {
       engine: app.renderer.name,
       webglVersion: gl !== null && gl instanceof WebGL2RenderingContext ? 2 : null,

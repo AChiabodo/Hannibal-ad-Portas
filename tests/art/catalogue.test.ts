@@ -9,9 +9,20 @@
  */
 import { describe, expect, it } from 'vitest';
 import { PLATE_BACKGROUND, PLATE_HEIGHT, PLATE_WIDTH, catalogue, cataloguePlate } from '../../src/art/catalogue';
-import { GLYPHS, GLYPH_WIDTH, LINE_HEIGHT } from '../../src/art/font';
+import { GLYPHS, GLYPH_WIDTH, LINE_HEIGHT, measureText } from '../../src/art/font';
 import { RAMPS, RAMP_NAMES, RAMP_SHADES } from '../../src/art/palette';
 import { pixelAt } from '../../src/art/pixel-buffer';
+import {
+  MATERIALS,
+  TERRAIN_MATERIALS,
+  TERRAIN_TILE,
+  cellTile,
+  referenceBackground,
+  roadTile,
+  terrainEntries,
+  variantQuadrants,
+} from '../../src/art/terrain';
+import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from '../../src/art/nodes';
 
 /** How many glyphs stand on one row of the plate, which the layout test mirrors. */
 const GLYPH_GRID_COLUMNS = 16;
@@ -19,6 +30,22 @@ const CELL_WIDTH = GLYPH_WIDTH + 3;
 const CELL_HEIGHT = LINE_HEIGHT + 3;
 const PLATE_PADDING = 4;
 const HEADING_HEIGHT = LINE_HEIGHT + 3;
+const SECTION_GAP = 8;
+
+/** The terrain section's own arithmetic, written out again so the plate is checked rather than trusted. */
+const TERRAIN_CELL = TERRAIN_TILE + 3;
+const TERRAIN_LABEL_GAP = 3;
+const NODES_HEIGHT = NODE_TILE + 3;
+const GLYPH_GRID_HEIGHT = Math.ceil(GLYPHS.length / GLYPH_GRID_COLUMNS) * CELL_HEIGHT;
+const RAMPS_HEIGHT = RAMP_NAMES.length * (7 + SECTION_GAP) - SECTION_GAP;
+const TERRAIN_TOP =
+  PLATE_PADDING + HEADING_HEIGHT + GLYPH_GRID_HEIGHT + SECTION_GAP + HEADING_HEIGHT + RAMPS_HEIGHT + SECTION_GAP + HEADING_HEIGHT;
+
+/** Where the terrain section's own columns begin. */
+const TERRAIN_LABEL_WIDTH = Math.max(
+  ...['ground', 'road', ...TERRAIN_MATERIALS].map((label) => measureText(label)),
+);
+const TERRAIN_X = PLATE_PADDING + TERRAIN_LABEL_WIDTH + TERRAIN_LABEL_GAP;
 
 /** The name the catalogue gives a character. */
 function glyphName(character: string): string {
@@ -26,16 +53,24 @@ function glyphName(character: string): string {
 }
 
 describe('the catalogue', () => {
-  it('names every glyph and every ramp exactly once', () => {
+  it('names every glyph, every ramp, every terrain tile and every marker exactly once', () => {
     const names = catalogue().map((entry) => entry.name);
 
-    expect(names.length).toBe(GLYPHS.length + RAMP_NAMES.length);
+    expect(names.length).toBe(
+      GLYPHS.length + RAMP_NAMES.length + terrainEntries().length + nodeEntries().length,
+    );
     expect(new Set(names).size).toBe(names.length);
     for (const glyph of GLYPHS) {
       expect(names).toContain(glyphName(glyph.character));
     }
     for (const name of RAMP_NAMES) {
       expect(names).toContain(`ramp:${name}`);
+    }
+    for (const entry of terrainEntries()) {
+      expect(names).toContain(entry.name);
+    }
+    for (const entry of nodeEntries()) {
+      expect(names).toContain(entry.name);
     }
   });
 
@@ -119,5 +154,91 @@ describe('the catalogue plate', () => {
     }
 
     expect(checked).toBe(glyphs.length * GLYPH_WIDTH * LINE_HEIGHT);
+  });
+
+  it('shows every material, in a row of sixteen variants under its name', () => {
+    const plate = cataloguePlate();
+
+    // The ground row: every material's own tile, in `MATERIALS` order.
+    for (let index = 0; index < MATERIALS.length; index += 1) {
+      const entry = terrainEntries()[index];
+      if (entry === undefined) continue;
+
+      for (let y = 0; y < entry.buffer.height; y += 1) {
+        for (let x = 0; x < entry.buffer.width; x += 1) {
+          const pixel = pixelAt(entry.buffer, x, y);
+          expect(pixelAt(plate, TERRAIN_X + index * TERRAIN_CELL + x, TERRAIN_TOP + y)).toEqual(
+            pixel[3] === 0 ? PLATE_BACKGROUND : pixel,
+          );
+        }
+      }
+    }
+
+    // And a variant row: one material, sixteen masks, left to right.
+    for (let row = 0; row < TERRAIN_MATERIALS.length; row += 1) {
+      const material = TERRAIN_MATERIALS[row];
+      if (material === undefined) continue;
+
+      for (let mask = 0; mask < 16; mask += 1) {
+        const tile = cellTile(variantQuadrants(material, referenceBackground(material), mask));
+        const top = TERRAIN_TOP + (1 + row) * TERRAIN_CELL;
+        const left = TERRAIN_X + mask * TERRAIN_CELL;
+
+        for (const [x, y] of [
+          [0, 0],
+          [TERRAIN_TILE - 1, 0],
+          [0, TERRAIN_TILE - 1],
+          [TERRAIN_TILE - 1, TERRAIN_TILE - 1],
+        ] as const) {
+          const pixel = pixelAt(tile, x, y);
+          expect(
+            pixelAt(plate, left + x, top + y),
+            `${material} mask ${String(mask)} at (${String(x)}, ${String(y)})`,
+          ).toEqual(pixel[3] === 0 ? PLATE_BACKGROUND : pixel);
+        }
+      }
+    }
+
+    // And the roads, whose pieces are paths on nothing: the plate shows the
+    // background where the piece has no ink.
+    const roadTop = TERRAIN_TOP + (1 + TERRAIN_MATERIALS.length) * TERRAIN_CELL + SECTION_GAP + HEADING_HEIGHT;
+    for (let mask = 0; mask < 16; mask += 1) {
+      const piece = roadTile(mask);
+      for (const [x, y] of [
+        [0, 0],
+        [TERRAIN_TILE - 1, TERRAIN_TILE - 1],
+        [8, 8],
+      ] as const) {
+        const pixel = pixelAt(piece, x, y);
+        expect(pixelAt(plate, TERRAIN_X + mask * TERRAIN_CELL + x, roadTop + y), `road ${String(mask)}`).toEqual(
+          pixel[3] === 0 ? PLATE_BACKGROUND : pixel,
+        );
+      }
+    }
+  });
+
+  it('stands the resource markers under the terrain, on the neutral plate and nothing else', () => {
+    const plate = cataloguePlate();
+
+    // The nodes row comes after the road row, its own gap and heading.
+    const roadTop = TERRAIN_TOP + (1 + TERRAIN_MATERIALS.length) * TERRAIN_CELL + SECTION_GAP + HEADING_HEIGHT;
+    const nodesTop = roadTop + NODES_HEIGHT + SECTION_GAP + HEADING_HEIGHT;
+
+    for (let index = 0; index < NODE_KINDS.length; index += 1) {
+      const kind = NODE_KINDS[index];
+      if (kind === undefined) continue;
+
+      const marker = nodeMarker(kind);
+      const left = TERRAIN_X + index * TERRAIN_CELL;
+
+      for (let y = 0; y < marker.height; y += 1) {
+        for (let x = 0; x < marker.width; x += 1) {
+          const pixel = pixelAt(marker, x, y);
+          expect(pixelAt(plate, left + x, nodesTop + y), `${kind} at (${String(x)}, ${String(y)})`).toEqual(
+            pixel[3] === 0 ? PLATE_BACKGROUND : pixel,
+          );
+        }
+      }
+    }
   });
 });

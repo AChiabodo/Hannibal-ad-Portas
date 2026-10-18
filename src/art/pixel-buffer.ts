@@ -152,25 +152,59 @@ export function fillRect(
  * upload.
  *
  * This is what lets a glyph — drawn on a transparent buffer — be stamped onto a
- * plate without the generator knowing what is underneath it.
+ * plate without the generator knowing what is underneath it, and it is the whole
+ * of `blit`: the common case of one buffer onto another *is* this function with
+ * the whole source named, which is why the callers that want all of it use the
+ * shorter name.
  *
  * @throws RangeError when the target is the source: compositing a buffer onto
  *   itself through an offset is a smear whose result depends on the direction
  *   of the walk, so it is refused rather than half-defined.
  */
 export function blit(target: PixelBuffer, source: PixelBuffer, x: number, y: number): void {
+  blitRegion(target, source, 0, 0, source.width, source.height, x, y);
+}
+
+/**
+ * Composites one rectangle of a buffer onto another, source over, clipped.
+ *
+ * The same arithmetic as `blit`, applied to a region of the source rather than
+ * all of it: this is what lets a tile be assembled out of the quadrants of four
+ * materials — the dual grid of B3 copies an 8×8 quadrant at a time — and what
+ * lets a sprite be cut out of a sheet.
+ *
+ * The region is refused when it is not whole or not inside the source, because
+ * a caller asking for pixels that are not there is a bug in the caller; the
+ * destination is clipped, because a caller composing against an edge should not
+ * have to measure it first. A zero-width or zero-height region paints nothing.
+ *
+ * @throws RangeError when the target is the source, or the region is not a whole
+ *   rectangle inside it.
+ */
+export function blitRegion(
+  target: PixelBuffer,
+  source: PixelBuffer,
+  sourceX: number,
+  sourceY: number,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+): void {
   if (target === source) {
     throw new RangeError('a buffer cannot be blitted onto itself: the result would depend on walk order');
   }
+  requireRegion(source, sourceX, sourceY, width, height);
 
   const left = Math.max(0, x);
   const top = Math.max(0, y);
-  const right = Math.min(target.width, x + source.width);
-  const bottom = Math.min(target.height, y + source.height);
+  const right = Math.min(target.width, x + width);
+  const bottom = Math.min(target.height, y + height);
 
   for (let row = top; row < bottom; row += 1) {
     for (let column = left; column < right; column += 1) {
-      const sourceIndex = ((row - y) * source.width + (column - x)) * CHANNELS;
+      const sourceIndex =
+        ((sourceY + row - y) * source.width + (sourceX + column - x)) * CHANNELS;
       const alpha = source.pixels[sourceIndex + 3] ?? 0;
       if (alpha === 0) continue;
 
@@ -198,6 +232,57 @@ export function blit(target: PixelBuffer, source: PixelBuffer, x: number, y: num
       target.pixels[targetIndex + 3] = outAlpha;
     }
   }
+}
+
+/**
+ * A copy of a buffer turned a whole number of quarter turns clockwise.
+ *
+ * Rotation is a primitive of the pipeline rather than a trick of one generator:
+ * the plan's autotiling is *five tiles plus rotation* rather than forty-seven
+ * variants, so a single canonical piece turned four ways has to be exactly as
+ * good as one drawn four times — and the only way to know that is for the turn
+ * to be code the tests walk. The turn is clockwise because that is what a reader
+ * assumes; a negative or absent turn is normalised, and a fractional one is
+ * refused rather than rounded.
+ *
+ * A quarter turn that is a multiple of four still returns a fresh buffer: the
+ * buffer is read-only as a value, but a caller that gets one back must not be
+ * able to tell a rotation from an alias.
+ *
+ * @throws RangeError when the number of turns is not a whole number.
+ */
+export function rotateQuarterTurns(buffer: PixelBuffer, turns: number): PixelBuffer {
+  if (!Number.isInteger(turns)) {
+    throw new RangeError(`a rotation must be a whole number of quarter turns, got ${String(turns)}`);
+  }
+
+  const quarter = ((turns % 4) + 4) % 4;
+  let turned = copyOf(buffer);
+
+  for (let turn = 0; turn < quarter; turn += 1) turned = rotateOnce(turned);
+
+  return turned;
+}
+
+/** One clockwise quarter turn: the pixel at `(x, y)` comes from `(y, height − 1 − x)`. */
+function rotateOnce(buffer: PixelBuffer): PixelBuffer {
+  const turned = createPixelBuffer(buffer.height, buffer.width);
+
+  for (let y = 0; y < turned.height; y += 1) {
+    for (let x = 0; x < turned.width; x += 1) {
+      setPixel(turned, x, y, pixelAt(buffer, y, buffer.height - 1 - x));
+    }
+  }
+
+  return turned;
+}
+
+/** A fresh buffer holding the same pixels and the same shape. */
+function copyOf(buffer: PixelBuffer): PixelBuffer {
+  const copy = createPixelBuffer(buffer.width, buffer.height);
+  copy.pixels.set(buffer.pixels);
+
+  return copy;
 }
 
 /**
@@ -253,6 +338,28 @@ function indexOf(buffer: PixelBuffer, x: number, y: number): number {
 function requireDimension(value: number, what: string): void {
   if (!Number.isInteger(value) || value < 1) {
     throw new RangeError(`a pixel buffer ${what} must be a positive integer, got ${String(value)}`);
+  }
+}
+
+/** @throws RangeError when the region is not a whole rectangle inside the buffer. */
+function requireRegion(buffer: PixelBuffer, x: number, y: number, width: number, height: number): void {
+  if (!Number.isInteger(width) || width < 0 || !Number.isInteger(height) || height < 0) {
+    throw new RangeError(
+      `a blit region must have whole, non-negative sides, got ${String(width)}×${String(height)}`,
+    );
+  }
+  if (
+    !Number.isInteger(x) ||
+    !Number.isInteger(y) ||
+    x < 0 ||
+    y < 0 ||
+    x + width > buffer.width ||
+    y + height > buffer.height
+  ) {
+    throw new RangeError(
+      `the region (${String(x)}, ${String(y)}) ${String(width)}×${String(height)} is outside a ` +
+        `${String(buffer.width)}×${String(buffer.height)} buffer`,
+    );
   }
 }
 

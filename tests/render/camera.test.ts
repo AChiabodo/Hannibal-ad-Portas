@@ -10,10 +10,12 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_ZOOM,
   MIN_ZOOM,
+  clampTo,
   createCamera,
   panBy,
   screenToStage,
   stageToScreen,
+  zoomAbout,
   zoomIn,
   zoomOut,
   zoomTo,
@@ -106,5 +108,65 @@ describe('mapping between the stage and the screen', () => {
     expect(stageToScreen(camera, 10, 10)).toEqual({ x: 0, y: 0 });
     expect(stageToScreen(camera, 11, 12)).toEqual({ x: 2, y: 4 });
     expect(screenToStage(camera, 2, 4)).toEqual({ x: 11, y: 12 });
+  });
+});
+
+describe('zooming about a point on the screen', () => {
+  it('keeps the stage pixel under that point exactly where it was', () => {
+    for (const zoom of [MIN_ZOOM, 2, 3, MAX_ZOOM]) {
+      for (const [screenX, screenY] of [
+        [0, 0],
+        [1, 1],
+        [63, 47],
+        [320, 240],
+      ] as const) {
+        const camera = createCamera({ x: 41, y: 27, zoom: 4 });
+        const next = zoomAbout(camera, zoom, screenX, screenY);
+
+        expect(screenToStage(next, screenX, screenY), `zoom ${String(zoom)}`).toEqual(
+          screenToStage(camera, screenX, screenY),
+        );
+        // And it is a position, not half of one: the whole point of the module.
+        expect(Number.isInteger(next.x)).toBe(true);
+        expect(Number.isInteger(next.y)).toBe(true);
+      }
+    }
+  });
+
+  it('is the same camera when the zoom does not change', () => {
+    const camera = createCamera({ x: 9, y: 4, zoom: 3 });
+
+    expect(zoomAbout(camera, 3, 17, 11)).toEqual(camera);
+  });
+
+  it('refuses a fractional point and a zoom it could not take', () => {
+    const camera = createCamera({ zoom: 2 });
+
+    expect(() => zoomAbout(camera, 3, 1.5, 0)).toThrow(/whole number/);
+    expect(() => zoomAbout(camera, 3, 0, 0.5)).toThrow(/whole number/);
+    expect(() => zoomAbout(camera, MAX_ZOOM + 1, 0, 0)).toThrow(RangeError);
+  });
+});
+
+describe('keeping the viewport on the stage', () => {
+  const viewport = { stageWidth: 100, stageHeight: 60, width: 40, height: 40 };
+
+  it('stops the camera at the stage’s edges, at every zoom level', () => {
+    for (let zoom = MIN_ZOOM; zoom <= MAX_ZOOM; zoom += 1) {
+      const at = { ...viewport, width: 40 * zoom, height: 40 * zoom };
+
+      expect(clampTo(createCamera({ x: -5, y: -5, zoom }), at)).toEqual({ x: 0, y: 0, zoom });
+      expect(clampTo(createCamera({ x: 1000, y: 1000, zoom }), at)).toEqual({
+        x: Math.max(0, 100 - 40),
+        y: Math.max(0, 60 - 40),
+        zoom,
+      });
+    }
+  });
+
+  it('leaves a stage smaller than the viewport at its own origin, which is all of it', () => {
+    const small = { stageWidth: 20, stageHeight: 20, width: 100, height: 100 };
+
+    expect(clampTo(createCamera({ x: 40, y: 40, zoom: 2 }), small)).toEqual({ x: 0, y: 0, zoom: 2 });
   });
 });

@@ -46,8 +46,11 @@ export function rgba(hex: number, alpha = 255): Rgba {
  *
  * `night`, `parchment` and `neutral` are surfaces and inks: the page, the words
  * on it, and the flat grey the Atelier judges art against. `stone`, `bronze`,
- * `blood` and `olive` are the material bases the theatre is drawn from, and each
- * carries enough of a ramp to shade a whole figure without leaving it.
+ * `blood`, `olive` and `water` are the material bases the theatre is drawn
+ * from, and each carries enough of a ramp to shade a whole figure without
+ * leaving it. `water` joined the palette with B3: a river has to read as water
+ * at a glance, and a river painted out of the stone or night ramps reads as wet
+ * rock, which is exactly the confusion a map is not allowed to have.
  */
 export const BASE = {
   /** The dark behind everything, and the page's own background. */
@@ -66,6 +69,8 @@ export const BASE = {
   blood: rgba(0x9b2f22),
   /** Vegetation, cloth and the land at rest. */
   olive: rgba(0x6b7a3a),
+  /** Rivers and fords: the one base no other material is close to. */
+  water: rgba(0x3a6f92),
 } as const;
 
 /** How many shades a standard ramp carries: dark enough to shade, light enough to highlight. */
@@ -157,10 +162,11 @@ export const RAMPS = {
   blood: ramp(BASE.blood),
   olive: ramp(BASE.olive),
   parchment: ramp(BASE.parchment),
+  water: ramp(BASE.water),
 } as const;
 
 /** The name of one of the derived ramps. */
 export type RampName = keyof typeof RAMPS;
 
 /** The ramps in the order a catalogue, a swatch strip or a test walks them. */
-export const RAMP_NAMES: readonly RampName[] = ['stone', 'bronze', 'blood', 'olive', 'parchment'];
+export const RAMP_NAMES: readonly RampName[] = ['stone', 'bronze', 'blood', 'olive', 'parchment', 'water'];

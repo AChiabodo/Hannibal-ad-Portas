@@ -1,5 +1,6 @@
 /**
- * The catalogue: every artefact B2 generates, and the one plate the Atelier shows.
+ * The catalogue: every artefact B2 and B3 generate, and the one plate the
+ * Atelier shows.
  *
  * The Atelier's job is to make generated art inspectable — by a human, and by an
  * agent that would otherwise guess at pixels from source (ADR-0002). For that to
@@ -9,24 +10,41 @@
  * which is what the page renders at its several zoom levels.
  *
  * Every entry is named and is itself a `PixelBuffer`, so a caller that wants to
- * look at one glyph rather than a plate has one to look at — a test, a bake step
- * or an agent inspecting a single sprite. Names are stable and machine-readable:
- * `glyph:U+00E0` and `ramp:bronze`, which is what a diff between two builds of
- * the catalogue should be written in.
+ * look at one glyph, one ramp or one terrain variant has one to look at — a
+ * test, a bake step or an agent inspecting a single sprite. Names are stable and
+ * machine-readable: `glyph:U+00E0`, `ramp:bronze` and `terrain:forest:13`, which
+ * is what a diff between two builds of the catalogue should be written in.
  *
- * What is *not* here is as deliberate as what is. B2 generates a font and a
- * palette; the figures of C2, the buildings of C5 and the terrain of B3 join this
- * catalogue by adding themselves to it, which is why the plate lays sections out
- * from constants rather than from a scenery list.
+ * Three sections, and each is laid out from what it holds rather than from a
+ * number someone maintains beside it:
+ *
+ * - **glyphs**, the whole font, in a grid;
+ * - **ramps**, the shades of each base, as strips;
+ * - **terrain**, the ground of B3: every material's own tile, then one row per
+ *   material of its sixteen dual-grid variants, and then the sixteen road
+ *   connections. A row shows its material against the ground it crosses, which is
+ * - **nodes**, the four resource markers B3 stands on that ground.
  */
 
 import { GLYPHS, GLYPH_WIDTH, LINE_HEIGHT, drawText, measureText, textPlate } from './font.ts';
+import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from './nodes.ts';
 import { BASE, RAMPS, RAMP_NAMES, RAMP_SHADES } from './palette.ts';
 import { type PixelBuffer, blit, createPixelBuffer, fillRect } from './pixel-buffer.ts';
+import {
+  MATERIALS,
+  TERRAIN_MATERIALS,
+  TERRAIN_TILE,
+  cellTile,
+  materialTile,
+  referenceBackground,
+  roadTile,
+  terrainEntries,
+  variantQuadrants,
+} from './terrain.ts';
 
 /** One named artefact: what the Atelier renders, and what a test can pin. */
 export interface CatalogueEntry {
-  /** A stable, machine-readable name, e.g. `glyph:U+0041` or `ramp:blood`. */
+  /** A stable, machine-readable name, e.g. `glyph:U+0041` or `terrain:forest:13`. */
   readonly name: string;
   /** The pixels, in the one currency the pipeline has (PLAN §3). */
   readonly buffer: PixelBuffer;
@@ -53,7 +71,7 @@ const SWATCH_WIDTH = 7;
 const SWATCH_HEIGHT = 7;
 const SWATCH_GAP = 1;
 
-/** Blank rows between the glyph grid and the ramp strips. */
+/** Blank rows between two sections. */
 const SECTION_GAP = 8;
 
 /** Air between a section's heading and what it heads. */
@@ -83,15 +101,47 @@ const RAMP_LABEL_WIDTH = Math.max(...RAMP_NAMES.map((name) => measureText(name))
 /** Width of the ramp section: a name, and the shades of the ramp beside it. */
 const RAMPS_WIDTH = RAMP_LABEL_WIDTH + LABEL_GAP + RAMP_SHADES * SWATCH_WIDTH + (RAMP_SHADES - 1) * SWATCH_GAP;
 
-/** The plate's height, which the sections above add up to. */
-export const PLATE_HEIGHT = PLATE_PADDING * 2 + HEADING_HEIGHT * 2 + GLYPH_GRID_HEIGHT + SECTION_GAP + RAMPS_HEIGHT;
+/** How many terrain variants stand on one row: the dual grid's sixteen masks. */
+const TERRAIN_COLUMNS = 16;
+
+/** One cell of a terrain row: the tile, plus the air that keeps two rows apart. */
+const TERRAIN_CELL = TERRAIN_TILE + 3;
+
+/** The labels down the side of the terrain section: the ground, one row per material, the road, the nodes. */
+const TERRAIN_ROW_LABELS: readonly string[] = ['ground', 'road', 'node', ...TERRAIN_MATERIALS];
+
+/** The widest of them, which is what the tiles clear. */
+const TERRAIN_LABEL_WIDTH = Math.max(...TERRAIN_ROW_LABELS.map((label) => measureText(label)));
+
+/** Width of the terrain section: a label, and sixteen variants beside it. */
+const TERRAIN_WIDTH = TERRAIN_LABEL_WIDTH + LABEL_GAP + TERRAIN_COLUMNS * TERRAIN_CELL;
+
+/** The rows of variant tiles: one per material that can be a boundary's foreground. */
+const TERRAIN_ROWS = TERRAIN_MATERIALS.length;
+
+/** Height of the terrain section: the material row, the variant rows and the road row. */
+const TERRAIN_HEIGHT = (1 + TERRAIN_ROWS + 1) * TERRAIN_CELL;
+
+/** The resource markers, which stand in a row of their own under the terrain. */
+const NODES_HEIGHT = NODE_TILE + 3;
 
 /** The plate's width: the padding, and whichever section is wider. */
-export const PLATE_WIDTH = PLATE_PADDING * 2 + Math.max(GLYPH_GRID_WIDTH, RAMPS_WIDTH);
+export const PLATE_WIDTH = PLATE_PADDING * 2 + Math.max(GLYPH_GRID_WIDTH, RAMPS_WIDTH, TERRAIN_WIDTH);
+
+/** The plate's height, which the sections above add up to. */
+export const PLATE_HEIGHT =
+  PLATE_PADDING * 2 +
+  HEADING_HEIGHT * 5 +
+  GLYPH_GRID_HEIGHT +
+  RAMPS_HEIGHT +
+  TERRAIN_HEIGHT +
+  NODES_HEIGHT +
+  SECTION_GAP * 4;
 
 /**
  * Every artefact the art library generates, in a stable order: the glyphs in
- * code-point order, then the ramps in the order `RAMP_NAMES` states.
+ * code-point order, the ramps in the order `RAMP_NAMES` states, and the terrain
+ * tiles `terrainEntries` names.
  *
  * Each glyph is drawn on its own transparent buffer at line-box size, so the
  * accent band is part of the entry and two entries can be compared without
@@ -107,28 +157,43 @@ export function catalogue(): readonly CatalogueEntry[] {
 
   const ramps = RAMP_NAMES.map((name) => ({ name: `ramp:${name}`, buffer: rampSwatches(name) }));
 
-  return [...glyphs, ...ramps];
+  return [...glyphs, ...ramps, ...terrainEntries(), ...nodeEntries()];
+}
+
+/** The glyph entries, which stand first in the catalogue and in the plate's grid. */
+function glyphEntries(entries: readonly CatalogueEntry[]): readonly CatalogueEntry[] {
+  return entries.slice(0, GLYPHS.length);
+}
+
+/** The ramp entries, which stand after the glyphs and are drawn as strips. */
+function rampEntries(entries: readonly CatalogueEntry[]): readonly CatalogueEntry[] {
+  return entries.slice(GLYPHS.length, GLYPHS.length + RAMP_NAMES.length);
 }
 
 /**
  * The whole catalogue on one plate, which is what the Atelier renders.
  *
  * The layout is additive from the constants above — padding, a heading, the
- * grid, a gap, a heading, the ramp strips — so the plate's size is a consequence
- * of what the catalogue holds rather than a number someone maintains beside it.
- * Everything is drawn in the plate's own coordinates and nothing is scaled: the
- * zoom the Atelier shows it at is the camera's business, not the plate's.
+ * grid, a gap, a heading, the ramp strips, a gap, a heading, the terrain, a gap,
+ * a heading, the roads — so the plate's size is a consequence of what the
+ * catalogue holds rather than a number someone maintains beside it. Everything
+ * is drawn in the plate's own coordinates and nothing is scaled: the zoom the
+ * Atelier shows it at is the camera's business, not the plate's.
  */
 export function cataloguePlate(): PixelBuffer {
   const plate = createPixelBuffer(PLATE_WIDTH, PLATE_HEIGHT, PLATE_BACKGROUND);
+  // Asked for once: every glyph is drawn afresh by `catalogue()`, and a plate
+  // that asked again per section would draw the font five times over.
   const entries = catalogue();
+  const glyphs = glyphEntries(entries);
+  const ramps = rampEntries(entries);
 
   let y = PLATE_PADDING;
   blit(plate, textPlate('glyphs', PLATE_INK), PLATE_PADDING, y);
   y += HEADING_HEIGHT;
 
   for (let index = 0; index < GLYPHS.length; index += 1) {
-    const entry = entries[index];
+    const entry = glyphs[index];
     if (entry === undefined) continue;
 
     const column = index % GLYPH_GRID_COLUMNS;
@@ -142,13 +207,68 @@ export function cataloguePlate(): PixelBuffer {
 
   // The swatches are the ramp entries themselves, blitted rather than redrawn: the
   // plate shows the catalogue and does not hold a second opinion about it.
+  const rampsTop = y;
   for (let index = 0; index < RAMP_NAMES.length; index += 1) {
-    const entry = entries[GLYPHS.length + index];
+    const entry = ramps[index];
     if (entry === undefined) continue;
 
-    blit(plate, textPlate(RAMP_NAMES[index] ?? '', PLATE_INK), PLATE_PADDING, y);
-    blit(plate, entry.buffer, PLATE_PADDING + RAMP_LABEL_WIDTH + LABEL_GAP, y + 1);
-    y += SWATCH_HEIGHT + SECTION_GAP;
+    const row = rampsTop + index * (SWATCH_HEIGHT + SECTION_GAP);
+    blit(plate, textPlate(RAMP_NAMES[index] ?? '', PLATE_INK), PLATE_PADDING, row);
+    blit(plate, entry.buffer, PLATE_PADDING + RAMP_LABEL_WIDTH + LABEL_GAP, row + 1);
+  }
+  y = rampsTop + RAMPS_HEIGHT + SECTION_GAP;
+
+  blit(plate, textPlate('terrain', PLATE_INK), PLATE_PADDING, y);
+  y += HEADING_HEIGHT;
+
+  // One row per material, each a label and sixteen variants: the mask a column
+  // stands for is the column's own number, so a row reads left to right from
+  // "none of it" to "all of it".
+  blit(plate, textPlate('ground', PLATE_INK), PLATE_PADDING, y + (TERRAIN_CELL - LINE_HEIGHT) / 2);
+  for (let index = 0; index < MATERIALS.length; index += 1) {
+    const material = MATERIALS[index];
+    if (material === undefined) continue;
+
+    blit(plate, materialTile(material), PLATE_PADDING + TERRAIN_LABEL_WIDTH + LABEL_GAP + index * TERRAIN_CELL, y);
+  }
+  y += TERRAIN_CELL;
+
+  for (const material of TERRAIN_MATERIALS) {
+    const background = referenceBackground(material);
+    blit(plate, textPlate(material, PLATE_INK), PLATE_PADDING, y + (TERRAIN_CELL - LINE_HEIGHT) / 2);
+
+    for (let mask = 0; mask < TERRAIN_COLUMNS; mask += 1) {
+      blit(
+        plate,
+        cellTile(variantQuadrants(material, background, mask)),
+        PLATE_PADDING + TERRAIN_LABEL_WIDTH + LABEL_GAP + mask * TERRAIN_CELL,
+        y,
+      );
+    }
+    y += TERRAIN_CELL;
+  }
+  y += SECTION_GAP;
+
+  blit(plate, textPlate('roads', PLATE_INK), PLATE_PADDING, y);
+  y += HEADING_HEIGHT;
+
+  blit(plate, textPlate('road', PLATE_INK), PLATE_PADDING, y + (TERRAIN_CELL - LINE_HEIGHT) / 2);
+  for (let mask = 0; mask < TERRAIN_COLUMNS; mask += 1) {
+    blit(plate, roadTile(mask), PLATE_PADDING + TERRAIN_LABEL_WIDTH + LABEL_GAP + mask * TERRAIN_CELL, y);
+  }
+  y += TERRAIN_CELL + SECTION_GAP;
+
+  blit(plate, textPlate('nodes', PLATE_INK), PLATE_PADDING, y);
+  y += HEADING_HEIGHT;
+
+  // The markers are drawn on the neutral plate with no ground under them, which is
+  // exactly the question a marker has to answer: does it read on nothing?
+  blit(plate, textPlate('node', PLATE_INK), PLATE_PADDING, y + (TERRAIN_CELL - LINE_HEIGHT) / 2);
+  for (let index = 0; index < NODE_KINDS.length; index += 1) {
+    const kind = NODE_KINDS[index];
+    if (kind === undefined) continue;
+
+    blit(plate, nodeMarker(kind), PLATE_PADDING + TERRAIN_LABEL_WIDTH + LABEL_GAP + index * TERRAIN_CELL, y);
   }
 
   return plate;

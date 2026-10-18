@@ -30,8 +30,9 @@ export const PLATE_NAME = 'catalogue';
 export const USAGE = `Usage: node src/cli/bake-main.ts [--out <dir>]
 
 Writes every generated artefact to <dir> (default: ${DEFAULT_OUT}): one PNG per
-glyph and per ramp in the catalogue, plus the whole catalogue plate. Prints one
-line per file with its name, its size in pixels and its pixel hash.
+glyph, per ramp, per terrain tile and per resource marker in the catalogue, plus
+the whole catalogue plate. Prints one line per file with its name, its size in
+pixels and its pixel hash.
 
 The files are build products and the game never reads them back: the runtime draws
 from the same generators this command baked from. They exist so that art can be

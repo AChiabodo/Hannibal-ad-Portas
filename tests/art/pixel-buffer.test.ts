@@ -8,10 +8,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   blit,
+  blitRegion,
   createPixelBuffer,
   fillRect,
   hashPixelBuffer,
   pixelAt,
+  rotateQuarterTurns,
   setPixel,
   TRANSPARENT,
 } from '../../src/art/pixel-buffer';
@@ -134,6 +136,70 @@ describe('compositing one buffer onto another', () => {
     const buffer = createPixelBuffer(2, 2, RED);
 
     expect(() => blit(buffer, buffer, 1, 0)).toThrow(RangeError);
+  });
+});
+
+describe('compositing one rectangle of a buffer', () => {
+  /** A 4×4 buffer whose pixel at `(x, y)` holds its own coordinates as a colour. */
+  function marked(): ReturnType<typeof createPixelBuffer> {
+    const buffer = createPixelBuffer(4, 4);
+    for (let y = 0; y < 4; y += 1) {
+      for (let x = 0; x < 4; x += 1) setPixel(buffer, x, y, [x, y, 0, 255]);
+    }
+
+    return buffer;
+  }
+
+  it('copies the named rectangle to the named corner, clipped at the target', () => {
+    const target = createPixelBuffer(3, 3);
+
+    blitRegion(target, marked(), 1, 1, 2, 2, 0, 0);
+
+    expect(pixelAt(target, 0, 0)).toEqual([1, 1, 0, 255]);
+    expect(pixelAt(target, 1, 1)).toEqual([2, 2, 0, 255]);
+    expect(pixelAt(target, 2, 2)).toEqual(TRANSPARENT);
+
+    // Off the target is dropped, not refused, the same as a whole-buffer blit.
+    blitRegion(target, marked(), 0, 0, 4, 4, -1, -1);
+    expect(pixelAt(target, 0, 0)).toEqual([1, 1, 0, 255]);
+  });
+
+  it('refuses a region the source does not have, and refuses to blit a buffer onto itself', () => {
+    const buffer = marked();
+
+    expect(() => blitRegion(buffer, buffer, 0, 0, 2, 2, 0, 0)).toThrow(RangeError);
+    expect(() => blitRegion(createPixelBuffer(1, 1), buffer, 3, 0, 2, 1, 0, 0)).toThrow(RangeError);
+    expect(() => blitRegion(createPixelBuffer(1, 1), buffer, 0, 0, -1, 1, 0, 0)).toThrow(RangeError);
+    expect(() => blitRegion(createPixelBuffer(1, 1), buffer, 0, 0, 1.5, 1, 0, 0)).toThrow(RangeError);
+  });
+});
+
+describe('turning a buffer', () => {
+  it('turns a corner clockwise, one quarter at a time', () => {
+    const buffer = createPixelBuffer(2, 2);
+    setPixel(buffer, 0, 0, RED);
+
+    expect(pixelAt(rotateQuarterTurns(buffer, 1), 1, 0)).toEqual(RED);
+    expect(pixelAt(rotateQuarterTurns(buffer, 2), 1, 1)).toEqual(RED);
+    expect(pixelAt(rotateQuarterTurns(buffer, 3), 0, 1)).toEqual(RED);
+    expect(pixelAt(rotateQuarterTurns(buffer, 4), 0, 0)).toEqual(RED);
+    expect(pixelAt(rotateQuarterTurns(buffer, -3), 1, 0)).toEqual(RED);
+  });
+
+  it('swaps the sides of a rectangle and comes back to where it started', () => {
+    const wide = createPixelBuffer(3, 1, RED);
+    const turned = rotateQuarterTurns(wide, 1);
+
+    expect([turned.width, turned.height]).toEqual([1, 3]);
+    expect(hashPixelBuffer(rotateQuarterTurns(wide, 4))).toBe(hashPixelBuffer(wide));
+  });
+
+  it('hands back a copy rather than the buffer itself, and refuses a fractional turn', () => {
+    const buffer = createPixelBuffer(2, 2, RED);
+
+    expect(rotateQuarterTurns(buffer, 0)).not.toBe(buffer);
+    expect(rotateQuarterTurns(buffer, 0).pixels).toEqual(buffer.pixels);
+    expect(() => rotateQuarterTurns(buffer, 1.5)).toThrow(RangeError);
   });
 });
 

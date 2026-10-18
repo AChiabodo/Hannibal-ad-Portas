@@ -24,6 +24,13 @@
  * fractional is the thing this module exists to prevent. B3 can add an anchored
  * zoom when it can re-anchor on integers; here, zoom keeps the top-left corner
  * and moves nothing by half a pixel.
+ *
+ * B3 added it, and this is how: `zoomAbout` asks which stage pixel a screen
+ * point is showing *before* the zoom, and puts that pixel back under the same
+ * screen point *after* it, rounding the new position to the pixel the point is
+ * in rather than moving by half of one. `clampTo` is the other half of a camera
+ * that is actually moved by a player: a viewport slid past the edge of the stage
+ * shows nothing, so it is put back.
  */
 
 /** The smallest magnification: one stage pixel per screen pixel. */
@@ -122,6 +129,66 @@ export function screenToStage(camera: Camera, x: number, y: number): { readonly 
   return {
     x: camera.x + Math.floor(x / camera.zoom),
     y: camera.y + Math.floor(y / camera.zoom),
+  };
+}
+
+/**
+ * The camera at a different magnification, keeping one screen point where it is.
+ *
+ * This is the zoom a wheel does: the stage pixel under the pointer stays under
+ * the pointer, so the map grows towards what the player is looking at rather
+ * than away from it. The arithmetic is `screenToStage` before, `screenToStage`
+ * after, and the position that makes the two agree — which is an integer, because
+ * `screenToStage` is whole in and whole out and the division is rounded down.
+ * A zoom about a screen point therefore cannot put the camera between two pixels,
+ * which is the property the whole module is for.
+ *
+ * @throws RangeError when the zoom is not a whole magnification in range, or the
+ *   screen point is not a whole number of screen pixels.
+ */
+export function zoomAbout(camera: Camera, zoom: number, screenX: number, screenY: number): Camera {
+  requireWhole(screenX, 'a screen x');
+  requireWhole(screenY, 'a screen y');
+
+  const next = requireCamera({ x: camera.x, y: camera.y, zoom });
+  const anchor = screenToStage(camera, screenX, screenY);
+
+  return {
+    x: anchor.x - Math.floor(screenX / next.zoom),
+    y: anchor.y - Math.floor(screenY / next.zoom),
+    zoom: next.zoom,
+  };
+}
+
+/** What a camera has to be kept inside: the stage's size and the viewport's. */
+export interface Viewport {
+  /** Stage width in pixels. */
+  readonly stageWidth: number;
+  /** Stage height in pixels. */
+  readonly stageHeight: number;
+  /** Viewport width in screen pixels. */
+  readonly width: number;
+  /** Viewport height in screen pixels. */
+  readonly height: number;
+}
+
+/**
+ * The camera moved as little as it takes to keep the viewport on the stage.
+ *
+ * A viewport slid past the edge of the stage shows the page's background, which
+ * is a bug that looks like a design decision; so the camera stops at the edge.
+ * A stage smaller than the viewport is not panned at all — its top-left corner
+ * is all of it there is to show — which is the same arithmetic with the far bound
+ * clamped to zero instead of negative.
+ */
+export function clampTo(camera: Camera, viewport: Viewport): Camera {
+  const across = Math.max(0, viewport.stageWidth - Math.floor(viewport.width / camera.zoom));
+  const down = Math.max(0, viewport.stageHeight - Math.floor(viewport.height / camera.zoom));
+
+  return {
+    x: Math.min(Math.max(0, camera.x), across),
+    y: Math.min(Math.max(0, camera.y), down),
+    zoom: camera.zoom,
   };
 }
 

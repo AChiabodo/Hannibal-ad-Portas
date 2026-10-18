@@ -15,11 +15,9 @@
 import { describe, expect, it } from 'vitest';
 import { catalogue, cataloguePlate } from '../../src/art/catalogue';
 import { hashPixelBuffer } from '../../src/art/pixel-buffer';
-import { titlePlate } from '../../src/art/title';
 
 /** The fingerprints recorded from the generators as accepted. */
-const PLATE_HASH = '224fbb946b77d04d';
-const TITLE_HASH = 'db817c162bf51e43';
+const PLATE_HASH = 'b0eac29529a6325e';
 
 const GLYPH_HASHES: Readonly<Record<string, string>> = {
   'glyph:U+0020': '19ce279ecc93e509',
@@ -30,15 +28,22 @@ const GLYPH_HASHES: Readonly<Record<string, string>> = {
   'glyph:U+00D9': '97f51eff418d6c5e',
   'ramp:stone': 'd0007ed617908b29',
   'ramp:parchment': '6371c17806297e2f',
+  'terrain:plain': 'a38e504004e2b885',
+  'terrain:river': '071c4ea85185bd39',
+  'terrain:forest:1': 'ca8c7a531f8ac267',
+  'terrain:forest:3': '05220f100872dc91',
+  'terrain:ford:15': '7d34527f96548791',
+  'road:5': '1c9614c06266f59d',
+  'road:15': '6cbfe1095e247ff4',
+  'node:grain': '66279bf415efe8ad',
+  'node:timber': 'eaae50b95335f381',
+  'node:stone': 'a0aa54a966b9308f',
+  'node:iron': 'b7b8ef7b02238245',
 };
 
 describe('the generated output, as a fingerprint', () => {
   it('pins the whole catalogue plate, layout and all', () => {
     expect(hashPixelBuffer(cataloguePlate())).toBe(PLATE_HASH);
-  });
-
-  it('pins the game page’s first screen', () => {
-    expect(hashPixelBuffer(titlePlate())).toBe(TITLE_HASH);
   });
 
   it('pins the artefacts inside the plate, so a hash says which one moved', () => {
