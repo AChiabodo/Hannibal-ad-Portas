@@ -42,6 +42,7 @@ Boundaries are enforced in CI, because they are what makes headless testing poss
 - **`art/`** — pure pixel generators: `PixelBuffer` in, `PixelBuffer` out. Never imports `pixi.js`, enforced by the render allow-list.
 - **`audio/`** — score and effects described as data, synthesized by a WebAudio adapter.
 - **`render/`** — the only place `pixi.js` exists, enforced. Converts `PixelBuffer` into `BufferImageSource`; owns camera, culling and picking.
+- **`input/`** — the human's hands: the selection and the control groups, which are the Player's memory and not state, and the Controller that turns an order into a Command (C2).
 - **`ui/`** — Italian HUD, string table, minimap.
 - **`cli/`** — headless runner and the external-agent protocol.
 

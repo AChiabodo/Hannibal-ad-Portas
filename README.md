@@ -647,15 +647,71 @@ no file was added to draw a word.
 **The page runs a Match** (`render/game.ts`). B3 drew the theatre and stopped;
 B7 opens the economy Match of B6 on the same seed, plays it in real time at the
 pace B5 built, and reads its own Faction's **Observation** — never the world —
-into the HUD. It raises one Squad at boot through the same seam a Player will use
-(C2 gives a Player a way to raise one by hand), so the Squad panel is a live panel
-and not a fixture. Real time lives here and only here, because `sim/` may not read
-a wall clock (ADR-0006): a `requestAnimationFrame` loop measures the frame and
-asks `pacing.ticksFor` how many whole ticks that is worth, clamped at both ends —
-a background tab does not owe the Match an hour, and a frame's timestamp is the
+into the HUD. Real time lives here and only here, because `sim/` may not read a
+wall clock (ADR-0006): a `requestAnimationFrame` loop measures the frame and asks
+`pacing.ticksFor` how many whole ticks that is worth, clamped at both ends — a
+background tab does not owe the Match an hour, and a frame's timestamp is the
 moment the frame began, which can precede the clock read that started the loop.
 `advance` steps ticks with no wall time at all, which is how a browser test
 watches a Season turn instead of waiting three and a half minutes for it.
+
+## Playing
+
+The Roman army, and a hand on it (C2). The page opens looking at its Stronghold,
+where five Squads have mustered — `render/opening.ts`, real Squads of real types
+through C1's scenario door, standing on free ground a block's width apart — and
+the fog is the Faction's own, refreshed from the settlements and the men it is
+marching (`eyesOfEconomy`, B4's radii), so what a Player can see follows what
+they command.
+
+**A Squad is drawn as its soldiers** (`art/figures.ts`, `render/squads.ts`). A
+figure is a paper doll composed from parts — a helmet, a shield and a weapon,
+each one a kind rather than a sprite — so the three Roman lines are told apart by
+*shape* at the lowest zoom: the hastatus' little round parma and short pilum, the
+principes' wall of a scutum under a low crest, the triarius' great round hoplon
+with a spear that reaches over every other man's head. Four directions and four
+actions are drawn: two of the directions are authored (the front and the profile)
+and the other two are mirrors with the face painted out, and the frames are idle,
+walk and attack in two steps each and a death. The block is composed from the
+*simulation's own* list of men (`sim/squad.ts`'s `menOf`), so the formation on
+screen is the formation the rules hold, and it is anchored by the middle of its
+front rank's ground line, so a Squad that loses a rank loses the men at the back
+and nobody shuffles. One sprite per Squad, re-composed only when the shape it
+draws has changed, and the whole roster in every direction and frame is on the
+Atelier's plate beside the glyphs, the ramps and the terrain.
+
+**The Player is a Controller** (`input/`, ADR-0014). A click picks a Squad by the
+rectangle its men are drawn in, a drag picks every block it touches, and an order
+is queued and emitted on the next tick as a real `move`, `attackMove`, `hold`,
+`withdraw`, `formation` or `group` Command — the same seam the built-in AI will
+use (D3) and an external agent will write on a line (E1). The selection and the
+control groups are the Player's memory: they are hashed by nothing and nobody else
+can see them, and a `group` Command is recorded so that a replay re-enacts the
+selection as well as the orders.
+
+| Gesture | What it does |
+| --- | --- |
+| Left click | Pick the Squad under the pointer, or the interface row it landed on |
+| Shift + left click | Add that Squad to the picked set, or take it out again |
+| Left drag | Pick every Squad the box touches |
+| Right click | `move` the picked Squads to that tile |
+| Shift + right click, or `a` then left click | `attackMove` there |
+| Right drag | Pan the camera |
+| Wheel | Zoom about the pointer |
+| `s` / `w` | `hold` / `withdraw` |
+| `l` / `c` | Hold a line / a column |
+| Ctrl (or ⌘) + digit | Bind the picked Squads to that control group |
+| Digit | Pick the Squads that group holds |
+| `Escape` | Drop the picked set, or the order being armed |
+| `Space` | Pause and resume |
+
+Everything a hand can do is a hook first (`selectAt`, `selectIn`, `orderAt`,
+`orderNow`, `setFormation`, `bindGroup`, `recallGroup`), so the pointer and the
+keyboard end at the same calls a test makes: nothing about the page is reachable
+only by a hand. The browser tests click, drag and press keys on the real canvas,
+and one of them compares the pixels of a Squad's block with the block composed in
+Node — the men on screen are the generator's, where the simulation says they
+stand.
 
 ## The seam
 
@@ -792,6 +848,7 @@ src/                application code
     font.ts         the bitmap font: 5×7 letterforms, an accent band, every glyph the UI needs
     terrain.ts      the seven materials, the five dual-grid shapes, the six road pieces
     nodes.ts        the four resource markers: a sheaf, two logs, a heap and a diamond
+    figures.ts      the paper-doll soldiers: a body, and the helmet, shield and weapon hung on it
     catalogue.ts    every artefact, named, and the one plate the Atelier renders
   cli/              the headless Match as a command
     arguments.ts    what the command line means, and what it refuses
@@ -803,18 +860,26 @@ src/                application code
     png.ts          a PNG encoder in the repository's own code, for the bake step
     bake.ts         the catalogue written out as files, and the table it prints
     bake-main.ts    the bake command: standard output, standard error, exit codes
+  input/            the Player's hands: a selection, control groups and a Controller (no engine imports)
+    selection.ts    what a Player has picked, and how a click or a drag picks it
+    human.ts        the human Controller: an order becomes a Command on the next tick
   ui/               the Italian interface: words, panels, minimap (no engine imports)
     strings.ts      every word a Player reads, with its English fallback path
     minimap.ts      the theatre at one pixel a tile, drawn through B4's fog
     hud.ts          the readouts, the selection panels, the layout and the hit test
+    marquee.ts      the box a drag draws, as a buffer of its own size
   render/           the application's one PixiJS-aware layer
     camera.ts       a whole-pixel position and a whole-number zoom, and no smoothing
     stage.ts        the adapter: PixelBuffer to texture, the camera on a container, the frame read back
     terrain.ts      the map composed into one image: ground, roads over it, markers over those
     fog.ts          the fog over that image: unexplored opaque, remembered veiled, visible clear
     view.ts         the seed, zoom, viewport and Faction the page opens on, with no engine in sight
-    boot.ts         the game page's boot: the theatre, its fog, the Match, the camera, the pointer
+    boot.ts         the game page's boot: the theatre, its fog, the Match, the camera, the hooks
     game.ts         the Match behind the interface, and the real-time loop that drives it
+    opening.ts      the army the page musters, and the eyes it therefore has
+    squads.ts       a Squad drawn as its soldiers in formation, from the simulation's own list
+    squad-layer.ts  one sprite per Squad on the map, and the mark of where it was told to go
+    controls.ts     the pointer and the keyboard, ending at the hooks a test calls
     hud.ts          the interface's two plates on the stage, in screen space
     atelier-layout.ts  where the several zoom levels of the catalogue stand on the page
     atelier.ts      the Atelier page: the catalogue plate, one column per zoom level
@@ -865,4 +930,10 @@ a plan that includes Pages.
   selects the row a Player pressed, the minimap is the map through B4's own fog,
   and the HUD stays in screen space at every zoom — the theatre and fog
   comparisons drop the points the interface covers, using the page's own
-  rectangles rather than a second layout kept in the test.
+  rectangles rather than a second layout kept in the test. The war is driven the
+  way a Player drives it since C2: a real mouse clicks a Squad, drags a box over
+  several, right-clicks a destination and presses keys, and the Commands that
+  reach the Match are read back through the page's hooks. The army is hidden with
+  the page's own `showSquads(false)` lens for the comparisons that are about the
+  ground, and one test composes a Squad's block in Node and compares it with the
+  GPU's pixels, so the men on screen are the generator's.

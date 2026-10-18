@@ -108,8 +108,17 @@ export interface HudModel {
   readonly rows: readonly HudRow[];
   /** What is selected, or `null`. */
   readonly detail: HudDetail | null;
-  /** Which row is selected, or `null`. */
+  /** Which row the panel belongs to, or `null`. */
   readonly selected: Selection | null;
+  /**
+   * Every row a Player has picked, which is not the same as the panel's.
+   *
+   * Box selection (C2) picks several Squads at once, and an order goes to all of
+   * them while the panel shows the first. A list that highlighted only the panel
+   * would tell a Player that the other four men they dragged over are not in the
+   * order they are about to give.
+   */
+  readonly picked: readonly Selection[];
 }
 
 /** The viewport the HUD is composed for, in screen pixels. */
@@ -220,16 +229,28 @@ export function hudModel(
   visible: EconomyVisible,
   strongholds: readonly number[],
   selection: Selection | null,
+  squadSelection: readonly number[] = [],
 ): HudModel {
   const selected = findSelection(visible, selection);
   const focus = focusSettlement(visible, selected);
+  const picked = pickedSquads(visible, squadSelection);
 
   return {
     readouts: readouts(visible, focus, strongholds),
     rows: rows(visible, strongholds),
     detail: selected === null ? null : detail(visible, strongholds, selected),
     selected,
+    picked: selected !== null && selected.kind === 'squad' && !picked.some((row) => row.id === selected.id)
+      ? [...picked, selected]
+      : picked,
   };
+}
+
+/** The picked Squads the Faction still holds, as the rows a highlight can name. */
+function pickedSquads(visible: EconomyVisible, ids: readonly number[]): readonly Selection[] {
+  return visible.squads
+    .filter((squad) => ids.includes(squad.id))
+    .map((squad) => ({ kind: 'squad' as const, id: squad.id }));
 }
 
 /** Where everything stands, given what the HUD says. */
@@ -491,6 +512,7 @@ function settlementLines(settlement: VisibleSettlement): readonly HudLine[] {
 function squadLines(squad: VisibleSquad): readonly HudLine[] {
   return [
     { label: translate('ui.type'), value: squadLabel(squad.type) },
+    { label: translate('ui.men'), value: String(squad.men) },
     { label: translate('ui.morale'), value: String(squad.morale) },
     { label: translate('ui.payroll'), value: String(squad.payroll) },
     { label: translate('ui.unpaid'), value: String(squad.unpaid) },
@@ -561,7 +583,10 @@ function drawRows(buffer: PixelBuffer, model: HudModel, rows: readonly RowRect[]
     const text = model.rows.find((candidate) => sameSelection(candidate.selection, row.selection));
     if (text === undefined) continue;
 
-    if (model.selected !== null && sameSelection(model.selected, row.selection)) {
+    // Every picked row stands on the selected ground: a box selection picks
+    // several Squads, and the list has to say so.
+    const picked = model.picked.some((candidate) => sameSelection(candidate, row.selection));
+    if (picked || (model.selected !== null && sameSelection(model.selected, row.selection))) {
       fillRect(buffer, row.rect.x + 1, row.rect.y, row.rect.width - 2, row.rect.height, HUD_SELECTED);
     }
 

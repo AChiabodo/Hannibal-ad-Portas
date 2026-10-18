@@ -2,12 +2,12 @@ import { expect, test, type Page } from '@playwright/test';
 import type { SpqrDebugHooks } from '../src/debug';
 import { blit, pixelAt, type PixelBuffer } from '../src/art/pixel-buffer';
 import { createFog, refreshVision, viewOf } from '../src/sim/fog';
-import { eyesOf } from '../src/sim/fog-match';
 import { MAP_HEIGHT, MAP_WIDTH, generateMap } from '../src/sim/map';
 import type { ViewState } from '../src/render/boot';
 import { renderFog } from '../src/render/fog';
 import { VIEWED_FACTION, DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
-import { renderTerrain, THEATRE_PIXELS } from '../src/render/terrain';
+import { renderTerrain, THEATRE_PIXELS, tilePixel } from '../src/render/terrain';
+import { openingEyes } from '../src/render/opening';
 import { screenToStage, stageToScreen } from '../src/render/camera';
 import type { Rect } from '../src/ui/hud';
 import { describeView, hudRects, samples } from './hooks';
@@ -46,7 +46,9 @@ const THEATRE: PixelBuffer = foggedByThePlayer();
 /** The theatre rendered, with the fog the page opens with drawn over it. */
 function foggedByThePlayer(): PixelBuffer {
   const fog = createFog();
-  refreshVision(fog, GRID, eyesOf(GRID, VIEWED_FACTION));
+  // The eyes the page opens with: the Stronghold's watch, and the opening
+  // army's own (C2 — a Squad has eyes, and the fog follows the men).
+  refreshVision(fog, GRID, openingEyes(GRID, VIEWED_FACTION));
 
   const frame = renderTerrain(GRID);
   blit(frame, renderFog(viewOf(fog)), 0, 0);
@@ -139,7 +141,34 @@ async function boot(page: Page): Promise<SpqrDebugHooks['boot'] & { readonly boo
   const report: SpqrDebugHooks['boot'] = await page.evaluate(() => window.__SPQR.boot);
   if (!report.booted) throw new Error(`boot failed: ${report.error}`);
 
+  // C2 puts an army on the map, and these tests are about the map: the men are
+  // hidden with the page's own lens, so what is compared is the theatre and the
+  // fog the generators produced and not a hundred soldiers standing on it.
+  await page.evaluate(() => window.__SPQR.game?.showSquads(false));
+
   return report;
+}
+
+/**
+ * The camera the page opens with: centred on the player's Stronghold, clamped to
+ * the theatre.
+ *
+ * Written out here rather than read off the page, because a test that asked the
+ * page where it was looking and then checked it would be checking nothing.
+ */
+function openingCamera(): { readonly x: number; readonly y: number; readonly zoom: number } {
+  const stronghold = GRID.strongholds[0];
+  if (stronghold === undefined) throw new Error('the map has no Stronghold');
+
+  const at = tilePixel(stronghold.x, stronghold.y);
+  const across = Math.max(0, THEATRE_PIXELS - Math.floor(VIEWPORT_WIDTH / DEFAULT_ZOOM));
+  const down = Math.max(0, THEATRE_PIXELS - Math.floor(VIEWPORT_HEIGHT / DEFAULT_ZOOM));
+
+  return {
+    x: Math.min(Math.max(0, Math.floor(at.x - VIEWPORT_WIDTH / (2 * DEFAULT_ZOOM))), across),
+    y: Math.min(Math.max(0, Math.floor(at.y - VIEWPORT_HEIGHT / (2 * DEFAULT_ZOOM))), down),
+    zoom: DEFAULT_ZOOM,
+  };
 }
 
 test('boots in a real browser and draws the generated theatre through software WebGL', async ({ page }) => {
@@ -162,7 +191,7 @@ test('boots in a real browser and draws the generated theatre through software W
   expect(report.render.engine).toBe('webgl');
   expect(report.render.webglVersion).toBe(2);
 
-  // The viewport is the canvas, the camera opens on the middle of the theatre at
+  // The viewport is the canvas, the camera opens on the Faction's Stronghold at
   // its default zoom, and the page can say what it is looking at.
   const view = await describeView(page);
   expect(view.width).toBe(VIEWPORT_WIDTH);
@@ -174,8 +203,9 @@ test('boots in a real browser and draws the generated theatre through software W
   // The page opens in the player's fog, not with the whole map revealed.
   expect(view.inspection).toBe(false);
   expect(view.watch).toBe(null);
-  expect(view.camera.x).toBe(Math.floor(THEATRE_PIXELS / 2 - VIEWPORT_WIDTH / (2 * DEFAULT_ZOOM)));
-  expect(view.camera.y).toBe(Math.floor(THEATRE_PIXELS / 2 - VIEWPORT_HEIGHT / (2 * DEFAULT_ZOOM)));
+  // C2 opens the camera where the army musters: the player's Stronghold, kept
+  // inside the theatre's edges (B3's clamp), instead of the middle of the map.
+  expect(view.camera).toEqual(openingCamera());
 
   // The centre pixel of the frame is the theatre pixel the camera says is there.
   const centre = { x: Math.floor(VIEWPORT_WIDTH / 2), y: Math.floor(VIEWPORT_HEIGHT / 2) };
@@ -284,10 +314,13 @@ test('moves the camera for a drag, in whole stage pixels', async ({ page }) => {
   const box = await canvas.boundingBox();
   if (box === null) throw new Error('the page has no canvas to drag');
 
+  // Panning is the *right* button's drag since C2: the left button picks a box
+  // of Squads, and a camera that moved when a Player selected would be a camera
+  // nobody could aim.
   await page.mouse.move(box.x + 300, box.y + 200);
-  await page.mouse.down();
+  await page.mouse.down({ button: 'right' });
   await page.mouse.move(box.x + 260, box.y + 180, { steps: 4 });
-  await page.mouse.up();
+  await page.mouse.up({ button: 'right' });
 
   const after = await describeView(page);
   // Dragging left and up moves the camera right and down, by whole pixels: 40

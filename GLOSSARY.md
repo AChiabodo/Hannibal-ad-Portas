@@ -193,9 +193,14 @@ _UI_: —
 _Avoid_: Stat, indicator, counter
 
 **Selection**:
-What the Player has picked, a settlement or a Squad, and the panel that follows it. There is one selection at a time, and nothing selected is a state rather than an error.
+What the Player has picked — a settlement, or one or more Squads — and the panel that follows it. It is the Player's own memory rather than Match state: nothing else can see it and it decides nothing on its own. A box selects every Squad it touches; one order goes to all of them, while the panel shows the first one picked. There is one selection at a time, and nothing selected is a state rather than an error.
 _UI_: Selezione
 _Avoid_: Focus, target, highlight
+
+**Control group**:
+Numbered Squads a Player has bound to a digit, so that one key calls them back. It is a Command when it is bound, because a log has to re-enact the selection, and it commands nobody: the list belongs to the Player.
+_UI_: Gruppo
+_Avoid_: Hotkey group, squad slot
 
 **Minimap**:
 The theatre at one pixel per tile, drawn through the Faction's Fog of war: it shows what the Faction knows and nothing more.

@@ -20,10 +20,13 @@ import {
 import {
   economyMatchOutcome,
   economyMatchRules,
+  eyesOfEconomy,
   observeEconomy,
   type EconomyVisible,
   type EconomyWorld,
 } from '../../src/sim/economy-match';
+import { SQUAD_VISION, SETTLEMENT_VISION } from '../../src/sim/fog';
+import { musterSquad } from '../../src/sim/movement';
 import { createMatch } from '../../src/sim/match';
 import { RESOURCE, RESOURCE_KINDS } from '../../src/sim/map';
 import {
@@ -310,3 +313,27 @@ function buildingCodeOf(id: string): number {
 
   return code;
 }
+
+describe('the eyes a Faction has in this world', () => {
+  it('sees from its settlements and from the Squads it is marching, and no further', () => {
+    const world = worldOf(7);
+    const stronghold = world.economy.settlements[0];
+    if (stronghold === undefined) throw new Error('the map has no Stronghold');
+
+    musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: 4, y: 4 });
+
+    const eyes = eyesOfEconomy(world, 'rome');
+
+    expect(eyes).toHaveLength(2);
+    expect(eyes[0]).toEqual({ x: stronghold.x, y: stronghold.y, radius: SETTLEMENT_VISION });
+    expect(eyes[1]).toEqual({ x: 4, y: 4, radius: SQUAD_VISION });
+  });
+
+  it('has no eyes for the other Faction’s things', () => {
+    const world = worldOf(7);
+
+    musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: 4, y: 4 });
+
+    expect(eyesOfEconomy(world, 'carthage').every((eye) => eye.x !== 4 || eye.y !== 4)).toBe(true);
+  });
+});

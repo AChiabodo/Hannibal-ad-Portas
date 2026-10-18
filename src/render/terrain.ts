@@ -109,6 +109,22 @@ export function tilePixel(x: number, y: number): { readonly x: number; readonly 
 }
 
 /**
+ * Which tile a theatre pixel belongs to: the inverse of `tilePixel`, rounded
+ * down.
+ *
+ * The theatre is drawn half a tile out of step with the logical grid (the dual
+ * grid's margin), so the pixel at `(0, 0)` is not tile `(0, 0)` but the cells
+ * around it; this is the one conversion a click needs, and it is here beside the
+ * function it inverts so the two cannot disagree about the margin.
+ */
+export function tileAt(pixelX: number, pixelY: number): { readonly x: number; readonly y: number } {
+  return {
+    x: Math.floor((pixelX - THEATRE_MARGIN) / TERRAIN_TILE),
+    y: Math.floor((pixelY - THEATRE_MARGIN) / TERRAIN_TILE),
+  };
+}
+
+/**
  * The four materials around a cell's centre, clockwise from the north-west.
  *
  * Cell `(i, j)` covers the corner where those four logical tiles meet, and a

@@ -193,6 +193,21 @@ export interface Eye {
  */
 export const SETTLEMENT_VISION = 8;
 
+/**
+ * How far a Squad sees, in tiles.
+ *
+ * Less than a settlement and more than the tile it stands on: a marching Squad
+ * is what discovers the theatre (PLAN §4: "vision is a radius around the
+ * Faction's own Squads and settlements"), so it has to see far enough ahead to
+ * be worth sending, and not so far that a settlement's own watch is redundant.
+ * Four tiles is a nine-by-nine neighbourhood around every Squad.
+ *
+ * C2 is the ticket that puts a Squad's eyes on this radius: the page refreshes
+ * the fog from the Squads its Observation holds, so what a Player sees on screen
+ * follows the men they are marching.
+ */
+export const SQUAD_VISION = 4;
+
 /** A Faction's fog, knowing nothing: every tile unexplored and no contact remembered. */
 export function createFog(): Fog {
   const terrain = new Uint8Array(TILE_COUNT);

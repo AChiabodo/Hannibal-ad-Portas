@@ -15,12 +15,13 @@ import { expect, test, type Page } from '@playwright/test';
 import { blit, pixelAt, type PixelBuffer, type Rgba } from '../src/art/pixel-buffer';
 import { TERRAIN_TILE } from '../src/art/terrain';
 import { createFog, eyeOf, inspectionView, refreshVision, viewOf, SETTLEMENT_VISION, type FogView } from '../src/sim/fog';
-import { eyesOf } from '../src/sim/fog-match';
+
 import { generateMap, MAP_WIDTH, type MapGrid, type Site } from '../src/sim/map';
 import { screenToStage } from '../src/render/camera';
 import type { ViewState } from '../src/render/boot';
 import { UNEXPLORED, renderFog } from '../src/render/fog';
 import { renderTerrain, tilePixel } from '../src/render/terrain';
+import { openingEyes } from '../src/render/opening';
 import { DEFAULT_SEED, VIEWED_FACTION } from '../src/render/view';
 import type { Rect } from '../src/ui/hud';
 import { describeView, hudRects, samples } from './hooks';
@@ -58,7 +59,9 @@ function watching(...watches: readonly Site[]): FogView {
   const fog = createFog();
 
   for (const watch of [null, ...watches]) {
-    const eyes = [...eyesOf(MAP, VIEWED_FACTION)];
+    // What the page can see before any watch of its own: the Stronghold and the
+    // opening army that musters below it (C2).
+    const eyes = [...openingEyes(MAP, VIEWED_FACTION)];
     if (watch !== null) eyes.push(eyeOf(watch, SETTLEMENT_VISION));
     refreshVision(fog, MAP, eyes);
   }
@@ -164,6 +167,10 @@ async function boot(page: Page): Promise<ViewState> {
 
   const report = await page.evaluate(() => window.__SPQR.boot);
   if (!report.booted) throw new Error(`boot failed: ${report.error}`);
+
+  // The army C2 musters is hidden for these comparisons: the ticket under test
+  // is the fog, and a Squad standing in it is a second thing on the frame.
+  await page.evaluate(() => window.__SPQR.game?.showSquads(false));
 
   return describeView(page);
 }

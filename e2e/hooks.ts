@@ -3,6 +3,10 @@ import type { Rgba } from '../src/art/pixel-buffer';
 import type { AtelierLayout } from '../src/render/atelier-layout';
 import type { ViewState } from '../src/render/boot';
 import type { HudModel, Rect, RowRect, Selection } from '../src/ui/hud';
+import type { SquadReport } from '../src/render/game';
+import type { Selection as PlayerSelection } from '../src/input/selection';
+import type { Command } from '../src/sim/command';
+import type { LoggedCommand } from '../src/sim/replay';
 import type { Knowledge } from '../src/sim/fog';
 
 /**
@@ -130,4 +134,44 @@ export async function minimapSamples(
 
     return game.minimapSamples(askedPoints);
   }, asked);
+}
+
+/** The Faction's own Squads, each with the theatre rectangle its men are drawn in. */
+export async function squads(page: Page): Promise<readonly SquadReport[]> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.squads();
+  });
+}
+
+/** What the Player has picked: the Squads an order would go to, and the settlement the panel shows. */
+export async function selection(page: Page): Promise<PlayerSelection> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.selection();
+  });
+}
+
+/** The Commands the page has applied lately, oldest first. */
+export async function applied(page: Page): Promise<readonly LoggedCommand<Command>[]> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.applied();
+  });
+}
+
+/** The Squads a control group holds. */
+export async function groupOf(page: Page, index: number): Promise<readonly number[]> {
+  return page.evaluate((which) => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.groupOf(which);
+  }, index);
 }

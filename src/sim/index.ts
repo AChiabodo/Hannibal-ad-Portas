@@ -95,6 +95,14 @@
  *   Commands `economyMatchRules` obeys. Recruitment puts a Squad on its
  *   settlement's tile, and `observeEconomy` reports where it stands beside what
  *   it costs to keep.
+ *
+ * C2 put men on the map and a hand on them, and the half of that which is the
+ * simulation's is small on purpose: the rules already knew where every man in a
+ * block stood, and drawing them is `art/` and `render/`. What was missing was
+ * eyes. A Squad sees (`SQUAD_VISION`), and `eyesOfEconomy` is the one list of a
+ * Faction's eyes — its settlements' watches and its marching Squads' — that the
+ * page refreshes its fog from (ADR-0013). The Player's selection and control
+ * groups are not here at all: they are `input/`'s, and not state (ADR-0014).
  */
 export { TICK_HZ, TICK_MS } from './clock.ts';
 export { requireTickCount } from './ticks.ts';
@@ -222,7 +230,7 @@ export {
 } from './economy.ts';
 export type { Allocation, Economy, Settlement, Squad, Work } from './economy.ts';
 
-export { economyMatchOutcome, economyMatchRules, observeEconomy } from './economy-match.ts';
+export { economyMatchOutcome, economyMatchRules, eyesOfEconomy, observeEconomy } from './economy-match.ts';
 export type {
   EconomyVisible,
   EconomyWorld,
@@ -316,6 +324,7 @@ export {
   refreshVision,
   requireTile,
   SETTLEMENT_VISION,
+  SQUAD_VISION,
   UNSEEN,
   viewOf,
 } from './fog.ts';

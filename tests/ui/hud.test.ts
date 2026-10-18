@@ -151,10 +151,36 @@ describe('the HUD model', () => {
 
     expect(model.detail?.title).toBe('Reparto 1');
     expect(words).toContain(`${translate('ui.type')} Astati`);
+    expect(words).toContain(`${translate('ui.men')} 120`);
     expect(words).toContain(`${translate('ui.morale')} 8`);
     expect(words).toContain(`${translate('ui.payroll')} 3`);
     expect(words).toContain(`${translate('ui.unpaid')} 1`);
     expect(words).toContain(`${translate('ui.home')} 0`);
+  });
+
+  it('highlights every Squad a box selection picked, and shows the first one’s panel', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1, 2]);
+
+    expect(model.picked).toEqual([
+      { kind: 'squad', id: 1 },
+      { kind: 'squad', id: 2 },
+    ]);
+    expect(model.selected).toEqual({ kind: 'squad', id: 1 });
+    expect(model.detail?.title).toBe('Reparto 1');
+
+    // The panel's own Squad is highlighted even when the caller forgot to list
+    // it: a panel with no highlighted row would be a selection nobody can see.
+    const alone = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 2 }, [1]);
+    expect(alone.picked).toEqual([
+      { kind: 'squad', id: 1 },
+      { kind: 'squad', id: 2 },
+    ]);
+  });
+
+  it('drops a picked Squad it no longer holds, and never picks a settlement that way', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, null, [99, 0, 2]);
+
+    expect(model.picked).toEqual([{ kind: 'squad', id: 2 }]);
   });
 
   it('shows the selected settlement in the readouts, and the Stronghold when nothing is selected', () => {

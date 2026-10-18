@@ -17,9 +17,9 @@ import { catalogue, cataloguePlate } from '../../src/art/catalogue';
 import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 
 /** The fingerprints recorded from the generators as accepted. */
-const PLATE_HASH = 'b0eac29529a6325e';
+const PLATE_HASH = '7ae4db39cfbb0606';
 
-const GLYPH_HASHES: Readonly<Record<string, string>> = {
+const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'glyph:U+0020': '19ce279ecc93e509',
   'glyph:U+0041': 'aae456011072287d',
   'glyph:U+0061': 'b702478adf79d775',
@@ -39,6 +39,18 @@ const GLYPH_HASHES: Readonly<Record<string, string>> = {
   'node:timber': 'eaae50b95335f381',
   'node:stone': 'a0aa54a966b9308f',
   'node:iron': 'b7b8ef7b02238245',
+  // C2's soldiers: one hash per figure, direction and frame, so a change to a
+  // helmet, a shield or a stride names itself.
+  'figure:hastati:south:idle': 'f0efdd16ff33d615',
+  'figure:hastati:south:walk:0': 'fbfcbd329e1c5b56',
+  'figure:hastati:south:walk:1': 'f066906df8ef1777',
+  'figure:hastati:south:attack:1': '9ba58ddc8139ec6c',
+  'figure:hastati:south:death': 'da59746b7721e844',
+  'figure:hastati:north:idle': '24bdb2b2bc8df020',
+  'figure:hastati:east:idle': 'e4156d4064e24cb3',
+  'figure:hastati:west:idle': '86d3ae1c38343c17',
+  'figure:principes:south:idle': '13763da87015a35e',
+  'figure:triarii:south:idle': '9247c68e448e0b34',
 };
 
 describe('the generated output, as a fingerprint', () => {
@@ -49,7 +61,7 @@ describe('the generated output, as a fingerprint', () => {
   it('pins the artefacts inside the plate, so a hash says which one moved', () => {
     const entries = new Map(catalogue().map((entry) => [entry.name, entry.buffer]));
 
-    for (const [name, hash] of Object.entries(GLYPH_HASHES)) {
+    for (const [name, hash] of Object.entries(ARTEFACT_HASHES)) {
       const buffer = entries.get(name);
       expect(buffer, name).toBeDefined();
       expect(hashPixelBuffer(buffer!), name).toBe(hash);

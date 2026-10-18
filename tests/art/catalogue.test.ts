@@ -23,6 +23,16 @@ import {
   variantQuadrants,
 } from '../../src/art/terrain';
 import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from '../../src/art/nodes';
+import {
+  FIGURE_FACINGS,
+  FIGURE_FRAMES,
+  FIGURE_HEIGHT,
+  FIGURE_NAMES,
+  FIGURE_WIDTH,
+  figureEntries,
+  frameName,
+  soldier,
+} from '../../src/art/figures';
 
 /** How many glyphs stand on one row of the plate, which the layout test mirrors. */
 const GLYPH_GRID_COLUMNS = 16;
@@ -47,17 +57,42 @@ const TERRAIN_LABEL_WIDTH = Math.max(
 );
 const TERRAIN_X = PLATE_PADDING + TERRAIN_LABEL_WIDTH + TERRAIN_LABEL_GAP;
 
+/** The figures section's own arithmetic, written out again so its cells are checked rather than trusted. */
+const FIGURE_CAPTIONS = FIGURE_FRAMES.map(frameName);
+const FIGURE_CELL_WIDTH = Math.max(
+  FIGURE_WIDTH + 3,
+  Math.max(...FIGURE_CAPTIONS.map((caption) => measureText(caption))) + 4,
+);
+const FIGURE_CELL_HEIGHT = FIGURE_HEIGHT + 3;
+const FIGURE_LABEL_WIDTH = Math.max(
+  ...FIGURE_NAMES.flatMap((name) => FIGURE_FACINGS.map((facing) => measureText(`${name} ${facing}`))),
+);
+const FIGURE_X = PLATE_PADDING + FIGURE_LABEL_WIDTH + TERRAIN_LABEL_GAP;
+const FIGURES_TOP =
+  PLATE_PADDING +
+  (HEADING_HEIGHT + GLYPH_GRID_HEIGHT + SECTION_GAP) +
+  (HEADING_HEIGHT + RAMPS_HEIGHT + SECTION_GAP) +
+  (HEADING_HEIGHT + (1 + TERRAIN_MATERIALS.length) * TERRAIN_CELL + SECTION_GAP) +
+  (HEADING_HEIGHT + TERRAIN_CELL + SECTION_GAP) +
+  (HEADING_HEIGHT + NODES_HEIGHT + SECTION_GAP) +
+  HEADING_HEIGHT;
+const FIGURE_ROWS_TOP = FIGURES_TOP + LINE_HEIGHT + 3;
+
 /** The name the catalogue gives a character. */
 function glyphName(character: string): string {
   return `glyph:U+${(character.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')}`;
 }
 
 describe('the catalogue', () => {
-  it('names every glyph, every ramp, every terrain tile and every marker exactly once', () => {
+  it('names every glyph, every ramp, every terrain tile, every marker and every figure exactly once', () => {
     const names = catalogue().map((entry) => entry.name);
 
     expect(names.length).toBe(
-      GLYPHS.length + RAMP_NAMES.length + terrainEntries().length + nodeEntries().length,
+      GLYPHS.length +
+        RAMP_NAMES.length +
+        terrainEntries().length +
+        nodeEntries().length +
+        figureEntries().length,
     );
     expect(new Set(names).size).toBe(names.length);
     for (const glyph of GLYPHS) {
@@ -70,6 +105,9 @@ describe('the catalogue', () => {
       expect(names).toContain(entry.name);
     }
     for (const entry of nodeEntries()) {
+      expect(names).toContain(entry.name);
+    }
+    for (const entry of figureEntries()) {
       expect(names).toContain(entry.name);
     }
   });
@@ -240,5 +278,32 @@ describe('the catalogue plate', () => {
         }
       }
     }
+  });
+});
+
+describe('the figures on the plate', () => {
+  it('stands every soldier of the roster, in every direction and every frame, in its own cell', () => {
+    const plate = cataloguePlate();
+    const rows = FIGURE_NAMES.flatMap((name) => FIGURE_FACINGS.map((facing) => ({ name, facing })));
+
+    rows.forEach(({ name, facing }, row) => {
+      FIGURE_FRAMES.forEach((frame, column) => {
+        const figure = soldier(name, facing, frame);
+        const left = FIGURE_X + column * FIGURE_CELL_WIDTH;
+        const top = FIGURE_ROWS_TOP + row * FIGURE_CELL_HEIGHT;
+
+        for (const [x, y] of [
+          [0, 0],
+          [FIGURE_WIDTH - 1, FIGURE_HEIGHT - 1],
+          [Math.floor(FIGURE_WIDTH / 2), Math.floor(FIGURE_HEIGHT / 2)],
+        ] as const) {
+          const pixel = pixelAt(figure, x, y);
+          expect(
+            pixelAt(plate, left + x, top + y),
+            `${name} ${facing} ${frameName(frame)} at (${String(x)}, ${String(y)})`,
+          ).toEqual(pixel[3] === 0 ? PLATE_BACKGROUND : pixel);
+        }
+      });
+    });
   });
 });

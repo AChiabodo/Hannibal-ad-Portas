@@ -23,9 +23,22 @@
  * - **terrain**, the ground of B3: every material's own tile, then one row per
  *   material of its sixteen dual-grid variants, and then the sixteen road
  *   connections. A row shows its material against the ground it crosses, which is
- * - **nodes**, the four resource markers B3 stands on that ground.
+ * - **nodes**, the four resource markers B3 stands on that ground;
+ * - **figures**, the soldiers of C2: one row per soldier and direction, one
+ *   column per animation frame — the whole Roman roster, in the four ways it can
+ *   face and the four things it can do.
  */
 
+import {
+  FIGURE_FACINGS,
+  FIGURE_FRAMES,
+  FIGURE_HEIGHT,
+  FIGURE_NAMES,
+  FIGURE_WIDTH,
+  figureEntries,
+  frameName,
+  soldier,
+} from './figures.ts';
 import { GLYPHS, GLYPH_WIDTH, LINE_HEIGHT, drawText, measureText, textPlate } from './font.ts';
 import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from './nodes.ts';
 import { BASE, RAMPS, RAMP_NAMES, RAMP_SHADES } from './palette.ts';
@@ -125,18 +138,44 @@ const TERRAIN_HEIGHT = (1 + TERRAIN_ROWS + 1) * TERRAIN_CELL;
 /** The resource markers, which stand in a row of their own under the terrain. */
 const NODES_HEIGHT = NODE_TILE + 3;
 
+/** The figure rows: one per soldier of the roster, and per direction. */
+const FIGURE_ROWS = FIGURE_NAMES.length * FIGURE_FACINGS.length;
+
+/** What every figure column's caption says, so a column is as wide as its own name. */
+const FIGURE_CAPTIONS: readonly string[] = FIGURE_FRAMES.map(frameName);
+
+/** One cell of the figures section: a soldier and the air that keeps two rows apart. */
+const FIGURE_CELL_WIDTH = Math.max(
+  FIGURE_WIDTH + 3,
+  Math.max(...FIGURE_CAPTIONS.map((caption) => measureText(caption))) + 4,
+);
+const FIGURE_CELL_HEIGHT = FIGURE_HEIGHT + 3;
+
+/** The widest figure-row label, e.g. `principes south`. */
+const FIGURE_LABEL_WIDTH = Math.max(
+  ...FIGURE_NAMES.flatMap((name) => FIGURE_FACINGS.map((facing) => measureText(`${name} ${facing}`))),
+);
+
+/** Width of the figures section: a label, and one column per frame. */
+const FIGURES_WIDTH = FIGURE_LABEL_WIDTH + LABEL_GAP + FIGURE_FRAMES.length * FIGURE_CELL_WIDTH;
+
+/** Height of the figures section: the frame captions, and a row per soldier and direction. */
+const FIGURES_HEIGHT = LINE_HEIGHT + 3 + FIGURE_ROWS * FIGURE_CELL_HEIGHT;
+
 /** The plate's width: the padding, and whichever section is wider. */
-export const PLATE_WIDTH = PLATE_PADDING * 2 + Math.max(GLYPH_GRID_WIDTH, RAMPS_WIDTH, TERRAIN_WIDTH);
+export const PLATE_WIDTH =
+  PLATE_PADDING * 2 + Math.max(GLYPH_GRID_WIDTH, RAMPS_WIDTH, TERRAIN_WIDTH, FIGURES_WIDTH);
 
 /** The plate's height, which the sections above add up to. */
 export const PLATE_HEIGHT =
   PLATE_PADDING * 2 +
-  HEADING_HEIGHT * 5 +
+  HEADING_HEIGHT * 6 +
   GLYPH_GRID_HEIGHT +
   RAMPS_HEIGHT +
   TERRAIN_HEIGHT +
   NODES_HEIGHT +
-  SECTION_GAP * 4;
+  FIGURES_HEIGHT +
+  SECTION_GAP * 5;
 
 /**
  * Every artefact the art library generates, in a stable order: the glyphs in
@@ -157,7 +196,7 @@ export function catalogue(): readonly CatalogueEntry[] {
 
   const ramps = RAMP_NAMES.map((name) => ({ name: `ramp:${name}`, buffer: rampSwatches(name) }));
 
-  return [...glyphs, ...ramps, ...terrainEntries(), ...nodeEntries()];
+  return [...glyphs, ...ramps, ...terrainEntries(), ...nodeEntries(), ...figureEntries()];
 }
 
 /** The glyph entries, which stand first in the catalogue and in the plate's grid. */
@@ -269,6 +308,50 @@ export function cataloguePlate(): PixelBuffer {
     if (kind === undefined) continue;
 
     blit(plate, nodeMarker(kind), PLATE_PADDING + TERRAIN_LABEL_WIDTH + LABEL_GAP + index * TERRAIN_CELL, y);
+  }
+  y += NODES_HEIGHT + SECTION_GAP;
+
+  blit(plate, textPlate('figures', PLATE_INK), PLATE_PADDING, y);
+  y += HEADING_HEIGHT;
+
+  // The frame captions, over the columns they name: `idle`, `walk:0`, `walk:1`,
+  // `attack:0`, `attack:1`, `death`. A row is one soldier facing one way, so the
+  // grid reads as "this is what a hastatus looks like from the east, walking".
+  const figuresTop = y + LINE_HEIGHT + 3;
+  for (let index = 0; index < FIGURE_CAPTIONS.length; index += 1) {
+    blit(
+      plate,
+      textPlate(FIGURE_CAPTIONS[index] ?? '', PLATE_INK),
+      PLATE_PADDING + FIGURE_LABEL_WIDTH + LABEL_GAP + index * FIGURE_CELL_WIDTH,
+      y,
+    );
+  }
+
+  let row = 0;
+  for (const name of FIGURE_NAMES) {
+    for (const facing of FIGURE_FACINGS) {
+      const top = figuresTop + row * FIGURE_CELL_HEIGHT;
+      blit(
+        plate,
+        textPlate(`${name} ${facing}`, PLATE_INK),
+        PLATE_PADDING,
+        top + Math.floor((FIGURE_CELL_HEIGHT - LINE_HEIGHT) / 2),
+      );
+
+      for (let index = 0; index < FIGURE_FRAMES.length; index += 1) {
+        const frame = FIGURE_FRAMES[index];
+        if (frame === undefined) continue;
+
+        blit(
+          plate,
+          soldier(name, facing, frame),
+          PLATE_PADDING + FIGURE_LABEL_WIDTH + LABEL_GAP + index * FIGURE_CELL_WIDTH,
+          top,
+        );
+      }
+
+      row += 1;
+    }
   }
 
   return plate;

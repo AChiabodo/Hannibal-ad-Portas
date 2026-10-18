@@ -52,7 +52,8 @@ import {
   type Settlement,
   type Squad,
 } from './economy.ts';
-import { factionCode } from './faction.ts';
+import { factionCode, type Faction } from './faction.ts';
+import { eyeOf, SETTLEMENT_VISION, SQUAD_VISION, type Eye } from './fog.ts';
 import { generateMap, type MapGrid, type Site } from './map.ts';
 import { applyMovementCommands, goalOf, march, routeCacheFor } from './movement.ts';
 import { refusalOf, type RouteRefusal } from './route.ts';
@@ -261,6 +262,29 @@ export const observeEconomy: MatchSetup<EconomyWorld, EconomyVisible>['observe']
       .map((squad) => visibleSquad(squad)),
   };
 };
+
+/**
+ * Every eye a Faction has in this world: its settlements' watches, and the
+ * Squads that march between them (PLAN §4, B4).
+ *
+ * Vision is a rule and not a drawing decision, so the radii are `fog.ts`'s and
+ * the composition — a settlement sees eight tiles, a Squad four — is here, where
+ * the settlements and the Squads are both in hand. The page refreshes its fog
+ * from exactly this list, which is what makes what a Player sees on the map and
+ * what the Faction's Controller is allowed to know one answer rather than two.
+ */
+export function eyesOfEconomy(world: EconomyWorld, faction: Faction): readonly Eye[] {
+  const owner = factionCode(faction);
+
+  return [
+    ...world.economy.settlements
+      .filter((settlement) => settlement.owner === owner)
+      .map((settlement) => eyeOf(settlement, SETTLEMENT_VISION)),
+    ...world.economy.squads
+      .filter((squad) => squad.owner === owner)
+      .map((squad) => eyeOf(squad, SQUAD_VISION)),
+  ];
+}
 
 /** A settlement, as its holder reads it: where it is, and how its people are spent. */
 function visibleSettlement(map: MapGrid, settlement: Settlement): VisibleSettlement {

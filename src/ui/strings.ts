@@ -94,6 +94,7 @@ export const STRINGS = {
   'ui.workStanding': { it: 'Completato', en: 'Standing' },
   'ui.workBuilding': { it: 'In costruzione', en: 'Building' },
   'ui.ticksLeft': { it: '{ticks} tick', en: '{ticks} ticks' },
+  'ui.men': { it: 'Uomini', en: 'Men' },
   'ui.morale': { it: 'Morale', en: 'Morale' },
   'ui.payroll': { it: 'Soldo', en: 'Payroll' },
   'ui.unpaid': { it: 'Soldo arretrato', en: 'Unpaid seasons' },

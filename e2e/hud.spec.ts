@@ -19,8 +19,9 @@ import { expect, test, type Page } from '@playwright/test';
 import { pixelAt } from '../src/art/pixel-buffer';
 import { MAP_HEIGHT, MAP_WIDTH, generateMap, type MapGrid } from '../src/sim/map';
 import { KNOWLEDGE, createFog, knows, refreshVision, viewOf, type FogView } from '../src/sim/fog';
-import { eyesOf } from '../src/sim/fog-match';
+
 import { DEFAULT_SEED, VIEWED_FACTION } from '../src/render/view';
+import { openingEyes } from '../src/render/opening';
 import {
   MINIMAP_CAMERA,
   MINIMAP_PADDING,
@@ -41,6 +42,8 @@ import {
   minimapSamples,
   samples,
   select,
+  selection,
+  squads,
 } from './hooks';
 
 const MAP: MapGrid = generateMap(DEFAULT_SEED);
@@ -48,7 +51,7 @@ const MAP: MapGrid = generateMap(DEFAULT_SEED);
 /** The fog the page opens with, composed here exactly as the page composes it. */
 function openingFog(): FogView {
   const fog = createFog();
-  refreshVision(fog, MAP, eyesOf(MAP, VIEWED_FACTION));
+  refreshVision(fog, MAP, openingEyes(MAP, VIEWED_FACTION));
 
   return viewOf(fog);
 }
@@ -125,13 +128,40 @@ test('selects the row a Player clicks', async ({ page }) => {
 
   await page.mouse.click(box.x + squad.rect.x + 5, box.y + squad.rect.y + 5);
 
-  expect(await page.evaluate(() => window.__SPQR.game?.selection() ?? null)).toEqual({ kind: 'squad', id: 1 });
+  // A click on the row the page drew picks that Squad (C2's selection is the
+  // Player's: a set of Squads, and the panel over one of them).
+  expect((await selection(page)).squads).toEqual([1]);
 
-  // And a click on the theatre clears it again rather than selecting whatever
-  // happens to be underneath the pointer.
-  await page.mouse.click(box.x + 400, box.y + 300);
-  expect(await page.evaluate(() => window.__SPQR.game?.selection() ?? null)).toBeNull();
+  // And a click on bare theatre clears it again rather than selecting whatever
+  // happens to be underneath the pointer. The point is chosen against the Squads
+  // the page reports (C2), so "bare" is a fact about the map and not a hope.
+  const empty = await emptyCanvasPoint(page);
+  await page.mouse.click(box.x + empty.x, box.y + empty.y);
+  expect((await selection(page)).squads).toEqual([]);
 });
+
+/** A canvas point no Squad's block covers, which is where a click lands on the theatre alone. */
+async function emptyCanvasPoint(page: Page): Promise<{ readonly x: number; readonly y: number }> {
+  const view = await describeView(page);
+  const blocks = (await squads(page)).map((squad) => ({
+    x: (squad.rect.x - view.camera.x) * view.camera.zoom,
+    y: (squad.rect.y - view.camera.y) * view.camera.zoom,
+    width: squad.rect.width * view.camera.zoom,
+    height: squad.rect.height * view.camera.zoom,
+  }));
+
+  for (let y = 40; y < view.height - 40; y += 20) {
+    for (let x = 160; x < view.width - 40; x += 20) {
+      if (blocks.some((block) => x >= block.x && x < block.x + block.width && y >= block.y && y < block.y + block.height)) {
+        continue;
+      }
+
+      return { x, y };
+    }
+  }
+
+  throw new Error('the army covers the whole map, so no click lands on bare theatre');
+}
 
 test('draws the minimap from the map, through the fog the Faction actually has', async ({ page }) => {
   await boot(page);
