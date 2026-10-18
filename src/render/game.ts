@@ -75,6 +75,7 @@ import {
   selectIn,
   selectSettlement,
   type PickRect,
+  type Pickable,
   type Selection as PlayerSelection,
 } from '../input/selection.ts';
 import { createHuman, type HumanController } from '../input/human.ts';
@@ -527,9 +528,13 @@ export function createGame(options: GameOptions): Game {
     repaint();
   }
 
-  /** The blocks a pick can land on: the Faction's own Squads, and the rectangles they are drawn in. */
-  function pickables(): readonly { readonly id: number; readonly rect: PickRect }[] {
-    return squadReports().map((squad) => ({ id: squad.id, rect: squad.rect }));
+  /**
+   * The blocks a pick can land on: the Faction's own Squads, the rectangles they
+   * are drawn in, and the row they stand on — which is the order the layer draws
+   * them in, so the one a Player sees on top is the one the click takes.
+   */
+  function pickables(): readonly Pickable[] {
+    return squadReports().map((squad) => ({ id: squad.id, rect: squad.rect, depth: squad.y }));
   }
 
   /** An order to a screen point, given to the Squads picked when the Player clicked. */

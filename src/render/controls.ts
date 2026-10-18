@@ -148,10 +148,13 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
     press = null;
 
     if (finished.button === 2) {
-      // A right press that panned is a pan; one that did not is an order.
+      // A right press that panned is a pan; one that did not is an order. The
+      // shift makes it an attack-move, which is the same choice `a` arms — and
+      // an armed order wins, because a Player who pressed `a` has already said
+      // what the next click means.
       if (finished.appliedX === 0 && finished.appliedY === 0) {
         const at = local(event);
-        target.orderAt(armed ?? 'move', at.x, at.y);
+        target.orderAt(armed ?? (event.shiftKey ? 'attackMove' : 'move'), at.x, at.y);
         armed = null;
       }
       return;

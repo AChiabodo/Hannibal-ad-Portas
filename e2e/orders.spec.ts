@@ -247,6 +247,25 @@ test('issues an Attack-move with the keyboard and the mouse, and a Hold with the
   expect((await applied(page)).map((entry) => entry.command.kind)).toContain('hold');
 });
 
+test('attack-moves on a shift + right click, without arming anything', async ({ page }) => {
+  await boot(page);
+  const { squad, at } = await clickableSquad(page);
+  const view = await describeView(page);
+  const origin = await canvasOrigin(page);
+  const squadClick = onPage(origin, at);
+  const orderClick = onPage(origin, toScreen(view.camera, targetNear(squad)));
+
+  await page.mouse.click(squadClick.x, squadClick.y);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(orderClick.x, orderClick.y, { button: 'right' });
+  await page.keyboard.up('Shift');
+  await step(page, 1);
+
+  const marching = (await squads(page)).find((candidate) => candidate.id === squad.id);
+  expect(marching?.goal).not.toBeNull();
+  expect((await applied(page)).map((entry) => entry.command.kind)).toContain('attackMove');
+});
+
 test('sends a Withdraw as a real Command, even though the rules obey it later', async ({ page }) => {
   await boot(page);
   const { squad, at } = await clickableSquad(page);

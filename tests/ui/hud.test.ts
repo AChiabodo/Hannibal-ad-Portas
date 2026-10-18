@@ -156,6 +156,37 @@ describe('the HUD model', () => {
     expect(words).toContain(`${translate('ui.payroll')} 3`);
     expect(words).toContain(`${translate('ui.unpaid')} 1`);
     expect(words).toContain(`${translate('ui.home')} 0`);
+    expect(words).toContain(`${translate('ui.order')} ${translate('order.standing')}`);
+  });
+
+  it('says why a Squad is not doing what it was told, in words a Player reads', () => {
+    const refused = hudModel({ ...VISIBLE, squads: [{ ...VISIBLE.squads[0]!, refused: 'water' }] }, STRONGHOLDS, {
+      kind: 'squad',
+      id: 1,
+    });
+
+    expect(refused.detail?.lines.map(lineText)).toContain(`${translate('ui.order')} ${translate('refusal.water')}`);
+
+    // And a refusal outranks the march it interrupted: the Squad kept its route,
+    // so "on the march" is true and is not the answer to the Player's question.
+    const interrupted = hudModel(
+      { ...VISIBLE, squads: [{ ...VISIBLE.squads[0]!, goal: { x: 20, y: 20 }, refused: 'unreachable' }] },
+      STRONGHOLDS,
+      { kind: 'squad', id: 1 },
+    );
+    expect(interrupted.detail?.lines.map(lineText)).toContain(
+      `${translate('ui.order')} ${translate('refusal.unreachable')}`,
+    );
+  });
+
+  it('reads an order that is under way as a march', () => {
+    const model = hudModel(
+      { ...VISIBLE, squads: [{ ...VISIBLE.squads[0]!, goal: { x: 20, y: 20 } }] },
+      STRONGHOLDS,
+      { kind: 'squad', id: 1 },
+    );
+
+    expect(model.detail?.lines.map(lineText)).toContain(`${translate('ui.order')} ${translate('order.marching')}`);
   });
 
   it('highlights every Squad a box selection picked, and shows the first one’s panel', () => {

@@ -45,13 +45,26 @@ export interface PickRect {
   readonly height: number;
 }
 
-/** A Squad, as far as picking is concerned: an id, and the rectangle it is drawn in. */
+/** A Squad, as far as picking is concerned: where it is drawn, and how near the front it is. */
 export interface Pickable {
   /** The Squad id an order would name. */
   readonly id: number;
 
   /** Where it is drawn, in theatre pixels. */
   readonly rect: PickRect;
+
+  /**
+   * How far down the screen the Squad *stands* — the tile row its block is
+   * drawn at, which is the key the renderer sorts blocks by.
+   *
+   * Not derived from `rect`: a block's rectangle is its whole drawn extent, and
+   * which way that extent grows depends on where the Squad is facing (`render/
+   * squads.ts` anchors it by its front rank). The tile row is the thing both
+   * sides can agree on without one of them guessing at the other's arithmetic —
+   * the renderer draws the larger row in front, and the pick takes the larger
+   * row.
+   */
+  readonly depth: number;
 }
 
 /** A point in theatre pixels. */
@@ -88,10 +101,11 @@ export const NOTHING_SELECTED: Selection = { squads: [], settlement: null };
  * clearing everything.
  *
  * When two blocks overlap, the one drawn **in front** wins: the blocks are drawn
- * back to front by the tile they stand on (`render/squad-layer.ts`), so the
- * Squad with the later tile is the one whose men a Player can see under the
- * pointer. Ties are broken by id so that the answer never depends on the order
- * a list happened to arrive in.
+ * back to front by the tile row they stand on (`render/squad-layer.ts` sorts
+ * them by it), so the Squad on the later row is the one whose men a Player can
+ * see under the pointer. Ties are broken by id, which is the order the layer
+ * adds two blocks on one row in, so that the answer never depends on the order a
+ * list happened to arrive in.
  */
 export function selectAt(
   selection: Selection,
@@ -194,9 +208,9 @@ function overlaps(left: PickRect, right: PickRect): boolean {
 }
 
 /**
- * The Squad drawn in front of the others: the one standing furthest down the
- * screen, which is the one whose men are painted last, with the id breaking a
- * tie so the answer is stable.
+ * The Squad drawn in front of the others: the one standing on the later tile
+ * row, which is the one whose men are painted last, with the id breaking a tie
+ * so the answer is stable.
  */
 function frontmost(candidates: readonly Pickable[]): Pickable | null {
   let best: Pickable | null = null;
@@ -207,9 +221,7 @@ function frontmost(candidates: readonly Pickable[]): Pickable | null {
       continue;
     }
 
-    const lower = candidate.rect.y + candidate.rect.height;
-    const bestLower = best.rect.y + best.rect.height;
-    if (lower > bestLower || (lower === bestLower && candidate.id > best.id)) best = candidate;
+    if (candidate.depth > best.depth || (candidate.depth === best.depth && candidate.id > best.id)) best = candidate;
   }
 
   return best;

@@ -37,6 +37,7 @@
  * make English data carry Italian words.
  */
 import { RESOURCE, type ResourceKind } from '../sim/map.ts';
+import type { RouteRefusal } from '../sim/route.ts';
 import type { Season } from '../sim/season.ts';
 
 /** The languages the interface can be read in. */
@@ -99,6 +100,12 @@ export const STRINGS = {
   'ui.payroll': { it: 'Soldo', en: 'Payroll' },
   'ui.unpaid': { it: 'Soldo arretrato', en: 'Unpaid seasons' },
   'ui.home': { it: 'Insediamento', en: 'Home' },
+  'ui.order': { it: 'Ordine', en: 'Order' },
+  'order.marching': { it: 'In marcia', en: 'On the march' },
+  'order.standing': { it: 'Fermo', en: 'Standing' },
+  'refusal.offMap': { it: 'Fuori mappa', en: 'Off the map' },
+  'refusal.water': { it: 'Acque profonde', en: 'Deep water' },
+  'refusal.unreachable': { it: 'Nessuna via', en: 'No way through' },
   'ui.nothingSelected': { it: 'Nessuna selezione', en: 'Nothing selected' },
   'ui.none': { it: '—', en: '—' },
   'ui.listItem': { it: '{name} {id}', en: '{name} {id}' },
@@ -175,6 +182,25 @@ const WORK_KEYS: Readonly<Record<string, StringKey>> = {
   forum: 'work.forum',
   castrum: 'work.castrum',
 };
+
+/** The refusal each reason is called, in the order `route.ts` states them. */
+const REFUSAL_KEYS: Readonly<Record<RouteRefusal, StringKey>> = {
+  'off-map': 'refusal.offMap',
+  water: 'refusal.water',
+  unreachable: 'refusal.unreachable',
+};
+
+/**
+ * Why a Squad is not doing what it was told, as a Player reads it.
+ *
+ * A refused order is the one thing a Squad does that a Player cannot see: the
+ * Squad keeps the route it had and stands still, which is indistinguishable from
+ * a click that missed (C1). So the reason is a word, and this is the word —
+ * `Acque profonde` rather than a Squad that ignores a click.
+ */
+export function refusalLabel(reason: RouteRefusal): string {
+  return translate(REFUSAL_KEYS[reason]);
+}
 
 /** The Squad type each content id is called. */
 const SQUAD_KEYS: Readonly<Record<string, StringKey>> = {

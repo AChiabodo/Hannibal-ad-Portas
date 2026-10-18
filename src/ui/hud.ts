@@ -50,7 +50,7 @@ import {
   MINIMAP_PLATE_HEIGHT,
   MINIMAP_PLATE_WIDTH,
 } from './minimap.ts';
-import { message, resourceLabel, seasonLabel, squadLabel, translate, workLabel } from './strings.ts';
+import { message, refusalLabel, resourceLabel, seasonLabel, squadLabel, translate, workLabel } from './strings.ts';
 
 /** What a Player has selected, or `null` for nothing. */
 export type Selection =
@@ -508,7 +508,7 @@ function settlementLines(settlement: VisibleSettlement): readonly HudLine[] {
   return lines;
 }
 
-/** A Squad's figures: what it is, what it has left to fight with, and what it owes. */
+/** A Squad's figures: what it is, what it has left to fight with, what it owes, and what it is doing. */
 function squadLines(squad: VisibleSquad): readonly HudLine[] {
   return [
     { label: translate('ui.type'), value: squadLabel(squad.type) },
@@ -517,7 +517,23 @@ function squadLines(squad: VisibleSquad): readonly HudLine[] {
     { label: translate('ui.payroll'), value: String(squad.payroll) },
     { label: translate('ui.unpaid'), value: String(squad.unpaid) },
     { label: translate('ui.home'), value: String(squad.home) },
+    { label: translate('ui.order'), value: orderLabel(squad) },
   ];
+}
+
+/**
+ * What a Squad is doing, as a Player reads it: the reason its last order was
+ * refused if one was, and otherwise whether it is walking.
+ *
+ * A refusal goes first because it is the answer to a question the Player has
+ * already asked — they clicked, nothing moved, and this is why (`ui/strings.ts`
+ * says the words). A Squad standing still because it has arrived and one that
+ * was never ordered anywhere are the same state (C1) and read the same way.
+ */
+function orderLabel(squad: VisibleSquad): string {
+  if (squad.refused !== null) return refusalLabel(squad.refused);
+
+  return translate(squad.goal === null ? 'order.standing' : 'order.marching');
 }
 
 /** The name a settlement reads as: its Stronghold status, not its id. */

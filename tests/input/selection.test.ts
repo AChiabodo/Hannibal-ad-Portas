@@ -18,9 +18,14 @@ import {
   type PickRect,
 } from '../../src/input/selection';
 
-/** A block of a Squad: a drawn rectangle, at a place. */
-function block(id: number, x: number, y: number, width = 54, height = 50): Pickable {
-  return { id, rect: { x, y, width, height } };
+/**
+ * A block of a Squad: a drawn rectangle, at a place, standing on a tile row.
+ *
+ * The row defaults to the rectangle's own vertical position, which is what a
+ * test that does not care about depth wants; the tests that do care pass one.
+ */
+function block(id: number, x: number, y: number, width = 54, height = 50, depth = y): Pickable {
+  return { id, rect: { x, y, width, height }, depth };
 }
 
 /** The middle of a block. */
@@ -40,15 +45,22 @@ describe('one click', () => {
     expect(selectAt(NOTHING_SELECTED, squads, middle(squads[1]!))).toEqual({ squads: [2], settlement: null });
   });
 
-  it('picks the block drawn in front when two overlap', () => {
-    // The same place, two blocks: the one further down the screen is painted
-    // last, and so is the one a Player is looking at.
-    const behind = block(1, 0, 0);
-    const front = block(2, 10, 20);
+  it('picks the block drawn in front when two overlap, by the row they stand on', () => {
+    // The same place, two blocks: the layer paints the Squad on the later tile
+    // row last, so that is the one a Player is looking at — whatever the two
+    // rectangles' own bottoms happen to say, which depends on where each Squad
+    // faces (`render/squads.ts` anchors a block at its front rank).
+    const behind = block(1, 0, 0, 54, 50, 10);
+    const front = block(2, 0, 0, 54, 50, 20);
     const at = { x: 20, y: 30 };
 
     expect(selectAt(NOTHING_SELECTED, [behind, front], at).squads).toEqual([2]);
     expect(selectAt(NOTHING_SELECTED, [front, behind], at).squads).toEqual([2]);
+
+    // Two blocks on one row are drawn in the order the layer added them, which
+    // is the Faction's list: the later one is on top.
+    const sameRow = block(3, 0, 0, 54, 50, 20);
+    expect(selectAt(NOTHING_SELECTED, [front, sameRow], at).squads).toEqual([3]);
   });
 
   it('clears the selection on empty ground, and keeps it on a shift-click that missed', () => {
@@ -70,7 +82,7 @@ describe('one click', () => {
   });
 
   it('picks nothing where a block has no width or no height', () => {
-    const sliver = { id: 1, rect: { x: 10, y: 10, width: 0, height: 10 } };
+    const sliver: Pickable = { id: 1, rect: { x: 10, y: 10, width: 0, height: 10 }, depth: 10 };
 
     expect(selectAt(NOTHING_SELECTED, [sliver], { x: 10, y: 15 })).toEqual(NOTHING_SELECTED);
   });
