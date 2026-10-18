@@ -13,7 +13,7 @@ import { createAtelier } from './render/atelier.ts';
 async function boot(): Promise<void> {
   const atelier = await createAtelier(requireMount('app'));
 
-  publishHooks({ boot: { booted: true, render: atelier.probe }, view: null, atelier });
+  publishHooks({ boot: { booted: true, render: atelier.probe }, view: null, game: null, atelier });
 }
 
 boot().catch((error: unknown) => {

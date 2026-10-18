@@ -10,6 +10,7 @@
  */
 import type { AtelierHooks } from './render/atelier.ts';
 import type { ViewHooks } from './render/boot.ts';
+import type { GameHooks } from './render/game.ts';
 import type { FrameReport } from './render/stage.ts';
 
 /** What the boot sequence managed to do, success or failure. */
@@ -22,6 +23,8 @@ export interface SpqrDebugHooks {
   readonly boot: BootReport;
   /** The game page's camera and pixel read-back; null on any other page. */
   readonly view: ViewHooks | null;
+  /** The game page's Match and interface; null on any other page. */
+  readonly game: GameHooks | null;
   /** The Atelier's geometry and pixel read-back; null on any other page. */
   readonly atelier: AtelierHooks | null;
 }

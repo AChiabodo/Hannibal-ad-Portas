@@ -140,6 +140,33 @@ export function fillRect(
 }
 
 /**
+ * Paints the one-pixel edge of a rectangle, clipped to the buffer.
+ *
+ * The edge is drawn *inside* the rectangle, so a `width × height` outline spans
+ * exactly the pixels `fillRect` would have painted and no others: the two calls
+ * describe the same region, which is what lets a panel be filled and framed
+ * without a caller having to reason about which side of the boundary it is on.
+ * A rectangle too small to have an inside — one pixel wide, or one tall — is
+ * drawn as the line it is rather than as a hole.
+ */
+export function strokeRect(
+  buffer: PixelBuffer,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  colour: Rgba,
+): void {
+  requireColour(colour);
+  if (width <= 0 || height <= 0) return;
+
+  fillRect(buffer, x, y, width, 1, colour);
+  fillRect(buffer, x, y + height - 1, width, 1, colour);
+  fillRect(buffer, x, y, 1, height, colour);
+  fillRect(buffer, x + width - 1, y, 1, height, colour);
+}
+
+/**
  * Composites one buffer over another at `(x, y)`, source over, clipped.
  *
  * The arithmetic is integer and exact, and it is straight-alpha source-over:

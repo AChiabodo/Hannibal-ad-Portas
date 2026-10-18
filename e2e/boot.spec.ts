@@ -6,7 +6,8 @@ import type { ViewState } from '../src/render/boot';
 import { DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
 import { renderTerrain, THEATRE_PIXELS } from '../src/render/terrain';
 import { screenToStage, stageToScreen } from '../src/render/camera';
-import { describeView, samples } from './hooks';
+import { describeView, hudRects, samples } from './hooks';
+import type { Rect } from '../src/ui/hud';
 
 /**
  * The theatre on screen (ticket B3).
@@ -36,17 +37,26 @@ const MAP = { seed: DEFAULT_SEED, mapWidth: MAP_WIDTH, mapHeight: MAP_HEIGHT, ma
  * Only points inside the viewport: at a magnification above one, and after any
  * pan, the theatre is larger than the canvas or shifted by it, and a point off
  * the canvas is a question with no answer rather than a wrong one.
+ *
+ * The step adapts to how much theatre is on screen, because at 8× the viewport
+ * holds eighty stage pixels and a fixed step of seventeen would leave a handful
+ * of points — most of them behind the interface. The step is chosen so that the
+ * smaller dimension is walked about eight times, and never finer than one stage
+ * pixel.
  */
 function visiblePoints(view: ViewState): { points: [number, number][]; expected: [number, number][] } {
   const points: [number, number][] = [];
   const expected: [number, number][] = [];
   const { camera } = view;
 
+  const firstX = Math.max(0, camera.x);
+  const firstY = Math.max(0, camera.y);
   const lastX = Math.min(THEATRE.width, camera.x + Math.ceil(view.width / camera.zoom));
   const lastY = Math.min(THEATRE.height, camera.y + Math.ceil(view.height / camera.zoom));
+  const step = Math.min(17, Math.max(1, Math.floor(Math.min(lastX - firstX, lastY - firstY) / 8)));
 
-  for (let y = Math.max(0, camera.y); y < lastY; y += 17) {
-    for (let x = Math.max(0, camera.x); x < lastX; x += 17) {
+  for (let y = firstY; y < lastY; y += step) {
+    for (let x = firstX; x < lastX; x += step) {
       const screen = stageToScreen(camera, x, y);
       points.push([screen.x, screen.y]);
       expected.push([x, y]);
@@ -56,21 +66,47 @@ function visiblePoints(view: ViewState): { points: [number, number][]; expected:
   return { points, expected };
 }
 
-/** Asserts that every canvas point shows the theatre pixel the camera says it should. */
+/**
+ * Asserts that every canvas point shows the theatre pixel the camera says it should.
+ *
+ * Points the interface covers are dropped rather than compared: since B7 the
+ * frame is the theatre *and* the HUD over it, and a panel is deliberately not
+ * the map. The rectangles come from the page's own layout, so the exclusion is
+ * the interface's idea of where it stands and not a second one kept here.
+ */
 async function expectTheatrePixels(page: Page, view: ViewState, context: string): Promise<void> {
+  const rects = await hudRects(page);
   const { points, expected } = visiblePoints(view);
-  expect(points.length, context).toBeGreaterThan(10);
+  const kept: { point: [number, number]; stage: [number, number] }[] = [];
 
-  const drawn = await samples(page, 'view', points);
-  let wrong = 0;
   for (let index = 0; index < points.length; index += 1) {
-    const [stageX, stageY] = expected[index] ?? [0, 0];
-    const wanted = pixelAt(THEATRE, stageX, stageY);
+    const point = points[index];
+    const stage = expected[index];
+    if (point === undefined || stage === undefined) continue;
+    if (rects.some((rect) => covers(rect, point[0], point[1]))) continue;
+
+    kept.push({ point, stage });
+  }
+
+  expect(kept.length, context).toBeGreaterThan(10);
+
+  const drawn = await samples(page, 'view', kept.map((entry) => entry.point));
+  let wrong = 0;
+  for (let index = 0; index < kept.length; index += 1) {
+    const entry = kept[index];
+    if (entry === undefined) continue;
+
+    const wanted = pixelAt(THEATRE, entry.stage[0], entry.stage[1]);
     const got = drawn[index];
     if (got === undefined || got[0] !== wanted[0] || got[1] !== wanted[1] || got[2] !== wanted[2]) wrong += 1;
   }
 
   expect(wrong, `${context}: mismatched pixels`).toBe(0);
+}
+
+/** Whether a screen point falls on the interface rather than on the theatre. */
+function covers(rect: Rect, x: number, y: number): boolean {
+  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
 }
 
 /** Boots the page and waits for the hooks, answering with what the renderer reported. */

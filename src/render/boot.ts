@@ -3,12 +3,18 @@
  *
  * B2 put the pipeline on screen with a title plate. B3 puts the *game* there: a
  * map B1 generated from a seed, rendered by `render/terrain.ts` into one
- * `PixelBuffer`, and drawn as one texture under the camera B2 built. It is the
- * smallest honest thing that satisfies the ticket — there is no Match yet, no fog
- * and no Squad — and it is also the browser half of the pixel-hash story: a test
- * computes the same theatre *in Node* with the same generator and asks the page
- * for the pixel the camera says is there, so the GPU's answer is compared against
- * the generator's and neither side can pass alone.
+ * `PixelBuffer`, and drawn as one texture under the camera B2 built. **B7 adds
+ * the interface and the Match behind it**: `render/game.ts` opens the economy
+ * Match on the same seed, and the HUD of `ui/` is drawn over the theatre in
+ * screen space. What is still missing is the war — there is no fog (B4) and no
+ * Squad on the map (C1, C2) — and the page says so rather than pretending.
+ *
+ * It is also the browser half of the pixel-hash story: a test computes the same
+ * theatre *in Node* with the same generator and asks the page for the pixel the
+ * camera says is there, so the GPU's answer is compared against the generator's
+ * and neither side can pass alone. The HUD is excluded from that comparison by
+ * rectangle (`hudRects`), because the theatre is what is being compared and the
+ * interface is deliberately over part of it.
  *
  * **One texture, and why that is the responsive answer.** The whole 96×96
  * theatre is composed once, on boot, into a single 1552×1552 buffer. Panning and
@@ -22,7 +28,9 @@
  * **Input is a convenience over the same hooks.** The wheel and a drag call
  * `zoomAbout` and `panBy`, which are the calls a test makes: nothing about the
  * page is reachable only by a hand. Both are whole steps, so a player cannot put
- * the camera between two pixels any more than a test can.
+ * the camera between two pixels any more than a test can. A click is the same
+ * idea again: it asks `ui/hud.ts` which row it landed on and selects it, so the
+ * pointer and the test drive one selection rather than two.
  */
 
 import { Container } from 'pixi.js';
@@ -30,6 +38,9 @@ import { BASE } from '../art/palette.ts';
 import type { Rgba } from '../art/pixel-buffer.ts';
 import { MAP_HEIGHT, MAP_WIDTH, generateMap } from '../sim/map.ts';
 import { THEATRE_PIXELS, renderTerrain } from './terrain.ts';
+import { hitTest } from '../ui/hud.ts';
+import type { ViewportRect } from '../ui/minimap.ts';
+import { createGame, type GameHooks } from './game.ts';
 import {
   type Camera,
   clampTo,
@@ -95,15 +106,16 @@ export interface ViewHooks {
   samples(points: readonly PixelPoint[]): readonly Rgba[];
 }
 
-/** The running game page: what it drew, and the hooks to ask it for more. */
-export interface GameView extends ViewHooks {
+/** The running game page: what it drew, the camera, and the Match behind the interface. */
+export interface GameView extends ViewHooks, GameHooks {
   /** What the renderer did when the page booted. */
   readonly probe: FrameReport;
 }
 
 /**
- * Builds the page: the theatre on one texture, the camera on it, one frame drawn,
- * and the hooks Playwright and, later, an external agent drive it with.
+ * Builds the page: the theatre on one texture, the camera on it, the Match and
+ * its interface over both, one frame drawn, and the hooks Playwright and, later,
+ * an external agent drive it with.
  */
 export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
   const theatre = renderTerrain(generateMap(DEFAULT_SEED));
@@ -125,15 +137,31 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
   };
   let camera = clampTo(centred(createCamera({ zoom: DEFAULT_ZOOM }), stage), bounds);
   applyCamera(world, camera);
-  stage.render();
+
+  const size = { width: stage.width, height: stage.height };
+  const game = createGame({
+    stage,
+    seed: DEFAULT_SEED,
+    size,
+    viewport: (): ViewportRect => ({
+      x: camera.x,
+      y: camera.y,
+      width: Math.floor(stage.width / camera.zoom),
+      height: Math.floor(stage.height / camera.zoom),
+    }),
+  });
 
   const moveTo = (next: Camera): void => {
     camera = clampTo(next, bounds);
     applyCamera(world, camera);
+    // Only the minimap cares where the camera is: the panels are screen-space, and
+    // recomposing them on a pan would be work for a picture that has not changed.
+    game.syncMinimap();
     stage.render();
   };
 
   const view: GameView = {
+    ...game.hooks,
     probe: frameReport(stage),
     panBy: (dx, dy) => {
       moveTo(panCamera(camera, dx, dy));
@@ -156,7 +184,10 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
     samples: (points) => samplesOf(stage, points),
   };
 
-  bindPointer(stage, view);
+  bindPointer(stage, view, (screenX, screenY) => {
+    view.select(hitTest(view.hud(), size, screenX, screenY));
+  });
+  game.start();
 
   return view;
 }
@@ -178,8 +209,12 @@ function centred(camera: Camera, stage: Stage): Camera {
  * been applied is panned, so a slow drag does not lose its remainder and a fast
  * one does not jump. The wheel is an anchored zoom about the pointer, which is
  * why `zoomAbout` exists: the map grows towards what the player is looking at.
+ *
+ * A press that did not move is a click, and a click is the selection: the pointer
+ * release asks the same `hitTest` a test would, so the row a Player presses and
+ * the row a test selects cannot drift apart.
  */
-function bindPointer(stage: Stage, view: GameView): void {
+function bindPointer(stage: Stage, view: GameView, onClick: (x: number, y: number) => void): void {
   let drag: { readonly pointerId: number; readonly fromX: number; readonly fromY: number; appliedX: number; appliedY: number } | null =
     null;
 
@@ -204,7 +239,15 @@ function bindPointer(stage: Stage, view: GameView): void {
   const release = (event: PointerEvent): void => {
     if (drag === null || event.pointerId !== drag.pointerId) return;
 
+    const pressed = drag;
     drag = null;
+
+    // A press that panned is a drag; a press that did not is a click. The
+    // remainder is deliberately not the test: a one-pixel drag is still a drag.
+    if (pressed.appliedX !== 0 || pressed.appliedY !== 0) return;
+
+    const rect = stage.canvas.getBoundingClientRect();
+    onClick(Math.floor(event.clientX - rect.left), Math.floor(event.clientY - rect.top));
   };
   stage.canvas.addEventListener('pointerup', release);
   stage.canvas.addEventListener('pointercancel', release);

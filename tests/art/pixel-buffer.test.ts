@@ -15,6 +15,7 @@ import {
   pixelAt,
   rotateQuarterTurns,
   setPixel,
+  strokeRect,
   TRANSPARENT,
 } from '../../src/art/pixel-buffer';
 
@@ -85,6 +86,50 @@ describe('filling a rectangle', () => {
     fillRect(buffer, 0, 0, 0, 0, RED);
 
     expect([...buffer.pixels]).toEqual([0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255]);
+  });
+});
+
+describe('stroking a rectangle', () => {
+  it('paints the edge inside the region, and leaves the middle alone', () => {
+    const buffer = createPixelBuffer(4, 4, BLUE);
+    strokeRect(buffer, 0, 0, 4, 4, RED);
+
+    for (let y = 0; y < 4; y += 1) {
+      for (let x = 0; x < 4; x += 1) {
+        const onEdge = x === 0 || y === 0 || x === 3 || y === 3;
+        expect(pixelAt(buffer, x, y), `${String(x)},${String(y)}`).toEqual(onEdge ? [255, 0, 0, 255] : [0, 0, 255, 255]);
+      }
+    }
+  });
+
+  it('covers exactly the pixels a fill of the same region would', () => {
+    const filled = createPixelBuffer(3, 2, BLUE);
+    const stroked = createPixelBuffer(3, 2, BLUE);
+    fillRect(filled, 0, 0, 3, 2, RED);
+    strokeRect(stroked, 0, 0, 3, 2, RED);
+
+    // Two rows and three columns is all edge, so the two calls agree; a stroke
+    // of a bigger region is the same boundary and a hollow middle.
+    expect([...stroked.pixels]).toEqual([...filled.pixels]);
+
+    const plate = createPixelBuffer(5, 5, BLUE);
+    strokeRect(plate, 1, 1, 3, 3, RED);
+    expect(pixelAt(plate, 2, 2)).toEqual([0, 0, 255, 255]);
+    expect(pixelAt(plate, 1, 2)).toEqual([255, 0, 0, 255]);
+  });
+
+  it('clips at the buffer edge and paints nothing for an empty region', () => {
+    const buffer = createPixelBuffer(3, 3, BLUE);
+    strokeRect(buffer, -1, -1, 3, 3, RED);
+    strokeRect(buffer, 0, 0, 0, 2, RED);
+
+    // The region's own boundary is at x = -1 and y = -1, so only the parts of
+    // the edge that fall inside the buffer are painted.
+    expect(pixelAt(buffer, 0, 1)).toEqual([255, 0, 0, 255]);
+    expect(pixelAt(buffer, 1, 0)).toEqual([255, 0, 0, 255]);
+    expect(pixelAt(buffer, 1, 1)).toEqual([255, 0, 0, 255]);
+    expect(pixelAt(buffer, 0, 0)).toEqual([0, 0, 255, 255]);
+    expect(pixelAt(buffer, 2, 2)).toEqual([0, 0, 255, 255]);
   });
 });
 

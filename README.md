@@ -440,6 +440,76 @@ has no row of its own because plain is the ground everything else is laid over: 
 is never the foreground of a boundary, and its boundary with a hill is the hill's
 variant seen from the other side.
 
+## The interface
+
+The window a Player watches all of it through, in Italian, and the first thing
+built to be *read* rather than merely rendered (B7). `src/ui/` is the interface
+and it has no engine in it: the HUD is a `PixelBuffer` composed in Node, so what
+it says and what it draws are both testable without a browser, and the page does
+nothing but upload it.
+
+**One string table, and no hard-coded text** (`ui/strings.ts`). Every word a
+Player reads is a key — `ui.treasury`, `resource.grain`, `work.villa` — and a
+translation carries the same text in each language the game speaks. Italian is
+*required*, because it is the language the interface is played in and a key with
+no Italian is a blank panel rather than an untranslated one; English is optional,
+and that is the fallback path the plan asks for. Placeholders (`{name}`) are part
+of a key's contract, so `message` substitutes them and refuses a value that is
+missing rather than printing a hole. The ticket's criterion — *no player-facing
+string is hard-coded* — is asserted against the source: a test walks every
+drawing call under `ui/` and `render/` and fails on a literal string passed to
+the font, because the only way text reaches the screen is through `drawText`.
+
+**Readouts, and panels that say the figures that matter** (`ui/hud.ts`). The top
+bar names the settlement whose stock it is showing — the Stronghold when nothing
+is selected, because a readout with nothing in it is a readout a Player learns to
+ignore — and then carries the year, the Season, the treasury and the four
+resources. A readout says whether its figure is a *numeral*, which is drawn at
+the plan's large size, and whether it starts a row; the bar's height follows from
+how many rows its words need, so a translation or a third resource moves the list
+down instead of being clipped at the screen's edge. The left column lists every
+settlement and every Squad the Faction holds, and the panel under it says what
+the selected one is: a settlement's tier, people, stock, labour and works; a
+Squad's kind, its **morale**, its **Payroll** and the Seasons it has gone unpaid.
+One module owns the model, the layout and the hit test, because a row a Player
+can see and a row a click selects have to be the same rectangle — and the click
+the page handles asks the same `hitTest` a test would, so the pointer and the
+test drive one selection rather than two.
+
+**A minimap that is honest about fog** (`ui/minimap.ts`). One pixel per tile, the
+colour of its terrain, with the Strongholds in their Factions' colours and the
+resource nodes as the lightest shade of what they hold. The plate takes a **fog
+grid** and nothing else, so a tile the Faction has never seen is drawn in the
+night colour whatever the map holds underneath it: an unexplored Stronghold
+showing through the fog is the leak this module exists to prevent, and the browser
+test checks the whole plate against the map regenerated in Node. Fog of war is
+B4's; what B7 fixes is the contract — `unseen`, `explored`, `visible` — and until
+its visibility grid lands the page composes one out of what it is allowed to
+know: the ground around the settlements it holds.
+
+**The HUD is screen-space, which is what "legible at every zoom" means.** The
+panels are composed at the viewport's own size and drawn over the theatre without
+the camera, so a 5×7 glyph is five by seven screen pixels at 1× and at 8×, and no
+panel is ever magnified into a smear. The minimap is the one piece that changes
+with the camera, because marking what the camera is showing is the whole of its
+job — and it lives on a sprite of its own, so a pan recomposes a hundred-pixel
+square instead of a full-screen interface. Everything the interface is made of is
+generated: the glyphs are `art/font.ts` and the colours are `art/palette.ts`, and
+no file was added to draw a word.
+
+**The page runs a Match** (`render/game.ts`). B3 drew the theatre and stopped;
+B7 opens the economy Match of B6 on the same seed, plays it in real time at the
+pace B5 built, and reads its own Faction's **Observation** — never the world —
+into the HUD. It raises one Squad at boot through the same seam a Player will use
+(C2 gives a Player a way to raise one by hand), so the Squad panel is a live panel
+and not a fixture. Real time lives here and only here, because `sim/` may not read
+a wall clock (ADR-0006): a `requestAnimationFrame` loop measures the frame and
+asks `pacing.ticksFor` how many whole ticks that is worth, clamped at both ends —
+a background tab does not owe the Match an hour, and a frame's timestamp is the
+moment the frame began, which can precede the clock read that started the loop.
+`advance` steps ticks with no wall time at all, which is how a browser test
+watches a Season turn instead of waiting three and a half minutes for it.
+
 ## The seam
 
 One seam carries every decision in the game (PLAN §3, ADR-0003). A **Controller**
@@ -566,12 +636,18 @@ src/                application code
     png.ts          a PNG encoder in the repository's own code, for the bake step
     bake.ts         the catalogue written out as files, and the table it prints
     bake-main.ts    the bake command: standard output, standard error, exit codes
+  ui/               the Italian interface: words, panels, minimap (no engine imports)
+    strings.ts      every word a Player reads, with its English fallback path
+    minimap.ts      the theatre at one pixel a tile, drawn through a fog grid
+    hud.ts          the readouts, the selection panels, the layout and the hit test
   render/           the application's one PixiJS-aware layer
     camera.ts       a whole-pixel position and a whole-number zoom, and no smoothing
     stage.ts        the adapter: PixelBuffer to texture, the camera on a container, the frame read back
     terrain.ts      the map composed into one image: ground, roads over it, markers over those
     view.ts         the seed, zoom and viewport the page opens on, with no engine in sight
     boot.ts         the game page's boot: the theatre, the camera, the pointer, the debug hooks
+    game.ts         the Match behind the interface, and the real-time loop that drives it
+    hud.ts          the interface's two plates on the stage, in screen space
     atelier-layout.ts  where the several zoom levels of the catalogue stand on the page
     atelier.ts      the Atelier page: the catalogue plate, one column per zoom level
   page.ts           where a page mounts, and what a failed boot looks like
@@ -585,7 +661,7 @@ docs/PLAN.md        the plan of record
 docs/COMMANDS.md    the Command vocabulary an external agent is written from
 ```
 
-Further modules from the plan's architecture (`ai/`, `audio/`, `ui/`)
+Further modules from the plan's architecture (`ai/`, `audio/`)
 arrive with the tickets that need them, under `src/`.
 
 ## Continuous integration
@@ -616,4 +692,9 @@ a plan that includes Pages.
   to SwiftShader on a machine with no GPU. Both pages are checked this way: the
   theatre at every zoom the camera offers, at both corners of the map and after a
   drag and a wheel, and the Atelier's whole catalogue at 1×, 2× and 4× — each
-  against the same pixels generated in Node, point for point.
+  against the same pixels generated in Node, point for point. The interface is
+  checked the same way since B7: the words come from the string table, a click
+  selects the row a Player pressed, the minimap is the map through the fog the
+  page reports, and the HUD stays in screen space at every zoom — the theatre
+  comparison drops the points the interface covers, using the page's own
+  rectangles rather than a second layout kept in the test.

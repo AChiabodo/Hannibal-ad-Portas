@@ -169,3 +169,30 @@ _Avoid_: Bank, gold
 The extra grain the autumn Season brings in from the people on the land: a visible peak in the year's production, on top of the Season's ordinary work.
 _UI_: Raccolto
 _Avoid_: Yield, crop
+
+### The interface
+
+**String table**:
+The one place a player-facing word lives: a stable English key, and the word in every language the game speaks. Italian is required — it is the language the interface is played in — and English is the fallback path for a key not yet translated.
+_UI_: —
+_Avoid_: Locale file, translations, i18n bundle
+
+**Readout**:
+One labelled figure the interface always shows — the year, the Season, the treasury, a resource — as against a panel, which a selection opens.
+_UI_: —
+_Avoid_: Stat, indicator, counter
+
+**Selection**:
+What the Player has picked, a settlement or a Squad, and the panel that follows it. There is one selection at a time, and nothing selected is a state rather than an error.
+_UI_: Selezione
+_Avoid_: Focus, target, highlight
+
+**Minimap**:
+The theatre at one pixel per tile, drawn through the Faction's fog: it shows what the Faction knows and nothing more.
+_UI_: Mappa
+_Avoid_: Overview, radar, small map
+
+**Fog**:
+What a Faction knows of one tile: never seen, seen and remembered, or in view. The visibility grid is B4's; the minimap obeys it.
+_UI_: —
+_Avoid_: Shroud, blackout, unexplored (that is one of its three states)
