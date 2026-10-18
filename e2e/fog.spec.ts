@@ -22,7 +22,8 @@ import type { ViewState } from '../src/render/boot';
 import { UNEXPLORED, renderFog } from '../src/render/fog';
 import { renderTerrain, tilePixel } from '../src/render/terrain';
 import { DEFAULT_SEED, VIEWED_FACTION } from '../src/render/view';
-import { describeView, samples } from './hooks';
+import type { Rect } from '../src/ui/hud';
+import { describeView, hudRects, samples } from './hooks';
 
 /** The theatre the page is showing, and the Stronghold its player starts in. */
 const MAP: MapGrid = generateMap(DEFAULT_SEED);
@@ -92,13 +93,23 @@ function same(got: Rgba | undefined, wanted: Rgba, tolerance: number): boolean {
  * the one thing that is not exact: a veiled pixel is blended by the GPU in
  * floats, and one step of an eight-bit channel is a rounding difference rather
  * than a different fog.
+ *
+ * Points the interface covers are dropped rather than compared: since B7 the
+ * frame is the theatre, the fog and the HUD over both, and a panel is
+ * deliberately not the map. The rectangles come from the page's own layout.
  */
 async function expectDrawn(page: Page, image: PixelBuffer, context: string, tolerance = 0): Promise<void> {
   const view = await describeView(page);
+  const rects = await hudRects(page);
   const points: [number, number][] = [];
   for (let y = 5; y < view.height; y += 11) {
-    for (let x = 5; x < view.width; x += 11) points.push([x, y]);
+    for (let x = 5; x < view.width; x += 11) {
+      if (rects.some((rect) => covers(rect, x, y))) continue;
+      points.push([x, y]);
+    }
   }
+
+  expect(points.length, context).toBeGreaterThan(100);
 
   const drawn = await samples(page, 'view', points);
   let wrong = 0;
@@ -108,6 +119,11 @@ async function expectDrawn(page: Page, image: PixelBuffer, context: string, tole
   }
 
   expect(wrong, `${context}: mismatched pixels of ${String(points.length)}`).toBe(0);
+}
+
+/** Whether a screen point falls on the interface rather than on the theatre. */
+function covers(rect: Rect, x: number, y: number): boolean {
+  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
 }
 
 /** Puts a stage pixel in the middle of the viewport, by panning whole pixels, where the map allows. */

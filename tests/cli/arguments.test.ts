@@ -7,6 +7,7 @@ import {
   USAGE,
 } from '../../src/cli/arguments';
 import { DEFAULT_RULES, RULES, RULES_NAMES, type RulesName } from '../../src/cli/rules';
+import { HEADLESS_TICKS } from '../../src/sim/season';
 import { MAX_SEED } from '../../src/sim/rng';
 
 /** The options a well-formed command line parses into, with the defaults filled in. */
@@ -47,12 +48,26 @@ describe('the command line', () => {
     );
   });
 
-  it('plays the empty Match by default, and takes which rules to play by name', () => {
-    expect(parseArguments([])).toEqual(run({ rules: 'empty' }));
+  it('plays the economy Match by default, and takes which rules to play by name', () => {
+    expect(parseArguments([])).toEqual(run());
+    expect(run().options.rules).toBe('economy');
     expect(parseArguments(['--rules', 'draws'])).toEqual(run({ rules: 'draws' }));
+    expect(parseArguments(['--rules', 'seasons', '--seed', '3'])).toEqual(
+      run({ seed: 3, rules: 'seasons' }),
+    );
+    expect(parseArguments(['--rules', 'economy', '--seed', '3'])).toEqual(
+      run({ seed: 3, rules: 'economy' }),
+    );
     expect(parseArguments(['--rules', 'empty', '--seed', '3'])).toEqual(
       run({ seed: 3, rules: 'empty' }),
     );
+  });
+
+  it('bounds a headless Match to three game years by default, the same bound the season clock names', () => {
+    // 3.5 minutes a Season, four Seasons a year, three years: 25 200 ticks at 10 Hz.
+    expect(HEADLESS_TICKS).toBe(25_200);
+    expect(DEFAULT_TICKS).toBe(HEADLESS_TICKS);
+    expect(parseArguments([])).toEqual(run({ ticks: HEADLESS_TICKS }));
   });
 
   it('refuses a rules name it does not have, naming the name it was given', () => {

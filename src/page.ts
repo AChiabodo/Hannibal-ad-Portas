@@ -7,11 +7,12 @@
  * for its own sake: a page that failed to publish its hooks would be a page the
  * browser test cannot inspect, and that is a failure worth having in one place.
  *
- * The Italian on a failed boot is a placeholder in the same sense the title plate
- * is: player text belongs in the string table with its English fallback path
- * (PLAN §2.4), which B7 builds.
+ * The Italian on a failed boot is the string table's like every other word a
+ * Player reads (PLAN §2.4): this module is the one place a page can fail before
+ * its own interface exists, and it says so in the game's language.
  */
 import type { SpqrDebugHooks } from './debug.ts';
+import { message } from './ui/strings.ts';
 
 /**
  * The element a page mounts its canvas in.
@@ -37,11 +38,11 @@ export function publishHooks(hooks: SpqrDebugHooks): void {
  * attribute, so a test fails with the message rather than with a timeout.
  */
 export function failBoot(error: unknown, mountId: string): void {
-  const message = error instanceof Error ? error.message : String(error);
+  const reason = error instanceof Error ? error.message : String(error);
   const mount = document.getElementById(mountId);
 
-  if (mount !== null) mount.textContent = `Avvio fallito: ${message}`;
-  window.__SPQR = { boot: { booted: false, error: message }, view: null, atelier: null };
+  if (mount !== null) mount.textContent = message('ui.bootFailed', { message: reason });
+  window.__SPQR = { boot: { booted: false, error: reason }, view: null, game: null, atelier: null };
   document.body.dataset.spqrBooted = 'failed';
   console.error(error);
 }

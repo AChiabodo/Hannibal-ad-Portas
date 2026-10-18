@@ -4,14 +4,14 @@
  * The CLI is a harness, not a game: it hands the driver a seed, the two idle
  * Players and a bound, and takes whatever the rules give back. *Which* rules is
  * the one choice this module leaves to the command line, and it is a name from
- * the table in `rules.ts`: the empty Match by default, the theatre with both
- * Factions' fogs beside it, and a Match whose rules draw on every tick, so that
- * CI can gate a hash of the fog and of the generator actually working
- * (ADR-0006, ADR-0013, A5 review F5).
+ * the table in `rules.ts`: the economy Match by default, the clock on its own,
+ * the theatre with both Factions' fogs beside it, the engine-only empty Match,
+ * and a Match whose rules draw on every tick, so that CI can gate a hash of the
+ * settlements and the map, of the calendar, of the fog, of the seed expansion
+ * and of the generator actually working (ADR-0006, ADR-0013, A5 review F5).
  *
- * Today those are the only Matches there are, because no system has been built
- * yet; when B1 to C5 land, they change what a name plays and nothing about the
- * command line or its report changes.
+ * Those names change what a name plays as the world is built, and nothing about
+ * the command line or its report changes with them.
  *
  * The invariant is ADR-0006's, made checkable: the same seed and the same
  * Commands must end in the same state hash. A Match the caller asked a hash of

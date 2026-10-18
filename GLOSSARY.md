@@ -33,6 +33,11 @@ One quarter of a Match's game year, and the Match's strategic clock: harvest in 
 _UI_: Stagione
 _Avoid_: Turn, phase, cycle
 
+**Year**:
+Four Seasons of Match time, counted from one. A human Match has no limit on them; a headless Match is bound to three so that it always terminates.
+_UI_: Anno
+_Avoid_: Cycle, age, era
+
 ### The theatre
 
 **Tile**:
@@ -61,7 +66,7 @@ _UI_: Guado
 _Avoid_: Bridge, crossing (reserve "crossing" for the act)
 
 **Resource node**:
-A place on the map holding one resource — grain, timber, stone or iron — in a quantity the economy draws on. Nodes stand on the terrain that suits them: timber in forests, stone and iron on hills, grain on farmland.
+A place on the map holding one resource — grain, timber, stone or iron — in a quantity the economy draws on each Season. Nodes stand on the terrain that suits them: timber in forests, stone and iron on hills, grain on farmland. The quantity is how much land a settlement can work, not a pile that runs out (ADR-0012).
 _UI_: Giacimento
 _Avoid_: Deposit, mine, patch, field
 
@@ -144,3 +149,55 @@ _Avoid_: Decay, drain, penalty
 The denarii a Faction owes each Season for the Squads it keeps. Unpaid Squads lose morale and eventually desert.
 _UI_: Soldo
 _Avoid_: Upkeep, maintenance, cost, salary
+
+**Settlement**:
+A place on the map with people, buildings and a stock: a Stronghold or a minor settlement. Its tier gates what may be raised in it.
+_UI_: Insediamento
+_Avoid_: City, town, base, colony (a Stronghold and a minor settlement are both settlements)
+
+**Tier**:
+One of the three steps of a settlement's growth — raised by the building that raises it — and the gate on which Squad types it may raise. The progression is the tiers, and there is no technology tree beside them.
+_UI_: Livello
+_Avoid_: Level, age, era, upgrade
+
+**Labour allocation**:
+How a settlement's population is divided between its works and its land. There is no Command for it: it follows from what the settlement has built and who lives in it.
+_UI_: Manodopera
+_Avoid_: Assignment, jobs, workers
+
+**Work**:
+One building in one settlement: a labour demand plus a timer while it goes up, and a labour demand plus what it yields once it stands.
+_UI_: Cantiere
+_Avoid_: Building (a building is the kind; a work is the one in a settlement), construction site
+
+**Treasury**:
+The denarii a Faction holds, once per Faction rather than once per settlement, as against the four resources, which are held per settlement.
+_UI_: Tesoreria
+_Avoid_: Bank, gold
+
+**Harvest**:
+The extra grain the autumn Season brings in from the people on the land: a visible peak in the year's production, on top of the Season's ordinary work.
+_UI_: Raccolto
+_Avoid_: Yield, crop
+
+### The interface
+
+**String table**:
+The one place a player-facing word lives: a stable English key, and the word in every language the game speaks. Italian is required — it is the language the interface is played in — and English is the fallback path for a key not yet translated.
+_UI_: —
+_Avoid_: Locale file, translations, i18n bundle
+
+**Readout**:
+One labelled figure the interface always shows — the year, the Season, the treasury, a resource — as against a panel, which a selection opens.
+_UI_: —
+_Avoid_: Stat, indicator, counter
+
+**Selection**:
+What the Player has picked, a settlement or a Squad, and the panel that follows it. There is one selection at a time, and nothing selected is a state rather than an error.
+_UI_: Selezione
+_Avoid_: Focus, target, highlight
+
+**Minimap**:
+The theatre at one pixel per tile, drawn through the Faction's Fog of war: it shows what the Faction knows and nothing more.
+_UI_: Mappa
+_Avoid_: Overview, radar, small map

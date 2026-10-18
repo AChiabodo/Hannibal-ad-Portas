@@ -136,8 +136,10 @@ iron, four to six capturable minor settlements, a Stronghold for each Faction,
 and roads joining the nodes to one another. The map is integer state like
 everything else the world will hold, so the day a Match's rules put it in
 `MatchState` the tiles it starts on are covered by the state hash and a replay
-begins on the same ones (ADR-0006); B6 and C1 are the tickets that do, and
-`src/sim/empty.ts` is still the world the CLI plays today.
+begins on the same ones (ADR-0006); **B6 put it there**, in `economyMatchRules`,
+with the settlements standing on it, and C1 adds the Squads that walk on it. The
+world the CLI played before that was the clock (`src/sim/season.ts`), which is the
+piece of the Match B5 could put in `MatchState` without the map.
 
 The theatre is **organic, not mirrored**: the two halves do not carry the same
 hills in the same places, and no pass reflects one side onto the other. Fairness
@@ -200,6 +202,97 @@ legend: . plain   ^ hill   f forest   , farmland   ~ river   = ford   - road
 The dump is a reading of the map and not a second opinion about it: it is
 byte-stable for a seed, so two runs diff cleanly, and it holds no timing, no
 path and no wall clock, the same as the Match report.
+
+## The strategic clock
+
+Time has a shape. A game year is four **Seasons** of three and a half minutes
+each — `SEASON_TICKS` in `src/sim/season.ts` — and the calendar is integer state
+like everything else, so the state hash covers it and two replays cross the same
+boundaries on the same ticks. Spring and summer are the campaign season, autumn
+brings the harvest and winter brings Attrition; those last two are the **only
+hooks another system needs**, so no system counts the year for itself:
+
+```ts
+const changes = advanceCalendar(world.calendar, tick); // once per tick
+announceSeasons(changes, economy.seasons, attrition.seasons);
+```
+
+`advanceCalendar` is handed the tick being *left* — the same argument a rule's
+`step` receives — and puts the calendar where the Match's own clock says it is.
+It reports; it does not announce. `announceSeasons` hands the same report to
+every subscriber, so the economy and Attrition both hear the year turn and
+neither can be starved by whoever advanced the clock first. A boundary therefore
+falls on the same tick in every run, a second reading of the same tick reports
+nothing, and a rules step that missed a tick catches up without swallowing a
+harvest. A Controller reads the season as a word and the year as a number from
+its Observation; the index the world stores never leaves it.
+
+A Match plays at **three speeds** — 1x, 2x and 3x — and can be **paused**, and
+both are the driver's business rather than the simulation's: they change how much
+wall time a tick costs, never what a tick does, so a paused Match and a fast one
+are the same Match on the same seed (`src/sim/pacing.ts`). Orders given while
+paused are held by the Player's Controller and applied on the first tick after
+the resume, in the order they were given, so thinking costs nothing. Pausing is
+idempotent, and the time spent paused is not banked and then replayed as a burst.
+
+A human Match has no time limit. A **headless Match is bound to three game
+years** — `HEADLESS_TICKS`, 25 200 ticks, 42 minutes of Match time — because a
+Match that can never end is a test that can never finish (ADR-0010). The CLI's
+default bound is exactly that, and its default Match is the one with the theatre
+and the economy in it.
+
+## The economy
+
+A real economy with nobody to click (B6, ADR-0005). There are no worker units
+and no supply lines: a **settlement** holds a pool of **population**, and the
+pool is *allocated* — staffed onto the settlement's **works** in the order it
+raised them, and whatever is left onto its **land**. Production follows that
+allocation and nothing else, which is why a work nobody can staff neither builds
+nor yields.
+
+```ts
+const allocation = allocate(settlement, landCapacity(map, settlement));
+const produced = seasonYield(settlement, allocation, season); // + harvest in autumn
+```
+
+- **Four resources, held per settlement.** Grain, timber, stone and iron
+  accumulate in the settlement that produced them, up to what it can store; there
+  is no shared national pool. A settlement's land is the ground around it —
+  farmland feeds, forest yields timber, hill yields stone — and the **resource
+  nodes** the map put there add their own amount on top, which is what makes a
+  node worth marching to. Iron has no terrain of its own, so above the base it
+  comes from a node or from a mine.
+- **Denarii, held once per Faction.** One treasury, taxed from the people a
+  Faction's settlements hold and from its markets, and capped like a war chest.
+- **Construction is a labour allocation plus a timer.** Starting a building pays
+  its cost out of the settlement's stock and appends a work; the work is staffed
+  out of the population and counts its ticks down, and when the timer runs out it
+  stands and produces. There is no construction scene, on purpose (ADR-0005).
+- **Three tiers, and no technology tree.** `villa` raises a settlement to its
+  second tier and `forum` to its third, and a Squad type states the tier it
+  needs: a tier-2 Squad cannot be recruited in a tier-1 settlement. The
+  progression is the tiers.
+- **Payroll every Season.** A Faction owes its Squads' Payroll each Season out of
+  its treasury; a Squad it cannot pay loses morale and, after enough Seasons
+  owed, **deserts**. A paid Squad recovers a little of what it lost, so a rough
+  patch is survivable and a permanent one is not.
+- **The autumn harvest is a peak.** Ordinary production runs every Season
+  (`onSeason`); the harvest arrives on top of it on the autumn boundary
+  (`onAutumn`), so the grain it brings in is a number a reader can see apart from
+  the Season's own work.
+
+`economyMatchRules` joins B1's map, B5's clock and B6's economy in one
+`MatchState` — the first Match whose hash covers the tiles it begins on — and
+`observeEconomy` is what a Faction reads of it: its settlements and where they
+stand, their tier, people, stocks, land and works, its treasury, and its Squads
+with the Payroll terms they are charged on. An enemy's settlement is not in the
+Observation, which is the one filtering B6 can do before fog (B4) arrives.
+
+The plan's own test of the thing is a Match left alone: over three game years an
+idle economy neither **stalls** — production in year three is still real — nor
+becomes **infinite** — every population, stock and treasury stays inside its
+ceiling. That is asserted end to end in `tests/sim/economy-match.test.ts`, and
+its three years are what the CLI's golden hash covers by default.
 
 ## The first pixels
 
@@ -420,7 +513,78 @@ Faction's real eyes) and `inspect(true)` turns the inspection mode on, which is
 the frame `sim/fog.ts`'s `inspectionView` describes. The browser tests walk one
 tile through all three states with those two calls and compare the GPU's pixels
 against the image composed in Node, at two zooms and after two hundred camera
-moves.
+moves. The same `FogView` is what B7's minimap is drawn through, so the corner of
+the screen and the map under the camera are two drawings of one memory.
+
+## The interface
+
+The window a Player watches all of it through, in Italian, and the first thing
+built to be *read* rather than merely rendered (B7). `src/ui/` is the interface
+and it has no engine in it: the HUD is a `PixelBuffer` composed in Node, so what
+it says and what it draws are both testable without a browser, and the page does
+nothing but upload it.
+
+**One string table, and no hard-coded text** (`ui/strings.ts`). Every word a
+Player reads is a key — `ui.treasury`, `resource.grain`, `work.villa` — and a
+translation carries the same text in each language the game speaks. Italian is
+*required*, because it is the language the interface is played in and a key with
+no Italian is a blank panel rather than an untranslated one; English is optional,
+and that is the fallback path the plan asks for. Placeholders (`{name}`) are part
+of a key's contract, so `message` substitutes them and refuses a value that is
+missing rather than printing a hole. The ticket's criterion — *no player-facing
+string is hard-coded* — is asserted against the source: a test walks every
+drawing call under `ui/` and `render/` and fails on a literal string passed to
+the font, because the only way text reaches the screen is through `drawText`.
+
+**Readouts, and panels that say the figures that matter** (`ui/hud.ts`). The top
+bar names the settlement whose stock it is showing — the Stronghold when nothing
+is selected, because a readout with nothing in it is a readout a Player learns to
+ignore — and then carries the year, the Season, the treasury and the four
+resources. A readout says whether its figure is a *numeral*, which is drawn at
+the plan's large size, and whether it starts a row; the bar's height follows from
+how many rows its words need, so a translation or a third resource moves the list
+down instead of being clipped at the screen's edge. The left column lists every
+settlement and every Squad the Faction holds, and the panel under it says what
+the selected one is: a settlement's tier, people, stock, labour and works; a
+Squad's kind, its **morale**, its **Payroll** and the Seasons it has gone unpaid.
+One module owns the model, the layout and the hit test, because a row a Player
+can see and a row a click selects have to be the same rectangle — and the click
+the page handles asks the same `hitTest` a test would, so the pointer and the
+test drive one selection rather than two.
+
+**A minimap that is honest about fog** (`ui/minimap.ts`). One pixel per tile, the
+colour of its terrain, with the Strongholds in their Factions' colours, the
+resource nodes as the lightest shade of what they hold, and the last known
+position of an enemy where the Faction believes it is. The plate takes **B4's own
+`FogView`** and nothing else — the same object the theatre is veiled with — so a
+tile the Faction has never seen is drawn in the night colour whatever the map
+holds underneath it, and a landmark on a tile nobody has looked at is not drawn
+at all. An unexplored Stronghold showing through the fog is the leak this module
+exists to prevent, and the browser test compares the whole plate against the map
+and the fog regenerated in Node, pixel for pixel.
+
+**The HUD is screen-space, which is what "legible at every zoom" means.** The
+panels are composed at the viewport's own size and drawn over the theatre without
+the camera, so a 5×7 glyph is five by seven screen pixels at 1× and at 8×, and no
+panel is ever magnified into a smear. The minimap is the one piece that changes
+with the camera, because marking what the camera is showing is the whole of its
+job — and it lives on a sprite of its own, so a pan recomposes a hundred-pixel
+square instead of a full-screen interface. Everything the interface is made of is
+generated: the glyphs are `art/font.ts` and the colours are `art/palette.ts`, and
+no file was added to draw a word.
+
+**The page runs a Match** (`render/game.ts`). B3 drew the theatre and stopped;
+B7 opens the economy Match of B6 on the same seed, plays it in real time at the
+pace B5 built, and reads its own Faction's **Observation** — never the world —
+into the HUD. It raises one Squad at boot through the same seam a Player will use
+(C2 gives a Player a way to raise one by hand), so the Squad panel is a live panel
+and not a fixture. Real time lives here and only here, because `sim/` may not read
+a wall clock (ADR-0006): a `requestAnimationFrame` loop measures the frame and
+asks `pacing.ticksFor` how many whole ticks that is worth, clamped at both ends —
+a background tab does not owe the Match an hour, and a frame's timestamp is the
+moment the frame began, which can precede the clock read that started the loop.
+`advance` steps ticks with no wall time at all, which is how a browser test
+watches a Season turn instead of waiting three and a half minutes for it.
 
 ## The seam
 
@@ -477,7 +641,7 @@ npm run match -- --seed 1 --ticks 600
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 0,
-  "hash": "bf3d192e9ab9eb5f"
+  "hash": "3aaaf501674cafe1"
 }
 ```
 
@@ -490,11 +654,12 @@ harness Match to play, `--expect-hash` requires it to end on a hash you
 recorded, and `--help` describes the lot.
 
 CI plays that very command, with the hash above as its `--expect-hash`: a change
-that moves the hash is a decision in review (ADR-0006). Three Matches are
-gated, each for a different reason, and the third is B4's: `--rules fog` plays
-B1's theatre with both Factions' memory of it in state and ends on
-`3d60b17e3e9b6e50` at seed 1, so a change to the map or to the fog moves a hash
-somebody recorded rather than passing unnoticed.
+that moves the hash is a decision in review (ADR-0006). It plays more than one:
+the default Match over its whole three-year bound, the clock's own `seasons`
+Match, B4's `fog` Match — B1's theatre with both Factions' memory of it in state
+— the engine-only `empty` Match, and one that draws on every tick. The economy,
+the clock, the fog, the seed expansion and the draw loop are each gated rather
+than inferred from the others.
 
 The exit codes are the same three `npm run guard` uses: **0** the Match ran,
 **1** a game invariant was violated — a hash that is not the expected one, a
@@ -502,13 +667,15 @@ Command outside the vocabulary, a float where state must be integers — and **2
 the command line was misused. A violated hash still prints the report first: the
 interesting number is the one the Match ended on.
 
-Today the Match is empty, on purpose: no system has been built yet, so nothing
-can be lost and the tick bound is what ends the run (`src/sim/empty.ts`).
-`--rules` chooses which harness Match the CLI plays: `--rules draws` plays one
-whose rules draw from the seed on every tick, so the golden hash in CI covers the
-draw loop as well as the seed expansion, and `--rules fog` plays B1's theatre
-with B4's two fogs in state. The harness around it is the point, and the waves
-that build the world change what is inside it rather than how it is driven.
+Today the Match has a theatre, a clock and an economy (B1, B5, B6): its world is
+the map the seed generated, the calendar, and the settlements standing on it, and
+the tick bound is what ends the run (`src/sim/economy-match.ts`). `--rules`
+chooses which harness Match the CLI plays: `economy` is the default, `seasons` is
+the clock on its own, `fog` is B1's theatre with B4's two fogs in state, `empty`
+is the engine and the seam alone, and `draws` plays one whose rules draw from the
+seed on every tick, so the golden hash in CI covers the draw loop as well as the
+seed expansion (`src/cli/rules.ts`). The harness around it is the point, and the
+waves that build the world change what is inside it rather than how it is driven.
 
 The command needs no build step. Node strips the types and runs `src/cli/main.ts`
 as it stands, which is why every relative import under `src/` names its extension
@@ -533,10 +700,15 @@ src/                application code
     observation.ts  everything a Controller may know, and nothing else
     controller.ts   the one interface every mind implements, plus an idle and a scripted one
     driver.ts       two Controllers, one Match, a result and a command log
-    empty.ts        the Match with no systems in it yet: what the CLI plays today
+    empty.ts        the Match with no systems in it: the engine and the seam alone
+    season.ts       the strategic clock, its Season hooks, and the season Match
+    pacing.ts       three speeds, a pause, and the orders a pause holds
     map.ts          the theatre a seed generates, and the invariants it satisfies
     fog.ts          what each Faction has seen, remembers and can see, and the inspection mode
     fog-match.ts    B1's theatre with both Factions' fogs in state, and the Observation built from one
+    economy.ts      settlements, labour, the four resources, tiers and Payroll
+    economy-match.ts  the Match that joins the map, the clock and the economy
+  content/          the typed tables the rules read: resources, Squad types, buildings
   art/              pure pixel generation: PixelBuffer in, PixelBuffer out (no engine imports)
     pixel-buffer.ts the one currency: RGBA bytes, the drawing primitives and the pixel hash
     palette.ts      nine bases, and the ramps derived from them by integer arithmetic
@@ -554,13 +726,19 @@ src/                application code
     png.ts          a PNG encoder in the repository's own code, for the bake step
     bake.ts         the catalogue written out as files, and the table it prints
     bake-main.ts    the bake command: standard output, standard error, exit codes
+  ui/               the Italian interface: words, panels, minimap (no engine imports)
+    strings.ts      every word a Player reads, with its English fallback path
+    minimap.ts      the theatre at one pixel a tile, drawn through B4's fog
+    hud.ts          the readouts, the selection panels, the layout and the hit test
   render/           the application's one PixiJS-aware layer
     camera.ts       a whole-pixel position and a whole-number zoom, and no smoothing
     stage.ts        the adapter: PixelBuffer to texture, the camera on a container, the frame read back
     terrain.ts      the map composed into one image: ground, roads over it, markers over those
     fog.ts          the fog over that image: unexplored opaque, remembered veiled, visible clear
     view.ts         the seed, zoom, viewport and Faction the page opens on, with no engine in sight
-    boot.ts         the game page's boot: the theatre, its fog, the camera, the pointer, the debug hooks
+    boot.ts         the game page's boot: the theatre, its fog, the Match, the camera, the pointer
+    game.ts         the Match behind the interface, and the real-time loop that drives it
+    hud.ts          the interface's two plates on the stage, in screen space
     atelier-layout.ts  where the several zoom levels of the catalogue stand on the page
     atelier.ts      the Atelier page: the catalogue plate, one column per zoom level
   page.ts           where a page mounts, and what a failed boot looks like
@@ -574,7 +752,7 @@ docs/PLAN.md        the plan of record
 docs/COMMANDS.md    the Command vocabulary an external agent is written from
 ```
 
-Further modules from the plan's architecture (`content/`, `ai/`, `audio/`, `ui/`)
+Further modules from the plan's architecture (`ai/`, `audio/`)
 arrive with the tickets that need them, under `src/`.
 
 ## Continuous integration
@@ -605,4 +783,9 @@ a plan that includes Pages.
   to SwiftShader on a machine with no GPU. Both pages are checked this way: the
   theatre at every zoom the camera offers, at both corners of the map and after a
   drag and a wheel, and the Atelier's whole catalogue at 1×, 2× and 4× — each
-  against the same pixels generated in Node, point for point.
+  against the same pixels generated in Node, point for point. The interface is
+  checked the same way since B7: the words come from the string table, a click
+  selects the row a Player pressed, the minimap is the map through B4's own fog,
+  and the HUD stays in screen space at every zoom — the theatre and fog
+  comparisons drop the points the interface covers, using the page's own
+  rectangles rather than a second layout kept in the test.

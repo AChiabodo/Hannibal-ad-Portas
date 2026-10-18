@@ -1,45 +1,69 @@
 /**
- * The game page's boot: the theatre on screen, under fog, pannable and zoomable
- * (tickets B3, B4).
+ * The game page's boot: the theatre on screen, under fog, with the Italian
+ * interface over it, pannable and zoomable (tickets B3, B4, B7).
  *
  * B2 put the pipeline on screen with a title plate. B3 puts the *game* there: a
  * map B1 generated from a seed, rendered by `render/terrain.ts` into one
  * `PixelBuffer`, and drawn as one texture under the camera B2 built. B4 puts the
  * fog over it: a second image of the same size, drawn from the knowledge of one
- * Faction — the player's — so what the page shows and what that Faction may
- * decide on come from the same object.
+ * Faction — the one the page shows — so what the page shows and what that
+ * Faction may decide on come from the same object. B7 puts the interface over
+ * both and the Match behind them: `render/game.ts` opens the economy Match on
+ * the same seed, and the HUD of `ui/` is drawn in screen space.
  *
- * There is still no Match on this page: no Squad, no settlement that changes
- * hands, nothing that ticks. So the fog is computed from the one thing a Faction
- * starts with — the Stronghold its Match opens in — and the debug hooks move a
- * *watch* about the theatre, which is the same call a tick makes with a
- * Faction's real eyes. That is what lets a player, a test and an agent watch a
- * tile go from unexplored to in view and then to remembered as the watch moves
- * on, which is the whole of the three-state fog in one gesture.
+ * **The fog the page draws is B4's own**, refreshed from the eyes the Faction
+ * has (`sim/fog.ts`), and the minimap reads the very same `FogView` — one fog,
+ * so the map in the corner and the map under the camera cannot disagree about
+ * what the Faction knows. The debug hooks move a *watch* about the theatre,
+ * which is the same call a tick makes with a Faction's real eyes, and that is
+ * what lets a player, a test and an agent watch a tile go from unexplored to in
+ * view and then to remembered as the watch moves on.
  *
- * **One texture, and why that is the responsive answer.** The whole 96×96
- * theatre is composed once, on boot, into a single 1552×1552 buffer, and so is
- * its fog. Panning and zooming move one container: no tile is culled, no sprite
- * is created or destroyed, and the work per frame is the same at the corner of
- * the map as at its centre. The fog texture is rebuilt only when what the
- * Faction knows changes, which is a debug hook's doing rather than a frame's.
- * B4's fog and F3's performance pass are the tickets that will say what the map
- * costs once things move over it.
+ * **One texture per image, and why that is the responsive answer.** The whole
+ * 96×96 theatre is composed once, on boot, into a single 1552×1552 buffer, and so
+ * is its fog. Panning and zooming move one container: no tile is culled, no
+ * sprite is created or destroyed, and the work per frame is the same at the
+ * corner of the map as at its centre. The fog texture is rebuilt only when what
+ * the Faction knows changes, which is a watch's doing rather than a frame's —
+ * the eyes this branch has do not move — and F3's performance pass is the ticket
+ * that will say what the map costs once things move over it.
+ *
+ * It is also the browser half of the pixel-hash story: a test computes the same
+ * theatre *in Node* with the same generators and asks the page for the pixel the
+ * camera says is there, so the GPU's answer is compared against the generator's
+ * and neither side can pass alone. The HUD is excluded from that comparison by
+ * rectangle (`hudRects`), because the theatre is what is being compared and the
+ * interface is deliberately over part of it.
  *
  * **Input is a convenience over the same hooks.** The wheel and a drag call
  * `zoomAbout` and `panBy`, which are the calls a test makes: nothing about the
  * page is reachable only by a hand. Both are whole steps, so a player cannot put
- * the camera between two pixels any more than a test can.
+ * the camera between two pixels any more than a test can. A click is the same
+ * idea again: it asks `ui/hud.ts` which row it landed on and selects it, so the
+ * pointer and the test drive one selection rather than two.
  */
 
 import { Container, Sprite, type Texture } from 'pixi.js';
 import { BASE } from '../art/palette.ts';
 import type { Rgba } from '../art/pixel-buffer.ts';
-import { SETTLEMENT_VISION, createFog, eyeOf, refreshVision, requireTile, viewOf, type Eye } from '../sim/fog.ts';
+import {
+  SETTLEMENT_VISION,
+  createFog,
+  eyeOf,
+  inspectionView,
+  refreshVision,
+  requireTile,
+  viewOf,
+  type Eye,
+  type FogView,
+} from '../sim/fog.ts';
 import { eyesOf } from '../sim/fog-match.ts';
 import { MAP_HEIGHT, MAP_WIDTH, generateMap, type Site } from '../sim/map.ts';
+import { hitTest } from '../ui/hud.ts';
+import type { ViewportRect } from '../ui/minimap.ts';
 import { renderFog } from './fog.ts';
 import { THEATRE_PIXELS, renderTerrain } from './terrain.ts';
+import { createGame, type GameHooks } from './game.ts';
 import {
   type Camera,
   clampTo,
@@ -127,16 +151,16 @@ export interface ViewHooks {
   samples(points: readonly PixelPoint[]): readonly Rgba[];
 }
 
-/** The running game page: what it drew, and the hooks to ask it for more. */
-export interface GameView extends ViewHooks {
+/** The running game page: what it drew, the camera, and the Match behind the interface. */
+export interface GameView extends ViewHooks, GameHooks {
   /** What the renderer did when the page booted. */
   readonly probe: FrameReport;
 }
 
 /**
  * Builds the page: the theatre on one texture, the fog over it, the camera on
- * both, one frame drawn, and the hooks Playwright and, later, an external agent
- * drive it with.
+ * both, the Match and its interface over everything, one frame drawn, and the
+ * hooks Playwright and, later, an external agent drive it with.
  */
 export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
   const map = generateMap(DEFAULT_SEED);
@@ -157,6 +181,7 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
   const fog = createFog();
   let watch: Eye | null = null;
   let inspection = false;
+  let revealed: FogView | null = null;
   let texture: Texture | null = null;
 
   const fogSprite = new Sprite();
@@ -171,16 +196,44 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
   let camera = clampTo(centred(createCamera({ zoom: DEFAULT_ZOOM }), stage), bounds);
   applyCamera(world, camera);
 
+  // The one fog the page has, read by the fog sprite and by the minimap alike:
+  // the Faction's own memory, or the whole theatre while the inspection mode is
+  // on. It is a function rather than a value because the memory is written to
+  // every time a watch moves.
+  const currentFog = (): FogView => revealed ?? viewOf(fog);
+
+  const size = { width: stage.width, height: stage.height };
+  const game = createGame({
+    stage,
+    seed: DEFAULT_SEED,
+    size,
+    fog: currentFog,
+    viewport: (): ViewportRect => ({
+      x: camera.x,
+      y: camera.y,
+      width: Math.floor(stage.width / camera.zoom),
+      height: Math.floor(stage.height / camera.zoom),
+    }),
+  });
+
   const moveTo = (next: Camera): void => {
     camera = clampTo(next, bounds);
     applyCamera(world, camera);
+    // Only the minimap cares where the camera is: the panels are screen-space, and
+    // recomposing them on a pan would be work for a picture that has not changed.
+    game.syncMinimap();
     stage.render();
   };
 
-  // What the player's Faction knows, refreshed from the eyes it has and drawn
-  // over the theatre. Everything that changes it goes through here, so the
-  // sprite and the fog cannot drift apart: the texture is rebuilt from the grid
-  // it was built for, and the one before it is let go rather than kept.
+  // What the Faction knows, refreshed from the eyes it has and drawn over the
+  // theatre. Everything that changes it goes through here, so the sprite, the
+  // minimap and the grid they were both built from cannot drift apart: the
+  // texture is rebuilt from the grid it was built for, and the one before it is
+  // let go rather than kept.
+  //
+  // The eyes are the Stronghold's and do not move — C1 is the ticket that puts a
+  // Squad on the map with eyes of its own — so this is a watch's doing and not a
+  // frame's.
   const paintFog = (): void => {
     refreshVision(
       fog,
@@ -193,12 +246,14 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
     texture = next;
     fogSprite.texture = next;
     fogSprite.visible = !inspection;
+    game.syncMinimap();
     stage.render();
   };
 
   paintFog();
 
   const view: GameView = {
+    ...game.hooks,
     probe: frameReport(stage),
     panBy: (dx, dy) => {
       moveTo(panCamera(camera, dx, dy));
@@ -217,9 +272,15 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       watch = eyeOf({ x, y }, SETTLEMENT_VISION);
       paintFog();
     },
-    inspect: (revealed) => {
-      inspection = revealed === true;
+    inspect: (shown) => {
+      inspection = shown === true;
+      // The omniscient view is built once, when it is asked for, rather than on
+      // every frame: seeing everything is a debug mode, and a mode that copied
+      // two nine-thousand-tile grids ten times a second would be a mode that
+      // changed what it was measuring.
+      revealed = inspection ? inspectionView(map, fog.contacts) : null;
       fogSprite.visible = !inspection;
+      game.syncMinimap();
       stage.render();
     },
     describe: () => ({
@@ -236,7 +297,10 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
     samples: (points) => samplesOf(stage, points),
   };
 
-  bindPointer(stage, view);
+  bindPointer(stage, view, (screenX, screenY) => {
+    view.select(hitTest(view.hud(), size, screenX, screenY));
+  });
+  game.start();
 
   return view;
 }
@@ -258,8 +322,12 @@ function centred(camera: Camera, stage: Stage): Camera {
  * been applied is panned, so a slow drag does not lose its remainder and a fast
  * one does not jump. The wheel is an anchored zoom about the pointer, which is
  * why `zoomAbout` exists: the map grows towards what the player is looking at.
+ *
+ * A press that did not move is a click, and a click is the selection: the pointer
+ * release asks the same `hitTest` a test would, so the row a Player presses and
+ * the row a test selects cannot drift apart.
  */
-function bindPointer(stage: Stage, view: GameView): void {
+function bindPointer(stage: Stage, view: GameView, onClick: (x: number, y: number) => void): void {
   let drag: { readonly pointerId: number; readonly fromX: number; readonly fromY: number; appliedX: number; appliedY: number } | null =
     null;
 
@@ -284,7 +352,15 @@ function bindPointer(stage: Stage, view: GameView): void {
   const release = (event: PointerEvent): void => {
     if (drag === null || event.pointerId !== drag.pointerId) return;
 
+    const pressed = drag;
     drag = null;
+
+    // A press that panned is a drag; a press that did not is a click. The
+    // remainder is deliberately not the test: a one-pixel drag is still a drag.
+    if (pressed.appliedX !== 0 || pressed.appliedY !== 0) return;
+
+    const rect = stage.canvas.getBoundingClientRect();
+    onClick(Math.floor(event.clientX - rect.left), Math.floor(event.clientY - rect.top));
   };
   stage.canvas.addEventListener('pointerup', release);
   stage.canvas.addEventListener('pointercancel', release);

@@ -9,7 +9,7 @@ function options(overrides: Partial<RunOptions> = {}): RunOptions {
 }
 
 describe('playing a Match headless', () => {
-  it('runs a whole Match and ends it by the tick bound, with nothing in it', () => {
+  it('runs a whole Match and ends it by the tick bound, on the documented defaults', () => {
     const run = playMatch(options());
 
     expect(run.seed).toBe(7);
@@ -18,7 +18,7 @@ describe('playing a Match headless', () => {
     expect(run.hash).toMatch(/^[0-9a-f]{16}$/);
   });
 
-  it('plays the rules the command line named, rather than the empty Match', () => {
+  it('plays the rules the command line named, rather than the Match on the clock', () => {
     const drawing = playMatch(options({ rules: 'draws' }));
 
     expect(drawing.result).toEqual({ kind: 'clock', tick: 120 });

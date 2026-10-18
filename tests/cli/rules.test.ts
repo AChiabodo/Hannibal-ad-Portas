@@ -3,6 +3,7 @@ import { DEFAULT_RULES, drawsRules, isRulesName, RULES, type DrawsWorld } from '
 import type { Command } from '../../src/sim/command';
 import { createMatch, type Match } from '../../src/sim/match';
 import type { RngState } from '../../src/sim/rng';
+import { HEADLESS_TICKS } from '../../src/sim/season';
 
 /** The cursor of a Match, copied, so a later draw cannot rewrite what was read. */
 function cursor(match: Match<DrawsWorld, Command>): RngState {
@@ -81,7 +82,56 @@ describe('the Matches the command line can play, by name', () => {
   it('gives the drawing Match a different hash from the empty Match on the same seed and bound', () => {
     expect(RULES.draws.play(1, 600).hash).not.toBe(RULES.empty.play(1, 600).hash);
   });
+});
 
+describe('a Match on the strategic clock, which is the one the command line plays by default', () => {
+  it('plays the seasons Match by name, and ends it by the tick bound like any other', () => {
+    expect(isRulesName('seasons')).toBe(true);
+    expect(RULES.seasons.play(1, 600).result).toEqual({ kind: 'clock', tick: 600 });
+    expect(RULES.seasons.play(1, 600).hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('gives the seasons Match a different hash from the empty one, so the clock really reaches the state', () => {
+    expect(RULES.seasons.play(1, 600).hash).not.toBe(RULES.empty.play(1, 600).hash);
+  });
+
+  it('runs a headless Match bound to three game years, and always terminates', () => {
+    const run = RULES.seasons.play(7, HEADLESS_TICKS);
+
+    expect(run.result).toEqual({ kind: 'clock', tick: HEADLESS_TICKS });
+    expect(run.log).toEqual([]);
+  });
+});
+
+describe('the Match on the theatre and the economy, which is the one the command line plays by default', () => {
+  it('plays the economy Match by name, and ends it by the tick bound like any other', () => {
+    expect(isRulesName('economy')).toBe(true);
+    expect(DEFAULT_RULES).toBe('economy');
+    expect(RULES.economy.play(1, 600).result).toEqual({ kind: 'clock', tick: 600 });
+    expect(RULES.economy.play(1, 600).hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('gives the economy Match a hash of its own, so the settlements and the map really reach the state', () => {
+    const economy = RULES.economy.play(1, 600).hash;
+
+    expect(economy).not.toBe(RULES.seasons.play(1, 600).hash);
+    expect(economy).not.toBe(RULES.empty.play(1, 600).hash);
+    expect(economy).not.toBe(RULES.draws.play(1, 600).hash);
+  });
+
+  it('runs a headless economy Match bound to three game years, and always terminates', () => {
+    const run = RULES.economy.play(1, HEADLESS_TICKS);
+
+    expect(run.result).toEqual({ kind: 'clock', tick: HEADLESS_TICKS });
+    expect(run.log).toEqual([]);
+  });
+
+  it('plays the same three game years again from the same seed, hash for hash', () => {
+    expect(RULES.economy.play(7, HEADLESS_TICKS).hash).toBe(RULES.economy.play(7, HEADLESS_TICKS).hash);
+  });
+});
+
+describe('a Match on the theatre and the fog', () => {
   it('plays the fog Match again from the same seed, hash for hash, and ends by the clock', () => {
     const first = RULES.fog.play(1, 600);
     const second = RULES.fog.play(1, 600);
@@ -95,8 +145,12 @@ describe('the Matches the command line can play, by name', () => {
   it('gives the fog Match a different hash from the empty Match: the map and what each Faction knows are in state', () => {
     expect(RULES.fog.play(1, 600).hash).not.toBe(RULES.empty.play(1, 600).hash);
   });
+});
 
-  it('names the three Matches it ships, and nothing else', () => {
+describe('the names of the Matches the command line ships', () => {
+  it('names the Matches it ships, and nothing else', () => {
+    expect(isRulesName('economy')).toBe(true);
+    expect(isRulesName('seasons')).toBe(true);
     expect(isRulesName('empty')).toBe(true);
     expect(isRulesName('draws')).toBe(true);
     expect(isRulesName('fog')).toBe(true);

@@ -41,16 +41,34 @@ jobs:
       # JSON report on standard output and an exit code a script can branch on.
       # The CLI needs no build step — Node runs the TypeScript source directly
       # (ADR-0009) — and the recorded hash is the README's, so determinism is
-      # gated here rather than believed (ADR-0006).
+      # gated here rather than believed (ADR-0006). The default Match is B6's:
+      # the theatre, the clock and the economy in one world.
       - name: Play a Match headless
-        run: npm run match -- --seed 1 --ticks 600 --expect-hash bf3d192e9ab9eb5f
+        run: npm run match -- --seed 1 --ticks 600 --expect-hash 3aaaf501674cafe1
 
-      # The Match above draws nothing: `emptyMatchRules.step` is a no-op, so its
-      # golden hash proves the seed expansion, the canonical form and the hash
-      # are portable across machines, and nothing about the draw loop — which is
-      # exactly where an engine-dependent implementation would hide. This Match
-      # draws on every tick instead, so the same gate covers `sfc32` itself
-      # (ADR-0006, A5 review F5). Two hashes, one with draws and one without.
+      # B5's guarantee, over the whole horizon: the default bound is three game
+      # years, and a Match that runs to it terminates on exactly that tick. The
+      # hash gates the calendar across every Season boundary, the year turn and,
+      # now, three years of the economy — its stocks, its tiers and its Payroll.
+      - name: Play a headless Match to its three-year bound
+        run: npm run match -- --seed 1 --expect-hash 685ee739af48f521
+
+      # The clock on its own, so a change in the economy cannot hide a change in
+      # the calendar it runs on.
+      - name: Play a Match on the strategic clock
+        run: npm run match -- --seed 1 --ticks 600 --rules seasons --expect-hash 61afacff3b33a793
+
+      # The engine and the seam alone. This Match draws nothing and advances
+      # nothing, so its golden hash proves the seed expansion, the canonical form
+      # and the hash are portable across machines, and nothing about the draw
+      # loop — which is exactly where an engine-dependent implementation would
+      # hide (A5 review F5).
+      - name: Play the engine-only Match headless
+        run: npm run match -- --seed 1 --ticks 600 --rules empty --expect-hash bf3d192e9ab9eb5f
+
+      # And a Match that draws on every tick instead, so a fourth gate covers
+      # `sfc32` itself (ADR-0006, A5 review F5). Five hashes: the economy at two
+      # bounds, the clock, the engine alone, and the draw loop.
       - name: Play a Match that draws, headless
         run: npm run match -- --seed 1 --ticks 600 --rules draws --expect-hash 337cd166204506b0
 

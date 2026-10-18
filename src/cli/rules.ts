@@ -11,16 +11,20 @@
  * to hand the driver a Match the CLI can play, so that CI can record the state
  * hash it ends on and fail when that hash moves (ADR-0003, ADR-0006).
  *
- * There are three names, and each exists for a reason. The **empty** Match draws
- * nothing: `emptyMatchRules.step` is a no-op, so its golden hash is the seed
+ * There are five names. The **economy** Match is the one the command plays by
+ * default: B1's theatre, B5's clock and B6's economy in one world, so the seed,
+ * the tick loop, the calendar and the settlements are exercised together and the
+ * golden hash moves when any of them does. The **seasons** Match is the clock on
+ * its own, kept as the narrower gate it has always been. The **fog** Match is
+ * B4's: B1's theatre and both Factions' memory of it in one world, so the gate
+ * covers the map in state and the fog that filters an Observation (ADR-0013).
+ * The **empty** Match draws nothing and advances nothing: its hash is the seed
  * expanded, the clock at the bound and the world it started with — a real proof
  * that `xmur3`'s expansion, the canonical form and the hash are portable across
  * machines, and no proof at all about the draw loop, which is where `Math.imul`,
  * `| 0` and `>>> 0` live and where an implementation that disagreed between
- * engines would hide (A5 review, F5). The **fog** Match is B4's: B1's theatre
- * and both Factions' memory of it in one world, so the gate covers the map in
- * state and the fog that filters an Observation (ADR-0013). The **drawing**
- * Match below draws on every tick, so the same gate covers `sfc32` itself.
+ * engines would hide (A5 review, F5). The **drawing** Match below draws on every
+ * tick, so the same gate covers `sfc32` itself.
  *
  * The rules here hold integers only, for the ordinary reason: they are
  * authoritative state, `serializeState` accepts nothing else, and the hash is
@@ -32,15 +36,23 @@
  * would have to be a lie about one of them.
  */
 import {
+  economyMatchOutcome,
+  economyMatchRules,
   emptyMatchOutcome,
   emptyMatchRules,
   fogMatchOutcome,
   fogMatchRules,
   idleController,
+  observeEconomy,
   observeEmptyMatch,
   observeFogMatch,
+  observeSeasonMatch,
   runMatch,
+  seasonMatchOutcome,
+  seasonMatchRules,
   type Command,
+  type EconomyVisible,
+  type EconomyWorld,
   type EmptyMatchVisible,
   type EmptyMatchWorld,
   type FogMatchVisible,
@@ -49,6 +61,8 @@ import {
   type MatchRun,
   type MatchSetup,
   type Players,
+  type SeasonMatchVisible,
+  type SeasonMatchWorld,
 } from '../sim/index.ts';
 
 /**
@@ -138,6 +152,30 @@ function idlePlayers<Visible>(): Players<Visible> {
   ];
 }
 
+/** Plays the economy Match: B1's theatre, B5's clock and B6's settlements in one world. */
+function playEconomy(seed: number, ticks: number): MatchRun {
+  return runMatch<EconomyWorld, EconomyVisible>({
+    seed,
+    rules: economyMatchRules,
+    observe: observeEconomy,
+    outcome: economyMatchOutcome,
+    players: idlePlayers(),
+    ticks,
+  });
+}
+
+/** Plays the Match on the strategic clock: the calendar is the world, and the bound ends it. */
+function playSeasons(seed: number, ticks: number): MatchRun {
+  return runMatch<SeasonMatchWorld, SeasonMatchVisible>({
+    seed,
+    rules: seasonMatchRules,
+    observe: observeSeasonMatch,
+    outcome: seasonMatchOutcome,
+    players: idlePlayers(),
+    ticks,
+  });
+}
+
 /** Plays the empty Match: no systems, no draws, and the tick bound is what ends it. */
 function playEmpty(seed: number, ticks: number): MatchRun {
   return runMatch<EmptyMatchWorld, EmptyMatchVisible>({
@@ -188,10 +226,10 @@ function playDraws(seed: number, ticks: number): MatchRun {
  * Where `RulesName` is read from, and where the menu's order comes from: the
  * table below is checked against this list in both directions, so a name with
  * no rules, or rules under a name nobody can type, is a type error rather than
- * a use that fails at whatever hour CI runs. `DEFAULT_RULES` spells `empty` a
+ * a use that fails at whatever hour CI runs. `DEFAULT_RULES` spells `economy` a
  * second time, and its type is this list's, so the two cannot disagree.
  */
-export const RULES_NAMES = ['empty', 'fog', 'draws'] as const;
+export const RULES_NAMES = ['economy', 'seasons', 'empty', 'fog', 'draws'] as const;
 
 /** A name `--rules` accepts, which is also the only thing the table below is keyed by. */
 export type RulesName = (typeof RULES_NAMES)[number];
@@ -217,6 +255,16 @@ interface RulesEntry {
  * so a name `--rules` accepts and a Match `playMatch` can play cannot disagree.
  */
 export const RULES = {
+  economy: {
+    description: 'the Match on the theatre and the economy: map, seasons, settlements, Payroll',
+    play: playEconomy,
+  },
+
+  seasons: {
+    description: 'the Match on the strategic clock: seasons advance, and the bound ends it',
+    play: playSeasons,
+  },
+
   empty: {
     description: 'the Match with no systems in it: the bound ends it',
     play: playEmpty,
@@ -234,7 +282,7 @@ export const RULES = {
 } as const satisfies Readonly<Record<RulesName, RulesEntry>>;
 
 /** The Match played when the command line names no rules. */
-export const DEFAULT_RULES: RulesName = 'empty';
+export const DEFAULT_RULES: RulesName = 'economy';
 
 /** Whether a string names a Match this command can play: what the CLI asks before refusing one. */
 export function isRulesName(value: string): value is RulesName {

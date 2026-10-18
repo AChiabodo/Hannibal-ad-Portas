@@ -31,8 +31,9 @@
  *   implement, plus the idle and scripted Controllers a headless Match runs on.
  * - `driver.ts` — the loop that asks two Controllers for Commands and runs a
  *   Match to a result, with no browser anywhere.
- * - `empty.ts` — the Match with no systems in it yet, which is the one the CLI
- *   can play today (A4); B1–C5 fill the world in behind it.
+ * - `empty.ts` — the Match with no systems in it: the engine and the seam, and
+ *   nothing else. It stays as the harness that gates the seed expansion and the
+ *   canonical form on their own (A5 review, F5).
  *
  * B1 built the first piece of that world:
  *
@@ -54,6 +55,29 @@
  * - `fog-match.ts` — the theatre, both Factions' memory of it, and the
  *   Observation built from that memory, recomputed on every tick from the
  *   settlements the Faction holds.
+ *
+ * B5 gave the Match its strategic clock, which the CLI plays today:
+ *
+ * - `season.ts` — the calendar: four Seasons to a game year, autumn and winter
+ *   as the only two hooks another system needs, and a Season Match whose
+ *   Observation carries the season and the year. The headless bound of three
+ *   game years is `HEADLESS_TICKS` here, so the clock and the bound cannot
+ *   disagree about how long a year is.
+ * - `pacing.ts` — the three speeds, the pause, and the orders given in it: a
+ *   paused loop steps no ticks, and a `PausableController` holds what a Player
+ *   decides until the Match resumes. Neither ever reaches state or the hash.
+ *
+ * B6 gave the Match an economy with nobody to click, and put the theatre the map
+ * generated inside `MatchState` at last (ADR-0005):
+ *
+ * - `economy.ts` — settlements, the population allocated to their works and their
+ *   land, the four resources held per settlement and the denarii held once per
+ *   Faction, the autumn harvest, construction as a labour allocation plus a
+ *   timer, the three tiers that gate recruitment, and the Payroll that moves
+ *   morale and, eventually, deserts.
+ * - `economy-match.ts` — the Match that joins B1's map, B5's clock and B6's
+ *   economy: the first world whose hash covers the tiles a Match begins on.
+ *   `content/` is where the buildings and Squad types it reads are written down.
  */
 export { TICK_HZ, TICK_MS } from './clock.ts';
 export { requireTickCount } from './ticks.ts';
@@ -117,6 +141,79 @@ export { ForeignCommandError, ObservationProjectionError, runMatch } from './dri
 export type { MatchResult, MatchRun, MatchSetup, Outcome } from './driver.ts';
 export { emptyMatchOutcome, emptyMatchRules, observeEmptyMatch } from './empty.ts';
 export type { EmptyMatchVisible, EmptyMatchWorld } from './empty.ts';
+
+export { createPacing, isSpeed, NORMAL_SPEED, SPEEDS } from './pacing.ts';
+export type { Pacing, PausableController, Speed } from './pacing.ts';
+
+export {
+  advanceCalendar,
+  announceSeasons,
+  HEADLESS_TICKS,
+  HEADLESS_YEARS,
+  observeSeasonMatch,
+  SEASON_TICKS,
+  SEASONS,
+  SEASONS_PER_YEAR,
+  seasonMatchOutcome,
+  seasonMatchRules,
+  seasonName,
+  seasonOf,
+  startCalendar,
+  YEAR_TICKS,
+} from './season.ts';
+export type {
+  Season,
+  SeasonCalendar,
+  SeasonChange,
+  SeasonHooks,
+  SeasonMatchVisible,
+  SeasonMatchWorld,
+} from './season.ts';
+
+export {
+  advanceConstruction,
+  allocate,
+  applyEconomyCommand,
+  BASE_HOUSING,
+  BASE_LAND_CAPACITY,
+  BASE_STORAGE,
+  chargePayroll,
+  createEconomy,
+  GRAIN_PER_HEAD,
+  harvest,
+  harvestYield,
+  HARVEST_YIELD,
+  housingCapacity,
+  isHeld,
+  landCapacity,
+  LAND_RADIUS,
+  LAND_YIELD,
+  MORALE_LOSS_PER_UNPAID_SEASON,
+  MORALE_RECOVERY,
+  POPULATION_GROWTH,
+  produceSeason,
+  seasonYield,
+  standingWorks,
+  STARTING_DENARII,
+  STARTING_POPULATION,
+  STARTING_STOCKS,
+  STARVATION_LOSS,
+  storageCapacity,
+  TAX_PER_DENARIUS,
+  TREASURY_CAP,
+  UNOWNED,
+} from './economy.ts';
+export type { Allocation, Economy, Settlement, Squad, Work } from './economy.ts';
+
+export { economyMatchOutcome, economyMatchRules, observeEconomy } from './economy-match.ts';
+export type {
+  EconomyVisible,
+  EconomyWorld,
+  VisibleSettlement,
+  VisibleSquad,
+  VisibleStocks,
+  VisibleWork,
+} from './economy-match.ts';
 
 export {
   generateMap,
