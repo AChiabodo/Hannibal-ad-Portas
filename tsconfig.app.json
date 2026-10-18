@@ -8,6 +8,13 @@
     "moduleDetection": "force",
     "types": ["vite/client"],
 
+    // The headless CLI runs this source directly through Node, which resolves
+    // modules the way the standard says to: every relative import names its
+    // extension (ADR-0009). `erasableSyntaxOnly` keeps the source strippable —
+    // no enum, no namespace, nothing Node would have to generate code for.
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -20,5 +27,9 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src"],
+
+  // The CLI is Node code, not browser code: it is type-checked with Node's
+  // globals by `tsconfig.node.json`.
+  "exclude": ["src/cli"]
 }

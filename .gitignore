@@ -5,6 +5,9 @@ node_modules/
 dist/
 .vite/
 
+# Baked art: build products `npm run bake` writes, never committed
+artifacts/
+
 # Test output
 coverage/
 playwright-report/

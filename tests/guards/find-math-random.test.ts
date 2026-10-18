@@ -56,6 +56,25 @@ describe('findMathRandomViolations', () => {
     ]);
   });
 
+  it('leaves the exponentiation operator to the transcendental fence', () => {
+    const violations = violationsOf({
+      'src/sim/square.ts':
+        'export const square = (x: number): number => x ** 2;\n' +
+        'export const scale = (x: number): number => {\n  x **= 2;\n  return x;\n};\n',
+    });
+
+    expect(violations).toEqual([]);
+  });
+
+  it('does not report the members of another global object', () => {
+    const violations = violationsOf({
+      'src/sim/stamp.ts': 'export const stamp = (): number => Date.now();\n',
+      'src/sim/entropy.ts': 'export const draw = (): string => crypto.randomUUID();\n',
+    });
+
+    expect(violations).toEqual([]);
+  });
+
   it('reports every occurrence, not just the first', () => {
     const violations = violationsOf({
       'src/sim/two.ts': 'export const a = () => Math.random();\nexport const b = () => Math.random();\n',

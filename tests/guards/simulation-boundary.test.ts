@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { findRendererReachableFromSimulation } from '../../scripts/guards/simulation-boundary.mjs';
+import { findTranscendentalMathReachableFromSimulation } from '../../scripts/guards/transcendental-math.mjs';
 import { makeTree, type FixtureTree } from './make-tree';
 
 let tree: FixtureTree | undefined;
@@ -12,6 +13,12 @@ afterEach(() => {
 function violationsOf(files: Record<string, string>) {
   tree = makeTree(files);
   return findRendererReachableFromSimulation(tree.root);
+}
+
+/** Both reachability fences share the walk, so they share the entry fixtures too. */
+function transcendentalViolationsOf(files: Record<string, string>) {
+  tree = makeTree(files);
+  return findTranscendentalMathReachableFromSimulation(tree.root);
 }
 
 describe('findRendererReachableFromSimulation', () => {
@@ -147,5 +154,66 @@ describe('findRendererReachableFromSimulation', () => {
     tree = makeTree({ 'src/render/adapter.ts': 'export const ready = true;\n' });
 
     expect(() => findRendererReachableFromSimulation(tree!.root)).toThrow(/src\/sim/);
+  });
+});
+
+/**
+ * The simulation's entry is a list, not the single `src/sim` directory: ADR-0001
+ * counts the AI as part of the simulation and PLAN §3 puts it in `ai/`, beside
+ * `sim/`, and `content/` is the third root the plan counts as the simulation.
+ * These pin that the shared walk covers both, whichever fence is asking.
+ */
+describe('the simulation entries', () => {
+  it('fences the AI beside src/sim, without src/sim importing it', () => {
+    const violations = violationsOf({
+      'src/sim/index.ts': 'export {};\n',
+      'src/ai/aim.ts': "export * from './ballistics';\n",
+      'src/ai/ballistics.ts':
+        "import { Application } from 'pixi.js';\nexport const app = Application;\n",
+    });
+
+    expect(violations.map((violation) => violation.file)).toEqual(['src/ai/ballistics.ts']);
+    // Every file in an entry directory is an entry point, so the chain starts at the AI file.
+    expect(violations[0]?.chain).toEqual(['src/ai/ballistics.ts', 'pixi.js']);
+  });
+
+  it('fences arithmetic no engine pins down inside the AI', () => {
+    const violations = transcendentalViolationsOf({
+      'src/sim/index.ts': 'export {};\n',
+      'src/ai/tactical.ts': 'export const aim = (x: number): number => Math.sin(x);\n',
+    });
+
+    expect(violations.map((violation) => violation.file)).toEqual(['src/ai/tactical.ts']);
+    expect(violations[0]?.message).toContain('Math.sin');
+    expect(violations[0]?.chain).toEqual(['src/ai/tactical.ts']);
+  });
+
+  it('fences src/content, the other root the plan counts as the simulation', () => {
+    const violations = violationsOf({
+      'src/sim/index.ts': 'export {};\n',
+      'src/content/units.ts':
+        "import { Application } from 'pixi.js';\nexport const app = Application;\n",
+    });
+
+    expect(violations.map((violation) => violation.file)).toEqual(['src/content/units.ts']);
+  });
+
+  it('tolerates src/ai and src/content until the day they exist', () => {
+    const violations = violationsOf({
+      'src/sim/index.ts': 'export const ready = true;\n',
+    });
+
+    expect(violations).toEqual([]);
+  });
+
+  it('fails loudly when an entry exists but is not a directory', () => {
+    tree = makeTree({
+      'src/sim/index.ts': 'export {};\n',
+      'src/ai': 'a file where the AI directory should be, not a root that is merely absent\n',
+    });
+
+    expect(() => findRendererReachableFromSimulation(tree!.root)).toThrow(
+      /guard entry is not a directory: src\/ai/,
+    );
   });
 });

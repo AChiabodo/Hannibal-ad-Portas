@@ -33,6 +33,68 @@ One quarter of a Match's game year, and the Match's strategic clock: harvest in 
 _UI_: Stagione
 _Avoid_: Turn, phase, cycle
 
+**Year**:
+Four Seasons of Match time, counted from one. A human Match has no limit on them; a headless Match is bound to three so that it always terminates.
+_UI_: Anno
+_Avoid_: Cycle, age, era
+
+### The theatre
+
+**Tile**:
+One square of the theatre's grid, 16×16 pixels, and the unit everything on the map stands on.
+_UI_: Casella
+_Avoid_: Cell, square, hex
+
+**Cell**:
+One square of the *rendering* grid, which is half a tile out of step with the theatre's: it covers the corner where four tiles meet, and each of its four quadrants is one of those tiles' nearest quarter. Autotiling chooses for a cell, not for a tile, so a coastline's or a riverbank's shape belongs to a cell.
+_UI_: —
+_Avoid_: using "cell" for a Tile
+
+**Resource marker**:
+The small pile drawn on a Resource node's tile — a sheaf of grain, logs, a heap of stone, a stack of iron — sized and shaped to be read at the lowest zoom. It is a marker standing on the Terrain, not a kind of Terrain.
+_UI_: —
+_Avoid_: Icon, badge, sprite
+
+**Terrain**:
+What a tile is made of — plain, hill, forest, farmland, river, ford, road — and the modifier it carries. Only a river stops a Squad outright; the rest are costs and effects.
+_UI_: Terreno
+_Avoid_: Ground, biome
+
+**Ford**:
+A river tile a Squad may cross, at the cost of disorder. Every river carries several, because a river with one crossing is a wall with a gate.
+_UI_: Guado
+_Avoid_: Bridge, crossing (reserve "crossing" for the act)
+
+**Resource node**:
+A place on the map holding one resource — grain, timber, stone or iron — in a quantity the economy draws on each Season. Nodes stand on the terrain that suits them: timber in forests, stone and iron on hills, grain on farmland. The quantity is how much land a settlement can work, not a pile that runs out (ADR-0012).
+_UI_: Giacimento
+_Avoid_: Deposit, mine, patch, field
+
+**Minor settlement**:
+A capturable settlement that is not a Stronghold. Four to six stand on every map, and taking one means holding its centre.
+_UI_: Insediamento minore
+_Avoid_: Village, town, city, outpost
+
+**Road**:
+A path laid between settlements and resource nodes when the map is generated: it carries a Squad faster, and it crosses water only at a ford.
+_UI_: Strada
+_Avoid_: Highway, route (a route is what pathfinding returns)
+
+**Half**:
+One of the two sides of the perpendicular bisector of the two Strongholds: the territory each Faction starts nearest to, and the unit a generated map's resource parity is stated in. Not the map's left and right.
+_UI_: —
+_Avoid_: Side, half of the map
+
+**Fog of war**:
+What one Faction has seen of the theatre, in three states: unexplored — no eye has ever covered the tile; remembered — an eye covered it once, and the ground it had then is still known; visible — an eye covers it now. Vision is a radius around the Faction's own Squads and settlements, and the fog is *memory*: ground stays known after the Squad that saw it marches away.
+_UI_: Nebbia di guerra
+_Avoid_: Shroud, blackout, visibility mask, using "fog" for the unexplored state alone
+
+**Last known contact**:
+Where an enemy thing was standing when the Faction last saw it, kept after it marches out of view. The place is a memory and not a live position, and how stale that memory is matters.
+_UI_: Ultimo contatto noto
+_Avoid_: Blip, tracker, calling a thing the rules can see right now a "contact" (that is an enemy in sight; only the fog's *memory* of one is a last known contact)
+
 ### Command
 
 **Controller**:
@@ -40,7 +102,7 @@ Whichever mind drives a Faction: the human input handler, the built-in AI, a scr
 _Avoid_: Player, input handler, brain
 
 **Observation**:
-Everything a Controller is allowed to know: the Match state filtered through its Faction's visibility. No Controller ever reads Match state outside its own Observation.
+Everything a Controller is allowed to know: the Match state filtered through its Faction's fog of war. No Controller ever reads Match state outside its own Observation.
 _UI_: —
 _Avoid_: View, state (the raw Match state is not an Observation)
 
@@ -87,3 +149,60 @@ _Avoid_: Decay, drain, penalty
 The denarii a Faction owes each Season for the Squads it keeps. Unpaid Squads lose morale and eventually desert.
 _UI_: Soldo
 _Avoid_: Upkeep, maintenance, cost, salary
+
+**Settlement**:
+A place on the map with people, buildings and a stock: a Stronghold or a minor settlement. Its tier gates what may be raised in it.
+_UI_: Insediamento
+_Avoid_: City, town, base, colony (a Stronghold and a minor settlement are both settlements)
+
+**Tier**:
+One of the three steps of a settlement's growth — raised by the building that raises it — and the gate on which Squad types it may raise. The progression is the tiers, and there is no technology tree beside them.
+_UI_: Livello
+_Avoid_: Level, age, era, upgrade
+
+**Labour allocation**:
+How a settlement's population is divided between its works and its land. There is no Command for it: it follows from what the settlement has built and who lives in it.
+_UI_: Manodopera
+_Avoid_: Assignment, jobs, workers
+
+**Work**:
+One building in one settlement: a labour demand plus a timer while it goes up, and a labour demand plus what it yields once it stands.
+_UI_: Cantiere
+_Avoid_: Building (a building is the kind; a work is the one in a settlement), construction site
+
+**Treasury**:
+The denarii a Faction holds, once per Faction rather than once per settlement, as against the four resources, which are held per settlement.
+_UI_: Tesoreria
+_Avoid_: Bank, gold
+
+**Harvest**:
+The extra grain the autumn Season brings in from the people on the land: a visible peak in the year's production, on top of the Season's ordinary work.
+_UI_: Raccolto
+_Avoid_: Yield, crop
+
+### The interface
+
+**String table**:
+The one place a player-facing word lives: a stable English key, and the word in every language the game speaks. Italian is required — it is the language the interface is played in — and English is the fallback path for a key not yet translated.
+_UI_: —
+_Avoid_: Locale file, translations, i18n bundle
+
+**Readout**:
+One labelled figure the interface always shows — the year, the Season, the treasury, a resource — as against a panel, which a selection opens.
+_UI_: —
+_Avoid_: Stat, indicator, counter
+
+**Selection**:
+What the Player has picked — a settlement, or one or more Squads — and the panel that follows it. It is the Player's own memory rather than Match state: nothing else can see it and it decides nothing on its own. A box selects every Squad it touches; one order goes to all of them, while the panel shows the first one picked. There is one selection at a time, and nothing selected is a state rather than an error.
+_UI_: Selezione
+_Avoid_: Focus, target, highlight
+
+**Control group**:
+Numbered Squads a Player has bound to a digit, so that one key calls them back. It is a Command when it is bound, because a log has to re-enact the selection, and it commands nobody: the list belongs to the Player.
+_UI_: Gruppo
+_Avoid_: Hotkey group, squad slot
+
+**Minimap**:
+The theatre at one pixel per tile, drawn through the Faction's Fog of war: it shows what the Faction knows and nothing more.
+_UI_: Mappa
+_Avoid_: Overview, radar, small map

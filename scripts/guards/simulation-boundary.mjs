@@ -1,3 +1,4 @@
+import { RENDERER_PACKAGE, isRendererImport } from './renderer.mjs';
 import { reachableFromSimulation } from './sim-reachability.mjs';
 
 /**
@@ -8,9 +9,6 @@ import { reachableFromSimulation } from './sim-reachability.mjs';
  */
 
 /** @typedef {import('./violations.mjs').Violation} Violation */
-
-/** The rendering engine the simulation must never reach. */
-export const RENDERER_PACKAGE = 'pixi.js';
 
 /**
  * @param {string} specifier
@@ -46,7 +44,7 @@ export function findRendererReachableFromSimulation(root) {
     const at = { file: found.file, line: found.line, column: found.column };
     const chain = [...found.chain, found.specifier];
 
-    if (isForbidden(found.specifier, RENDERER_PACKAGE)) {
+    if (isRendererImport(found.specifier)) {
       violations.push({ ...at, message: message(found.specifier), chain });
       continue;
     }
@@ -57,13 +55,4 @@ export function findRendererReachableFromSimulation(root) {
   }
 
   return violations;
-}
-
-/**
- * @param {string} specifier
- * @param {string} forbidden
- * @returns {boolean}
- */
-function isForbidden(specifier, forbidden) {
-  return specifier === forbidden || specifier.startsWith(`${forbidden}/`);
 }

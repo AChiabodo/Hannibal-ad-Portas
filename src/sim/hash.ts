@@ -16,7 +16,7 @@
  * tick in a long Match: the callers that care about divergence hash at
  * checkpoints (`replay` in `replay.ts` does exactly that).
  */
-import { serializeState } from './state';
+import { serializeState } from './state.ts';
 
 /** The FNV-1a 64-bit parameters, as the algorithm defines them. */
 const OFFSET_BASIS = 0xcbf29ce484222325n;

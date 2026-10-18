@@ -4,4 +4,4 @@ We render with PixiJS 8, but the simulation (map, economy, squads, combat, AI, v
 
 **Considered Options**: Phaser 4 — a full framework that would have reached a first moving frame faster, rejected for the asset-pipeline mismatch, the larger bundle, and the subsystems we would end up fighting rather than using.
 
-**Consequences**: we own camera, picking, selection and culling. The render layer becomes swappable, the simulation is testable headlessly, and "why is this not a Phaser project?" is answered here rather than in a comment.
+**Consequences**: we own camera, picking, selection and culling. The render layer becomes swappable, the simulation is testable headlessly, and "why is this not a Phaser project?" is answered here rather than in a comment. The reachability fences start from `src/sim`, `src/ai` and `src/content`, so the AI is fenced with the simulation while PLAN §3's module boundary — and its own directory — stay as they are.
