@@ -73,7 +73,7 @@ jobs:
         run: npm run match -- --seed 1 --ticks 600 --rules draws --expect-hash 337cd166204506b0
 
   guards:
-    name: Fences (imports, engine allow-list, Math.random, transcendentals, ambient clock)
+    name: Fences (six: import boundaries, engine allow-list, Math.random, transcendentals, ambient clock, no committed assets)
     runs-on: ubuntu-latest
     steps:
       - name: Check out
@@ -89,9 +89,9 @@ jobs:
         run: npm ci
 
       # Fails if the simulation can reach pixi.js, if pixi.js appears outside
-      # render/ and e2e/, if any code calls Math.random, or if the simulation
-      # reaches arithmetic or a clock no engine pins down. Every fence names the
-      # offending file.
+      # render/ and e2e/, if any code calls Math.random, if the simulation reaches
+      # arithmetic or a clock no engine pins down, or if an image, font or audio
+      # file has been committed. Every fence names the offending file.
       - name: Guard the fences
         run: npm run guard
 

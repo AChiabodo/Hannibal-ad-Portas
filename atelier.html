@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SPQR — Atelier</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: start center;
+        background: #14110d;
+        color: #d8cbb4;
+        font-family: ui-monospace, monospace;
+      }
+
+      /*
+       * The catalogue is wider than most windows, so the page scrolls rather than
+       * shrinking the plate: a scaled-down plate is art nobody can judge.
+       */
+      #app {
+        padding: 8px;
+      }
+
+      #app canvas {
+        display: block;
+        image-rendering: pixelated;
+      }
+
+      [data-spqr-booted='failed'] #app {
+        padding: 1rem;
+        color: #e0a0a0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/atelier.ts"></script>
+  </body>
+</html>

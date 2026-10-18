@@ -19,6 +19,7 @@ const SOURCE_EXTENSION_SET = new Set(SOURCE_EXTENSIONS);
 const IGNORED_DIRECTORIES = new Set([
   '.agents',
   '.git',
+  'artifacts',
   'coverage',
   'dist',
   'node_modules',
@@ -38,6 +39,36 @@ const IGNORED_DIRECTORIES = new Set([
  * @returns {string[]}
  */
 export function collectSourceFiles(root, directories) {
+  return collectFiles(root, directories, (name) => SOURCE_EXTENSION_SET.has(extname(name)));
+}
+
+/**
+ * Collects every readable file under the given root-relative directories,
+ * source or not, sorted, as absolute paths.
+ *
+ * The asset fence needs to see a `.png` to report it, which is the one thing a
+ * walk that keeps only source extensions cannot do. Everything else about the
+ * walk — the ignore list, the refusal of a missing root — is the same, so it is
+ * the same walk with a different question asked of each name.
+ *
+ * @param {string} root Repository root.
+ * @param {readonly string[]} directories Root-relative directories to walk.
+ * @returns {string[]}
+ */
+export function collectAllFiles(root, directories) {
+  return collectFiles(root, directories, () => true);
+}
+
+/**
+ * The walk both collectors share: recursion, the ignore list, and the sorted
+ * result. `keep` decides what each file name is.
+ *
+ * @param {string} root Repository root.
+ * @param {readonly string[]} directories Root-relative directories to walk.
+ * @param {(name: string) => boolean} keep
+ * @returns {string[]}
+ */
+function collectFiles(root, directories, keep) {
   /** @type {string[]} */
   const files = [];
 
@@ -57,7 +88,7 @@ export function collectSourceFiles(root, directories) {
     if (!stats.isDirectory()) {
       throw new Error(`guard scan root is not a directory: ${directory}`);
     }
-    walk(path, files);
+    walk(path, files, keep);
   }
 
   return files.sort();
@@ -129,15 +160,16 @@ function isImportOrRequire(node) {
 /**
  * @param {string} directory
  * @param {string[]} files
+ * @param {(name: string) => boolean} keep
  */
-function walk(directory, files) {
+function walk(directory, files, keep) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
 
     if (entry.isDirectory()) {
       if (IGNORED_DIRECTORIES.has(entry.name)) continue;
-      walk(path, files);
-    } else if (entry.isFile() && SOURCE_EXTENSION_SET.has(extname(entry.name))) {
+      walk(path, files, keep);
+    } else if (entry.isFile() && keep(entry.name)) {
       files.push(path);
     }
   }

@@ -27,7 +27,8 @@
  * number is the one the Match ended on, and a reader who gets only an exit code
  * has to run it again to find out.
  */
-import { parseArguments, USAGE, UsageError } from './arguments.ts';
+import { parseArguments, USAGE } from './arguments.ts';
+import { exitCodeFor, formatFailure } from './failure.ts';
 import { formatMap } from './dump.ts';
 import { formatReport, reportOf } from './report.ts';
 import { playMatch, requireExpectedHash } from './run.ts';
@@ -45,13 +46,6 @@ try {
     requireExpectedHash(run, parsed.options);
   }
 } catch (error: unknown) {
-  process.stderr.write(`${failure(error)}\n`);
-  process.exitCode = error instanceof UsageError ? 2 : 1;
-}
-
-/** One readable line about what went wrong, with the usage when the command line was the problem. */
-function failure(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-
-  return error instanceof UsageError ? `cli: ${message}\n\n${USAGE}` : `cli: ${message}`;
+  process.stderr.write(`${formatFailure(error, 'cli', USAGE)}\n`);
+  process.exitCode = exitCodeFor(error);
 }

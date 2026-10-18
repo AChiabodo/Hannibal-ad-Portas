@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
 /**
@@ -6,6 +7,12 @@ import { defineConfig } from 'vite';
  */
 const base = process.env.PAGES_BASE ?? '/';
 
+/** The page a player opens, and the page an agent inspects the art on (PLAN §3). */
+const pages = {
+  main: fileURLToPath(new URL('./index.html', import.meta.url)),
+  atelier: fileURLToPath(new URL('./atelier.html', import.meta.url)),
+};
+
 export default defineConfig({
   base,
   build: {
@@ -13,6 +20,9 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: true,
+    // Two pages, not one with a mode: the Atelier is a surface a test can point
+    // at and a person can open, and both are deployed by the same build.
+    rollupOptions: { input: pages },
   },
   server: {
     // Pinned to IPv4 so the Playwright web server and the browser agree on
