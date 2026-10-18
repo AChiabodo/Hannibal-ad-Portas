@@ -15,13 +15,12 @@ import { SOURCE_EXTENSIONS, collectSourceFiles, importsOf, toRepoPath } from './
 /**
  * The simulation's roots, in walk order.
  *
- * `src/sim` is the Match itself. `src/ai` (D1) and `src/content` (B6) are the
- * other two directories ADR-0001 and PLAN §3 count as the simulation, and they
- * do not exist yet: the walk covers the ones that are there, so the day the AI
- * or the content appears it is fenced without anyone remembering to add it —
- * which is the whole point. PLAN §3's module boundary is unchanged: `ai/` still
- * lives beside `sim/` and may reach only an Observation's types; the decision
- * here is to widen the fence's entry, not to move the AI under `sim/`.
+ * `src/sim` is the Match itself. `src/ai` and `src/content` are the other two
+ * directories ADR-0001 and PLAN §3 count as the simulation. The directory list
+ * tolerates absent optional roots in fixture repositories, while this working
+ * tree fences all three. PLAN §3's module boundary is unchanged: `ai/` lives
+ * beside `sim/` and may reach only an Observation's types; the fence starts
+ * there without moving the AI under `sim/`.
  */
 export const SIMULATION_ENTRIES = ['src/sim', 'src/ai', 'src/content'];
 
@@ -86,10 +85,10 @@ export function existingSimulationEntries(root) {
 /**
  * Whether a simulation root is there and is a directory.
  *
- * Only `ENOENT` — "not there yet", which is exactly what tolerating a future
- * D1/B6 root means — is false. A path that exists but is a file, or that cannot
+ * Only `ENOENT` — a missing optional root in a fixture repository — is false.
+ * A path that exists but is a file, or that cannot
  * be read, is an error rather than a root that is merely absent: the guard must
- * not mistake either for "does not exist yet" and quietly leave it unfenced.
+ * not mistake either for a missing optional root and quietly leave it unfenced.
  * `collectSourceFiles` takes the same stance for a missing scan root.
  *
  * @param {string} root Repository root.

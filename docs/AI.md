@@ -62,8 +62,8 @@ nonempty id unique within their behaviour and layer, and a nonempty reason.
 Malformed scores and ambiguous ids fail rather than silently disappearing from
 JSON. Every decision includes a built-in `idle` candidate at utility zero that
 keeps the current plan and emits nothing. Idle wins a zero tie; other ties use
-behaviour id then candidate id in code-point order, independent of registration
-order. Negative candidates therefore cannot force an unwanted Command.
+behaviour id then candidate id in UTF-16 code-unit order, independent of
+registration order. Negative candidates therefore cannot force an unwanted Command.
 
 ## Reading a Match
 

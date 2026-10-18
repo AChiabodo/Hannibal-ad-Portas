@@ -114,8 +114,9 @@ headlessly across a Season boundary. Its JSON report includes every strategic,
 operational and tactical decision, all candidate utilities and reasons, and the
 selected candidate. The economy policy grows settlements and recruits against
 recurring Payroll capacity; the military policy defends observed threats,
-chooses counters, commits reserves and withdraws beaten Squads. Scouting plugs
-into the independent registry in D4. See
+chooses counters, commits reserves and withdraws beaten Squads. Shipped scouting
+keeps last-known contacts current, and the siege policy chooses between Assault
+and Blockade. See
 [docs/AI.md](docs/AI.md) for clocks, registration and log interpretation.
 
 ## The deterministic core
@@ -641,9 +642,9 @@ everyone who can read the map (ADR-0020). ADR-0006 says a moved hash is a decisi
 in review, and that was the decision too.
 
 **What C5 does not own.** No siege towers, multiple ladders, mines or artillery:
-the plan excludes them from v1. No decision about when to assault and when to
-blockade, which is D5's; `observeSiege` carries the walls, the breach, the ram,
-the hold and the garrison for it to decide with, and nothing more. The page still
+the plan excludes them from v1. The shipped D5 siege policy chooses when to
+Assault and when to Blockade from the walls, breach, ram, hold and garrison in
+`observeSiege`. The page still
 plays the economy Match, so a wall is something the CLI and the tests exercise
 rather than something drawn on screen yet: putting the walls in the interface is
 B7's and E4's, and `observeSiege` is the projection they will read.
@@ -1218,6 +1219,7 @@ src/                application code
   cli/              the headless Match as a command
     arguments.ts    what the command line means, and what it refuses
     rules.ts        the Matches a run can play, by name, and what each draws
+    ai-match.ts     composing economy, military, scouting and siege policies for headless AI Matches
     run.ts          playing one Match, and the hash invariant the CLI checks
     dump.ts         the map a seed generates, written out for inspection
     report.ts       the JSON report, ordered and free of anything that varies
@@ -1225,6 +1227,14 @@ src/                application code
     png.ts          a PNG encoder in the repository's own code, for the bake step
     bake.ts         the catalogue written out as files, and the table it prints
     bake-main.ts    the bake command: standard output, standard error, exit codes
+  ai/               the built-in Controller, registered behaviours and difficulty levels
+    controller.ts   three decision clocks, utility selection and replayable decision logs
+    registry.ts     behaviour registration and deterministic candidate ordering
+    economy.ts      settlement growth, production, recruitment and payroll planning
+    military.ts     field defence, counters, reserves and withdrawal
+    scouting.ts     exploration and last-known contact patrols
+    siege.ts        Assault and Blockade prosecution
+    difficulty.ts   Tiro, Centurio and Imperator settings
   input/            the Player's hands: a selection, control groups and a Controller (no engine imports)
     selection.ts    what a Player has picked, and how a click or a drag picks it
     human.ts        the human Controller: an order becomes a Command on the next tick
@@ -1260,8 +1270,8 @@ docs/PLAN.md        the plan of record
 docs/COMMANDS.md    the Command vocabulary an external agent is written from
 ```
 
-Further modules from the plan's architecture (`ai/`, `audio/`)
-arrive with the tickets that need them, under `src/`.
+Further modules from the plan's architecture (`audio/`) arrive with the tickets
+that need them, under `src/`.
 
 ## Continuous integration
 
