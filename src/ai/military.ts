@@ -1,6 +1,7 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Behaviour, Candidate } from './registry.ts';
 import type { EconomyObservation } from './economy.ts';
+import { planningContacts, type Contact } from './scouting.ts';
 
 type Faction = Observation<unknown>['faction'];
 interface Site { readonly x: number; readonly y: number }
@@ -21,6 +22,7 @@ export interface MilitaryObservation {
   readonly settlements: readonly (Site & { readonly id: number })[];
   readonly squads: readonly Squad[];
   readonly enemies: readonly Enemy[];
+  readonly contacts?: readonly Contact[];
 }
 
 interface MilitaryType {
@@ -34,6 +36,7 @@ interface MilitaryContent {
   readonly squadTypes: readonly MilitaryType[];
   readonly matchup: Readonly<Record<string, Readonly<Record<string, string>>>>;
   readonly fatigueMax: number;
+  readonly ticksPerSecond: number;
 }
 
 /** Recruitment adjusts only preference; the economy retains all affordability gates. */
@@ -60,6 +63,8 @@ type MilitaryCommand = {
   readonly kind: 'hold' | 'withdraw'; readonly faction: Faction; readonly squads: readonly number[];
 } | {
   readonly kind: 'attack'; readonly faction: Faction; readonly squads: readonly number[]; readonly target: number;
+} | {
+  readonly kind: 'move'; readonly faction: Faction; readonly squads: readonly number[]; readonly x: number; readonly y: number;
 };
 
 const REGION_SIZE = 16;
@@ -88,6 +93,9 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
     id: 'military',
     tactical: ({ observation }) => {
       const { visible, faction } = observation;
+      const remembered = planningContacts(visible.contacts ?? [], observation.tick, content.ticksPerSecond)
+        .filter((contact) => contact.kind === 'squad' && !visible.enemies.some((enemy) => enemy.id === contact.id))
+        .map((contact) => ({ ...contact, type: contact.type ?? 'unknown' }));
       const squads = visible.squads.filter((squad) => !squad.routing && squad.garrison === null)
         .sort((a, b) => a.id - b.id);
       const regions = new Map<string, { friendly: number; enemy: number; threat: number }>();
@@ -99,6 +107,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
       for (const settlement of visible.settlements) region(settlement);
       for (const squad of squads) region(squad).friendly += power(squad);
       for (const enemy of visible.enemies) region(enemy).enemy += enemyPower(enemy);
+      for (const contact of remembered) region(contact).enemy += enemyPower(contact);
       const defence = visible.settlements.map((settlement) => {
         const enemies = visible.enemies.filter((enemy) => distance(enemy, settlement) <= DEFENCE_RADIUS);
         const area = region(settlement);
@@ -198,6 +207,22 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
       if (reserve !== undefined && !assigned.has(reserve.id)) {
         commands.push({ kind: 'hold', faction, squads: [reserve.id] });
         reasons.push(`Retain reserve ${reserve.id}.`);
+      }
+      // A remembered enemy is a place to investigate, never a live attack id.
+      // Keep the reserve and require a favourable line before committing.
+      for (const contact of remembered.sort((a, b) => b.seen - a.seen || a.id - b.id)) {
+        const line = ready.filter((squad) => squad !== reserve && !assigned.has(squad.id));
+        const threat = remembered.filter((enemy) => distance(enemy, contact) <= 4)
+          .reduce((sum, enemy) => sum + enemyPower(enemy), 0);
+        if (line.reduce((sum, squad) => sum + power(squad), 0) * 4 < threat * 5) continue;
+        let allocated = 0;
+        for (const squad of line) {
+          if (allocated * 4 >= threat * 5) break;
+          commands.push({ kind: 'move', faction, squads: [squad.id], x: contact.x, y: contact.y });
+          assigned.add(squad.id);
+          allocated += power(squad);
+        }
+        reasons.push(`Investigate last-known enemy ${contact.id} at (${contact.x}, ${contact.y}), seen tick ${contact.seen}; no live target assumed.`);
       }
       for (const squad of ready) {
         if (squad === reserve || assigned.has(squad.id)) continue;

@@ -10,11 +10,12 @@ import { musterSquad } from '../../src/sim/movement.ts';
 import { startCalendar } from '../../src/sim/season.ts';
 import { createSiege, observeSiege, siegeMatchOutcome, siegeMatchRules, type SiegeVisible, type SiegeWorld } from '../../src/sim/siege.ts';
 import { plainMap } from '../sim/test-map.ts';
+import { createFogs } from '../../src/sim/fog.ts';
 
 function theatre(): SiegeWorld {
   const map = { ...plainMap(), strongholds: [{ x: 20, y: 20 }, { x: 80, y: 80 }] as const };
   const economy = createEconomy(map);
-  return { map, economy, calendar: startCalendar(), siege: createSiege(map, economy), autumns: 0, winters: 0 };
+  return { map, economy, calendar: startCalendar(), siege: createSiege(map, economy), fog: createFogs(), autumns: 0, winters: 0 };
 }
 
 function scenario(hiddenX = 70): SiegeWorld {

@@ -83,7 +83,8 @@ import {
 } from './economy-match.ts';
 import { UNOWNED, type Economy, type Settlement, type Squad, type Supplied } from './economy.ts';
 import { factionCode, factionOf, type Faction } from './faction.ts';
-import { eyeCovers } from './fog.ts';
+import { createFogs, eyeCovers, viewOf, type Fog, type FogView } from './fog.ts';
+import { refreshSiegeFog, siegeContacts, type KnownContact } from './siege-fog.ts';
 import { RESOURCE, type MapGrid, type Site } from './map.ts';
 import type { MatchRules } from './match.ts';
 import { goalOf, orderedSquads, orderSquadTo, routeCacheFor } from './movement.ts';
@@ -257,6 +258,7 @@ export interface Siege {
 
 /** The world `siegeMatchRules` plays: the economy's Match, with its fortifications beside it. */
 export interface SiegeWorld extends EconomyWorld {
+  readonly fog: Readonly<Record<Faction, Fog>>;
   /** The walls, the rams and the two ways of taking a settlement. */
   readonly siege: Siege;
 }
@@ -317,6 +319,8 @@ export interface VisibleFront {
 
 /** What a Faction may know of a Siege: its own walls, and the ones it is at. */
 export interface SiegeVisible extends EconomyVisible {
+  readonly fog: FogView;
+  readonly contacts: readonly KnownContact[];
   /** Enemy field Squads currently in ordinary vision, with no private economic or combat facts. */
   readonly enemies: readonly { readonly id: number; readonly type: string; readonly x: number; readonly y: number }[];
   /** The fronts this Faction holds or is besieging. */
@@ -507,6 +511,7 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
     // One Season of blockade for every boundary the clock crossed — normally one,
     // and more only for a step that had a catch-up to make.
     for (let crossed = 0; crossed < changes.length; crossed += 1) starveBlockades(world);
+    refreshSiegeFog(world, tick + 1);
   },
 };
 
@@ -514,7 +519,9 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
 export function createSiegeWorld(seed: number): SiegeWorld {
   const world = economyMatchRules.createWorld(seed);
 
-  return { ...world, siege: createSiege(world.map, world.economy) };
+  const complete = { ...world, siege: createSiege(world.map, world.economy), fog: createFogs() };
+  refreshSiegeFog(complete, 0);
+  return complete;
 }
 
 /**
@@ -534,6 +541,8 @@ export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (wo
 
   return {
     ...seen,
+    fog: viewOf(world.fog[faction]),
+    contacts: siegeContacts(world, faction),
     enemies: world.economy.squads
       .filter((squad) => squad.owner !== owner && squad.garrison === FIELD && eyes.some((eye) => eyeCovers(eye, squad)))
       .map((squad) => ({ id: squad.id, type: squadTypeOf(squad.type)?.id ?? 'unknown', x: squad.x, y: squad.y })),
@@ -542,9 +551,8 @@ export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (wo
         const settlement = world.economy.settlements[front.settlement];
         if (settlement === undefined) return false;
 
-        // An open settlement has no wall to keep a secret: anyone may see that
-        // the village is standing there, and whether anybody is inside it.
-        return settlement.owner === owner || front.besieger === owner || !isWalled(front);
+        return settlement.owner === owner || front.besieger === owner ||
+          eyes.some((eye) => eyeCovers(eye, settlement));
       })
       .map((front) => visibleFront(world.economy, front)),
   };

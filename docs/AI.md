@@ -1,8 +1,8 @@
 # AI Controllers
 
 D1 supplies the clocks, utility selection and registration seam. D2 supplies
-the economy policy; D3 composes it with military decisions in the headless AI
-harness. Scouting belongs to D4.
+the economy policy; D3 supplies military decisions and D4 adds scouting and
+last-known contact planning in the headless AI harness.
 
 `createAi` (`src/ai/controller.ts`) is structurally a Controller: `decide` reads
 an `Observation<Visible>` and returns Commands. Create a fresh instance for each
@@ -73,8 +73,9 @@ npm run match -- --rules ai --seed 1 --ticks 2101
 
 The default bound remains three game years. This harness runs two fresh AIs
 against the complete Siege Match rules and their existing filtered projections.
-The default registry installs economy and military policies. `economyRegistry`
-remains available for isolated economic scenarios. An explicitly empty registry
+The default `scoutingRegistry` installs economy, military and scouting policies.
+`economyRegistry` and `militaryRegistry` remain available for isolated scenarios.
+An explicitly empty registry
 still runs the foundation alone, ending at the bound without Commands.
 
 ## Economy policy (D2)
@@ -119,9 +120,10 @@ and fatigue scale at composition. The complete Siege Observation now includes
 `enemies`: only enemy field Squads within the ordinary circular vision of owned
 settlements or Squads. Each record contains id, type and current tile; it carries
 no enemy treasury, stock, strength, morale or goal. Vision uses the same disc as
-terrain fog. Garrisons and enemies outside that disc are absent. There is no
-remembered contact in this policy, so losing sight stops pursuit; contact memory
-and scouting remain D4. This current-sight projection derives no fog memory.
+terrain fog. Garrisons and enemies outside that disc are absent. D4 adds the
+Faction's authoritative `fog` and its decoded `contacts` beside current sight;
+reading the projection never refreshes memory. Unobserved minor settlement
+fronts, as well as Strongholds, stay outside the projection.
 
 Every tactical decision rebuilds a sparse threat map of 16×16-tile regions from
 that Observation. Unoccupied regions have zero threat. Friendly power scales
@@ -166,7 +168,62 @@ and stopping pursuit through the Controller's Commands and decision log.
 `tests/ai/military-match.test.ts` checks the shipped registry, circular sight,
 hidden-world independence, actual withdrawal to quarters and Command replay to
 the same hash. These are deterministic policy checks, not tournament balance
-or siege-prosecution evidence. Neither scouting nor siege Commands are added.
+or siege-prosecution evidence. Siege Commands belong to D5.
+
+## Scouting and last-known contacts (D4)
+
+The complete Siege Match owns two independent fog memories. It refreshes them
+at creation and after every tick, using the same circular settlement and Squad
+vision as current sight. Enemy field Squads and enemy-owned settlements enter
+memory only in vision. A contact keeps its observed type, tile and tick after
+losing sight. Looking at its empty tile disproves it; hidden movement, death or
+capture cannot erase it. Settlement ids are negative within the fog's contact
+namespace and Squad ids positive, so the two cannot overwrite each other. The
+Observation decodes these records into `squad`, `settlement` or `stronghold`,
+without consulting the live enemy. Memory is state, hashed and replayed.
+
+`createScoutingBehaviour` receives only public map dimensions, terrain codes,
+vision radius, tick rate, Squad catalogue and explicit eligible scout types.
+It sends up to one third of
+the army to explore, rounded up; after observing the enemy Stronghold the quota
+falls to one eighth, with at least one patrol. It prefers Numidian horse and
+otherwise uses the Tier-1 sword line: hastati or Gauls, since neither roster
+has a separate light arm in v1. Elephants are excluded. Routing, garrisoned, engaged, beaten or locally
+threatened Squads and marches home are ineligible.
+
+Scouts search connected, observed walkable ground for tiles whose vision would
+reveal unexplored terrain. They score information gain against travel distance,
+prefer progress away from home and toward the interior, and spread detachments
+across different targets. A march continues while its destination can still
+reveal ground or refresh a contact. There is no random choice, hidden terrain
+lookup or enemy-position hint. After thirty seconds a remembered contact can
+draw a patrol back within circular vision, refreshing it through the ordinary
+Match rules. Exploration continues after discovery.
+
+Military planning includes recent remembered enemy Squads in its regional
+threat map. A favourable line may investigate their last-known tile with a
+`move`; an `attack` always requires current sight. Squad sightings expire as
+planning evidence after 120 seconds, settlement sightings after 600. This
+forgets their tactical relevance, leaving the historical fog record intact;
+there is no second espionage memory. Visible contacts refresh their timestamps
+and never expire while in sight.
+
+The composition root merges patrols with the selected military field decision.
+Attacks, investigations and withdrawals take precedence; idle holds release
+the patrols. A higher-utility scouting candidate carries the combined Commands
+and both explanations. The general utility registry and its one-winner rule
+remain unchanged. Independent military and economy registries still work.
+
+`tests/ai/scouting.test.ts` checks frontier orders, eligibility, quota reduction,
+continued patrols, contact refresh and age limits through the Controller.
+`tests/ai/scouting-match.test.ts` checks actual contact refresh and disproval,
+hidden-world independence, early shipped scouting and replay to the same hash.
+The discovery comparison uses seeds 1, 7 and 42, identical three-Squad Roman
+openings and a stationary opponent: the scouting AI must discover the enemy
+Stronghold in less than half the 12,000-tick observation window. The military
+baseline remains undiscovered at that bound; its discovery time is censored,
+not measured as exactly 12,000 ticks. This is a headless scouting comparison,
+not a tournament or browser rendering check.
 
 The JSON report adds `decisions`, sorted by tick, Rome before Carthage, and then
 strategic, operational, tactical. Each record names the Faction, tick, observed
