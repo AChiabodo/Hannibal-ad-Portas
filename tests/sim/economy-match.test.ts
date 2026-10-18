@@ -269,7 +269,10 @@ describe('Payroll across a Season boundary', () => {
     const world = match.state.world;
 
     world.economy.treasuries[0] = 10;
-    world.economy.squads.push(squad({ id: 1, owner: 0, morale: 5 }));
+    // Standing in its own country, so the Season charges Payroll and nothing
+    // else: a Squad cut off from Supply is a different Season's bill (C3).
+    const home = world.economy.settlements[0]!;
+    world.economy.squads.push(squad({ id: 1, owner: 0, morale: 5, x: home.x, y: home.y }));
 
     for (let tick = 0; tick < SEASON_TICKS - 1; tick += 1) match.step();
     expect(world.economy.squads[0]?.morale).toBe(5);
@@ -285,8 +288,11 @@ describe('Payroll across a Season boundary', () => {
 
     // An army the treasury cannot keep: six denarii a Season against a couple of tax.
     world.economy.treasuries[0] = 0;
+    const home = world.economy.settlements[0]!;
     for (const id of [1, 2]) {
-      world.economy.squads.push(squad({ id, owner: 0, type: squadTypeId('triarii'), morale: 4 }));
+      world.economy.squads.push(
+        squad({ id, owner: 0, type: squadTypeId('triarii'), morale: 4, x: home.x, y: home.y }),
+      );
     }
 
     for (let tick = 0; tick < SEASON_TICKS; tick += 1) match.step();

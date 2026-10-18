@@ -161,7 +161,7 @@ describe('a Match on the theatre and the fog', () => {
   });
 });
 
-describe('the march Match, which is what CI gates movement with', () => {
+describe('the march Match, which is what CI gates movement and combat with', () => {
   /** The world the march Match begins on, played for a bound, as the CLI plays it. */
   function played(seed: number, ticks: number): EconomyWorld {
     const world = marchWorld(seed);
@@ -209,17 +209,35 @@ describe('the march Match, which is what CI gates movement with', () => {
     expect(squares).toEqual([rome, carthage]);
   });
 
-  it('marches every one of them across: after the bound they stand on the other Stronghold', () => {
-    const [rome, carthage] = marchWorld(1).map.strongholds;
-    const world = played(1, 600);
+  it('marches the two armies across, and every survivor stands on the Stronghold it was sent to', () => {
+    const world = marchWorld(1);
+    const [rome, carthage] = world.map.strongholds;
+    const mustered = new Map(
+      world.economy.squads.map((squad) => [squad.id, { x: squad.x, y: squad.y, men: squad.strength }]),
+    );
 
-    expect(world.economy.squads).toHaveLength(12);
-    for (const squad of world.economy.squads) {
+    const after = played(1, 600);
+
+    expect(after.economy.squads.length).toBeGreaterThan(0);
+    for (const squad of after.economy.squads) {
       const target = squad.owner === factionCode('rome') ? carthage : rome;
+      const from = mustered.get(squad.id);
 
+      // It crossed the theatre: the ground it mustered on is behind it, and the
+      // Stronghold it was ordered to is the tile it stands on.
       expect({ x: squad.x, y: squad.y }).toEqual({ x: target.x, y: target.y });
+      expect({ x: squad.x, y: squad.y }).not.toEqual({ x: from?.x, y: from?.y });
       expect(squad.steps).toEqual([]);
     }
+
+    // The two armies met on the way: a march across a theatre with an enemy on
+    // it is a fight as well as a march (C3), so the survivors are the men who
+    // got through and not the twelve that set out.
+    expect(after.economy.squads.length).toBeLessThan(12);
+    expect(new Set(after.economy.squads.map((squad) => squad.owner)).size).toBe(2);
+    expect(
+      after.economy.squads.some((squad) => squad.strength < (mustered.get(squad.id)?.men ?? 0)),
+    ).toBe(true);
   });
 
   it('plays the same march again from the same seed and bound, hash for hash', () => {

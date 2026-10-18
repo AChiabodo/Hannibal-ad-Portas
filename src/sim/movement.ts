@@ -18,11 +18,13 @@
  * - `formation` sets the shape the Squad holds, which is a property of the Squad
  *   (ADR-0004) rather than of anybody arranging men.
  *
- * Everything else in the vocabulary is left alone: `attack`, `garrison`,
- * `withdraw`, `build`, `recruit`, `assault`, `blockade` and `group` belong to
- * the tickets that own them — `build` and `recruit` are the economy's, and are
- * applied beside this — and a rule that quietly half-implemented one of them
- * would be worse than one that does nothing at all. A Command naming a Squad the
+ * Everything else in the vocabulary is left alone here: `garrison`,
+ * `build`, `recruit`, `assault`, `blockade` and `group` belong to the tickets
+ * that own them — `build` and `recruit` are the economy's, and are applied
+ * beside this — and a rule that quietly half-implemented one of them would be
+ * worse than one that does nothing at all. `attack` and `withdraw` are combat's
+ * and are applied beside this too (`combat.ts`), because closing with an enemy
+ * and falling back are one rule and not two. A Command naming a Squad the
  * Faction does not own is ignored for the same reason: the seam guarantees the
  * *Command* came from the right Player, and this is where the Squad is asked
  * whether it belongs to them.
@@ -82,6 +84,7 @@ import {
   FACING,
   facingCode,
   formationCode,
+  isRouting,
   standingAt,
   type Block,
   type Facing,
@@ -154,7 +157,7 @@ export function musterSquad(economy: Economy, map: MapGrid, placement: Placement
   }
 
   const squad: Squad = {
-    ...standingAt(placement.x, placement.y, type.strength),
+    ...standingAt(placement.x, placement.y, type.strength, type.ammunition),
     id: economy.nextSquadId,
     owner: factionCode(placement.faction),
     type: code as number,
@@ -194,17 +197,17 @@ export function applyMovementCommands(
     switch (command.kind) {
       case 'move':
       case 'attackMove':
-        for (const squad of ownedBy(economy, owner, command.squads)) {
-          sendSquad(map, squad, { x: command.x, y: command.y }, routes);
+        for (const squad of orderedSquads(economy, owner, command.squads)) {
+          orderSquadTo(map, squad, { x: command.x, y: command.y }, routes);
         }
         break;
 
       case 'hold':
-        for (const squad of ownedBy(economy, owner, command.squads)) standDown(squad);
+        for (const squad of orderedSquads(economy, owner, command.squads)) standDown(squad);
         break;
 
       case 'formation':
-        for (const squad of ownedBy(economy, owner, command.squads)) {
+        for (const squad of orderedSquads(economy, owner, command.squads)) {
           squad.formation = formationCode(command.formation);
         }
         break;
@@ -307,8 +310,14 @@ export function routeCacheFor(map: MapGrid): RouteCache {
  * and its place — and records the reason on it. That is the whole of "does not
  * leave the Squad stranded mid-motion": the Squad was going somewhere, and it
  * still is.
+ *
+ * Exported because an order does not always arrive as a Command. C3's rout and
+ * its `withdraw` both send a Squad to ground it did not choose — the nearest
+ * friendly settlement — and they are the same order a Player's click is, so they
+ * come through here rather than growing a second way to move a block that would
+ * forget what a refusal is.
  */
-function sendSquad(map: MapGrid, squad: Squad, to: Site, routes: RouteCache): void {
+export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: RouteCache): void {
   const destination = squad.steps.at(-1);
 
   if (destination !== undefined && destination === tileOf(to)) {
@@ -346,8 +355,32 @@ function standDown(squad: Squad): void {
   squad.refused = NO_REFUSAL;
 }
 
-/** The Squads of a Command's list that the Faction actually owns, in the economy's own order. */
-function ownedBy(economy: Economy, owner: FactionCode, ids: readonly number[]): readonly Squad[] {
+/**
+ * The Squads a Command names that are this Faction's and still in good order.
+ *
+ * A routed Squad is running for its own walls and is driven by nobody: there is
+ * no manual rallying and no micro-recovery in this game (C3's out of scope, and
+ * ADR-0004's point), so the hand that got it broken does not get to walk it out of
+ * trouble either. `combat.ts`'s `run` is what moves it.
+ *
+ * Shared with `combat.ts`, which asks the same question of its two Commands: one
+ * definition of "this order is obeyed", so the movement's orders and the fight's
+ * cannot come to disagree about a running Squad.
+ */
+export function orderedSquads(economy: Economy, owner: FactionCode, ids: readonly number[]): readonly Squad[] {
+  return ownedSquads(economy, owner, ids).filter((squad) => !isRouting(squad));
+}
+
+/**
+ * The Squads of a Command's list that the Faction actually owns, in the economy's
+ * own order.
+ *
+ * The seam guarantees the *Command* came from the right Player; this is where-
+ * ever a rule asks the Squads themselves whether they belong to them, so that a
+ * Command naming an enemy Squad — or one that has already left the field —
+ * quietly orders nobody instead of reaching across the line.
+ */
+export function ownedSquads(economy: Economy, owner: FactionCode, ids: readonly number[]): readonly Squad[] {
   return economy.squads.filter((squad) => squad.owner === owner && ids.includes(squad.id));
 }
 

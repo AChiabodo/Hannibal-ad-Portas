@@ -2,11 +2,13 @@
  * The Squad types a Faction may raise (GLOSSARY: Squad; PLAN §4).
  *
  * A Squad type is what a Recruit Command names and what Payroll is charged on:
- * one block of soldiers, its tier, the men in it, the morale it comes with, what
- * it costs to raise and what it owes each Season. B6 ships one type a tier per
- * Faction, enough to make the tiers and the Payroll real; C4 fills the rosters
- * out — the elephants, the light troops, the form-and-silhouette variety — and
- * the shape below is what it fills.
+ * one block of soldiers, its tier, the men in it, the arm it carries, the morale
+ * it comes with, the missiles it can throw, what it costs to raise and what it
+ * owes each Season. B6 ships one type a tier per Faction, enough to make the
+ * tiers and the Payroll real; C3 reads the arm and the missiles (the matchup
+ * matrix and the first volleys); C4 fills the rosters out — the elephants, the
+ * light troops, the form-and-silhouette variety — and the shape below is what it
+ * fills.
  *
  * The id is a string, because it is what a Command carries and what a document
  * an external agent reads (`docs/COMMANDS.md`), and the code is an integer,
@@ -20,6 +22,7 @@
  * higher tier cannot be raised in a settlement that has not grown to it.
  */
 import type { Faction } from '../sim/faction.ts';
+import type { Arm } from './arms.ts';
 import { NOTHING, type ResourceAmounts } from './resources.ts';
 
 /**
@@ -45,8 +48,29 @@ export interface SquadType {
   /** How many men a full-strength Squad of the type is drawn as and counted as (ADR-0004). */
   readonly strength: number;
 
-  /** The morale a newly raised Squad starts with, and the most it recovers to (C3 owns the model). */
+  /**
+   * What the Squad is armed with: its row and column in the matchup matrix
+   * (`arms.ts`), and therefore who it has the better of a fight against.
+   */
+  readonly arm: Arm;
+
+  /**
+   * The morale a newly raised Squad starts with, and the most it recovers to.
+   *
+   * Morale is the primary resource of a fight (C3): a Squad breaks at none, and
+   * this is the whole of it at full spirits.
+   */
   readonly morale: number;
+
+  /**
+   * How many volleys of missiles it carries, if it carries any.
+   *
+   * A volley is thrown in the first rounds of a contact and never comes back
+   * until the Squad is resupplied in its own country: a type with none is a
+   * type that fights with the arm and nothing else, and a type with five is a
+   * type whose first seconds of a fight are worth manoeuvring for (C3).
+   */
+  readonly ammunition: number;
 
   /** The denarii it owes each Season: what Payroll is charged on (GLOSSARY: Payroll). */
   readonly payroll: number;
@@ -69,7 +93,9 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     faction: 'rome',
     tier: 1,
     strength: 120,
+    arm: 'sword',
     morale: 10,
+    ammunition: 4,
     payroll: 3,
     cost: { ...NOTHING, grain: 8, iron: 2 },
   },
@@ -78,7 +104,9 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     faction: 'rome',
     tier: 2,
     strength: 120,
+    arm: 'sword',
     morale: 12,
+    ammunition: 4,
     payroll: 4,
     cost: { ...NOTHING, grain: 10, iron: 4 },
   },
@@ -87,7 +115,9 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     faction: 'rome',
     tier: 3,
     strength: 100,
+    arm: 'spear',
     morale: 14,
+    ammunition: 0,
     payroll: 6,
     cost: { ...NOTHING, grain: 10, iron: 6 },
   },
@@ -96,7 +126,9 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     faction: 'carthage',
     tier: 1,
     strength: 120,
+    arm: 'spear',
     morale: 9,
+    ammunition: 0,
     payroll: 3,
     cost: { ...NOTHING, grain: 6, iron: 2 },
   },
@@ -105,7 +137,9 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     faction: 'carthage',
     tier: 2,
     strength: 120,
+    arm: 'sword',
     morale: 11,
+    ammunition: 2,
     payroll: 5,
     cost: { ...NOTHING, grain: 8, iron: 4 },
   },
@@ -114,7 +148,9 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     faction: 'carthage',
     tier: 3,
     strength: 60,
+    arm: 'cavalry',
     morale: 10,
+    ammunition: 6,
     payroll: 4,
     cost: { ...NOTHING, grain: 8, iron: 2 },
   },

@@ -682,7 +682,7 @@ function applyRecruit(economy: Economy, command: RecruitCommand): boolean {
       // A Squad leaves the settlement it was raised in, standing where it is
       // with the men its type is counted as: from there it is C1's block, and
       // the first order it is given moves it off the square.
-      ...standingAt(settlement.x, settlement.y, type.strength),
+      ...standingAt(settlement.x, settlement.y, type.strength, type.ammunition),
       id: economy.nextSquadId,
       owner: factionCode(command.faction),
       type: code,

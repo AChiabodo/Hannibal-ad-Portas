@@ -266,7 +266,7 @@ test('attack-moves on a shift + right click, without arming anything', async ({ 
   expect((await applied(page)).map((entry) => entry.command.kind)).toContain('attackMove');
 });
 
-test('sends a Withdraw as a real Command, even though the rules obey it later', async ({ page }) => {
+test('sends a Withdraw as a real Command the rules obey', async ({ page }) => {
   await boot(page);
   const { squad, at } = await clickableSquad(page);
   const click = onPage(await canvasOrigin(page), at);
@@ -275,8 +275,10 @@ test('sends a Withdraw as a real Command, even though the rules obey it later', 
   await page.keyboard.press('w');
   await step(page, 1);
 
-  // Combat is out of scope (C3 owns what a withdrawal *does*), so what the page
-  // can be held to is that the Command left the interface and reached the Match.
+  // What the page can be held to is that the Command left the interface and
+  // reached the Match; the rules' `withdraw` is `combat.ts`'s and sends the
+  // Squad to the nearest settlement its Faction holds, which is not a picture
+  // this test has to take (C3's own tests do).
   const withdrawn = (await applied(page)).filter((entry) => entry.command.kind === 'withdraw');
   expect(withdrawn).toHaveLength(1);
   expect(withdrawn[0]?.command).toMatchObject({ kind: 'withdraw', faction: 'rome', squads: [squad.id] });

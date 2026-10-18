@@ -103,6 +103,45 @@ export function formationOf(code: number): Formation {
 }
 
 /**
+ * How tired a Squad can get: the top of the fatigue scale (C3).
+ *
+ * Fatigue is a number in state rather than a flag because a fight is moved by
+ * *how* tired a Squad is, not by whether it is: a block that has marched twenty
+ * tiles fights worse than one that has marched four, and the scale is what lets
+ * a rule say so without a second table of states.
+ */
+export const FATIGUE_MAX = 20;
+
+/**
+ * What a Squad's nerve is doing, as state holds it (C3).
+ *
+ * A Squad is `held` while it stands and fights, and `routed` once its morale has
+ * gone: a routed Squad runs for safety, fights barely, and forms up again on its
+ * own when the ground behind it is quiet. There is no third word, because there
+ * is no manual rallying and no micro-recovery in this game (ADR-0004).
+ *
+ * A flag of two words rather than a boolean, because every other word in state
+ * is an integer code (ADR-0006) and `serializeState` refuses booleans.
+ */
+export const ROUTING = {
+  held: 0,
+  routed: 1,
+} as const;
+
+/**
+ * Whether a Squad has broken and is running: the one question a rule asks of
+ * `routing`.
+ *
+ * There is deliberately no `routingOf`/`routingCode` pair beside it, the way the
+ * facings have one: a facing is a word a report and a drawing both spell, and
+ * this is a flag only the rules read — so a vocabulary nobody walks would be two
+ * exported names and a test for nothing.
+ */
+export function isRouting(shape: { readonly routing: number }): boolean {
+  return shape.routing === ROUTING.routed;
+}
+
+/**
  * How many files a block stands in, by the shape it holds.
  *
  * The number is fixed, and that is the design: a line is twelve files abreast
@@ -262,6 +301,25 @@ export interface Block extends Shape {
    */
   strength: number;
 
+  /**
+   * How tired it is, from 0 to `FATIGUE_MAX`: a march and a fight both add to
+   * it, standing still out of contact takes it away, and a tired Squad strikes
+   * weakly (C3).
+   */
+  fatigue: number;
+
+  /**
+   * How many volleys of missiles it still carries, if any: spent in the first
+   * rounds of a contact and restocked only in its own country (C3).
+   */
+  ammunition: number;
+
+  /**
+   * Its nerve, as a `ROUTING` code: `held` while it fights, `routed` once it has
+   * broken. A routed Squad runs for safety and forms up again by itself (C3).
+   */
+  routing: number;
+
   /** The tile it stands on: one tile, because the Squad is the atomic unit (ADR-0004). */
   x: number;
 
@@ -293,12 +351,20 @@ export interface Block extends Shape {
  * as any other answer to "which way is a new Squad facing" — the first step it
  * takes turns it anyway — and `strength` is what a full-strength Squad of its
  * type is counted as (`content/`), until C3 takes men off it.
+ *
+ * A Squad begins fresh, unwounded and in good order: no fatigue, however far it
+ * walked to be raised here; whatever missiles its type carries; and its nerve
+ * held. C3 is the ticket that moves all three, and the state they begin in is
+ * this function's to say for the same reason the rest of it is.
  */
-export function standingAt(x: number, y: number, strength: number): Block {
+export function standingAt(x: number, y: number, strength: number, ammunition = 0): Block {
   return {
     x,
     y,
     strength,
+    fatigue: 0,
+    ammunition,
+    routing: ROUTING.held,
     formation: FORMATION.line,
     facing: FACING.south,
     steps: [],

@@ -24,6 +24,8 @@
  */
 import { Container, Sprite, Texture } from 'pixi.js';
 import type { VisibleSquad } from '../sim/economy-match.ts';
+import type { Corpse } from '../sim/residue.ts';
+import { CORPSE_FADE_STEPS, corpseFade, corpsePlacement, corpseSprite, figureOf } from './corpses.ts';
 import { textureOf } from './stage.ts';
 import {
   ORDER_MARKER_SIZE,
@@ -44,6 +46,14 @@ export interface SquadField {
 
   /** The tick the frames are chosen from. Never wall time (ADR-0006). */
   readonly tick: number;
+
+  /**
+   * The men who fell, as `sim/residue.ts` records them (C3).
+   *
+   * Residue and not state: a corpse is drawn, fades on a tick and is swept away,
+   * and nothing here may write back into it.
+   */
+  readonly corpses?: readonly Corpse[];
 
   /** Which Faction's cloth the soldiers wear. */
   readonly faction: 'rome' | 'carthage';
@@ -72,7 +82,14 @@ interface Drawn {
   key: string;
 }
 
-/** How far above the theatre a Squad's sprite sorts, so it is drawn over the map and the fog. */
+/**
+ * How far above the theatre a Squad's sprite sorts, so it is drawn over the map
+ * and the fog.
+ *
+ * The dead sort at the same height and one below, because a body belongs to the
+ * ground it fell on: a block of men standing over a corpse must hide it, and a
+ * corpse must never be drawn over the men still fighting.
+ */
 const ABOVE_THE_MAP = 10;
 
 /** How far above every block a destination marker sorts, so a marker is never hidden by the men. */
@@ -86,13 +103,20 @@ const ABOVE_EVERY_BLOCK = 1000;
  *   screen, so a pan moves them with the ground they stand on.
  */
 export function createSquadLayer(parent: Container): SquadLayer {
+  const fallen = new Container();
+  fallen.sortableChildren = true;
+  fallen.zIndex = ABOVE_THE_MAP;
+  parent.addChild(fallen);
+
   const root = new Container();
   root.sortableChildren = true;
-  root.zIndex = ABOVE_THE_MAP;
+  root.zIndex = ABOVE_THE_MAP + 1;
   parent.addChild(root);
 
   const squads = new Map<number, Drawn>();
   const markers = new Map<number, Sprite>();
+  const corpses = new Map<string, Sprite>();
+  const corpseTextures = new Map<string, Texture>();
 
   // One texture for every destination marker: a marker never changes, so it is
   // composed once and shared by every sprite that shows it.
@@ -101,6 +125,7 @@ export function createSquadLayer(parent: Container): SquadLayer {
   return {
     setVisible(visible) {
       root.visible = visible;
+      fallen.visible = visible;
     },
 
     update(field) {
@@ -153,8 +178,83 @@ export function createSquadLayer(parent: Container): SquadLayer {
         sprite.destroy();
         markers.delete(id);
       }
+
+      layOutTheDead(fallen, corpses, corpseTextures, field.corpses ?? [], field.tick);
     },
   };
+}
+
+/**
+ * Brings the field of the dead into line with the residue: laid where they fell,
+ * faded by their age, and gone when their thirty seconds are up. The residue a
+ * caller hands over is whatever its Faction may *see* — `render/corpses.ts`'s
+ * `visibleCorpses` is the filter — because the whole list is both Factions'.
+ *
+ * A corpse is keyed by where and when it fell rather than by a number, because
+ * residue has no ids and never gets one: two marks reported for one tile in one
+ * round are one mark, and a single body is the truth about what a Player can
+ * see. The step is the only thing that changes from frame to frame, and it is
+ * read off the tick rather than remembered.
+ */
+function layOutTheDead(
+  root: Container,
+  drawn: Map<string, Sprite>,
+  textures: Map<string, Texture>,
+  corpses: readonly Corpse[],
+  tick: number,
+): void {
+  const present = new Set<string>();
+
+  for (const corpse of corpses) {
+    const step = corpseFade(corpse, tick);
+    if (step === 0) continue;
+
+    const key = `${String(corpse.x)},${String(corpse.y)},${String(corpse.born)}`;
+    if (present.has(key)) continue;
+    present.add(key);
+
+    const at = corpsePlacement(corpse);
+    const known = drawn.get(key);
+
+    if (known === undefined) {
+      const lying = new Sprite(corpseTexture(textures, corpse));
+      lying.position.set(at.x, at.y);
+      lying.zIndex = corpse.y;
+      lying.alpha = step / CORPSE_FADE_STEPS;
+      root.addChild(lying);
+      drawn.set(key, lying);
+
+      continue;
+    }
+
+    known.alpha = step / CORPSE_FADE_STEPS;
+  }
+
+  for (const [key, lying] of drawn) {
+    if (present.has(key)) continue;
+
+    lying.destroy();
+    drawn.delete(key);
+  }
+}
+
+/**
+ * The texture of one kind of corpse, composed once and shared.
+ *
+ * A corpse never changes shape: it lies, and then it fades. So one texture per
+ * Faction and figure is the whole of what a field of the dead costs, however
+ * many corpses are on it — and the drawing itself is `render/corpses.ts`'s,
+ * which is checked in Node.
+ */
+function corpseTexture(textures: Map<string, Texture>, corpse: Corpse): Texture {
+  const key = `${figureOf(corpse)}:${String(corpse.owner)}`;
+  const known = textures.get(key);
+  if (known !== undefined) return known;
+
+  const composed = textureOf(corpseSprite(corpse));
+  textures.set(key, composed);
+
+  return composed;
 }
 
 /**

@@ -514,6 +514,8 @@ function squadLines(squad: VisibleSquad): readonly HudLine[] {
     { label: translate('ui.type'), value: squadLabel(squad.type) },
     { label: translate('ui.men'), value: String(squad.men) },
     { label: translate('ui.morale'), value: String(squad.morale) },
+    { label: translate('ui.fatigue'), value: String(squad.fatigue) },
+    { label: translate('ui.ammunition'), value: String(squad.ammunition) },
     { label: translate('ui.payroll'), value: String(squad.payroll) },
     { label: translate('ui.unpaid'), value: String(squad.unpaid) },
     { label: translate('ui.home'), value: String(squad.home) },
@@ -522,15 +524,20 @@ function squadLines(squad: VisibleSquad): readonly HudLine[] {
 }
 
 /**
- * What a Squad is doing, as a Player reads it: the reason its last order was
- * refused if one was, and otherwise whether it is walking.
+ * What a Squad is doing, as a Player reads it: whether it has broken and is
+ * running, the reason its last order was refused if one was, and otherwise
+ * whether it is walking.
  *
- * A refusal goes first because it is the answer to a question the Player has
+ * A rout goes first because it *overrides* the other two: a running Squad is not
+ * obeying orders and is not holding a refusal, and a panel that said "In marcia"
+ * about it would be telling the Player they are still in command of it (C3).
+ * A refusal comes next, because it is the answer to a question the Player has
  * already asked — they clicked, nothing moved, and this is why (`ui/strings.ts`
  * says the words). A Squad standing still because it has arrived and one that
  * was never ordered anywhere are the same state (C1) and read the same way.
  */
 function orderLabel(squad: VisibleSquad): string {
+  if (squad.routing) return translate('order.routing');
   if (squad.refused !== null) return refusalLabel(squad.refused);
 
   return translate(squad.goal === null ? 'order.standing' : 'order.marching');

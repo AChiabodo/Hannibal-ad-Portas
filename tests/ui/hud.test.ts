@@ -74,6 +74,10 @@ const VISIBLE: EconomyVisible = {
       goal: null,
       refused: null,
       morale: 8,
+      fatigue: 2,
+      ammunition: 3,
+      routing: false,
+      engaged: true,
       payroll: 3,
       unpaid: 1,
       home: 0,
@@ -89,6 +93,10 @@ const VISIBLE: EconomyVisible = {
       goal: null,
       refused: null,
       morale: 12,
+      fatigue: 0,
+      ammunition: 0,
+      routing: false,
+      engaged: false,
       payroll: 4,
       unpaid: 0,
       home: 0,
@@ -176,6 +184,26 @@ describe('the HUD model', () => {
     );
     expect(interrupted.detail?.lines.map(lineText)).toContain(
       `${translate('ui.order')} ${translate('refusal.unreachable')}`,
+    );
+  });
+
+  it('shows what a fight has cost it: fatigue, missiles and a rout', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 });
+    const words = model.detail?.lines.map(lineText) ?? [];
+
+    expect(words).toContain(`${translate('ui.fatigue')} 2`);
+    expect(words).toContain(`${translate('ui.ammunition')} 3`);
+
+    // A beaten Squad says so instead of naming an order it is not obeying: it is
+    // running, and the hand that got it broken is not in command of it (C3).
+    const routed = hudModel(
+      { ...VISIBLE, squads: [{ ...VISIBLE.squads[0]!, routing: true, goal: { x: 20, y: 20 } }] },
+      STRONGHOLDS,
+      { kind: 'squad', id: 1 },
+    );
+
+    expect(routed.detail?.lines.map(lineText)).toContain(
+      `${translate('ui.order')} ${translate('order.routing')}`,
     );
   });
 
@@ -372,6 +400,10 @@ describe('the HUD on screen', () => {
         goal: null,
         refused: null,
         morale: 10,
+        fatigue: 0,
+        ammunition: 4,
+        routing: false,
+        engaged: false,
         payroll: 3,
         unpaid: 0,
         home: 0,

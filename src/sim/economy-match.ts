@@ -10,35 +10,51 @@
  * crosses the same Season boundaries, pays the same Payroll and marches the same
  * route, because all of it is integer state the hash covers (ADR-0006).
  *
- * The tick does four things, in this order:
+ * The tick does five things, in this order:
  *
  * 1. **Applies the Commands.** `build` and `recruit` are the economy's
  *    (`economy.ts`); `move`, `attackMove`, `hold` and `formation` are the
- *    movement's (`movement.ts`). Each ignores the kinds the other owns, and the
- *    rest of the vocabulary belongs to tickets that have not landed.
+ *    movement's (`movement.ts`); `attack` and `withdraw` are combat's
+ *    (`combat.ts`). Each ignores the kinds the others own, and the rest of the
+ *    vocabulary belongs to tickets that have not landed.
  * 2. **Moves the Squads one step along their routes** (`march`), once the tile
  *    each is crossing has been paid for.
- * 3. **Counts the works down.** Construction is a timer plus the labour the
+ * 3. **Resolves the round of contact**, on the ticks a round falls on: the men
+ *    it costs, the morale it shakes, and the fatigue, the missiles, the Supply
+ *    and the rout and rally that follow (`combat.ts`). The men who fell are laid
+ *    on the field as residue, which is drawn and swept and never hashed.
+ * 4. **Counts the works down.** Construction is a timer plus the labour the
  *    allocation already gives it (ADR-0005).
- * 4. **Advances the calendar and announces the boundary.** The economy
- *    subscribes to `onSeason` for its ordinary production and Payroll, and to
- *    `onAutumn` for the harvest on top of it — the clock is advanced once, and
- *    the same report is handed to the one subscriber that cares.
+ * 5. **Advances the calendar and announces the boundary.** The economy
+ *    subscribes to `onSeason` for its ordinary production, Payroll, the morale a
+ *    Squad cut off from its country loses and the resupply of the ones that are
+ *    not, and to `onAutumn` for
+ *    the harvest on top of it — the clock is advanced once, and the same report
+ *    is handed to the one subscriber that cares.
  *
- * A Match on this world cannot be won or lost yet. Nothing takes a settlement
- * (C5) and nothing fights (C3), so the rules never decide one and the bound
- * ends it; `economyMatchOutcome` returns `null` and says so.
+ * A Match on this world still cannot be won or lost: nothing takes a settlement
+ * (C5), so the rules never decide one and the bound ends it;
+ * `economyMatchOutcome` returns `null` and says so. What a fight can do here is
+ * wear an army down and break it.
  *
  * The Observation is where B7 and D2 will read the economy from: the settlements
  * a Faction holds and where they stand, what is in their stocks, what they are
  * building for, how their people are divided, its treasury and its Squads — each
  * Squad where it stands, what shape it holds and where it is walking, beside the
- * Payroll and the morale. An enemy's settlement and its Squads are not in it,
- * which is the one filtering this Match can do without fog: ownership is the
- * economy's own secret and it keeps it.
+ * Payroll, the morale, the fatigue, the missiles it has left and whether it has
+ * broken (C3). An enemy's settlement and its Squads are not in it, which is the
+ * one filtering this Match can do without fog: ownership is the economy's own
+ * secret and it keeps it.
  */
 import { buildingOf, namedStock, squadTypeOf, type ResourceAmounts } from '../content/index.ts';
 import type { Command, Formation } from './command.ts';
+import {
+  applyCombatCommands,
+  engagedWith,
+  fight,
+  resupply,
+  supplyMorale,
+} from './combat.ts';
 import {
   advanceConstruction,
   applyEconomyCommand,
@@ -57,7 +73,8 @@ import { eyeOf, SETTLEMENT_VISION, SQUAD_VISION, type Eye } from './fog.ts';
 import { generateMap, type MapGrid, type Site } from './map.ts';
 import { applyMovementCommands, goalOf, march, routeCacheFor } from './movement.ts';
 import { refusalOf, type RouteRefusal } from './route.ts';
-import { facingOf, formationOf, type Facing } from './squad.ts';
+import { fadeResidue, recordCasualties } from './residue.ts';
+import { facingOf, formationOf, isRouting, type Facing } from './squad.ts';
 import type { MatchRules } from './match.ts';
 import type { MatchSetup } from './driver.ts';
 import {
@@ -158,8 +175,31 @@ export interface VisibleSquad {
   /** Why the last move Command it was given could not be carried out, or `null` (C1). */
   readonly refused: RouteRefusal | null;
 
-  /** What it has left to fight with. */
+  /** What it has left to fight with: the primary resource of a fight (C3). */
   readonly morale: number;
+
+  /** How tired it is, 0 to the top of the fatigue scale: a tired Squad strikes weakly (C3). */
+  readonly fatigue: number;
+
+  /** How many volleys of missiles it still carries: the first rounds of a contact are worth more (C3). */
+  readonly ammunition: number;
+
+  /**
+   * Whether it has broken and is running for safety (C3).
+   *
+   * A routed Squad is not in good order: it fights weakly, cannot be given an
+   * order, and forms up again on its own once the ground behind it is quiet.
+   */
+  readonly routing: boolean;
+
+  /**
+   * Whether an enemy Squad is in contact with it right now (C3).
+   *
+   * Contact is one tile, which is well inside any Squad's own eyes, so this is
+   * the Faction seeing the men it is already fighting and not the fog leaking
+   * an enemy it could not know about (B4).
+   */
+  readonly engaged: boolean;
 
   /** What it owes its Faction each Season: the term Payroll is charged on. */
   readonly payroll: number;
@@ -213,12 +253,21 @@ export const economyMatchRules: MatchRules<EconomyWorld, Command> = {
 
   step: (world, _rng, tick, commands) => {
     // The Commands first, in the order they arrived: the economy's own (build
-    // and recruit) and the movement's (move, attackMove, hold, formation), each
-    // ignoring the kinds the other owns. Then the ground the Squads cover, and
+    // and recruit), the movement's (move, attackMove, hold, formation) and
+    // combat's (attack, withdraw), each ignoring the kinds the others own. Then
+    // the ground the Squads cover, then the round of contact they fight, and
     // then the works and the calendar, which do not depend on where anybody is.
     for (const command of commands) applyEconomyCommand(world.economy, command);
     applyMovementCommands(world.economy, world.map, commands, routeCacheFor(world.map));
+    applyCombatCommands(world.economy, world.map, commands, routeCacheFor(world.map));
     march(world.economy, world.map);
+
+    // The dead are the one product of a fight that is not state: they are laid
+    // on the field for a drawing code and swept off it, and the world's hash
+    // covers neither (`sim/residue.ts`).
+    const fallen = fight(world.economy, world.map, tick, routeCacheFor(world.map));
+    recordCasualties(world.economy, fallen, tick);
+    fadeResidue(world.economy, tick);
 
     advanceConstruction(world.map, world.economy);
 
@@ -227,6 +276,8 @@ export const economyMatchRules: MatchRules<EconomyWorld, Command> = {
       onSeason: (change) => {
         produceSeason(world.map, world.economy, change.season);
         chargePayroll(world.economy);
+        supplyMorale(world.economy);
+        resupply(world.economy);
       },
       onAutumn: () => {
         harvest(world.map, world.economy);
@@ -259,7 +310,7 @@ export const observeEconomy: MatchSetup<EconomyWorld, EconomyVisible>['observe']
       .map((settlement) => visibleSettlement(world.map, settlement)),
     squads: world.economy.squads
       .filter((squad) => squad.owner === owner)
-      .map((squad) => visibleSquad(squad)),
+      .map((squad) => visibleSquad(world.economy, squad)),
   };
 };
 
@@ -306,8 +357,8 @@ function visibleSettlement(map: MapGrid, settlement: Settlement): VisibleSettlem
   };
 }
 
-/** A Squad, as its owner reads it: where it stands, and what it costs to keep. */
-function visibleSquad(squad: Squad): VisibleSquad {
+/** A Squad, as its owner reads it: where it stands, what it costs to keep, and how the fight is going. */
+function visibleSquad(economy: Economy, squad: Squad): VisibleSquad {
   const type = squadTypeOf(squad.type);
 
   return {
@@ -321,6 +372,10 @@ function visibleSquad(squad: Squad): VisibleSquad {
     goal: goalOf(squad),
     refused: refusalOf(squad.refused),
     morale: squad.morale,
+    fatigue: squad.fatigue,
+    ammunition: squad.ammunition,
+    routing: isRouting(squad),
+    engaged: engagedWith(economy, squad) !== undefined,
     payroll: type?.payroll ?? 0,
     unpaid: squad.unpaid,
     home: squad.home,

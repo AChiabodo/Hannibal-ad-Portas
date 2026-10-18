@@ -351,7 +351,7 @@ npm run match -- --seed 1 --ticks 600 --rules march
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 2,
-  "hash": "0cbe91ba1dacebcb"
+  "hash": "2df7aaf9e293a20c"
 }
 ```
 
@@ -361,7 +361,69 @@ the economy's half of every Squad beside them, so a change to any of it is a
 decision in review rather than a silent one. `musterSquad` is a scenario's way
 in — recruitment is the economy's — and the `march` Match exists because a
 ticket that says "a dozen Squads moving at once" should be something the
-repository runs rather than something it claims.
+repository runs rather than something it claims. Since C3 the two forces meet in
+the middle of that theatre, so the hash covers the fight as well as the march:
+the survivors are the men who got through, and every one of them still stands on
+the Stronghold it was sent to.
+
+## Combat and morale
+
+Two Squads that touch fight, and what they fight over is not a health bar. Each
+round of contact moves the same two quantities on both sides — how many men are
+left, and how close the Squad is to breaking — and a Squad that breaks runs
+rather than dying to the last man (ADR-0004, ADR-0015). Everything the plan
+lists as a lever moves one of those two numbers and nothing else:
+
+| Lever | What it does |
+| --- | --- |
+| the matchup matrix | `spear > cavalry > light > archers > spear`, the sword even against all; an advantage is ×3/2 and a disadvantage ×2/3 |
+| flank and rear | more men and more morale shock, and the flanked Squad strikes weakly back, because its front faces the wrong way |
+| terrain | a hill is harder to assault, a ford disorders whoever stands in it, cavalry in a forest cannot charge |
+| fatigue | a march and a fight both cost; a spent Squad strikes for 40% of a fresh one |
+| ammunition | the first volleys add men and shock; after that the type fights with its arm alone |
+| Supply | a Squad cut off from its Faction's country loses morale at every Season boundary |
+| Payroll | a Season in arrears is a Season of morale lost, and a Squad that breaks sooner |
+
+**One round, resolved at once** (`src/sim/combat.ts`). A round is five ticks —
+half a second — and every blow in it is computed from the state as the round
+*began*, then applied, so it cannot matter which Squad the list walked first.
+Nothing draws from the Match's generator: a fight is a pure function of the
+world, a replay reproduces it, and a balance change is a measurement. Every
+modifier is a ratio of whole numbers applied in a fixed order, which is why the
+test that predicts a number can work it out by hand.
+
+**Breaking, running, rallying.** A Squad at no morale has *routed*: it runs for
+the nearest settlement its Faction holds, strikes at a third of its weight,
+gives no shock at all, and cannot be ordered anywhere — no manual rallying, no
+micro-recovery. It also cannot be annihilated while it still has a route to
+walk: its strength floors at one man for as long as there is somewhere to run,
+which is what "breaks rather than dies to the last man" means mechanically. Once
+the ground behind it is quiet it recovers a point of morale a round and forms up
+by itself. That is the only fast recovery there is: a Squad in good order gets
+its nerve back from being paid (`chargePayroll`), not from waiting.
+
+**The dead are residue** (`src/sim/residue.ts`, `src/render/corpses.ts`). The men
+a round costs are recorded *beside* the Match, in a `WeakMap` keyed by the
+economy: one mark per round per Squad, on the tile they fell on, drawn as the
+death frame of the figure they were, faded over the last seconds of thirty and
+then swept away. None of it is in `MatchState`, so a Match that recorded a
+thousand corpses hashes as the Match that recorded none — which is the ticket's
+own criterion, asserted directly. The page draws only the ones its own fog is
+looking at (`visibleCorpses`): the residue list holds both Factions' dead, and a
+corpse on a tile nobody has an eye on is a fact about the enemy the Faction has
+not paid for.
+
+**What C3 does not own.** No generals or heroes; no ram, which is siege (C5); no
+manual rallying. Being cut off is read for now as "no settlement the Faction
+holds within `SUPPLY_RADIUS`", charged with Payroll at the Season boundary — C6
+replaces that inference with real Territory and per-Season Attrition, and
+`inSupply` is the one function that moves when it does.
+
+The Observation carries the fight to the Faction that is in it: `morale`,
+`fatigue`, `ammunition`, whether the Squad has `routed` and whether it is
+`engaged`. Contact is one tile, which is inside any Squad's own eyes, so the fog
+is not being spent by it. The HUD prints the figures, and reads a routed Squad as
+*In rotta* rather than naming an order it is not obeying.
 
 ## The first pixels
 
@@ -841,7 +903,10 @@ src/                application code
     route.ts        what crossing a tile costs, A* to find a way, and routes not searched twice
     squad.ts        the block a Squad is: its facings, its formations, and where its men stand
     movement.ts     the moving half of a Squad: routes, refused orders, and the Commands obeyed
-  content/          the typed tables the rules read: resources, Squad types, buildings
+    combat.ts       the fight: contact, the matchup, flanking, fatigue, missiles, rout and rally
+    residue.ts      the dead, kept beside the Match because they fade and never enter a hash
+  content/          the typed tables the rules read: resources, Squad types, arms, buildings
+    arms.ts         the five arms, and the matchup matrix: a cycle, not a ladder
   art/              pure pixel generation: PixelBuffer in, PixelBuffer out (no engine imports)
     pixel-buffer.ts the one currency: RGBA bytes, the drawing primitives and the pixel hash
     palette.ts      nine bases, and the ramps derived from them by integer arithmetic
@@ -878,7 +943,8 @@ src/                application code
     game.ts         the Match behind the interface, and the real-time loop that drives it
     opening.ts      the army the page musters, and the eyes it therefore has
     squads.ts       a Squad drawn as its soldiers in formation, from the simulation's own list
-    squad-layer.ts  one sprite per Squad on the map, and the mark of where it was told to go
+    squad-layer.ts  one sprite per Squad on the map, the mark of where it was told to go, and the dead
+    corpses.ts      a corpse: which body, where on its tile, and how far through its fade
     controls.ts     the pointer and the keyboard, ending at the hooks a test calls
     hud.ts          the interface's two plates on the stage, in screen space
     atelier-layout.ts  where the several zoom levels of the catalogue stand on the page

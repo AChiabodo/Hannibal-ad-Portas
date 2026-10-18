@@ -56,6 +56,19 @@
  *   Observation built from that memory, recomputed on every tick from the
  *   settlements the Faction holds.
  *
+ * C1 made the Squads walk, and C3 made them fight:
+ *
+ * - `squad.ts` — the block a Squad is: its facings, its formations, its fatigue
+ *   and its nerve, and where its men stand (the last two derived).
+ * - `route.ts` and `movement.ts` — what crossing a tile costs, A* over the
+ *   theatre, refusals, and the Commands that move a Squad.
+ * - `combat.ts` — the fight: contact, the matchup matrix, flanking and rear
+ *   attacks, terrain, fatigue, missiles, Supply, and the rout and rally that
+ *   follow. Morale is the primary resource and a round of it is one simultaneous
+ *   exchange (ADR-0015).
+ * - `residue.ts` — the men a fight costs, kept *beside* the Match: corpses are
+ *   drawn, fade, and never enter the state hash.
+ *
  * B5 gave the Match its strategic clock, which the CLI plays today:
  *
  * - `season.ts` — the calendar: four Seasons to a game year, autumn and winter
@@ -258,11 +271,14 @@ export {
   FACINGS,
   facingCode,
   facingOf,
+  FATIGUE_MAX,
   FORMATION,
   formationCode,
   formationOf,
   frontage,
+  isRouting,
   menOf,
+  ROUTING,
   standingAt,
 } from './squad.ts';
 export type { Block, Facing, Man, Shape } from './squad.ts';
@@ -272,9 +288,64 @@ export {
   goalOf,
   march,
   musterSquad,
+  orderedSquads,
+  orderSquadTo,
+  ownedSquads,
   routeCacheFor,
 } from './movement.ts';
 export type { Placement } from './movement.ts';
+
+export {
+  ADVANTAGE_RATIO,
+  applyCombatCommands,
+  armOfType,
+  ASPECT_SHOCK,
+  ASPECT_STRIKE,
+  aspectOf,
+  BASE_SHOCK,
+  BREAKING_MORALE,
+  engagedPairs,
+  engagedWith,
+  enemyWithin,
+  exchangeOf,
+  EXCHANGE_TICKS,
+  FATIGUE_PENALTY,
+  fight,
+  FORD_DISORDER,
+  FORD_SHOCK,
+  FOREST_CAVALRY,
+  HILL_DEFENCE,
+  inContact,
+  inSupply,
+  MATCHUP_SHOCK,
+  VOLLEY_STRIKE,
+  AMMUNITION_PER_VOLLEY,
+  moraleCeiling,
+  RALLY_MORALE,
+  RALLY_RADIUS,
+  resupply,
+  ROUTED_STRIKE,
+  safetyFor,
+  scaledBy,
+  supplyMorale,
+  STRIKE,
+  SUPPLY_MORALE_LOSS,
+  SUPPLY_RADIUS,
+  VOLLEY_SHOCK,
+} from './combat.ts';
+export type { Aspect, Exchange, Ratio } from './combat.ts';
+
+export {
+  CORPSE_FADE_TICKS,
+  CORPSE_LIMIT,
+  CORPSE_TICKS,
+  corpsesOf,
+  fadeResidue,
+  isLying,
+  recordCasualties,
+  residueFor,
+} from './residue.ts';
+export type { Corpse, Fallen, Residue } from './residue.ts';
 
 export {
   generateMap,

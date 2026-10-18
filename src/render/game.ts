@@ -13,6 +13,11 @@
  *   `move`, `attackMove`, `hold`, `withdraw`, `formation` and `group` Commands
  *   through the same seam a machine uses.
  *
+ * C3 adds the dead: the men a fight costs are laid on the field as residue
+ * (`render/corpses.ts`, `sim/residue.ts`), drawn under the living and swept away
+ * after their thirty seconds. They are read from the world's residue and never
+ * from an Observation, because a corpse is drawing and nothing else.
+ *
  * ## The clock, and the one place wall time is allowed
  *
  * `sim/` may not read a wall clock (ADR-0006), so the page is where real time
@@ -64,6 +69,8 @@ import { MAP_HEIGHT, MAP_WIDTH } from '../sim/map.ts';
 import { createMatch, type Match } from '../sim/match.ts';
 import type { Observation } from '../sim/observation.ts';
 import { createPacing, type Speed } from '../sim/pacing.ts';
+import { corpsesOf, type Corpse } from '../sim/residue.ts';
+import { visibleCorpses } from './corpses.ts';
 import type { LoggedCommand } from '../sim/replay.ts';
 import { requireTickCount } from '../sim/ticks.ts';
 import type { Eye, FogView, Knowledge } from '../sim/fog.ts';
@@ -125,6 +132,15 @@ export interface GameHooks {
   hudRows(): readonly RowRect[];
   /** The Faction's own Squads, with the rectangle each is drawn in. */
   squads(): readonly SquadReport[];
+  /**
+   * The men who have fallen lately where this Faction can see them, as residue:
+   * drawn on the field, faded by their age, and never part of the Match (C3).
+   *
+   * The whole list is both Factions', so this is the field filtered through the
+   * same fog the theatre is veiled with — a test can read what a Player is being
+   * shown without a screenshot.
+   */
+  corpses(): readonly Corpse[];
   /** Picks whatever is under a screen point — one click, with or without a shift. */
   selectAt(screenX: number, screenY: number, additive?: boolean): void;
   /** Picks every Squad a box dragged between two screen points touches. */
@@ -175,8 +191,8 @@ export interface GameHooks {
    * Bounded, because a page left open for an hour must not grow a log nobody
    * asked for. It is here so that "this click issued a real Command" is
    * something a test can read rather than infer from what moved — which matters
-   * for the Commands whose effect is a later ticket's (a `withdraw` is obeyed by
-   * C3, and it is still a Command today).
+   * for the Commands whose effect is a rule somebody else owns (a `withdraw` is
+   * obeyed by combat, and the log says it was issued whatever happened next).
    */
   applied(): readonly LoggedCommand<Command>[];
 }
@@ -258,6 +274,7 @@ export function createGame(options: GameOptions): Game {
 
   let model = readModel();
   let minimap = readMinimap();
+  let dead: readonly Corpse[] = readCorpses();
 
   repaint();
 
@@ -274,6 +291,7 @@ export function createGame(options: GameOptions): Game {
     },
     hudRows: () => hudLayout(model, options.size).rows,
     squads: () => squadReports(),
+    corpses: () => dead,
     selectAt: (x, y, additive = false) => {
       pickAt(x, y, additive);
     },
@@ -446,6 +464,14 @@ export function createGame(options: GameOptions): Game {
     return first === undefined ? null : { kind: 'squad', id: first };
   }
 
+  /**
+   * The men who fell where this Faction can see them: the world's residue, cut
+   * down by the fog the page draws the theatre through.
+   */
+  function readCorpses(): readonly Corpse[] {
+    return visibleCorpses(corpsesOf(match.state.world.economy, match.state.tick), options.fog());
+  }
+
   /** The minimap, through the fog the page owns, with the camera marked. */
   function readMinimap(): ReturnType<typeof minimapPlate> {
     return minimapPlate(match.state.world.map, options.fog(), options.viewport());
@@ -454,12 +480,18 @@ export function createGame(options: GameOptions): Game {
   /** Both plates, every block, and a frame drawn. */
   function repaint(): void {
     model = readModel();
+    dead = readCorpses();
     layer.panels(model, options.size);
     field.update({
       squads: visible().squads,
       selected: human.selection.squads,
       tick: match.state.tick,
       faction: PLAYER_FACTION,
+      // The dead are not in the Observation — they are not state, and a
+      // Faction's eyes do not report its corpses — so the page reads them from
+      // the world's residue, through its own fog, which is a drawing decision
+      // and nothing else. One read, which the `corpses` hook hands back too.
+      corpses: dead,
     });
     minimap = readMinimap();
     layer.minimap(model, minimap, options.size);

@@ -303,7 +303,10 @@ export function marchLog(world: EconomyWorld): CommandLog<Command> {
  * through the same driver a human and an AI use. What the hash it ends on covers
  * is therefore the whole of C1 in one number — the map in state, the routes
  * worked out over it, the terrain costs walked, the turns taken — with the
- * economy's half of every Squad beside it.
+ * economy's half of every Squad beside it. Since C3 the two forces meet in the
+ * middle of that theatre, so the same hash covers the fight as well: the
+ * survivors are the men who got through, and each of them still ends the March
+ * on the Stronghold it was ordered to.
  */
 function playMarch(seed: number, ticks: number): MatchRun {
   const world = marchWorld(seed);

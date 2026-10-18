@@ -78,14 +78,16 @@ jobs:
       - name: Play the theatre with fog, headless
         run: npm run match -- --seed 1 --ticks 600 --rules fog --expect-hash 3d60b17e3e9b6e50
 
-      # C1's movement, on the world the economy Match already plays: a dozen
-      # Squads, six a Faction, mustered at their own Stronghold and ordered
-      # across the map to the other one. The hash covers the routes worked out
-      # over the theatre, the terrain costs walked and every turn taken, beside
-      # the economy's half of each Squad, so a change to pathfinding or to
-      # marching moves this line and has to be a decision in review (ADR-0006).
-      - name: March a dozen Squads across the theatre, headless
-        run: npm run match -- --seed 1 --ticks 600 --rules march --expect-hash 0cbe91ba1dacebcb
+      # C1's movement and C3's combat on the world the economy Match already
+      # plays: a dozen Squads, six a Faction, mustered at their own Stronghold
+      # and ordered across the map to the other one, where the two forces meet.
+      # The hash covers the routes worked out over the theatre, the terrain costs
+      # walked, every turn taken, the round of contact that follows and the
+      # economy's half of each Squad, so a change to pathfinding, to marching or
+      # to a fight moves this line and has to be a decision in review
+      # (ADR-0006, ADR-0015).
+      - name: March a dozen Squads across the theatre, and let them fight, headless
+        run: npm run match -- --seed 1 --ticks 600 --rules march --expect-hash 2df7aaf9e293a20c
 
   guards:
     name: "Fences (six: import boundaries, engine allow-list, Math.random, transcendentals, ambient clock, no committed assets)"

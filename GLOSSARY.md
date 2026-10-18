@@ -143,6 +143,56 @@ The per-Season loss a Squad suffers for being outside its Faction's Territory, o
 _UI_: Attrito
 _Avoid_: Decay, drain, penalty
 
+**Supply**:
+Whether a Squad can draw on its Faction's country where it stands: a Squad with no friendly settlement in reach is cut off, and being cut off costs it morale each Season. Not the four resources, and not a line drawn on the map — that is Territory, which C6 builds.
+_UI_: Rifornimenti
+_Avoid_: Logistics, upkeep, in-supply/out-of-supply as a noun
+
+**Morale**:
+What a Squad has left to fight with, and the primary resource of a fight: it is what decides whether a Squad stands or breaks, as against its strength, which only decides how many men are still standing. Moved by the fight itself, by flanking and rear attacks, by fatigue, by Supply, and by Payroll.
+_UI_: Morale
+_Avoid_: Health, hit points, spirit, resolve
+
+**Rout**:
+What a Squad does when its morale is gone: it runs for the nearest settlement its Faction holds, strikes weakly, and is not butchered while it has somewhere to run. Automatic, and not a state a Player can order.
+_UI_: Rotta
+_Avoid_: Retreat, flee (reserve "withdraw" for the Command), break (as a noun)
+
+**Rally**:
+A routed Squad forming up again by itself, once the ground behind it is quiet. There is no Command for it and no micro-recovery: the player's job was to not get the Squad broken.
+_UI_: Adunata
+_Avoid_: Recover, regroup, reform
+
+**Ammunition**:
+The volleys of missiles a Squad carries into a fight: a Squad with ammunition left adds a volley to each round it is in contact, and spends one doing it. A type with none fights with its arm alone, and what has been thrown comes back only when the Squad is resupplied in its own country at a Season boundary. "Volley" is the unit; "missile" is only what is thrown.
+_UI_: Munizioni
+_Avoid_: Missiles, ammo, rounds, shots (a round is a tick of contact, not a thing thrown)
+
+**Fatigue**:
+How tired a Squad is from marching and fighting, on a scale from fresh to spent. A tired Squad strikes weakly until it has stood still out of contact for a while.
+_UI_: Fatica
+_Avoid_: Stamina, exhaustion, endurance
+
+**Arm**:
+What a Squad is equipped with — spear, sword, cavalry, light or archers — and therefore its row and column in the matchup matrix. Latin has no word for this that is not also a weapon, so the word is English everywhere and the interface never shows it.
+_UI_: —
+_Avoid_: Weapon, class, type (a type is a Squad type, which names an arm)
+
+**Matchup matrix**:
+The table deciding who has the better of a fight: `spear > cavalry > light > archers > spear`, with the sword even against everything. It is a cycle and not a ladder, so no arm is best and the right roster depends on the enemy's.
+_UI_: —
+_Avoid_: Counter table, rock-paper-scissors, unit chart
+
+**Aspect**:
+Where a blow lands relative to the way the target faces: its **front**, its **flank** or its **rear**. A flank or rear attack costs the target both men and morale, and the target strikes weakly in return, because its front rank is facing the wrong way. Manoeuvre is worth what the aspect is worth.
+_UI_: —
+_Avoid_: Angle, direction, orientation (a facing is the way a Squad looks, not where it is hit)
+
+**Corpse**:
+One mark left on the tile where men of one Squad fell in one round: drawn as a body in that Squad's own silhouette, then faded away after about thirty seconds. One mark may stand for several men. Residue and never state — a corpse changes nothing, blocks nothing, and is not in the state hash.
+_UI_: —
+_Avoid_: Body, casualty marker, corpse pile (a corpse is one mark on one tile, not a stock)
+
 ### Economy
 
 **Payroll**:
