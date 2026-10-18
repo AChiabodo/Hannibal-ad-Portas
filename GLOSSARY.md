@@ -33,6 +33,11 @@ One quarter of a Match's game year, and the Match's strategic clock: harvest in 
 _UI_: Stagione
 _Avoid_: Turn, phase, cycle
 
+**Year**:
+Four Seasons of Match time, counted from one. A human Match has no limit on them; a headless Match is bound to three so that it always terminates.
+_UI_: Anno
+_Avoid_: Cycle, age, era
+
 ### The theatre
 
 **Tile**:

@@ -31,8 +31,9 @@
  *   implement, plus the idle and scripted Controllers a headless Match runs on.
  * - `driver.ts` — the loop that asks two Controllers for Commands and runs a
  *   Match to a result, with no browser anywhere.
- * - `empty.ts` — the Match with no systems in it yet, which is the one the CLI
- *   can play today (A4); B1–C5 fill the world in behind it.
+ * - `empty.ts` — the Match with no systems in it: the engine and the seam, and
+ *   nothing else. It stays as the harness that gates the seed expansion and the
+ *   canonical form on their own (A5 review, F5).
  *
  * B1 built the first piece of that world:
  *
@@ -41,6 +42,17 @@
  *   fair map has to satisfy asserted over a thousand seeds. It is a pure
  *   function of the seed, and the map is integer state like everything else
  *   (ADR-0006), so the Match that eventually runs on it replays exactly.
+ *
+ * B5 gave the Match its strategic clock, which is the Match the CLI plays today:
+ *
+ * - `season.ts` — the calendar: four Seasons to a game year, autumn and winter
+ *   as the only two hooks another system needs, and a Season Match whose
+ *   Observation carries the season and the year. The headless bound of three
+ *   game years is `HEADLESS_TICKS` here, so the clock and the bound cannot
+ *   disagree about how long a year is.
+ * - `pacing.ts` — the three speeds, the pause, and the orders given in it: a
+ *   paused loop steps no ticks, and a `PausableController` holds what a Player
+ *   decides until the Match resumes. Neither ever reaches state or the hash.
  */
 export { TICK_HZ, TICK_MS } from './clock.ts';
 export { requireTickCount } from './ticks.ts';
@@ -104,6 +116,34 @@ export { ForeignCommandError, runMatch } from './driver.ts';
 export type { MatchResult, MatchRun, MatchSetup, Outcome } from './driver.ts';
 export { emptyMatchOutcome, emptyMatchRules, observeEmptyMatch } from './empty.ts';
 export type { EmptyMatchVisible, EmptyMatchWorld } from './empty.ts';
+
+export { createPacing, isSpeed, NORMAL_SPEED, SPEEDS } from './pacing.ts';
+export type { Pacing, PausableController, Speed } from './pacing.ts';
+
+export {
+  advanceCalendar,
+  announceSeasons,
+  HEADLESS_TICKS,
+  HEADLESS_YEARS,
+  observeSeasonMatch,
+  SEASON_TICKS,
+  SEASONS,
+  SEASONS_PER_YEAR,
+  seasonMatchOutcome,
+  seasonMatchRules,
+  seasonName,
+  seasonOf,
+  startCalendar,
+  YEAR_TICKS,
+} from './season.ts';
+export type {
+  Season,
+  SeasonCalendar,
+  SeasonChange,
+  SeasonHooks,
+  SeasonMatchVisible,
+  SeasonMatchWorld,
+} from './season.ts';
 
 export {
   generateMap,

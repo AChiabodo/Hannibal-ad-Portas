@@ -88,14 +88,17 @@ describe('a Match that draws, played from the command line', () => {
     expect(report.hash).toMatch(/^[0-9a-f]{16}$/);
   });
 
-  it('hashes the drawing Match differently from the empty one, so the gate covers the draw loop', () => {
+  it('hashes the drawing Match differently from the one the command line plays by default, so the gate covers the draw loop', () => {
     expect(reportOf(match('--seed', '1', '--ticks', '600', '--rules', 'draws')).hash).not.toBe(
       reportOf(match('--seed', '1', '--ticks', '600')).hash,
     );
   });
 
-  it('plays the empty Match when no rules are named, byte for byte the same command', () => {
+  it('plays the seasons Match when no rules are named, byte for byte the same command', () => {
     expect(match('--seed', '1', '--ticks', '600').stdout).toBe(
+      match('--seed', '1', '--ticks', '600', '--rules', 'seasons').stdout,
+    );
+    expect(match('--seed', '1', '--ticks', '600').stdout).not.toBe(
       match('--seed', '1', '--ticks', '600', '--rules', 'empty').stdout,
     );
   });

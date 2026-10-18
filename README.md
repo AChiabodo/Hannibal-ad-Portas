@@ -129,8 +129,9 @@ iron, four to six capturable minor settlements, a Stronghold for each Faction,
 and roads joining the nodes to one another. The map is integer state like
 everything else the world will hold, so the day a Match's rules put it in
 `MatchState` the tiles it starts on are covered by the state hash and a replay
-begins on the same ones (ADR-0006); B6 and C1 are the tickets that do, and
-`src/sim/empty.ts` is still the world the CLI plays today.
+begins on the same ones (ADR-0006); B6 and C1 are the tickets that do. The
+world the CLI plays today is the clock (`src/sim/season.ts`), which is the piece
+of the Match B5 could put in `MatchState` before the map moved in.
 
 The theatre is **organic, not mirrored**: the two halves do not carry the same
 hills in the same places, and no pass reflects one side onto the other. Fairness
@@ -194,6 +195,44 @@ The dump is a reading of the map and not a second opinion about it: it is
 byte-stable for a seed, so two runs diff cleanly, and it holds no timing, no
 path and no wall clock, the same as the Match report.
 
+## The strategic clock
+
+Time has a shape. A game year is four **Seasons** of three and a half minutes
+each — `SEASON_TICKS` in `src/sim/season.ts` — and the calendar is integer state
+like everything else, so the state hash covers it and two replays cross the same
+boundaries on the same ticks. Spring and summer are the campaign season, autumn
+brings the harvest and winter brings Attrition; those last two are the **only
+hooks another system needs**, so no system counts the year for itself:
+
+```ts
+const changes = advanceCalendar(world.calendar, tick); // once per tick
+announceSeasons(changes, economy.seasons, attrition.seasons);
+```
+
+`advanceCalendar` is handed the tick being *left* — the same argument a rule's
+`step` receives — and puts the calendar where the Match's own clock says it is.
+It reports; it does not announce. `announceSeasons` hands the same report to
+every subscriber, so the economy and Attrition both hear the year turn and
+neither can be starved by whoever advanced the clock first. A boundary therefore
+falls on the same tick in every run, a second reading of the same tick reports
+nothing, and a rules step that missed a tick catches up without swallowing a
+harvest. A Controller reads the season as a word and the year as a number from
+its Observation; the index the world stores never leaves it.
+
+A Match plays at **three speeds** — 1x, 2x and 3x — and can be **paused**, and
+both are the driver's business rather than the simulation's: they change how much
+wall time a tick costs, never what a tick does, so a paused Match and a fast one
+are the same Match on the same seed (`src/sim/pacing.ts`). Orders given while
+paused are held by the Player's Controller and applied on the first tick after
+the resume, in the order they were given, so thinking costs nothing. Pausing is
+idempotent, and the time spent paused is not banked and then replayed as a burst.
+
+A human Match has no time limit. A **headless Match is bound to three game
+years** — `HEADLESS_TICKS`, 25 200 ticks, 42 minutes of Match time — because a
+Match that can never end is a test that can never finish (ADR-0010). The CLI's
+default bound is exactly that, and its default Match is the one with the clock in
+it.
+
 ## The seam
 
 One seam carries every decision in the game (PLAN §3, ADR-0003). A **Controller**
@@ -238,7 +277,7 @@ npm run match -- --seed 1 --ticks 600
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 0,
-  "hash": "bf3d192e9ab9eb5f"
+  "hash": "61afacff3b33a793"
 }
 ```
 
@@ -251,7 +290,10 @@ harness Match to play, `--expect-hash` requires it to end on a hash you
 recorded, and `--help` describes the lot.
 
 CI plays that very command, with the hash above as its `--expect-hash`: a change
-that moves the hash is a decision in review (ADR-0006).
+that moves the hash is a decision in review (ADR-0006). It plays three more: the
+default Match over its whole three-year bound, the engine-only `empty` Match, and
+one that draws on every tick, so the clock, the seed expansion and the draw loop
+are each gated rather than inferred from the others.
 
 The exit codes are the same three `npm run guard` uses: **0** the Match ran,
 **1** a game invariant was violated — a hash that is not the expected one, a
@@ -259,13 +301,13 @@ Command outside the vocabulary, a float where state must be integers — and **2
 the command line was misused. A violated hash still prints the report first: the
 interesting number is the one the Match ended on.
 
-Today the Match is empty, on purpose: no system has been built yet, so nothing
-can be lost and the tick bound is what ends the run (`src/sim/empty.ts`).
-`--rules` chooses which harness Match the CLI plays, and `--rules draws` plays
-one whose rules draw from the seed on every tick, so the golden hash in CI covers
-the draw loop as well as the seed expansion (`src/cli/rules.ts`). The harness
-around it is the point, and the waves that build the world change what is inside
-it rather than how it is driven.
+Today the Match has a clock and nothing else (B5): its world is the calendar, so
+the tick bound is what ends the run (`src/sim/season.ts`). `--rules` chooses
+which harness Match the CLI plays: `seasons` is the default, `empty` is the
+engine and the seam alone, and `draws` plays one whose rules draw from the seed
+on every tick, so the golden hash in CI covers the draw loop as well as the seed
+expansion (`src/cli/rules.ts`). The harness around it is the point, and the waves
+that build the world change what is inside it rather than how it is driven.
 
 The command needs no build step. Node strips the types and runs `src/cli/main.ts`
 as it stands, which is why every relative import under `src/` names its extension
@@ -289,7 +331,9 @@ src/                application code
     observation.ts  everything a Controller may know, and nothing else
     controller.ts   the one interface every mind implements, plus an idle and a scripted one
     driver.ts       two Controllers, one Match, a result and a command log
-    empty.ts        the Match with no systems in it yet: what the CLI plays today
+    empty.ts        the Match with no systems in it: the engine and the seam alone
+    season.ts       the strategic clock, its two hooks, and the Match the CLI plays
+    pacing.ts       three speeds, a pause, and the orders a pause holds
     map.ts          the theatre a seed generates, and the invariants it satisfies
   cli/              the headless Match as a command
     arguments.ts    what the command line means, and what it refuses

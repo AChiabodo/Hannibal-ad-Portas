@@ -22,31 +22,22 @@
  */
 import { TICK_HZ } from '../sim/clock.ts';
 import { MAX_SEED } from '../sim/rng.ts';
+import { HEADLESS_TICKS } from '../sim/season.ts';
 import { DEFAULT_RULES, isRulesName, RULES, RULES_NAMES, type RulesName } from './rules.ts';
 
 /** The seed a Match runs on when the command line does not name one. */
 export const DEFAULT_SEED = 1;
 
-/** A game year is four Seasons (PLAN §1). */
-const SEASONS_PER_YEAR = 4;
-
-/** A Season is three to four minutes; the plan's middle is three and a half (PLAN §4). */
-const MINUTES_PER_SEASON = 3.5;
-
-/** How long a headless Match may run before its bound ends it: three game years (PLAN §4). */
-const HEADLESS_YEARS = 3;
-
 /**
  * The tick bound a Match runs to when the command line does not name one.
  *
  * Three game years, which is the bound the plan puts on a headless Match so
- * that one always terminates (PLAN §4): a Season is three to four minutes, four
- * Seasons make a game year, and three and a half minutes a Season puts the
- * bound at 42 minutes of Match time, which at `TICK_HZ` is this many ticks.
- * B5 owns the season clock and gives a Match a bound it can reason about;
- * until then this is the horizon, and the empty Match's only ending.
+ * that one always terminates (PLAN §4). The length of a Season and the number
+ * of years are the clock's to say, so this is `HEADLESS_TICKS` and not a second
+ * derivation of it: a Season that grew by a minute must not leave the CLI's
+ * bound describing last year's calendar.
  */
-export const DEFAULT_TICKS = HEADLESS_YEARS * SEASONS_PER_YEAR * MINUTES_PER_SEASON * 60 * TICK_HZ;
+export const DEFAULT_TICKS = HEADLESS_TICKS;
 
 /** What one command line asked for: a seed, a bound, which rules, and maybe a hash to expect. */
 export interface RunOptions {

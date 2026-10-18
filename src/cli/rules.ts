@@ -11,8 +11,10 @@
  * to hand the driver a Match the CLI can play, so that CI can record the state
  * hash it ends on and fail when that hash moves (ADR-0003, ADR-0006).
  *
- * There are two names, and the second exists for one reason. The **empty**
- * Match draws nothing: `emptyMatchRules.step` is a no-op, so its golden hash is
+ * There are three names. The **seasons** Match is the one the command plays by
+ * default: its world holds the strategic clock, so the seed, the tick loop and
+ * the calendar are exercised together, and its golden hash moves when any of
+ * them does. The **empty** Match draws nothing and advances nothing: its hash is
  * the seed expanded, the clock at the bound and the world it started with —
  * a real proof that `xmur3`'s expansion, the canonical form and the hash are
  * portable across machines, and no proof at all about the draw loop, which is
@@ -34,7 +36,10 @@ import {
   emptyMatchRules,
   idleController,
   observeEmptyMatch,
+  observeSeasonMatch,
   runMatch,
+  seasonMatchOutcome,
+  seasonMatchRules,
   type Command,
   type EmptyMatchVisible,
   type EmptyMatchWorld,
@@ -42,6 +47,8 @@ import {
   type MatchRun,
   type MatchSetup,
   type Players,
+  type SeasonMatchVisible,
+  type SeasonMatchWorld,
 } from '../sim/index.ts';
 
 /**
@@ -131,6 +138,18 @@ function idlePlayers<Visible>(): Players<Visible> {
   ];
 }
 
+/** Plays the Match on the strategic clock: the calendar is the world, and the bound ends it. */
+function playSeasons(seed: number, ticks: number): MatchRun {
+  return runMatch<SeasonMatchWorld, SeasonMatchVisible>({
+    seed,
+    rules: seasonMatchRules,
+    observe: observeSeasonMatch,
+    outcome: seasonMatchOutcome,
+    players: idlePlayers(),
+    ticks,
+  });
+}
+
 /** Plays the empty Match: no systems, no draws, and the tick bound is what ends it. */
 function playEmpty(seed: number, ticks: number): MatchRun {
   return runMatch<EmptyMatchWorld, EmptyMatchVisible>({
@@ -161,10 +180,10 @@ function playDraws(seed: number, ticks: number): MatchRun {
  * Where `RulesName` is read from, and where the menu's order comes from: the
  * table below is checked against this list in both directions, so a name with
  * no rules, or rules under a name nobody can type, is a type error rather than
- * a use that fails at whatever hour CI runs. `DEFAULT_RULES` spells `empty` a
+ * a use that fails at whatever hour CI runs. `DEFAULT_RULES` spells `seasons` a
  * second time, and its type is this list's, so the two cannot disagree.
  */
-export const RULES_NAMES = ['empty', 'draws'] as const;
+export const RULES_NAMES = ['seasons', 'empty', 'draws'] as const;
 
 /** A name `--rules` accepts, which is also the only thing the table below is keyed by. */
 export type RulesName = (typeof RULES_NAMES)[number];
@@ -190,6 +209,11 @@ interface RulesEntry {
  * so a name `--rules` accepts and a Match `playMatch` can play cannot disagree.
  */
 export const RULES = {
+  seasons: {
+    description: 'the Match on the strategic clock: seasons advance, and the bound ends it',
+    play: playSeasons,
+  },
+
   empty: {
     description: 'the Match with no systems in it: the bound ends it',
     play: playEmpty,
@@ -202,7 +226,7 @@ export const RULES = {
 } as const satisfies Readonly<Record<RulesName, RulesEntry>>;
 
 /** The Match played when the command line names no rules. */
-export const DEFAULT_RULES: RulesName = 'empty';
+export const DEFAULT_RULES: RulesName = 'seasons';
 
 /** Whether a string names a Match this command can play: what the CLI asks before refusing one. */
 export function isRulesName(value: string): value is RulesName {

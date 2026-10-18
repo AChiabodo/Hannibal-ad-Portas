@@ -116,7 +116,13 @@ export interface MatchSetup<World, Visible> {
    */
   readonly players: Players<Visible>;
 
-  /** The longest the Match may run: headless and AI-versus-AI Matches must terminate (B5). */
+  /**
+   * The longest the Match may run, and there is no unbounded Match: a bound is
+   * required, so `runMatch` always terminates. The CLI plays by default to
+   * `HEADLESS_TICKS`, three game years (B5) — a caller may deliberately choose
+   * another length, but it cannot choose none. A human Match is simply a caller
+   * that hands over a longer bound.
+   */
   readonly ticks: number;
 }
 

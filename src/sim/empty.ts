@@ -14,9 +14,10 @@
  *   integer state, so it still serializes and still hashes.
  * - No rule decides anything. The Match ends by the bound its caller set, which
  *   is the driver's own explicit rule and the outcome a tournament counts as
- *   "decided by the clock" (§5 of the plan). B5 gives the Match a season clock
- *   and C5 the rules that end it sooner — an enemy Stronghold taken — and this
- *   module is what they replace.
+ *   "decided by the clock" (§5 of the plan). B5 gave the Match a strategic clock
+ *   in `season.ts`, and that is the Match the CLI plays by default; this module
+ *   stays as the harness with the least in it, so the seed expansion and the
+ *   canonical form are gated with no system to hide behind (A5 review, F5).
  *
  * A Controller may emit whatever it likes into an empty Match: every Command in
  * the vocabulary is well formed, the driver logs it and ownership-checks it, and

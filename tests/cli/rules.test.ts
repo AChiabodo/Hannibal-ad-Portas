@@ -3,6 +3,7 @@ import { DEFAULT_RULES, drawsRules, isRulesName, RULES, type DrawsWorld } from '
 import type { Command } from '../../src/sim/command';
 import { createMatch, type Match } from '../../src/sim/match';
 import type { RngState } from '../../src/sim/rng';
+import { HEADLESS_TICKS } from '../../src/sim/season';
 
 /** The cursor of a Match, copied, so a later draw cannot rewrite what was read. */
 function cursor(match: Match<DrawsWorld, Command>): RngState {
@@ -81,8 +82,30 @@ describe('the Matches the command line can play, by name', () => {
   it('gives the drawing Match a different hash from the empty Match on the same seed and bound', () => {
     expect(RULES.draws.play(1, 600).hash).not.toBe(RULES.empty.play(1, 600).hash);
   });
+});
 
-  it('names the two Matches it ships, and nothing else', () => {
+describe('a Match on the strategic clock, which is the one the command line plays by default', () => {
+  it('plays the seasons Match by name, and ends it by the tick bound like any other', () => {
+    expect(isRulesName('seasons')).toBe(true);
+    expect(RULES.seasons.play(1, 600).result).toEqual({ kind: 'clock', tick: 600 });
+    expect(RULES.seasons.play(1, 600).hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('gives the seasons Match a different hash from the empty one, so the clock really reaches the state', () => {
+    expect(RULES.seasons.play(1, 600).hash).not.toBe(RULES.empty.play(1, 600).hash);
+  });
+
+  it('runs a headless Match bound to three game years, and always terminates', () => {
+    const run = RULES.seasons.play(7, HEADLESS_TICKS);
+
+    expect(run.result).toEqual({ kind: 'clock', tick: HEADLESS_TICKS });
+    expect(run.log).toEqual([]);
+  });
+});
+
+describe('the names of the Matches the command line ships', () => {
+  it('names the three Matches it ships, and nothing else', () => {
+    expect(isRulesName('seasons')).toBe(true);
     expect(isRulesName('empty')).toBe(true);
     expect(isRulesName('draws')).toBe(true);
     expect(isRulesName(DEFAULT_RULES)).toBe(true);
