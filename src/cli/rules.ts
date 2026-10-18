@@ -762,7 +762,7 @@ interface RulesEntry {
  */
 export const RULES = {
   ai: {
-    description: 'two economy AI Controllers on the whole Match, with scored decision logs',
+    description: 'two AI Controllers — economy, field, scouting and siege at Centurio — with scored decision logs',
     play: playAiMatch,
   },
   economy: {

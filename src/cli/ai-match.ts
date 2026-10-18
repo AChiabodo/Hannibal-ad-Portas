@@ -2,7 +2,10 @@ import { createAi, type AiDecision } from '../ai/controller.ts';
 import { createEconomyBehaviour } from '../ai/economy.ts';
 import { createMilitaryBehaviour, createMilitaryRecruitment } from '../ai/military.ts';
 import { createScoutingBehaviour } from '../ai/scouting.ts';
-import { createBehaviourRegistry, type BehaviourRegistry } from '../ai/registry.ts';
+import { createSiegeBehaviour } from '../ai/siege.ts';
+import { createBehaviourRegistry, type Behaviour, type BehaviourContext, type BehaviourRegistry,
+  type Candidate } from '../ai/registry.ts';
+import { DIFFICULTY, type Difficulty, type DifficultyName } from '../ai/difficulty.ts';
 import { BUILDINGS } from '../content/buildings.ts';
 import { MATCHUP } from '../content/arms.ts';
 import { SQUAD_TYPES } from '../content/squads.ts';
@@ -10,7 +13,8 @@ import { TICK_HZ } from '../sim/clock.ts';
 import { BASE_HOUSING, GRAIN_PER_HEAD, TAX_PER_DENARIUS } from '../sim/economy.ts';
 import type { Command } from '../sim/command.ts';
 import { runMatch, type MatchRun } from '../sim/driver.ts';
-import { observeSiege, siegeMatchOutcome, siegeMatchRules, type SiegeVisible } from '../sim/siege.ts';
+import { RELIEF_RADIUS, RAM_COST, SIEGE_RADIUS, canAssault, observeSiege, siegeMatchOutcome, siegeMatchRules,
+  type SiegeVisible } from '../sim/siege.ts';
 import { FATIGUE_MAX } from '../sim/squad.ts';
 import { MAP_WIDTH, MAP_HEIGHT, TERRAIN } from '../sim/map.ts';
 import { SQUAD_VISION, UNSEEN } from '../sim/fog.ts';
@@ -20,54 +24,148 @@ export interface AiMatchRun extends MatchRun {
   readonly decisions: readonly AiDecision<Command>[];
 }
 
-export const economyRegistry = createBehaviourRegistry<SiegeVisible, Command>([
-  createEconomyBehaviour({ buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
-    grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, taxPerDenarius: TAX_PER_DENARIUS }),
-]);
-
+const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
+  grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, taxPerDenarius: TAX_PER_DENARIUS };
 const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ };
+const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
+  vision: SQUAD_VISION, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
+  scoutTypes: ['hastati', 'gaul', 'numidian-horse'] };
+// One garrison is worth the strongest Tier-1 Squad a Faction can raise, since an
+// unseen front reports how many Squads man it and not which.
+const garrisonEstimate = Math.max(...SQUAD_TYPES.filter((type) => type.tier === 1)
+  .map((type) => type.strength * type.morale));
+const siegeContent = { canAssault, ramCost: RAM_COST, siegeRadius: SIEGE_RADIUS, reliefRadius: RELIEF_RADIUS,
+  garrisonEstimate, squadTypes: SQUAD_TYPES };
 
-export const militaryRegistry = createBehaviourRegistry<SiegeVisible, Command>([
-  createEconomyBehaviour({ buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
-    grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, taxPerDenarius: TAX_PER_DENARIUS,
-    recruitmentPreference: createMilitaryRecruitment(militaryContent) }),
-  createMilitaryBehaviour(militaryContent),
-]);
+/** The strongest candidate of a layer; a tie keeps the first, as the proposals arrive. */
+function strongest<T>(candidates: readonly Candidate<T>[]): Candidate<T> | undefined {
+  return candidates.reduce<Candidate<T> | undefined>((best, candidate) =>
+    best === undefined || candidate.utility > best.utility ? candidate : best, undefined);
+}
 
-const scouting = createScoutingBehaviour({ width: MAP_WIDTH, height: MAP_HEIGHT,
-  unseen: UNSEEN, water: TERRAIN.river, vision: SQUAD_VISION, ticksPerSecond: TICK_HZ,
-  squadTypes: SQUAD_TYPES, scoutTypes: ['hastati', 'gaul', 'numidian-horse'] });
-const military = createMilitaryBehaviour(militaryContent);
+/** Economy alone at one difficulty: what `economyRegistry` is to Centurio. */
+export function economyRegistryAt(difficulty: Difficulty = DIFFICULTY.centurio):
+BehaviourRegistry<SiegeVisible, Command> {
+  return createBehaviourRegistry<SiegeVisible, Command>([
+    createEconomyBehaviour(economyContent, difficulty),
+  ]);
+}
 
-/** Military attacks and withdrawals take precedence; idle holds release the scouts. */
-export const scoutingRegistry = createBehaviourRegistry<SiegeVisible, Command>([
-  ...militaryRegistry.behaviours,
-  { ...scouting, tactical(context) {
-    const proposed = scouting.tactical!(context);
-    const field = military.tactical!(context).reduce((best, candidate) => candidate.utility > best.utility ? candidate : best);
-    return proposed.map((candidate) => {
-      const occupied = new Set(field.commands.filter((command) => command.kind !== 'hold')
-        .flatMap((command) => command.squads));
-      const patrols = candidate.commands.filter((command) => !command.squads.some((id) => occupied.has(id)));
-      const scouts = new Set(patrols.flatMap((command) => command.squads));
-      return { ...candidate, reason: `${candidate.reason} ${field.reason}`,
-        commands: [...field.commands.filter((command) => command.kind !== 'hold' || !command.squads.some((id) => scouts.has(id))), ...patrols] };
-    });
-  } },
-]);
+/** Economy and the field army at one difficulty: the economy owns the operational clock. */
+export function militaryRegistryAt(difficulty: Difficulty = DIFFICULTY.centurio):
+BehaviourRegistry<SiegeVisible, Command> {
+  return createBehaviourRegistry<SiegeVisible, Command>([
+    createEconomyBehaviour({ ...economyContent,
+      recruitmentPreference: createMilitaryRecruitment(militaryContent) }, difficulty),
+    createMilitaryBehaviour(militaryContent, difficulty),
+  ]);
+}
 
 /**
- * The composition root owns simulation values and concrete types; ai/ owns
- * neither. Behaviours can be composed here without changing the AI registry.
- * D4 composes economy, military and scouting; callers may supply an independent registry.
+ * The composition root owns simulation values and concrete types; `ai/` owns
+ * neither. D4 composed economy, military and scouting; D5 adds the siege and the
+ * difficulty level. A siege owns the Squads it commits, so a `hold` from the
+ * field cannot stand down a Squad already at the walls; patrols and the field
+ * share what is left. `militaryRegistry` and `economyRegistry` remain available
+ * for isolated scenarios, and `scoutingRegistry` is the D4 army without a siege.
+ */
+export function difficultyRegistry(name: DifficultyName = 'centurio'): BehaviourRegistry<SiegeVisible, Command> {
+  return armyAt(DIFFICULTY[name], true);
+}
+
+/** Economy, field, patrols and — when asked — the siege, at one difficulty. */
+function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<SiegeVisible, Command> {
+  const economy = createEconomyBehaviour({ ...economyContent,
+    recruitmentPreference: createMilitaryRecruitment(militaryContent) }, difficulty);
+  const military = createMilitaryBehaviour(militaryContent, difficulty);
+  const scouting = createScoutingBehaviour(scoutingContent, difficulty);
+  const siege = createSiegeBehaviour(siegeContent, difficulty);
+
+  const fieldOf = (context: BehaviourContext<SiegeVisible>) => strongest(military.tactical!(context));
+
+  /**
+   * The field's orders for the Squads it keeps, then patrols on what is left
+   * over. A `hold` yields to a patrol so one Squad is not told both to stand and
+   * to march, and a Squad in `exclusions` belongs to neither.
+   */
+  function share<C extends Command & { readonly squads: readonly number[] }>(
+    context: BehaviourContext<SiegeVisible>,
+    field: Candidate<C> | undefined,
+    exclusions: ReadonlySet<number>,
+  ): readonly Command[] {
+    const held = (field?.commands ?? []).flatMap((command) => {
+      const squads = command.squads.filter((id) => !exclusions.has(id));
+      return squads.length === 0 ? [] : [{ ...command, squads }];
+    });
+    const owned = new Set(held.filter((command) => command.kind !== 'hold').flatMap((command) => command.squads));
+    const blocked = new Set([...exclusions, ...owned]);
+    const patrols = scouting.tactical!(context).flatMap((candidate) => candidate.commands)
+      .filter((command) => !command.squads.some((id) => blocked.has(id)));
+    const scouts = new Set(patrols.flatMap((command) => command.squads));
+    return [...held.filter((command) => command.kind !== 'hold' || !command.squads.some((id) => scouts.has(id))),
+      ...patrols];
+  }
+
+  /** The D4 army: the field's orders, with patrols on the Squads the field left. */
+  const scoutingBehaviour: Behaviour<SiegeVisible, Command> = { ...scouting, tactical: (context) => {
+    const field = fieldOf(context);
+    return scouting.tactical!(context).map((candidate) => ({ ...candidate,
+      reason: `${candidate.reason} ${field?.reason ?? ''}`.trim(), commands: share(context, field, new Set()) }));
+  } };
+
+  /** The D5 army: the siege owns its Squads, and the field owns the rest. */
+  const siegeBehaviour: Behaviour<SiegeVisible, Command> = { ...siege, tactical: (context) => {
+    const proposed = siege.tactical!(context);
+    if (proposed.length === 0) return [];
+    const field = fieldOf(context);
+    // A withdrawal is the one field order that beats a siege: men who are done
+    // fighting are not left standing under a wall to hold a ring together.
+    const withdrawn = new Set(field?.commands.filter((command) => command.kind === 'withdraw')
+      .flatMap((command) => command.squads) ?? []);
+    const trimmed = proposed.map((candidate) => ({ ...candidate,
+      commands: candidate.commands.flatMap((command) => {
+        const squads = command.squads.filter((id) => !withdrawn.has(id));
+        return squads.length === 0 ? [] : [{ ...command, squads }];
+      }) })).filter((candidate) => candidate.commands.length > 0);
+    if (trimmed.length === 0) return [];
+    const committed = new Set(trimmed.flatMap((candidate) => candidate.commands)
+      .flatMap((command) => command.squads));
+    return trimmed.map((candidate) => ({ ...candidate,
+      reason: `${candidate.reason} ${field?.reason ?? ''}`.trim(),
+      commands: [...candidate.commands, ...share(context, field, committed)] }));
+  } };
+
+  const behaviours: Behaviour<SiegeVisible, Command>[] = [economy, military, scoutingBehaviour];
+  if (withSiege) behaviours.push(siegeBehaviour);
+  return createBehaviourRegistry<SiegeVisible, Command>(behaviours);
+}
+
+/**
+ * The shipped registries, at the level D2, D3 and D4 shipped them (Centurio).
+ * `economyRegistry` and `militaryRegistry` remain available for isolated
+ * scenarios; `scoutingRegistry` is the D4 field and its patrols, without a
+ * siege; `armyRegistry` is the complete D5 army.
+ */
+export const economyRegistry = economyRegistryAt(DIFFICULTY.centurio);
+export const militaryRegistry = militaryRegistryAt(DIFFICULTY.centurio);
+export const scoutingRegistry = armyAt(DIFFICULTY.centurio, false);
+export const armyRegistry = difficultyRegistry('centurio');
+
+/**
+ * Two fresh AIs against the complete Siege Match, at a stated difficulty. The
+ * difficulty reaches only the behaviours and the Controller's operational clock;
+ * the rules are the same Match at every level.
  */
 export function playAiMatch(
   seed: number,
   ticks: number,
-  registry: BehaviourRegistry<SiegeVisible, Command> = scoutingRegistry,
+  registry: BehaviourRegistry<SiegeVisible, Command> = armyRegistry,
+  difficulty: Difficulty = DIFFICULTY.centurio,
 ): AiMatchRun {
-  const rome = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry });
-  const carthage = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry });
+  const rome = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ,
+    operationalSeconds: difficulty.reactionSeconds, registry });
+  const carthage = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ,
+    operationalSeconds: difficulty.reactionSeconds, registry });
   const run = runMatch({
     seed, ticks, rules: siegeMatchRules, observe: observeSiege, outcome: siegeMatchOutcome,
     players: [{ faction: 'rome', controller: rome }, { faction: 'carthage', controller: carthage }],
@@ -76,4 +174,9 @@ export function playAiMatch(
   const decisions = [...rome.readLog(), ...carthage.readLog()].sort((a, b) =>
     a.tick - b.tick || (a.faction === b.faction ? 0 : a.faction === 'rome' ? -1 : 1));
   return { ...run, decisions };
+}
+
+/** A Match played at one named difficulty, with the registry that level builds. */
+export function playAiMatchAt(seed: number, ticks: number, name: DifficultyName = 'centurio'): AiMatchRun {
+  return playAiMatch(seed, ticks, difficultyRegistry(name), DIFFICULTY[name]);
 }

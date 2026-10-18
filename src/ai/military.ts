@@ -2,6 +2,7 @@ import type { Observation } from '../sim/observation.ts';
 import type { Behaviour, Candidate } from './registry.ts';
 import type { EconomyObservation } from './economy.ts';
 import { planningContacts, type Contact } from './scouting.ts';
+import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 
 type Faction = Observation<unknown>['faction'];
 interface Site { readonly x: number; readonly y: number }
@@ -75,9 +76,10 @@ function distance(a: Site, b: Site): number {
 }
 
 /** Only public content and the looking Faction's Observation enter this policy. */
-export function createMilitaryBehaviour(content: MilitaryContent):
+export function createMilitaryBehaviour(content: MilitaryContent, difficulty: Difficulty = DIFFICULTY.centurio):
 Behaviour<MilitaryObservation, MilitaryCommand> {
   const types = new Map(content.squadTypes.map((type) => [type.id, type]));
+  const margin = attackPercent(difficulty);
   const enemyPower = (enemy: Enemy) => (types.get(enemy.type)?.morale ?? 10) * 100;
   function power(squad: Squad): number {
     const type = types.get(squad.type);
@@ -189,17 +191,17 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
         const threat = visible.enemies.filter((enemy) => distance(enemy, target) <= 4)
           .reduce((sum, enemy) => sum + enemyPower(enemy), 0);
         let available = line.reduce((sum, squad) => sum + power(squad), 0);
-        if (available * 4 < threat * 5 && reserve !== undefined && !assigned.has(reserve.id) && distance(reserve, target) <= 4) {
+        if (available * 100 < threat * margin && reserve !== undefined && !assigned.has(reserve.id) && distance(reserve, target) <= 4) {
           const reinforced = available + power(reserve);
-          if (reinforced * 4 >= threat * 5) {
+          if (reinforced * 100 >= threat * margin) {
             line.push(reserve);
             available = reinforced;
           }
         }
-        if (available * 4 < threat * 5) continue;
+        if (available * 100 < threat * margin) continue;
         let allocated = 0;
         for (const squad of line) {
-          if (allocated * 4 >= threat * 5) break;
+          if (allocated * 100 >= threat * margin) break;
           allocated += assign(squad, target, `against observed enemy ${target.id}: reinforce a winnable field engagement.`);
         }
         reasons.push(`Attack observed weakness ${target.id}: line ${available} against threat ${threat}.`);
@@ -214,10 +216,10 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
         const line = ready.filter((squad) => squad !== reserve && !assigned.has(squad.id));
         const threat = remembered.filter((enemy) => distance(enemy, contact) <= 4)
           .reduce((sum, enemy) => sum + enemyPower(enemy), 0);
-        if (line.reduce((sum, squad) => sum + power(squad), 0) * 4 < threat * 5) continue;
+        if (line.reduce((sum, squad) => sum + power(squad), 0) * 100 < threat * margin) continue;
         let allocated = 0;
         for (const squad of line) {
-          if (allocated * 4 >= threat * 5) break;
+          if (allocated * 100 >= threat * margin) break;
           commands.push({ kind: 'move', faction, squads: [squad.id], x: contact.x, y: contact.y });
           assigned.add(squad.id);
           allocated += power(squad);

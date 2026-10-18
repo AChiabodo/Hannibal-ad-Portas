@@ -73,8 +73,9 @@ npm run match -- --rules ai --seed 1 --ticks 2101
 
 The default bound remains three game years. This harness runs two fresh AIs
 against the complete Siege Match rules and their existing filtered projections.
-The default `scoutingRegistry` installs economy, military and scouting policies.
-`economyRegistry` and `militaryRegistry` remain available for isolated scenarios.
+The default `armyRegistry` installs economy, field, scouting and siege policies
+at Centurio. `economyRegistry`, `militaryRegistry` and `scoutingRegistry` (D4's
+field and patrols, without a siege) remain available for isolated scenarios.
 An explicitly empty registry
 still runs the foundation alone, ending at the bound without Commands.
 
@@ -238,6 +239,77 @@ Command log and state hash. A selected plan is AI memory, not authoritative
 Match state. Replaying the emitted Command log through scripted Controllers
 reproduces the same final hash without running the AI. Other harness reports
 keep their previous shape.
+
+## Siege policy (D5)
+
+`createSiegeBehaviour` (`src/ai/siege.ts`) chooses a path to a settlement and
+commits an army to it. Its target is a Stronghold the Faction has actually seen:
+a remembered `stronghold` contact and nothing else. With no contact there is no
+siege candidate at all, and the field and its patrols decide as before.
+
+The choice between Assault and Blockade is stated in the decision log with the
+numbers it read:
+
+- Rome assaults when its ram is already at the walls, when it has already paid
+  for one, or when the treasury can pay `RAM_COST` and the level is willing. A
+  breach is always assaulted, because a storm is the only way through it.
+- Carthage never assaults: `canAssault` is false, so it always blockades, and
+  says so rather than waiting for a ram that will never be built (ADR-0008).
+- A Rome that cannot pay for a ram blockades instead, and says which of the two
+  grounds sent it there.
+
+Committed Squads are the Faction's field Squads at the walls or already marching
+to them. The policy re-issues the same order each tick, which costs the marchers
+nothing (`movement.ts`). Every decision prices the observed garrison — the front
+reports a count, not a composition, so one unseen garrison is worth
+`garrisonEstimate` — plus any enemy field Squads inside `RELIEF_RADIUS` of the
+place, priced from the public roster. When a relieving army approaches, the
+policy either brings the reserve in to match it (`reinforce`) or withdraws what
+is already at the walls (`abandon`): it never feeds a losing ring. A siege too
+weak to start is not laid at all.
+
+A siege owns the Squads it commits. `scoutingRegistry` remains the D4 field and
+its patrols; `difficultyRegistry` adds the siege, and its candidate outranks the
+field's so a `hold` cannot stand down a Squad already at the walls. A field
+`withdraw` is the one exception, and the siege releases the men it names.
+
+## The three difficulty levels (D5)
+
+`DIFFICULTY` (`src/ai/difficulty.ts`) names Tiro, Centurio and Imperator.
+Each has four axes and nothing else:
+
+| Axis | Tiro | Centurio | Imperator |
+| --- | --- | --- | --- |
+| Reaction time (operational window) | 60 s | 30 s | 15 s |
+| Aggression (`attackPercent`) | 130% | 125% | 115% |
+| Planning horizon (Seasons of reserve) | 1 | 2 | 3 |
+| Scouting quota (`scoutsPer`/`scoutsPerFound`) | 5/12 | 3/8 | 2/5 |
+| Contact refresh | 60 s | 30 s | 15 s |
+
+Reaction time is `createAi`'s `operationalSeconds`; the default 30 is Centurio,
+and D2–D4's shipped numbers are Centurio's — 125%, a two-Season payroll reserve
+and a three-Season grain floor — so the engine's baseline is the middle level.
+Aggression sets the margin the field needs before attacking and biases the siege
+toward the fast path. Horizon is the Seasons of Payroll the economy holds back
+and one less than its grain floor. Scouting quality is how large a share of the
+army explores and how soon a contact is worth refreshing.
+
+Difficulty changes the opponent's thinking and nothing else. It never grants
+resources, production or vision: every value is a threshold or a clock the
+behaviours read, the AI still sees only its Observation, and the rules are the
+same Match at every level. `playAiMatchAt(seed, ticks, name)` builds the
+level's registry and supplies the matching Controller clock; `playAiMatch`
+remains available for an independent registry.
+
+`tests/ai/siege.test.ts` checks the assault-versus-blockade grounds, the
+Carthaginian blockade, reinforcement and abandonment through the Controller.
+`tests/ai/difficulty.test.ts` checks the four axes, the operational clock, and
+that every level sees the same rule-filtered Observation. `tests/ai/siege-match.test.ts`
+plays whole Matches with no human: Rome takes the Stronghold by Assault on seed 1
+and Carthage by Blockade on seed 7, the Command log replays to the same hash, the
+decisions do not move when a hidden army moves, and the three levels' decision
+logs are distinguishable on one seed. These are deterministic policy checks, not
+tournament balance: the balance numbers are E3's and F1's.
 
 ## The import fence
 

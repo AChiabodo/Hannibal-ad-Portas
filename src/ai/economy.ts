@@ -1,13 +1,12 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Behaviour, Candidate } from './registry.ts';
+import { DIFFICULTY, type Difficulty } from './difficulty.ts';
 
 type Faction = Observation<unknown>['faction'];
 type Resources = Readonly<Record<'grain' | 'timber' | 'stone' | 'iron', number>>;
 
-/** Two Seasons of Payroll plus a small working treasury. */
-function requiredReserve(payroll: number): number {
-  return 6 + payroll * 2;
-}
+/** A working treasury on top of the Seasons of Payroll the plan holds back. */
+const WORKING_TREASURY = 6;
 
 interface Building {
   readonly id: string;
@@ -61,8 +60,13 @@ export function createEconomyBehaviour(content: {
     readonly id: string; readonly faction: Faction; readonly tier: number;
     readonly payroll: number; readonly cost: Resources;
   }[];
-}): Behaviour<EconomyObservation, EconomyCommand> {
+}, difficulty: Difficulty = DIFFICULTY.centurio): Behaviour<EconomyObservation, EconomyCommand> {
   const buildings = new Map(content.buildings.map((building) => [building.id, building]));
+  const horizon = difficulty.horizonSeasons;
+  const requiredReserve = (payroll: number) => WORKING_TREASURY + payroll * horizon;
+  // One Season of grain is eaten as it is grown, so the floor is the horizon
+  // plus one: Centurio's three Seasons are `food * 3`, exactly as D2 shipped.
+  const grainFloor = (food: number) => food * (horizon + 1);
   function budget(observation: Observation<EconomyObservation>) {
     const visible = observation.visible;
     let income = 0;
@@ -99,7 +103,7 @@ export function createEconomyBehaviour(content: {
             const food = Math.max(1, Math.floor(settlement.population / content.grainPerHead));
             if (type.faction !== observation.faction || type.tier > settlement.tier ||
               payroll > funds.income || observation.visible.treasury < requiredReserve(payroll) ||
-              settlement.stocks.grain - type.cost.grain < food * 3 ||
+              settlement.stocks.grain - type.cost.grain < grainFloor(food) ||
               Object.entries(type.cost).some(([key, amount]) => settlement.stocks[key as keyof Resources] < amount)) continue;
             const count = observation.visible.squads.filter((squad) => squad.type === type.id).length;
             const preference = content.recruitmentPreference?.(observation, type.id);

@@ -126,6 +126,11 @@ A single order a Controller emits. The set of Commands is the game's entire publ
 _UI_: Ordine
 _Avoid_: Action, instruction, order (as a synonym for Command)
 
+**Difficulty**:
+How hard a built-in AI opponent thinks: Tiro, Centurio or Imperator. It changes planning horizon, aggression, reaction time and scouting quality, and nothing else — never resources, production or vision, which belong to the rules.
+_UI_: —
+_Avoid_: Level (a settlement's Tier is the progression; a Difficulty is not one), setting
+
 **Squad**:
 The atomic unit that is ordered, moved and fought: one block of soldiers with aggregate strength, morale and facing. The individual soldiers inside a Squad exist only as rendering.
 _UI_: Reparto

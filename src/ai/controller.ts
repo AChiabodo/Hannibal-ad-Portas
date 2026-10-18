@@ -40,15 +40,21 @@ export interface AiController<Visible, Command> {
 export function createAi<Visible extends CalendarVisible, Command = never>(
   options: {
     readonly ticksPerSecond: number;
+    /** Reaction time: the seconds between operational decisions. Thirty by default. */
+    readonly operationalSeconds?: number;
     readonly registry?: BehaviourRegistry<Visible, Command>;
   },
 ): AiController<Visible, Command> {
   if (!Number.isSafeInteger(options.ticksPerSecond) || options.ticksPerSecond < 1) {
     throw new RangeError('ticksPerSecond must be a positive whole number');
   }
+  const operationalSeconds = options.operationalSeconds ?? 30;
+  if (!Number.isSafeInteger(operationalSeconds) || operationalSeconds < 1) {
+    throw new RangeError('operationalSeconds must be a positive whole number');
+  }
   const log: AiDecision<Command>[] = [];
   const registry = createBehaviourRegistry(options.registry?.behaviours);
-  const operationalTicks = options.ticksPerSecond * 30;
+  const operationalTicks = options.ticksPerSecond * operationalSeconds;
   let calendar: { year: number; season: string } | undefined;
   let operationalWindow = -1;
   let plan: StrategicPlan = { posture: null, budget: {}, objective: null };

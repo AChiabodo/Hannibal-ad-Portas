@@ -1,5 +1,6 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Behaviour } from './registry.ts';
+import { DIFFICULTY, type Difficulty } from './difficulty.ts';
 
 interface Site { readonly x: number; readonly y: number }
 export interface Contact extends Site {
@@ -44,7 +45,7 @@ export function planningContacts(contacts: readonly Contact[], tick: number, tic
 }
 
 /** A light detachment explores reachable known ground at the edge of the unknown. */
-export function createScoutingBehaviour(content: ScoutingContent): Behaviour<ScoutingObservation, Move> {
+export function createScoutingBehaviour(content: ScoutingContent, difficulty: Difficulty = DIFFICULTY.centurio): Behaviour<ScoutingObservation, Move> {
   const types = new Map(content.squadTypes.map((type) => [type.id, type]));
   const { width, height, vision } = content;
   const index = (site: Site) => site.y * width + site.x;
@@ -64,7 +65,7 @@ export function createScoutingBehaviour(content: ScoutingContent): Behaviour<Sco
     const { visible, tick, faction } = observation;
     const contacts = planningContacts(visible.contacts, tick, content.ticksPerSecond);
     const found = contacts.some((contact) => contact.kind === 'stronghold');
-    const quota = Math.max(1, Math.ceil(visible.squads.length / (found ? 8 : 3)));
+    const quota = Math.max(1, Math.ceil(visible.squads.length / (found ? difficulty.scoutsPerFound : difficulty.scoutsPer)));
     const scouts = visible.squads.filter((squad) => {
       const type = types.get(squad.type);
       const light = type !== undefined && content.scoutTypes.includes(type.id);
@@ -107,7 +108,7 @@ export function createScoutingBehaviour(content: ScoutingContent): Behaviour<Sco
           const site = { x: tile % width, y: Math.floor(tile / width) };
           const travel = distances[tile]!;
           if (travel > 0 && !targets.some((other) => distance(other, site) < vision * 2)) {
-            const refresh = contacts.some((contact) => tick - contact.seen >= content.ticksPerSecond * 30 &&
+            const refresh = contacts.some((contact) => tick - contact.seen >= content.ticksPerSecond * difficulty.refreshSeconds &&
               withinVision(contact, site) && visible.fog.visible[index(contact)] !== 1);
             const unknown = gain(tile);
             if (unknown > 0 || refresh) {
