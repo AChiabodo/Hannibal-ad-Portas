@@ -8,10 +8,13 @@
  * in `controller.test.ts` makes reaching past the type a compile error rather
  * than a promise.
  *
- * The fog is not built yet (B4 owns it). Until it lands, `observe` returns
- * whatever the rules say a Faction sees, and this module owns only the seam —
- * the Faction, the tick, and the copy that keeps the Controller off the world.
- * Copying disconnects the Observation from the Match; it does not filter.
+ * The filtering is the rules' job and B4's (`sim/fog.ts`): what a projection may
+ * hold is the Faction's own fog — the terrain it remembers, what is in view, and
+ * the last known contacts — and nothing it has not seen. What is left to the
+ * core is the funnel: the projection must be structured-cloneable plain data,
+ * and one that is not is refused before any Controller is asked anything
+ * (`ObservationProjectionError`, in `driver.ts`). Copying disconnects the
+ * Observation from the Match; it does not filter, and it cannot.
  *
  * The projection itself belongs to the rules, because only they know what the
  * world is made of. The driver stamps it with the Faction that is looking and
@@ -39,9 +42,11 @@ export interface Observation<Visible> {
    * the world and the rules nowhere. A rules author may therefore return a
    * reference to the world, or to part of it, without giving a Controller a way
    * to change it; the copy carries only structured-cloneable plain data, and
-   * `driver.ts`'s `decide` says what that rules out. The copy disconnects the
-   * Observation from the Match, and filtering what it holds remains the rules'
-   * job.
+   * `driver.ts`'s `decide` says what that rules out. A projection the copy
+   * cannot carry at all is refused as `ObservationProjectionError`, naming the
+   * Faction it was built for. The copy disconnects the Observation from the
+   * Match, and filtering what it holds — through the rules' own fog — remains
+   * the rules' job.
    */
   readonly visible: Visible;
 }

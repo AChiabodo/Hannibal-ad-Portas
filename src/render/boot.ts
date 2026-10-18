@@ -1,21 +1,28 @@
 /**
- * The game page's boot: the theatre on screen, pannable and zoomable (ticket B3).
+ * The game page's boot: the theatre on screen, under fog, pannable and zoomable
+ * (tickets B3, B4).
  *
  * B2 put the pipeline on screen with a title plate. B3 puts the *game* there: a
  * map B1 generated from a seed, rendered by `render/terrain.ts` into one
- * `PixelBuffer`, and drawn as one texture under the camera B2 built. It is the
- * smallest honest thing that satisfies the ticket — there is no Match yet, no fog
- * and no Squad — and it is also the browser half of the pixel-hash story: a test
- * computes the same theatre *in Node* with the same generator and asks the page
- * for the pixel the camera says is there, so the GPU's answer is compared against
- * the generator's and neither side can pass alone.
+ * `PixelBuffer`, and drawn as one texture under the camera B2 built. B4 puts the
+ * fog over it: a second image of the same size, drawn from the knowledge of one
+ * Faction — the player's — so what the page shows and what that Faction may
+ * decide on come from the same object.
+ *
+ * There is still no Match on this page: no Squad, no settlement that changes
+ * hands, nothing that ticks. So the fog is computed from the one thing a Faction
+ * starts with — the Stronghold its Match opens in — and the debug hooks move a
+ * *watch* about the theatre, which is the same call a tick makes with a
+ * Faction's real eyes. That is what lets a player, a test and an agent watch a
+ * tile go from unexplored to in view and then to remembered as the watch moves
+ * on, which is the whole of the three-state fog in one gesture.
  *
  * **One texture, and why that is the responsive answer.** The whole 96×96
- * theatre is composed once, on boot, into a single 1552×1552 buffer. Panning and
- * zooming move one container: no tile is culled, no sprite is created or
- * destroyed, and the work per frame is the same at the corner of the map as at
- * its centre. That is a decision about this ticket — the terrain of B3 is static,
- * so there is nothing to gain from nine thousand sprites and a lot to lose — and
+ * theatre is composed once, on boot, into a single 1552×1552 buffer, and so is
+ * its fog. Panning and zooming move one container: no tile is culled, no sprite
+ * is created or destroyed, and the work per frame is the same at the corner of
+ * the map as at its centre. The fog texture is rebuilt only when what the
+ * Faction knows changes, which is a debug hook's doing rather than a frame's.
  * B4's fog and F3's performance pass are the tickets that will say what the map
  * costs once things move over it.
  *
@@ -25,10 +32,13 @@
  * the camera between two pixels any more than a test can.
  */
 
-import { Container } from 'pixi.js';
+import { Container, Sprite, type Texture } from 'pixi.js';
 import { BASE } from '../art/palette.ts';
 import type { Rgba } from '../art/pixel-buffer.ts';
-import { MAP_HEIGHT, MAP_WIDTH, generateMap } from '../sim/map.ts';
+import { SETTLEMENT_VISION, createFog, eyeOf, refreshVision, requireTile, viewOf, type Eye } from '../sim/fog.ts';
+import { eyesOf } from '../sim/fog-match.ts';
+import { MAP_HEIGHT, MAP_WIDTH, generateMap, type Site } from '../sim/map.ts';
+import { renderFog } from './fog.ts';
 import { THEATRE_PIXELS, renderTerrain } from './terrain.ts';
 import {
   type Camera,
@@ -44,11 +54,12 @@ import {
   createStage,
   frameReport,
   samplesOf,
+  textureOf,
   type FrameReport,
   type PixelPoint,
   type Stage,
 } from './stage.ts';
-import { DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from './view.ts';
+import { DEFAULT_SEED, DEFAULT_ZOOM, VIEWED_FACTION, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from './view.ts';
 
 /**
  * The magnification the page opens at, and the viewport it opens in, are
@@ -71,16 +82,20 @@ export interface ViewState {
   readonly mapHeight: number;
   /** The theatre's side in stage pixels, which is what the camera is clamped to. */
   readonly mapPixels: number;
+  /** Whether the debugging inspection mode is on: the whole theatre revealed, and no fog. */
+  readonly inspection: boolean;
+  /** Where the extra watch the hooks move is looking from, or `null` if it is nowhere yet. */
+  readonly watch: Site | null;
 }
 
 /**
  * The debug surface of the running page (ADR-0003).
  *
  * Deliberately the same calls a test makes and a player's wheel makes: move the
- * camera, change the zoom about a point, and read what the renderer produced.
- * `samples` is the agent's half of the pixel pipeline — the renderer's own pixels,
- * in the generator's own currency — and it takes several points at once because
- * extraction is the cost.
+ * camera, change the zoom about a point, look out from a tile, turn the fog off,
+ * and read what the renderer produced. `samples` is the agent's half of the pixel
+ * pipeline — the renderer's own pixels, in the generator's own currency — and it
+ * takes several points at once because extraction is the cost.
  */
 export interface ViewHooks {
   /** Moves the camera by whole stage pixels. Refuses anything else. */
@@ -89,7 +104,24 @@ export interface ViewHooks {
   zoomTo(zoom: number): void;
   /** Sets a magnification, keeping one whole screen pixel where it is. */
   zoomAbout(zoom: number, screenX: number, screenY: number): void;
-  /** The camera and the viewport, as they stand. */
+  /**
+   * Looks out from one tile of the theatre, which is what a tick does with a
+   * Faction's eyes.
+   *
+   * The watch *replaces* the one before it, and what the Faction saw stays
+   * remembered: this single call is how a page walks a tile through the three
+   * states of the fog. Refuses anything that is not a whole tile of the theatre.
+   */
+  lookFrom(x: number, y: number): void;
+  /**
+   * Turns the debugging inspection mode on or off: the whole theatre revealed.
+   *
+   * It is not a Player and cannot become one — there is no Controller here and
+   * nothing in this module can emit a Command (`inspectionView` is `sim/fog.ts`'s
+   * and states the same; `tests/sim/fog.test.ts` makes it a compile error).
+   */
+  inspect(revealed: boolean): void;
+  /** The camera and the viewport, as they stand, and what the fog is doing. */
   describe(): ViewState;
   /** Reads pixels out of the current frame, one extraction for all of them. */
   samples(points: readonly PixelPoint[]): readonly Rgba[];
@@ -102,11 +134,13 @@ export interface GameView extends ViewHooks {
 }
 
 /**
- * Builds the page: the theatre on one texture, the camera on it, one frame drawn,
- * and the hooks Playwright and, later, an external agent drive it with.
+ * Builds the page: the theatre on one texture, the fog over it, the camera on
+ * both, one frame drawn, and the hooks Playwright and, later, an external agent
+ * drive it with.
  */
 export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
-  const theatre = renderTerrain(generateMap(DEFAULT_SEED));
+  const map = generateMap(DEFAULT_SEED);
+  const theatre = renderTerrain(map);
   const stage = await createStage(mount, {
     width: VIEWPORT_WIDTH,
     height: VIEWPORT_HEIGHT,
@@ -117,6 +151,17 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
   stage.root.addChild(world);
   world.addChild(stage.spriteOf(theatre));
 
+  // The fog the page draws, and the sprite it is drawn with. The sprite starts
+  // with no texture: the first `paintFog` is what gives it one, so there is no
+  // moment at which the page shows a fog it has not computed.
+  const fog = createFog();
+  let watch: Eye | null = null;
+  let inspection = false;
+  let texture: Texture | null = null;
+
+  const fogSprite = new Sprite();
+  world.addChild(fogSprite);
+
   const bounds = {
     stageWidth: THEATRE_PIXELS,
     stageHeight: THEATRE_PIXELS,
@@ -125,13 +170,33 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
   };
   let camera = clampTo(centred(createCamera({ zoom: DEFAULT_ZOOM }), stage), bounds);
   applyCamera(world, camera);
-  stage.render();
 
   const moveTo = (next: Camera): void => {
     camera = clampTo(next, bounds);
     applyCamera(world, camera);
     stage.render();
   };
+
+  // What the player's Faction knows, refreshed from the eyes it has and drawn
+  // over the theatre. Everything that changes it goes through here, so the
+  // sprite and the fog cannot drift apart: the texture is rebuilt from the grid
+  // it was built for, and the one before it is let go rather than kept.
+  const paintFog = (): void => {
+    refreshVision(
+      fog,
+      map,
+      watch === null ? eyesOf(map, VIEWED_FACTION) : [...eyesOf(map, VIEWED_FACTION), watch],
+    );
+
+    const next = textureOf(renderFog(viewOf(fog)));
+    texture?.destroy(true);
+    texture = next;
+    fogSprite.texture = next;
+    fogSprite.visible = !inspection;
+    stage.render();
+  };
+
+  paintFog();
 
   const view: GameView = {
     probe: frameReport(stage),
@@ -144,6 +209,19 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
     zoomAbout: (zoom, screenX, screenY) => {
       moveTo(zoomAboutCamera(camera, zoom, screenX, screenY));
     },
+    lookFrom: (x, y) => {
+      // The tile is checked before the watch is set, so a refused look leaves
+      // the page looking where it was. The check is `sim/fog.ts`'s own, so the
+      // page and the rules refuse the same coordinates with the same sentence.
+      requireTile(x, y);
+      watch = eyeOf({ x, y }, SETTLEMENT_VISION);
+      paintFog();
+    },
+    inspect: (revealed) => {
+      inspection = revealed === true;
+      fogSprite.visible = !inspection;
+      stage.render();
+    },
     describe: () => ({
       camera,
       width: stage.width,
@@ -152,6 +230,8 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       mapWidth: MAP_WIDTH,
       mapHeight: MAP_HEIGHT,
       mapPixels: THEATRE_PIXELS,
+      inspection,
+      watch: watch === null ? null : { x: watch.x, y: watch.y },
     }),
     samples: (points) => samplesOf(stage, points),
   };

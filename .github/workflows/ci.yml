@@ -54,6 +54,12 @@ jobs:
       - name: Play a Match that draws, headless
         run: npm run match -- --seed 1 --ticks 600 --rules draws --expect-hash 337cd166204506b0
 
+      # B4's Match: B1's theatre and both Factions' fogs in one world. The hash
+      # covers the whole map in state and what each Faction has seen of it, so a
+      # change to the map or to the fog moves this line (ADR-0006, ADR-0013).
+      - name: Play the theatre with fog, headless
+        run: npm run match -- --seed 1 --ticks 600 --rules fog --expect-hash 3d60b17e3e9b6e50
+
   guards:
     name: Fences (six: import boundaries, engine allow-list, Math.random, transcendentals, ambient clock, no committed assets)
     runs-on: ubuntu-latest

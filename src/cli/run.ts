@@ -4,13 +4,14 @@
  * The CLI is a harness, not a game: it hands the driver a seed, the two idle
  * Players and a bound, and takes whatever the rules give back. *Which* rules is
  * the one choice this module leaves to the command line, and it is a name from
- * the table in `rules.ts`: the empty Match by default, and a Match whose rules
- * draw on every tick beside it, so that CI can gate a hash of the generator
- * actually working (ADR-0006, A5 review F5).
+ * the table in `rules.ts`: the empty Match by default, the theatre with both
+ * Factions' fogs beside it, and a Match whose rules draw on every tick, so that
+ * CI can gate a hash of the fog and of the generator actually working
+ * (ADR-0006, ADR-0013, A5 review F5).
  *
- * Today those two are the only Matches there are, because no system has been
- * built yet; when B1 to C5 land, they change what a name plays and nothing
- * about the command line or its report changes.
+ * Today those are the only Matches there are, because no system has been built
+ * yet; when B1 to C5 land, they change what a name plays and nothing about the
+ * command line or its report changes.
  *
  * The invariant is ADR-0006's, made checkable: the same seed and the same
  * Commands must end in the same state hash. A Match the caller asked a hash of
@@ -26,8 +27,8 @@ import type { MatchRun } from '../sim/index.ts';
  * Plays one whole Match, headless, from the options a command line gave.
  *
  * Which Match is the caller's to name and the table's to build, so this is a
- * lookup and a call: the two Matches have different worlds and are played in
- * their own types (`rules.ts`).
+ * lookup and a call: the Matches have different worlds and are played in their
+ * own types (`rules.ts`).
  *
  * Nothing here waits on anything: the loop runs ticks as fast as the processor
  * lets it, which is why a hundred short Matches are a routine command rather

@@ -1,9 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { SpqrDebugHooks } from '../src/debug';
-import { pixelAt, type PixelBuffer } from '../src/art/pixel-buffer';
+import { blit, pixelAt, type PixelBuffer } from '../src/art/pixel-buffer';
+import { createFog, refreshVision, viewOf } from '../src/sim/fog';
+import { eyesOf } from '../src/sim/fog-match';
 import { MAP_HEIGHT, MAP_WIDTH, generateMap } from '../src/sim/map';
 import type { ViewState } from '../src/render/boot';
-import { DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
+import { renderFog } from '../src/render/fog';
+import { VIEWED_FACTION, DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
 import { renderTerrain, THEATRE_PIXELS } from '../src/render/terrain';
 import { screenToStage, stageToScreen } from '../src/render/camera';
 import { describeView, samples } from './hooks';
@@ -22,13 +25,33 @@ import { describeView, samples } from './hooks';
  * completely (every sampled point matches, including the corners of the theatre),
  * pans and zooms across all 96×96 tiles, and stays exactly in step with the
  * generator at every zoom level.
+ *
+ * B4 put the fog over the map (see `fog.spec.ts` for the fog itself), so the
+ * image these tests compare against is the theatre *under the fog the page opens
+ * with*: the player's Faction sees the ground around its Stronghold and nothing
+ * else. The comparison is the same one it always was — the GPU against the
+ * generator — with one more generator in it, and the two states the page opens
+ * in (unexplored, in view) are both drawn exactly: an opaque cover and a
+ * transparent pixel.
  */
 
-/** The theatre the page is showing, computed in Node. */
-const THEATRE: PixelBuffer = renderTerrain(generateMap(DEFAULT_SEED));
-
 /** The map as the page will describe it, so a test can check the two agree. */
-const MAP = { seed: DEFAULT_SEED, mapWidth: MAP_WIDTH, mapHeight: MAP_HEIGHT, mapPixels: THEATRE_PIXELS };
+const DESCRIBED = { seed: DEFAULT_SEED, mapWidth: MAP_WIDTH, mapHeight: MAP_HEIGHT, mapPixels: THEATRE_PIXELS };
+
+/** The theatre B1 generates for the page's seed, and the ground under the fog drawn over it. */
+const GRID = generateMap(DEFAULT_SEED);
+const THEATRE: PixelBuffer = foggedByThePlayer();
+
+/** The theatre rendered, with the fog the page opens with drawn over it. */
+function foggedByThePlayer(): PixelBuffer {
+  const fog = createFog();
+  refreshVision(fog, GRID, eyesOf(GRID, VIEWED_FACTION));
+
+  const frame = renderTerrain(GRID);
+  blit(frame, renderFog(viewOf(fog)), 0, 0);
+
+  return frame;
+}
 
 /**
  * Canvas points that show the theatre, and the theatre pixel each one should show.
@@ -111,8 +134,11 @@ test('boots in a real browser and draws the generated theatre through software W
   expect(view.height).toBe(VIEWPORT_HEIGHT);
   expect(view.camera.zoom).toBe(DEFAULT_ZOOM);
   expect({ seed: view.seed, mapWidth: view.mapWidth, mapHeight: view.mapHeight, mapPixels: view.mapPixels }).toEqual(
-    MAP,
+    DESCRIBED,
   );
+  // The page opens in the player's fog, not with the whole map revealed.
+  expect(view.inspection).toBe(false);
+  expect(view.watch).toBe(null);
   expect(view.camera.x).toBe(Math.floor(THEATRE_PIXELS / 2 - VIEWPORT_WIDTH / (2 * DEFAULT_ZOOM)));
   expect(view.camera.y).toBe(Math.floor(THEATRE_PIXELS / 2 - VIEWPORT_HEIGHT / (2 * DEFAULT_ZOOM)));
 

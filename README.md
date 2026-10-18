@@ -271,7 +271,8 @@ three waves later.
 ## The theatre on screen
 
 `npm run dev`, and the page draws the map B1 generates from seed 7: pannable with
-a drag, zoomable with the wheel, at whole-number magnifications only.
+a drag, zoomable with the wheel, at whole-number magnifications only — and, since
+B4, under the fog of the Faction the player controls (see *Fog of war* below).
 
 **Terrain is generated, like everything else** (`art/terrain.ts`). Seven materials
 — plain, hill, forest, farmland, river, ford, road — each a 16×16 tile of
@@ -325,8 +326,9 @@ map as at its centre. That is what the ticket's "panning and zooming across a fu
 hope about the engine, and measured rather than asserted: a browser test moves the
 camera two hundred times inside the page and holds the total to a couple of
 seconds, which a per-frame recomposition of the map could not come near.
-`render/view.ts` holds the three numbers that decide the page (seed, zoom,
-viewport) where a Node test can reach them without loading PixiJS.
+`render/view.ts` holds the numbers that decide the page (seed, zoom,
+viewport, whose fog it shows) where a Node test can reach them without loading
+PixiJS.
 
 **The camera can zoom about a point** (`render/camera.ts`). B2 left that out on
 purpose, because a zoom centred on a fractional cursor puts the camera between two
@@ -347,6 +349,79 @@ has no row of its own because plain is the ground everything else is laid over: 
 is never the foreground of a boundary, and its boundary with a hill is the hill's
 variant seen from the other side.
 
+## Fog of war
+
+A Controller may only know what its Faction has seen (ADR-0003), and since B4
+that is a fact about the code rather than a promise about discipline: the
+Observation is the Faction's fog, and the fog holds nothing else.
+
+**Three states, two grids per Faction.** A tile is *unexplored* (no eye has ever
+covered it), *remembered* (an eye covered it once, and the terrain it had then is
+still there) or *visible* (an eye covers it now). The three are answered by two
+`Uint8Array`s per Faction (`src/sim/fog.ts`): the terrain as last seen, with
+`UNSEEN` where nobody has looked, and a flag per tile for what is in view. The
+memory grid answers both "has this been seen" and "what is believed", so a
+seen-flag beside a terrain grid cannot drift out of step with it.
+
+**Vision is a disc of tiles around an eye** — a Squad, a settlement — compared
+squared, in integers, so a radius is exact and no engine has to agree about a
+square root. There is no line of sight and no elevation to block it: the theatre
+has no playable height (ADR-0007), so a hill hides nothing. `refreshVision`
+takes the eyes as an argument and knows nothing about where they came from;
+`eyesOf` is the one place that says which of a Faction's settlements are looking
+— today the Stronghold it opens in — which is why the day Squads see too, or a
+settlement changes hands, is a change to one function.
+
+**The fog is memory, and memory is state.** A Squad that marches away leaves its
+terrain behind it: what is in view is recomputed on every tick, and what has been
+seen is written once and kept. That is why the grids are in the state hash
+([ADR-0013](docs/adr/0013-the-fog-is-memory-and-each-faction-owns-its-own.md)) —
+what a Faction has seen decides what it can decide, so two Matches whose memory
+differed would not be the same Match. Each Faction owns its own grids, built by
+`createFogs` as two separate arrays, and a test asserts that one Faction's
+knowledge neither appears in the other's Observation nor in the other's part of
+the canonical form.
+
+**Last known contact.** `observeContacts` remembers an enemy at the tile it
+stands on *when the Faction can see it*, and keeps that tile after the enemy
+marches out of view: the memory is where it was, with the tick it was seen, and
+not a live position. The fog does the filtering, so a rule cannot hand a Faction
+knowledge its eyes never reached; the fog also never forgets on its own, because
+how long a stale contact is worth planning against is the AI's question (D4) and
+`forgetContacts` is how a rule says a contact is gone. Nothing stands on this
+theatre that belongs to a Faction yet, so no contact has been observed in a
+shipped Match — the memory is built and tested, and it is the rule that owns a
+Squad which owns the ids and hands the fog what it can see (C1, C3, D4).
+
+**The debugging inspection mode is not a Player.** `inspectionView` answers with
+the whole theatre known, and with a `FogView` — which has no `decide`, so it
+cannot emit a Command. `tests/sim/fog.test.ts` makes both of those compile
+errors, which is the strongest thing a test can say about a shape.
+
+**Where it is wired.** `src/sim/fog-match.ts` is the Match the fog lands in: a
+world holding B1's map and both Factions' fogs, a `step` that recomputes vision
+on every tick from the settlements each Faction holds, and an `observe` that
+projects the looking Faction's fog and nothing else. It is what `npm run match --
+--rules fog` plays, and its golden hash is the one CI gates. `src/render/fog.ts`
+draws the same object: an opaque cover over unexplored tiles, a translucent veil
+over remembered ones, nothing over the tiles in view.
+
+The fog follows the *logical* tile grid, not the dual grid B3 autotiles on:
+vision is decided per tile, so a tile's whole 16×16 square carries one state and
+the half-tile margin around the theatre takes the edge tile's, clamped the way
+the terrain clamps its materials. A fog painted on the rendering grid would let
+one tile's state leak half a tile into its neighbour's, which is a lie about what
+the Faction can see.
+
+The game page opens under the viewed Faction's fog — the ground its Stronghold
+watches, and black beyond it — with two hooks that drive it the way a tick would:
+`lookFrom(x, y)` puts a watch on a tile (the same call a tick makes with a
+Faction's real eyes) and `inspect(true)` turns the inspection mode on, which is
+the frame `sim/fog.ts`'s `inspectionView` describes. The browser tests walk one
+tile through all three states with those two calls and compare the GPU's pixels
+against the image composed in Node, at two zooms and after two hundred camera
+moves.
+
 ## The seam
 
 One seam carries every decision in the game (PLAN §3, ADR-0003). A **Controller**
@@ -358,7 +433,9 @@ Controllers, differing in nothing else.
   Faction and the tick being decided. It is the only thing a Controller is
   handed, and reaching past it does not compile: a test in
   `tests/sim/controller.test.ts` fails if Match state ever becomes readable
-  through one.
+  through one. Since B4 the filtering is real rather than promised — the
+  projection is the Faction's own fog, so what a Controller is handed holds
+  nothing its Faction has not seen (see *Fog of war* below).
 - A **Command** is one of twelve, and the vocabulary is closed on
   purpose: adding one means implementing it twice, once for a human clicking and
   once for a machine emitting it. It is documented in
@@ -376,6 +453,15 @@ driver never lets a rule defend against either. The other way into the rules —
 replaying a log that arrived from outside a Match — closes the same vocabulary
 first: `replayCommands` (`src/sim/replay.ts`) reads every line through it before
 the first tick runs, so a log is refused rather than replayed into a rule.
+
+What a Controller is handed is *copied*, so the seam holds in both directions:
+the driver deep-copies the projection on the way out, exactly as
+`validateCommand` copies a Command on the way in, and a Controller writing
+through `observation.visible` reaches neither the rules nor the hash. The copy
+carries structured-cloneable plain data and nothing else; a projection the clone
+cannot carry at all — a function, a proxy — is refused before the Controller is
+asked anything, as `ObservationProjectionError`, which names `observe` and the
+Faction rather than leaving a `DataCloneError` to be traced back by hand.
 
 ## The headless Match
 
@@ -404,7 +490,11 @@ harness Match to play, `--expect-hash` requires it to end on a hash you
 recorded, and `--help` describes the lot.
 
 CI plays that very command, with the hash above as its `--expect-hash`: a change
-that moves the hash is a decision in review (ADR-0006).
+that moves the hash is a decision in review (ADR-0006). Three Matches are
+gated, each for a different reason, and the third is B4's: `--rules fog` plays
+B1's theatre with both Factions' memory of it in state and ends on
+`3d60b17e3e9b6e50` at seed 1, so a change to the map or to the fog moves a hash
+somebody recorded rather than passing unnoticed.
 
 The exit codes are the same three `npm run guard` uses: **0** the Match ran,
 **1** a game invariant was violated — a hash that is not the expected one, a
@@ -414,11 +504,11 @@ interesting number is the one the Match ended on.
 
 Today the Match is empty, on purpose: no system has been built yet, so nothing
 can be lost and the tick bound is what ends the run (`src/sim/empty.ts`).
-`--rules` chooses which harness Match the CLI plays, and `--rules draws` plays
-one whose rules draw from the seed on every tick, so the golden hash in CI covers
-the draw loop as well as the seed expansion (`src/cli/rules.ts`). The harness
-around it is the point, and the waves that build the world change what is inside
-it rather than how it is driven.
+`--rules` chooses which harness Match the CLI plays: `--rules draws` plays one
+whose rules draw from the seed on every tick, so the golden hash in CI covers the
+draw loop as well as the seed expansion, and `--rules fog` plays B1's theatre
+with B4's two fogs in state. The harness around it is the point, and the waves
+that build the world change what is inside it rather than how it is driven.
 
 The command needs no build step. Node strips the types and runs `src/cli/main.ts`
 as it stands, which is why every relative import under `src/` names its extension
@@ -445,6 +535,8 @@ src/                application code
     driver.ts       two Controllers, one Match, a result and a command log
     empty.ts        the Match with no systems in it yet: what the CLI plays today
     map.ts          the theatre a seed generates, and the invariants it satisfies
+    fog.ts          what each Faction has seen, remembers and can see, and the inspection mode
+    fog-match.ts    B1's theatre with both Factions' fogs in state, and the Observation built from one
   art/              pure pixel generation: PixelBuffer in, PixelBuffer out (no engine imports)
     pixel-buffer.ts the one currency: RGBA bytes, the drawing primitives and the pixel hash
     palette.ts      nine bases, and the ramps derived from them by integer arithmetic
@@ -466,8 +558,9 @@ src/                application code
     camera.ts       a whole-pixel position and a whole-number zoom, and no smoothing
     stage.ts        the adapter: PixelBuffer to texture, the camera on a container, the frame read back
     terrain.ts      the map composed into one image: ground, roads over it, markers over those
-    view.ts         the seed, zoom and viewport the page opens on, with no engine in sight
-    boot.ts         the game page's boot: the theatre, the camera, the pointer, the debug hooks
+    fog.ts          the fog over that image: unexplored opaque, remembered veiled, visible clear
+    view.ts         the seed, zoom, viewport and Faction the page opens on, with no engine in sight
+    boot.ts         the game page's boot: the theatre, its fog, the camera, the pointer, the debug hooks
     atelier-layout.ts  where the several zoom levels of the catalogue stand on the page
     atelier.ts      the Atelier page: the catalogue plate, one column per zoom level
   page.ts           where a page mounts, and what a failed boot looks like
