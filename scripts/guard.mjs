@@ -1,18 +1,21 @@
 #!/usr/bin/env node
 /**
- * The fences CI leans on (PLAN §3, §6):
+ * The fences CI leans on (PLAN §3, §6). They are numbered as the README numbers
+ * them, so a report and the document agree about which rule broke:
  *
  *   1. the simulation cannot reach the rendering engine (ADR-0001);
- *   2. nothing anywhere calls the global generator (ADR-0006);
- *   3. the simulation cannot reach arithmetic ECMA-262 leaves
+ *   2. `pixi.js` lives under `render/` and nowhere else (PLAN §3);
+ *   3. no `Math.random` anywhere (ADR-0006);
+ *   4. the simulation cannot reach arithmetic ECMA-262 leaves
  *      implementation-approximated, so two engines may disagree (ADR-0006);
- *   4. the simulation cannot reach the ambient clock or entropy — `crypto`,
- *      `Date.now`, `performance.now` (ADR-0006).
+ *   5. the simulation cannot reach the ambient clock or entropy — `crypto`,
+ *      `Date.now`, `performance.now` (ADR-0006);
+ *   6. no image, font or audio file is committed (PLAN §2.1, ADR-0002).
  *
- * All four are crude on purpose and loud on purpose: they name the offending file.
+ * All six are crude on purpose and loud on purpose: they name the offending file.
  * The three that look for a member are syntactic, so they see a global spelled
- * out and not an alias of it; the README's fence #2 names the spellings a green
- * tick does not cover.
+ * out and not an alias of it; the README names the spellings a green tick does
+ * not cover.
  *
  * Usage: node scripts/guard.mjs [--root <dir>] [--scan <dir>]...
  *
@@ -21,6 +24,7 @@
  *
  * Exit codes: 0 fences hold, 1 a fence is broken, 2 the CLI was misused.
  */
+import { ASSET_EXTENSIONS, findAssetFiles } from './guards/asset-files.mjs';
 import { GUARDED_ROOTS, collectSourceFiles } from './guards/source-files.mjs';
 import { findAmbientNondeterminismReachableFromSimulation } from './guards/ambient-globals.mjs';
 import { findMathRandomViolations } from './guards/find-math-random.mjs';
@@ -82,20 +86,23 @@ try {
   const transcendentalViolations = findTranscendentalMathReachableFromSimulation(options.root);
   const ambientViolations = findAmbientNondeterminismReachableFromSimulation(options.root);
   const renderViolations = findRendererOutsideRender(options.root);
+  const assetViolations = findAssetFiles(options.root);
   const entries = existingSimulationEntries(options.root).join(", ");
 
-  report("no Math.random", mathRandomViolations, `${mathRandomFiles.length} files scanned`);
   report("simulation boundary", boundaryViolations, `entry ${entries}`);
   report("pixi.js outside render/", renderViolations, `allowed under ${RENDERER_ALLOWED_DIRECTORIES.join(", ")}`);
+  report("no Math.random", mathRandomViolations, `${mathRandomFiles.length} files scanned`);
   report("no transcendental math", transcendentalViolations, `entry ${entries}`);
   report("no ambient clock or entropy", ambientViolations, `entry ${entries}`);
+  report("no committed assets", assetViolations, `${ASSET_EXTENSIONS.size} file kinds refused`);
 
   const total =
     mathRandomViolations.length +
     boundaryViolations.length +
     transcendentalViolations.length +
     ambientViolations.length +
-    renderViolations.length;
+    renderViolations.length +
+    assetViolations.length;
   if (total > 0) {
     console.error(`\nguard: ${total} violation(s) — the fences in docs/PLAN.md §3 do not hold`);
     process.exit(1);

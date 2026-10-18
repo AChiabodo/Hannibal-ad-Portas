@@ -1,40 +1,19 @@
+import { failBoot, publishHooks, requireMount } from './page.ts';
 import { bootRenderer } from './render/boot.ts';
-import type { BootReport } from './debug.ts';
 
 /**
- * Boots the game: renderer up, one frame drawn, debug hooks published.
+ * Boots the game: the title plate up, one frame drawn through the camera, the
+ * debug hooks published.
  *
- * A Match is not part of this ticket — this is the frame B2 builds on, and the
- * page Playwright drives to prove WebGL works in headless CI.
+ * A Match is not part of this page yet — B3 brings the theatre, and the plates
+ * and camera the rest of the HUD is drawn with are what B2 put here.
  */
-async function boot(): Promise<BootReport> {
-  const mount = document.getElementById('app');
-  if (mount === null) throw new Error('index.html has no #app element');
+async function boot(): Promise<void> {
+  const view = await bootRenderer(requireMount('app'));
 
-  const render = await bootRenderer(mount);
-  return { booted: true, render };
+  publishHooks({ boot: { booted: true, render: view.probe }, view, atelier: null });
 }
 
-/**
- * The one line of Italian on screen so far. Player-facing text belongs in the
- * string table with its English fallback path (PLAN §2.4), which B7 builds;
- * until then this literal is the placeholder.
- */
-function bootFailureText(message: string): string {
-  return `Avvio fallito: ${message}`;
-}
-
-boot()
-  .then((report) => {
-    window.__SPQR = { boot: report };
-    document.body.dataset.spqrBooted = 'true';
-  })
-  .catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    const mount = document.getElementById('app');
-
-    if (mount !== null) mount.textContent = bootFailureText(message);
-    window.__SPQR = { boot: { booted: false, error: message } };
-    document.body.dataset.spqrBooted = 'failed';
-    console.error(error);
-  });
+boot().catch((error: unknown) => {
+  failBoot(error, 'app');
+});
