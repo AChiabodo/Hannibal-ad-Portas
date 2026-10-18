@@ -592,8 +592,11 @@ besiegers — and the besieger has to close the ring again.
 **A minor settlement is taken by holding its centre**, and nothing is razed. An
 open settlement has no wall to break and nothing to starve: a Squad that stands on
 its tile, uncontested, for `CAPTURE_HOLDS` checks takes it, and its people, its
-works and its stocks stay. Only a Stronghold's fall ends the Match, and the result
-names it as the reason:
+works and its stocks stay. An open settlement is still seen through the Faction's
+own fog, though: no wall to keep a secret is not a licence to skip an eye, so an
+unseen village's front is absent from the Observation until a Squad or settlement
+of the Faction looks at it (ADR-0020). Only a Stronghold's fall ends the Match,
+and the result names it as the reason:
 
 ```
 npm run match -- --seed 1 --ticks 9000 --rules assault
@@ -604,7 +607,7 @@ npm run match -- --seed 1 --ticks 9000 --rules assault
   "winner": "rome",
   "reason": "rome won the Match: the carthage Stronghold fell to an assault",
   "commands": 2,
-  "hash": "f854cb39e4a9e78d"
+  "hash": "36bbe60e3694f897"
 }
 ```
 
@@ -620,7 +623,7 @@ npm run match -- --seed 1 --ticks 9000 --rules blockade
   "winner": "rome",
   "reason": "rome won the Match: the carthage Stronghold fell to a blockade",
   "commands": 2,
-  "hash": "fa7cc9b8808efefd"
+  "hash": "b83b7b0d7e917f0c"
 }
 ```
 
@@ -631,7 +634,11 @@ against the assault's 251 is the asymmetry the ticket is about, in one pair of
 numbers — three Seasons of siege to twenty-five seconds of storm. The blockade's
 hash moved when C6 landed, because the Roman army at those walls now winters
 outside its own country and Attrition takes its men: ADR-0006 says a moved hash is
-a decision in review, and that was the decision.
+a decision in review, and that was the decision. Both hashes moved again when D4
+landed: the Siege world now carries each Faction's fog, that fog is hashed state,
+and an open settlement's front is sighted through it rather than announced to
+everyone who can read the map (ADR-0020). ADR-0006 says a moved hash is a decision
+in review, and that was the decision too.
 
 **What C5 does not own.** No siege towers, multiple ladders, mines or artillery:
 the plan excludes them from v1. No decision about when to assault and when to

@@ -123,8 +123,13 @@ settlements or Squads. Each record contains id, type and current tile; it carrie
 no enemy treasury, stock, strength, morale or goal. Vision uses the same disc as
 terrain fog. Garrisons and enemies outside that disc are absent. D4 adds the
 Faction's authoritative `fog` and its decoded `contacts` beside current sight;
-reading the projection never refreshes memory. Unobserved minor settlement
-fronts, as well as Strongholds, stay outside the projection.
+reading the projection never refreshes memory. Since D4, a settlement's front is
+shown on the same predicate as every other sighting — owned, besieged by the
+Faction, or covered by one of its eyes (`observeSiege`, ADR-0020) — so unobserved
+minor settlement fronts, as well as Strongholds, stay outside the projection. An
+open settlement has no wall to keep a secret, and that is what a hold takes and
+an assault refuses (ADR-0008); it is not a licence to skip the fog, because a
+front read for free would be knowledge the fog beside it never recorded.
 
 Every tactical decision rebuilds a sparse threat map of 16×16-tile regions from
 that Observation. Unoccupied regions have zero threat. Friendly power scales

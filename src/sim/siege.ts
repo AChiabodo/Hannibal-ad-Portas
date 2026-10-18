@@ -323,7 +323,7 @@ export interface SiegeVisible extends EconomyVisible {
   readonly contacts: readonly KnownContact[];
   /** Enemy field Squads currently in ordinary vision, with no private economic or combat facts. */
   readonly enemies: readonly { readonly id: number; readonly type: string; readonly x: number; readonly y: number }[];
-  /** The fronts this Faction holds or is besieging. */
+  /** The fronts this Faction holds, is besieging, or has an eye on (ADR-0020). */
   readonly fronts: readonly VisibleFront[];
 }
 
@@ -525,14 +525,18 @@ export function createSiegeWorld(seed: number): SiegeWorld {
 }
 
 /**
- * What a Faction may see of a Siege: the fronts of the settlements it holds and
- * of the ones it is besieging, and no third kind.
+ * What a Faction may see of a Siege: the fronts of the settlements it holds, of
+ * the ones it is besieging, and of the ones one of its own eyes covers — and no
+ * fourth kind (ADR-0020).
  *
  * A wall is not a secret from the men in front of it or the men behind it, and
  * neither is the ram either of them built; a Stronghold nobody has marched on is
- * another Faction's business, and is not in the projection at all. The garrison is
- * reported as a count rather than a list of ids: what is on the walls is visible,
- * but which Squads a Faction keeps is in that Faction's own `squads`.
+ * another Faction's business, and is not in the projection at all. An open
+ * settlement is no exception: no wall to keep a secret is not a licence to skip
+ * an eye, because a front read for free would be knowledge the fog beside it
+ * never recorded. The garrison is reported as a count rather than a list of ids:
+ * what is on the walls is visible, but which Squads a Faction keeps is in that
+ * Faction's own `squads`.
  */
 export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (world, faction) => {
   const seen = observeEconomy(world, faction);

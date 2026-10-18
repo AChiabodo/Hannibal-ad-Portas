@@ -104,18 +104,22 @@ jobs:
       # names the reason (ADR-0006, ADR-0008, ADR-0018). The hash is the state of
       # a Match the rules decided, so a Match that only ran out its bound could
       # not match it; the unit tests also assert the tick it ended on is inside
-      # the bound.
+      # the bound. It moved again when D4 put each Faction's fog into the Siege
+      # world: the fog is hashed state now (ADR-0013), and an open settlement's
+      # front is sighted through it rather than announced (ADR-0020). A moved hash
+      # is a decision in review (ADR-0006).
       - name: Win a Match by Assault, headless
-        run: npm run match -- --seed 1 --ticks 9000 --rules assault --expect-hash f854cb39e4a9e78d
+        run: npm run match -- --seed 1 --ticks 9000 --rules assault --expect-hash 36bbe60e3694f897
 
       # C5's second path: the same Stronghold starved into surrender, over
       # Seasons rather than over a fight. Its hash covers the blockade's supply
       # cut, the starvation, the garrison's nerve and the surrender — and, since
       # C6, the Attrition the besieging army pays for wintering outside its own
-      # country. The hash moved when C6 landed, and ADR-0006 says a moved hash is
-      # a decision in review.
+      # country, and since D4 the fog the Siege world now holds and hashes
+      # (ADR-0013). The hash moved when each landed, and ADR-0006 says a moved
+      # hash is a decision in review.
       - name: Win a Match by Blockade, headless
-        run: npm run match -- --seed 1 --ticks 9000 --rules blockade --expect-hash fa7cc9b8808efefd
+        run: npm run match -- --seed 1 --ticks 9000 --rules blockade --expect-hash b83b7b0d7e917f0c
 
       # C6's Match: two armies in the field through four Season boundaries, one
       # of them holding position in a Roman camp and one in nobody's country. The
@@ -125,10 +129,13 @@ jobs:
       - name: Winter two armies in the field, one of them in a camp, headless
         run: npm run match -- --seed 1 --ticks 9000 --rules attrition --expect-hash a97e17ca99526aa7
 
-      # D1 crosses a Season boundary with two empty-registry AI Controllers.
-      # Keep the per-tick explanations in a report rather than flooding CI logs.
+      # D5's whole army crosses a Season boundary: two AI Controllers running
+      # economy, field, scouting and siege at Centurio. The hash gates the
+      # decisions that army makes, now that the fog it reads is hashed state
+      # (ADR-0013, ADR-0020). Keep the per-tick explanations in a report rather
+      # than flooding CI logs.
       - name: Play two AI Controllers with scored decision logs
-        run: node src/cli/main.ts --rules ai --seed 1 --ticks 2101 --expect-hash de50cac330a6e1af > "$RUNNER_TEMP/ai-match.json"
+        run: node src/cli/main.ts --rules ai --seed 1 --ticks 2101 --expect-hash a8ea015a1bb21037 > "$RUNNER_TEMP/ai-match.json"
 
   guards:
     name: "Fences (seven, including AI Observation imports)"

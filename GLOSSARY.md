@@ -158,6 +158,11 @@ The stretch of map a Faction draws supply from, inferred from the settlements it
 _UI_: Territorio
 _Avoid_: Borders, land, zone of control, influence
 
+**Front**:
+One settlement's Siege as a Faction reads it: the path being followed, any breach in its walls, the ram at them, the garrison on them, and how far a hold has got. A front is *sighted*, not announced: it is shown only to the settlement's owner, to the Faction besieging it, or to a Faction one of whose own eyes covers it — an open settlement with no wall to keep a secret included (ADR-0020).
+_UI_: Fronte
+_Avoid_: Sector, battle-line, and using "front" for the Aspect sense (that is a target's facing)
+
 **Siege**:
 The contest over a settlement, conducted either as an Assault or as a Blockade. The two paths are alternatives, not stages.
 _UI_: Assedio
