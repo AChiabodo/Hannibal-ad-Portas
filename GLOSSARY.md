@@ -40,6 +40,16 @@ One square of the theatre's grid, 16×16 pixels, and the unit everything on the 
 _UI_: Casella
 _Avoid_: Cell, square, hex
 
+**Cell**:
+One square of the *rendering* grid, which is half a tile out of step with the theatre's: it covers the corner where four tiles meet, and each of its four quadrants is one of those tiles' nearest quarter. Autotiling chooses for a cell, not for a tile, so a coastline's or a riverbank's shape belongs to a cell.
+_UI_: —
+_Avoid_: using "cell" for a Tile
+
+**Resource marker**:
+The small pile drawn on a Resource node's tile — a sheaf of grain, logs, a heap of stone, a stack of iron — sized and shaped to be read at the lowest zoom. It is a marker standing on the Terrain, not a kind of Terrain.
+_UI_: —
+_Avoid_: Icon, badge, sprite
+
 **Terrain**:
 What a tile is made of — plain, hill, forest, farmland, river, ford, road — and the modifier it carries. Only a river stops a Squad outright; the rest are costs and effects.
 _UI_: Terreno
@@ -70,6 +80,16 @@ One of the two sides of the perpendicular bisector of the two Strongholds: the t
 _UI_: —
 _Avoid_: Side, half of the map
 
+**Fog of war**:
+What one Faction has seen of the theatre, in three states: unexplored — no eye has ever covered the tile; remembered — an eye covered it once, and the ground it had then is still known; visible — an eye covers it now. Vision is a radius around the Faction's own Squads and settlements, and the fog is *memory*: ground stays known after the Squad that saw it marches away.
+_UI_: Nebbia di guerra
+_Avoid_: Shroud, blackout, visibility mask, using "fog" for the unexplored state alone
+
+**Last known contact**:
+Where an enemy thing was standing when the Faction last saw it, kept after it marches out of view. The place is a memory and not a live position, and how stale that memory is matters.
+_UI_: Ultimo contatto noto
+_Avoid_: Blip, tracker, calling a thing the rules can see right now a "contact" (that is an enemy in sight; only the fog's *memory* of one is a last known contact)
+
 ### Command
 
 **Controller**:
@@ -77,7 +97,7 @@ Whichever mind drives a Faction: the human input handler, the built-in AI, a scr
 _Avoid_: Player, input handler, brain
 
 **Observation**:
-Everything a Controller is allowed to know: the Match state filtered through its Faction's visibility. No Controller ever reads Match state outside its own Observation.
+Everything a Controller is allowed to know: the Match state filtered through its Faction's fog of war. No Controller ever reads Match state outside its own Observation.
 _UI_: —
 _Avoid_: View, state (the raw Match state is not an Observation)
 

@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { findAssetFiles } from '../../scripts/guards/asset-files.mjs';
 import { findAmbientNondeterminismReachableFromSimulation } from '../../scripts/guards/ambient-globals.mjs';
 import { findMathRandomViolations } from '../../scripts/guards/find-math-random.mjs';
 import { findRendererOutsideRender } from '../../scripts/guards/render-boundary.mjs';
@@ -27,5 +28,7 @@ describe('the repository itself', () => {
     expect(findRendererOutsideRender(REPO_ROOT)).toEqual([]);
     expect(findTranscendentalMathReachableFromSimulation(REPO_ROOT)).toEqual([]);
     expect(findAmbientNondeterminismReachableFromSimulation(REPO_ROOT)).toEqual([]);
+    // The repository ships no pixels, but it does generate a lot of them.
+    expect(findAssetFiles(REPO_ROOT)).toEqual([]);
   });
 });

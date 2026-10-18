@@ -11,20 +11,22 @@
  * to hand the driver a Match the CLI can play, so that CI can record the state
  * hash it ends on and fail when that hash moves (ADR-0003, ADR-0006).
  *
- * There are two names, and the second exists for one reason. The **empty**
- * Match draws nothing: `emptyMatchRules.step` is a no-op, so its golden hash is
- * the seed expanded, the clock at the bound and the world it started with —
- * a real proof that `xmur3`'s expansion, the canonical form and the hash are
- * portable across machines, and no proof at all about the draw loop, which is
- * where `Math.imul`, `| 0` and `>>> 0` live and where an implementation that
- * disagreed between engines would hide (A5 review, F5). The **drawing** Match
- * below draws on every tick, so the same gate covers `sfc32` itself.
+ * There are three names, and each exists for a reason. The **empty** Match draws
+ * nothing: `emptyMatchRules.step` is a no-op, so its golden hash is the seed
+ * expanded, the clock at the bound and the world it started with — a real proof
+ * that `xmur3`'s expansion, the canonical form and the hash are portable across
+ * machines, and no proof at all about the draw loop, which is where `Math.imul`,
+ * `| 0` and `>>> 0` live and where an implementation that disagreed between
+ * engines would hide (A5 review, F5). The **fog** Match is B4's: B1's theatre
+ * and both Factions' memory of it in one world, so the gate covers the map in
+ * state and the fog that filters an Observation (ADR-0013). The **drawing**
+ * Match below draws on every tick, so the same gate covers `sfc32` itself.
  *
  * The rules here hold integers only, for the ordinary reason: they are
  * authoritative state, `serializeState` accepts nothing else, and the hash is
  * what CI compares (ADR-0006).
  *
- * The two Matches have different worlds and different visibilities, so the
+ * The three Matches have different worlds and different visibilities, so the
  * table below holds a function per name and not a `MatchSetup`: each entry
  * plays *its own* Match, in the only types that Match has, and one common type
  * would have to be a lie about one of them.
@@ -32,12 +34,17 @@
 import {
   emptyMatchOutcome,
   emptyMatchRules,
+  fogMatchOutcome,
+  fogMatchRules,
   idleController,
   observeEmptyMatch,
+  observeFogMatch,
   runMatch,
   type Command,
   type EmptyMatchVisible,
   type EmptyMatchWorld,
+  type FogMatchVisible,
+  type FogMatchWorld,
   type MatchRules,
   type MatchRun,
   type MatchSetup,
@@ -143,6 +150,26 @@ function playEmpty(seed: number, ticks: number): MatchRun {
   });
 }
 
+/**
+ * Plays the fog Match: B1's theatre and B4's two fogs, which is the first Match
+ * whose world holds the map in state.
+ *
+ * Nothing stands on the map yet, so nothing happens on a tick but the visibility
+ * pass — and the golden hash CI records is what makes "the fog is state" a fact:
+ * the map, and what each Faction has seen of it, are inside the hash, so a change
+ * to either moves it (ADR-0006, ADR-0013).
+ */
+function playFog(seed: number, ticks: number): MatchRun {
+  return runMatch<FogMatchWorld, FogMatchVisible>({
+    seed,
+    rules: fogMatchRules,
+    observe: observeFogMatch,
+    outcome: fogMatchOutcome,
+    players: idlePlayers(),
+    ticks,
+  });
+}
+
 /** Plays the drawing Match: the same driver, onto a world whose rules draw on every tick. */
 function playDraws(seed: number, ticks: number): MatchRun {
   return runMatch<DrawsWorld, DrawsVisible>({
@@ -164,7 +191,7 @@ function playDraws(seed: number, ticks: number): MatchRun {
  * a use that fails at whatever hour CI runs. `DEFAULT_RULES` spells `empty` a
  * second time, and its type is this list's, so the two cannot disagree.
  */
-export const RULES_NAMES = ['empty', 'draws'] as const;
+export const RULES_NAMES = ['empty', 'fog', 'draws'] as const;
 
 /** A name `--rules` accepts, which is also the only thing the table below is keyed by. */
 export type RulesName = (typeof RULES_NAMES)[number];
@@ -193,6 +220,11 @@ export const RULES = {
   empty: {
     description: 'the Match with no systems in it: the bound ends it',
     play: playEmpty,
+  },
+
+  fog: {
+    description: "B1's theatre and B4's two fogs: the map and what each Faction knows, in state",
+    play: playFog,
   },
 
   draws: {

@@ -1,12 +1,113 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { SpqrDebugHooks } from '../src/debug';
+import { blit, pixelAt, type PixelBuffer } from '../src/art/pixel-buffer';
+import { createFog, refreshVision, viewOf } from '../src/sim/fog';
+import { eyesOf } from '../src/sim/fog-match';
+import { MAP_HEIGHT, MAP_WIDTH, generateMap } from '../src/sim/map';
+import type { ViewState } from '../src/render/boot';
+import { renderFog } from '../src/render/fog';
+import { VIEWED_FACTION, DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
+import { renderTerrain, THEATRE_PIXELS } from '../src/render/terrain';
+import { screenToStage, stageToScreen } from '../src/render/camera';
+import { describeView, samples } from './hooks';
 
-/** Reads the boot report the page publishes on `window.__SPQR` (ADR-0003). */
-async function bootReport(page: Page): Promise<SpqrDebugHooks['boot']> {
-  return page.evaluate(() => window.__SPQR.boot);
+/**
+ * The theatre on screen (ticket B3).
+ *
+ * The interesting assertion is not "the page loaded" but "the pixels on the GPU
+ * are the pixels the generator produces". So the whole theatre is composed
+ * *here*, in Node, by the same generator the page uses — B1 for the map, `art/`
+ * for the tiles, `render/terrain.ts` for the composition — and every check
+ * compares the renderer's answer with it. Two independent sides of the pipeline,
+ * neither of which can pass the comparison alone.
+ *
+ * What that buys is the map's own acceptance criteria: a map that renders
+ * completely (every sampled point matches, including the corners of the theatre),
+ * pans and zooms across all 96×96 tiles, and stays exactly in step with the
+ * generator at every zoom level.
+ *
+ * B4 put the fog over the map (see `fog.spec.ts` for the fog itself), so the
+ * image these tests compare against is the theatre *under the fog the page opens
+ * with*: the player's Faction sees the ground around its Stronghold and nothing
+ * else. The comparison is the same one it always was — the GPU against the
+ * generator — with one more generator in it, and the two states the page opens
+ * in (unexplored, in view) are both drawn exactly: an opaque cover and a
+ * transparent pixel.
+ */
+
+/** The map as the page will describe it, so a test can check the two agree. */
+const DESCRIBED = { seed: DEFAULT_SEED, mapWidth: MAP_WIDTH, mapHeight: MAP_HEIGHT, mapPixels: THEATRE_PIXELS };
+
+/** The theatre B1 generates for the page's seed, and the ground under the fog drawn over it. */
+const GRID = generateMap(DEFAULT_SEED);
+const THEATRE: PixelBuffer = foggedByThePlayer();
+
+/** The theatre rendered, with the fog the page opens with drawn over it. */
+function foggedByThePlayer(): PixelBuffer {
+  const fog = createFog();
+  refreshVision(fog, GRID, eyesOf(GRID, VIEWED_FACTION));
+
+  const frame = renderTerrain(GRID);
+  blit(frame, renderFog(viewOf(fog)), 0, 0);
+
+  return frame;
 }
 
-test('boots in a real browser and renders through software WebGL', async ({ page }) => {
+/**
+ * Canvas points that show the theatre, and the theatre pixel each one should show.
+ *
+ * Only points inside the viewport: at a magnification above one, and after any
+ * pan, the theatre is larger than the canvas or shifted by it, and a point off
+ * the canvas is a question with no answer rather than a wrong one.
+ */
+function visiblePoints(view: ViewState): { points: [number, number][]; expected: [number, number][] } {
+  const points: [number, number][] = [];
+  const expected: [number, number][] = [];
+  const { camera } = view;
+
+  const lastX = Math.min(THEATRE.width, camera.x + Math.ceil(view.width / camera.zoom));
+  const lastY = Math.min(THEATRE.height, camera.y + Math.ceil(view.height / camera.zoom));
+
+  for (let y = Math.max(0, camera.y); y < lastY; y += 17) {
+    for (let x = Math.max(0, camera.x); x < lastX; x += 17) {
+      const screen = stageToScreen(camera, x, y);
+      points.push([screen.x, screen.y]);
+      expected.push([x, y]);
+    }
+  }
+
+  return { points, expected };
+}
+
+/** Asserts that every canvas point shows the theatre pixel the camera says it should. */
+async function expectTheatrePixels(page: Page, view: ViewState, context: string): Promise<void> {
+  const { points, expected } = visiblePoints(view);
+  expect(points.length, context).toBeGreaterThan(10);
+
+  const drawn = await samples(page, 'view', points);
+  let wrong = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const [stageX, stageY] = expected[index] ?? [0, 0];
+    const wanted = pixelAt(THEATRE, stageX, stageY);
+    const got = drawn[index];
+    if (got === undefined || got[0] !== wanted[0] || got[1] !== wanted[1] || got[2] !== wanted[2]) wrong += 1;
+  }
+
+  expect(wrong, `${context}: mismatched pixels`).toBe(0);
+}
+
+/** Boots the page and waits for the hooks, answering with what the renderer reported. */
+async function boot(page: Page): Promise<SpqrDebugHooks['boot'] & { readonly booted: true }> {
+  await page.goto('/');
+  await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
+
+  const report: SpqrDebugHooks['boot'] = await page.evaluate(() => window.__SPQR.boot);
+  if (!report.booted) throw new Error(`boot failed: ${report.error}`);
+
+  return report;
+}
+
+test('boots in a real browser and draws the generated theatre through software WebGL', async ({ page }) => {
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -14,28 +115,192 @@ test('boots in a real browser and renders through software WebGL', async ({ page
     if (message.type() === 'error') consoleErrors.push(message.text());
   });
 
-  await page.goto('/');
-  await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
-
-  const boot = await bootReport(page);
-  expect(boot.booted).toBe(true);
-  if (!boot.booted) throw new Error(`boot failed: ${boot.error}`);
+  const report = await boot(page);
 
   test.info().annotations.push({
     type: 'renderer',
-    description: boot.render.rendererDescription ?? 'unreported',
+    description: report.render.rendererDescription ?? 'unreported',
   });
 
   // A real WebGL2 context, not a null context from a GPU stack that refused to
   // fall back to SwiftShader.
-  expect(boot.render.engine).toBe('webgl');
-  expect(boot.render.webglVersion).toBe(2);
+  expect(report.render.engine).toBe('webgl');
+  expect(report.render.webglVersion).toBe(2);
 
-  // Pixels actually made it through the renderer and back out again, which is
-  // the loop every later agent-facing verification depends on.
-  expect(boot.render.pixel).toEqual([255, 136, 0, 255]);
+  // The viewport is the canvas, the camera opens on the middle of the theatre at
+  // its default zoom, and the page can say what it is looking at.
+  const view = await describeView(page);
+  expect(view.width).toBe(VIEWPORT_WIDTH);
+  expect(view.height).toBe(VIEWPORT_HEIGHT);
+  expect(view.camera.zoom).toBe(DEFAULT_ZOOM);
+  expect({ seed: view.seed, mapWidth: view.mapWidth, mapHeight: view.mapHeight, mapPixels: view.mapPixels }).toEqual(
+    DESCRIBED,
+  );
+  // The page opens in the player's fog, not with the whole map revealed.
+  expect(view.inspection).toBe(false);
+  expect(view.watch).toBe(null);
+  expect(view.camera.x).toBe(Math.floor(THEATRE_PIXELS / 2 - VIEWPORT_WIDTH / (2 * DEFAULT_ZOOM)));
+  expect(view.camera.y).toBe(Math.floor(THEATRE_PIXELS / 2 - VIEWPORT_HEIGHT / (2 * DEFAULT_ZOOM)));
+
+  // The centre pixel of the frame is the theatre pixel the camera says is there.
+  const centre = { x: Math.floor(VIEWPORT_WIDTH / 2), y: Math.floor(VIEWPORT_HEIGHT / 2) };
+  const stageCentre = screenToStage(view.camera, centre.x, centre.y);
+  expect(report.render.pixel).toEqual(pixelAt(THEATRE, stageCentre.x, stageCentre.y));
 
   await expect(page.locator('#app canvas')).toHaveCount(1);
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
+});
+
+test('draws the theatre pixel for pixel, at every whole-number zoom the camera offers', async ({ page }) => {
+  await boot(page);
+
+  for (const zoom of [1, 2, 3, 4, 8]) {
+    await page.evaluate((level) => window.__SPQR.view?.zoomTo(level), zoom);
+
+    const view = await describeView(page);
+    expect(view.camera.zoom, `zoom ${String(zoom)}`).toBe(zoom);
+    await expectTheatrePixels(page, view, `zoom ${String(zoom)}`);
+  }
+});
+
+test('pans in whole stage pixels and lands on them exactly', async ({ page }) => {
+  await boot(page);
+
+  await page.evaluate(() => window.__SPQR.view?.zoomTo(3));
+  await page.evaluate(() => window.__SPQR.view?.panBy(5, 3));
+
+  const view = await describeView(page);
+  expect(Number.isInteger(view.camera.x), 'the camera is on a whole stage pixel').toBe(true);
+  expect(Number.isInteger(view.camera.y)).toBe(true);
+
+  // After an odd pan the mapping is still exact: the canvas point that shows a
+  // given stage pixel is the one the camera says, pixel for pixel.
+  await expectTheatrePixels(page, view, 'after panning');
+});
+
+test('reaches every corner of a full 96×96 map, and stays exact there', async ({ page }) => {
+  await boot(page);
+
+  // The whole theatre, at the zoom that shows the most of it, walked corner to
+  // corner: what the ticket asks for when it asks that panning and zooming stay
+  // responsive across a full map is that the map is *all* there, at every zoom,
+  // and one texture under a camera is what makes that true by construction.
+  for (const zoom of [1, 2]) {
+    await page.evaluate((level) => window.__SPQR.view?.zoomTo(level), zoom);
+    await page.evaluate(() => window.__SPQR.view?.panBy(-100000, -100000));
+
+    const topLeft = await describeView(page);
+    expect(topLeft.camera, `zoom ${String(zoom)} top left`).toEqual({ x: 0, y: 0, zoom });
+    await expectTheatrePixels(page, topLeft, `zoom ${String(zoom)} top left`);
+
+    await page.evaluate(() => window.__SPQR.view?.panBy(100000, 100000));
+
+    const bottomRight = await describeView(page);
+    expect(bottomRight.camera.x).toBe(THEATRE_PIXELS - Math.floor(VIEWPORT_WIDTH / bottomRight.camera.zoom));
+    expect(bottomRight.camera.y).toBe(THEATRE_PIXELS - Math.floor(VIEWPORT_HEIGHT / bottomRight.camera.zoom));
+    await expectTheatrePixels(page, bottomRight, `zoom ${String(zoom)} bottom right`);
+  }
+});
+
+test('zooms about a point with the wheel, keeping that point where it is', async ({ page }) => {
+  await boot(page);
+
+  const [screenX, screenY] = [190, 130];
+  const before = await describeView(page);
+  const anchor: { x: number; y: number } = screenToStage(before.camera, screenX, screenY);
+
+  await page.evaluate(
+    ({ x, y }) => window.__SPQR.view?.zoomAbout(4, x, y),
+    { x: screenX, y: screenY },
+  );
+
+  const after = await describeView(page);
+  expect(after.camera.zoom).toBe(4);
+  // The stage pixel that was under the point is still under it — the property a
+  // wheel needs, and the one B2's camera deliberately did not have.
+  expect(screenToStage(after.camera, screenX, screenY)).toEqual(anchor);
+  await expectTheatrePixels(page, after, 'after an anchored zoom');
+});
+
+test('refuses a pan or a zoom that would put it between two pixels', async ({ page }) => {
+  await boot(page);
+
+  const before = await describeView(page);
+
+  await expect(page.evaluate(() => window.__SPQR.view?.panBy(0.5, 0))).rejects.toThrow(/whole number of pixels/);
+  await expect(page.evaluate(() => window.__SPQR.view?.zoomTo(2.5))).rejects.toThrow(/whole number/);
+  await expect(page.evaluate(() => window.__SPQR.view?.zoomAbout(4, 0.5, 0))).rejects.toThrow(/whole number/);
+  await expect(page.evaluate(() => window.__SPQR.view?.zoomTo(99))).rejects.toThrow(/whole number/);
+
+  // The refusals left the camera where it was.
+  expect((await describeView(page)).camera).toEqual(before.camera);
+});
+
+test('moves the camera for a drag, in whole stage pixels', async ({ page }) => {
+  await boot(page);
+
+  const before = await describeView(page);
+  const canvas = page.locator('#app canvas');
+
+  await page.evaluate(() => window.__SPQR.view?.zoomTo(2));
+  const start = await describeView(page);
+
+  const box = await canvas.boundingBox();
+  if (box === null) throw new Error('the page has no canvas to drag');
+
+  await page.mouse.move(box.x + 300, box.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 260, box.y + 180, { steps: 4 });
+  await page.mouse.up();
+
+  const after = await describeView(page);
+  // Dragging left and up moves the camera right and down, by whole pixels: 40
+  // screen pixels at 2× is 20 stage pixels.
+  expect(after.camera).toEqual({ x: start.camera.x + 20, y: start.camera.y + 10, zoom: 2 });
+  expect(Number.isInteger(after.camera.x)).toBe(true);
+  expect(Number.isInteger(after.camera.y)).toBe(true);
+  expect(after.camera).not.toEqual(before.camera);
+});
+
+test('drags and wheels the whole map without regenerating it', async ({ page }) => {
+  await boot(page);
+
+  // The failure this catches is the one that would make a full map unresponsive:
+  // composing the theatre again on every frame. Two hundred camera moves in the
+  // page, measured there, cannot afford a 1.5-million-pixel composition each — that
+  // would be twenty seconds, and the bound is a couple of seconds with room for a
+  // slow software renderer.
+  const moves = 200;
+  const elapsed = await page.evaluate((count) => {
+    const started = performance.now();
+    for (let step = 0; step < count; step += 1) {
+      window.__SPQR.view?.panBy(step % 2 === 0 ? 3 : -3, step % 3 === 0 ? 2 : -2);
+      if (step % 25 === 0) window.__SPQR.view?.zoomTo((step % 4) + 1);
+    }
+
+    return performance.now() - started;
+  }, moves);
+
+  test.info().annotations.push({ type: 'camera moves', description: `${String(moves)} moves in ${elapsed.toFixed(0)}ms` });
+  expect(elapsed).toBeLessThan(3000);
+  await expectTheatrePixels(page, await describeView(page), 'after two hundred moves');
+});
+
+test('clamps the camera to the map instead of showing the page behind it', async ({ page }) => {
+  await boot(page);
+
+  await page.evaluate(() => window.__SPQR.view?.panBy(-100000, -100000));
+  expect((await describeView(page)).camera).toEqual({ x: 0, y: 0, zoom: DEFAULT_ZOOM });
+
+  await page.evaluate(() => window.__SPQR.view?.zoomTo(8));
+  await page.evaluate(() => window.__SPQR.view?.panBy(100000, 100000));
+  const clamped = (await describeView(page)).camera;
+
+  // At 8× the viewport is 80×60 stage pixels of a 1552-pixel theatre, so the
+  // camera can go almost to its end and no further — and the last stage pixel it
+  // can show is the one whose magnification would end exactly at the edge.
+  expect(clamped.zoom).toBe(8);
+  expect(clamped.x).toBe(THEATRE_PIXELS - Math.floor(VIEWPORT_WIDTH / 8));
+  expect(clamped.y).toBe(THEATRE_PIXELS - Math.floor(VIEWPORT_HEIGHT / 8));
 });

@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "guard": "node scripts/guard.mjs",
     "match": "node src/cli/main.ts",
+    "bake": "node src/cli/bake-main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "pretest:e2e": "playwright install chromium",
