@@ -53,6 +53,7 @@ import {
   tileX,
   tileY,
   type MapGrid,
+  type Site,
 } from '../../src/sim/map';
 import {
   applyMovementCommands,
@@ -61,7 +62,7 @@ import {
   routeCacheFor,
   type Placement,
 } from '../../src/sim/movement';
-import { createRouteCache, NO_REFUSAL } from '../../src/sim/route';
+import { createRouteCache, NO_REFUSAL, type RouteCache } from '../../src/sim/route';
 import { startCalendar } from '../../src/sim/season';
 import { depth, FACING, formationCode, frontage, menOf } from '../../src/sim/squad';
 import { squadTypeId } from './economy-fixtures';
@@ -88,6 +89,14 @@ function place(world: EconomyWorld, squadType: string, x: number, y: number): Sq
   const faction: Faction = squadTypeOf(squadTypeId(squadType))?.faction ?? 'rome';
 
   return musterSquad(world.economy, world.map, { faction, squadType, x, y });
+}
+
+/** A hastati at (5,5) on a plain theatre, and the cache its orders are planned in. */
+function plainSquad(): { world: EconomyWorld; squad: Squad; routes: RouteCache } {
+  const world = worldOf();
+  const squad = place(world, 'hastati', 5, 5);
+
+  return { world, squad, routes: createRouteCache(world.map) };
 }
 
 /** A Controller that emits the Commands a script stamps for each tick. */
@@ -492,6 +501,77 @@ describe('movement that can be replayed', () => {
 
     expect(hashState(world)).toBe(before);
     expect(cache.searches).toBe(0);
+  });
+});
+
+describe('a Squad that is re-aimed keeps the tile it has already paid for', () => {
+  it('keeps it when its goal moves before it arrives', () => {
+    // A Squad walks plain ground at four ticks a tile. Its goal jumps one tile
+    // east every `period` ticks, so an order re-plans its route while the Squad
+    // is still paying for the tile it is entering. Re-aiming must not re-charge
+    // that tile: the only thing that changes the Squad's pace is the ground it
+    // crosses, so it must stand where a Squad given one order and left alone
+    // stands, tick for tick.
+    const oneOrder: Site[] = [];
+    {
+      const { world, squad, routes } = plainSquad();
+      applyMovementCommands(world.economy, world.map, [move('rome', [squad.id], 89, 5)], routes);
+
+      for (let tick = 0; tick < 60; tick += 1) {
+        march(world.economy, world.map);
+        oneOrder.push({ x: squad.x, y: squad.y });
+      }
+    }
+
+    for (const period of [1, 2, 3, 4]) {
+      const { world, squad, routes } = plainSquad();
+      const moving: Site[] = [];
+
+      for (let tick = 0; tick < 60; tick += 1) {
+        const goal = 30 + Math.floor(tick / period);
+        applyMovementCommands(world.economy, world.map, [move('rome', [squad.id], goal, 5)], routes);
+        march(world.economy, world.map);
+        moving.push({ x: squad.x, y: squad.y });
+      }
+
+      expect({ period, positions: moving }).toEqual({ period, positions: oneOrder });
+    }
+  });
+
+  it('keeps it when an order re-plans onto a route that still enters it', () => {
+    // Two ticks into a four-tick tile, a new goal whose way still enters that
+    // same tile: the step lands on the tick it was always going to land on.
+    const { world, squad, routes } = plainSquad();
+
+    applyMovementCommands(world.economy, world.map, [move('rome', [squad.id], 30, 5)], routes);
+    march(world.economy, world.map);
+    march(world.economy, world.map);
+    applyMovementCommands(world.economy, world.map, [move('rome', [squad.id], 40, 5)], routes);
+    march(world.economy, world.map);
+    march(world.economy, world.map);
+
+    expect({ x: squad.x, y: squad.y }).toEqual({ x: 6, y: 5 });
+  });
+
+  it('pays for the new tile from the beginning when an order changes the tile it is entering', () => {
+    // The tile it was paying for is no longer the tile it is about to enter, so
+    // the ticks spent on the old one do not carry over: the new tile is paid for
+    // in full, and the step comes when its own cost is met.
+    const { world, squad, routes } = plainSquad();
+
+    applyMovementCommands(world.economy, world.map, [move('rome', [squad.id], 30, 5)], routes);
+    march(world.economy, world.map);
+    march(world.economy, world.map);
+    applyMovementCommands(world.economy, world.map, [move('rome', [squad.id], 5, 3)], routes);
+    march(world.economy, world.map);
+    march(world.economy, world.map);
+
+    expect({ x: squad.x, y: squad.y }).toEqual({ x: 5, y: 5 });
+
+    march(world.economy, world.map);
+    march(world.economy, world.map);
+
+    expect({ x: squad.x, y: squad.y }).toEqual({ x: 5, y: 4 });
   });
 });
 

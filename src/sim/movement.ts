@@ -223,12 +223,13 @@ export function applyMovementCommands(
  * has been paid for.
  *
  * The clock is the Squad's own: `wait` counts the ticks left before it enters
- * the next tile, and what it holds is the *cost of that tile* — set when the
- * route was planned and again after every step. So a route takes exactly the
- * ticks it was costed at, tile for tile, and the search that chose it chose the
- * quickest way in the same currency: a Squad that walked round a hill to save
- * eight ticks a tile arrives eight ticks a tile sooner for it. A Squad with
- * nowhere left to walk has nothing to pay, and stands.
+ * the next tile, and what it holds is the *cost of that tile* — set when a route
+ * is planned, kept by a re-aim that still enters it, and set again after every
+ * step. So a route takes exactly the ticks it was costed at, tile for tile, and
+ * the search that chose it chose the quickest way in the same currency: a Squad
+ * that walked round a hill to save eight ticks a tile arrives eight ticks a tile
+ * sooner for it. A Squad with nowhere left to walk has nothing to pay, and
+ * stands.
  *
  * The order of the loop is the order Squads were raised in, and no Squad's step
  * depends on another's, so the whole tick is a function of the list.
@@ -289,6 +290,16 @@ export function routeCacheFor(map: MapGrid): RouteCache {
  * nothing is searched for. That is what makes repeating an order — a Player
  * clicking twice, an AI re-issuing its objective every tick — cost nothing and
  * change nothing, and it is the reason the steps are kept on the Squad at all.
+ *
+ * An order to a *different* tile is a new route, and it is searched for; what it
+ * is not is a new step timer. A route that still enters the tile the Squad is
+ * already paying for keeps the ticks already spent on it, because what entering
+ * a tile costs does not depend on where the Squad goes after it. That is what
+ * makes re-aiming different from repeating: an AI updating its goal every tick,
+ * or a player moving the goalpost one tile at a time, is obeyed without costing
+ * the Squad a step it had already paid for. Only a route that enters a different
+ * tile — or none at all — is charged from the beginning.
+ *
  * Nothing on a theatre can block a way once it is planned (a route is blocked by
  * water and by nothing else), so a route already walked is a route still good.
  *
@@ -317,10 +328,15 @@ function sendSquad(map: MapGrid, squad: Squad, to: Site, routes: RouteCache): vo
   // way it is about to go happens here rather than at the first step, so a Squad
   // ordered across the map turns on the tick it is told and not four ticks
   // later — and the block does it as one piece, without disturbing a man.
+  const payingFor = squad.steps[0];
+  const firstStep = route.steps[0];
+
   squad.steps = [...route.steps];
   squad.refused = NO_REFUSAL;
   faceTheWay(squad);
-  squad.wait = costAhead(map, squad);
+
+  // Only a route entering a different tile re-prices the step.
+  if (payingFor === undefined || payingFor !== firstStep) squad.wait = costAhead(map, squad);
 }
 
 /** Stops a Squad where it stands, and forgets where it was going. */
