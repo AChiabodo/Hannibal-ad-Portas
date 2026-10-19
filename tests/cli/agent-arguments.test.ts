@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_DIFFICULTY,
   DEFAULT_FACTION,
   DEFAULT_OPPONENT,
   USAGE,
@@ -8,7 +7,7 @@ import {
   type AgentRunOptions,
 } from '../../src/cli/agent-arguments';
 import { DEFAULT_DEADLINE_MS, DEFAULT_DECISION_TICKS } from '../../src/cli/protocol';
-import { DEFAULT_SEED, UsageError } from '../../src/cli/arguments';
+import { DEFAULT_DIFFICULTY, DEFAULT_SEED, UsageError } from '../../src/cli/arguments';
 import { HEADLESS_TICKS } from '../../src/sim/season';
 
 /**

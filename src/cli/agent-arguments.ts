@@ -19,6 +19,7 @@ import { DIFFICULTY } from '../ai/difficulty.ts';
 import type { DifficultyName } from '../ai/difficulty.ts';
 import { HEADLESS_TICKS } from '../sim/season.ts';
 import {
+  DEFAULT_DIFFICULTY,
   DEFAULT_SEED,
   UsageError,
   describe,
@@ -28,6 +29,7 @@ import {
   readWholeNumber,
 } from './arguments.ts';
 import type { Opponent } from './agent.ts';
+import { continuationAt, optionAt } from './usage.ts';
 
 /** The opponents this command can put on the other side of a Match. */
 export const OPPONENTS: readonly Opponent[] = ['ai', 'idle'];
@@ -37,9 +39,6 @@ export const DEFAULT_FACTION: Faction = 'rome';
 
 /** The opponent an agent meets when the command line does not say: the built-in AI. */
 export const DEFAULT_OPPONENT: Opponent = 'ai';
-
-/** The difficulty the built-in AI plays at when the command line does not say. */
-export const DEFAULT_DIFFICULTY: DifficultyName = 'centurio';
 
 /** What one command line asked for: an agent, a Match, and how long it may take. */
 export interface AgentRunOptions {
@@ -92,15 +91,12 @@ export type ParsedAgentArguments =
 /** Where a description starts: every option line pads its flag to this column. */
 const DESCRIPTION_COLUMN = 26;
 
-/** One option as `--help` prints it: the flag, then its description in the shared column. */
-function option(flag: string, description: string): string {
-  return `  ${flag.padEnd(DESCRIPTION_COLUMN - 2)}${description}`;
-}
+/** One option as this command's `--help` prints it, in the shared layout (`usage.ts`). */
+const option = (flag: string, description: string): string =>
+  optionAt(DESCRIPTION_COLUMN, flag, description);
 
-/** A line continuing the option above it, starting where that option's description starts. */
-function continuation(text: string): string {
-  return `${' '.repeat(DESCRIPTION_COLUMN)}${text}`;
-}
+/** A line continuing the option above it, starting where its description starts. */
+const continuation = (text: string): string => continuationAt(DESCRIPTION_COLUMN, text);
 
 /** The one description of what this command accepts, printed verbatim by `--help`. */
 export const USAGE = `Usage: npm run agent -- --agent <file> [options]

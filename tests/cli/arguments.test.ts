@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_DIFFICULTY,
   DEFAULT_SEED,
   DEFAULT_TICKS,
   parseArguments,
@@ -18,6 +19,7 @@ function run(
     expectedHash: string | null;
     record: string | null;
     rules: RulesName;
+    difficulty: typeof DEFAULT_DIFFICULTY;
   }> = {},
 ) {
   return {
@@ -28,6 +30,7 @@ function run(
       expectedHash: null,
       record: null,
       rules: DEFAULT_RULES,
+      difficulty: DEFAULT_DIFFICULTY,
       ...overrides,
     },
   };
@@ -112,6 +115,18 @@ describe('the command line', () => {
     expect(() => parseArguments(['--map', '--rules', 'draws'])).toThrow(/--rules/);
   });
 
+  it('takes the level the AI plays at, which is the one thing a tournament Match needs named', () => {
+    expect(parseArguments(['--rules', 'ai', '--difficulty', 'imperator']))
+      .toEqual(run({ rules: 'ai', difficulty: 'imperator' }));
+
+    expect(() => parseArguments(['--difficulty', 'proconsul'])).toThrow(/--difficulty must name a level/);
+  });
+
+  it('refuses a level for a Match with no AI in it', () => {
+    expect(() => parseArguments(['--difficulty', 'tiro'])).toThrow(/--rules economy has no AI in it/);
+    expect(() => parseArguments(['--rules', 'march', '--difficulty', 'tiro'])).toThrow(/has no AI in it/);
+  });
+
   it('takes where to write the record a replay is made of', () => {
     expect(parseArguments(['--seed', '3', '--ticks', '40', '--record', 'artifacts/seed-3.json'])).toEqual(
       run({ seed: 3, ticks: 40, record: 'artifacts/seed-3.json' }),
@@ -172,7 +187,8 @@ describe('the command line', () => {
   });
 
   it('describes itself in one place, so the usage message cannot drift from the parser', () => {
-    for (const flag of ['--seed', '--ticks', '--expect-hash', '--rules', '--record', '--map', '--help']) {
+    for (const flag of ['--seed', '--ticks', '--expect-hash', '--rules', '--difficulty', '--record',
+      '--map', '--help']) {
       expect(USAGE).toContain(flag);
     }
     expect(USAGE).toContain(DEFAULT_TICKS.toString());

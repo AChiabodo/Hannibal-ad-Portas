@@ -5,7 +5,8 @@ import { DEFAULT_RULES } from '../../src/cli/rules';
 
 /** What the CLI plays unless a test says otherwise. */
 function options(overrides: Partial<RunOptions> = {}): RunOptions {
-  return { seed: 7, ticks: 120, expectedHash: null, record: null, rules: DEFAULT_RULES, ...overrides };
+  return { seed: 7, ticks: 120, difficulty: 'centurio', expectedHash: null, record: null,
+    rules: DEFAULT_RULES, ...overrides };
 }
 
 describe('playing a Match headless', () => {

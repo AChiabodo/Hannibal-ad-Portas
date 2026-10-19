@@ -17,6 +17,7 @@
     "match": "node src/cli/main.ts",
     "agent": "node src/cli/agent-main.ts",
     "replay": "node src/cli/replay-main.ts",
+    "tournament": "node src/cli/tournament-main.ts",
     "bake": "node src/cli/bake-main.ts",
     "test": "vitest run",
     "test:watch": "vitest",

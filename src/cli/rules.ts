@@ -103,7 +103,8 @@ import {
   type Site,
 } from '../sim/index.ts';
 import { squadTypesOf } from '../content/index.ts';
-import { playAiMatch } from './ai-match.ts';
+import { playAiMatchAt } from './ai-match.ts';
+import type { DifficultyName } from '../ai/difficulty.ts';
 
 /**
  * What the rules own in the drawing Match: integers, and nothing else.
@@ -821,8 +822,13 @@ interface RulesEntry {
    * A run, not a `MatchSetup`: what a caller wants from a name is the run's
    * result, its log and, above all, the hash CI records. The bound always
    * terminates the Match, so this always returns.
+   *
+   * The difficulty is the one name that has an AI to name it for: with `ai` it
+   * picks the level both Controllers play at, and with every other name it is
+   * absent because the flag is refused there. So a Match of a tournament can be
+   * played again at the level the tournament played it at (E3).
    */
-  readonly play: (seed: number, ticks: number) => MatchRun;
+  readonly play: (seed: number, ticks: number, difficulty?: DifficultyName) => MatchRun;
 
   /**
    * Re-enacts a log of this Match from its seed, hashing it at checkpoints.
@@ -882,8 +888,8 @@ function rulesOn<World>(
  */
 export const RULES = {
   ai: {
-    description: 'two AI Controllers — economy, field, scouting and siege at Centurio — with scored decision logs',
-    play: playAiMatch,
+    description: 'two AI Controllers — economy, field, scouting and siege — with scored decision logs',
+    play: playAiMatchAt,
     replay: replayer(siegeMatchRules, siegeMatchOutcome),
   },
   economy: {

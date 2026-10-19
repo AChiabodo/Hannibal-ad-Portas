@@ -32,6 +32,7 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | `npm run match`     | One whole Match headless as a JSON report, or — with `--map` — the map a seed generates, with no build step |
 | `npm run agent`     | One whole Match with an outside process playing one Faction over the protocol in [docs/PROTOCOL.md](docs/PROTOCOL.md) |
 | `npm run replay`    | Re-runs a Match recorded with `--record` and reports whether it still happens, and where it first diverges |
+| `npm run tournament`| The balance instrument: a batch of AI-vs-AI Matches on distinct seeds, and one JSON report of what they add up to |
 | `npm run bake`      | Writes the whole generated catalogue into `artifacts/` as PNGs, with the pixel hash of each, for inspection |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
 | `npm run test:e2e`  | Browser tests (Playwright, headless Chromium, software WebGL)           |
@@ -1345,6 +1346,106 @@ command line was misused or the file is not a record: a record
 arrives from outside, so it is read the way a Command from outside is — every
 field checked, an unknown field refused by name, and the checkpoints required to
 be the schedule a run keeps.
+
+## The tournament
+
+```
+npm run tournament
+```
+
+One command plays a batch of AI-vs-AI Matches — one per distinct seed, two hundred
+of them by default — and prints one JSON report of what they add up to. This is
+where "is the game balanced?" stops being an opinion: the report states the win
+rate of each Faction, the median and the spread of how long a Match lasts, the
+share of Matches the clock decided, and the seed of every Match that was lopsided
+or stalled, so the Match behind an odd number can be played again and read.
+
+```json
+{
+  "rules": "ai",
+  "difficulty": "centurio",
+  "bound": 25200,
+  "seeds": { "first": 1, "count": 200 },
+  "wins": { "rome": 7, "carthage": 185, "draws": 0 },
+  "winRate": { "rome": 0.035, "carthage": 0.925 },
+  "decidedByClock": { "matches": 8, "share": 0.04 },
+  "duration": {
+    "ticks": { "min": 5401, "p10": 6300, "median": 8400, "p90": 10500, "max": 25200 },
+    "minutes": { "min": 9, "p10": 10.5, "median": 14, "p90": 17.5, "max": 42 }
+  },
+  "outliers": {
+    "lopsided": [],
+    "stalled": [
+      { "seed": 10, "outcome": "clock", "winner": null, "victoryReason": null, "ticks": 25200, "decisions": 50592, "commands": 42375, "hash": "90ad57ccfd000e8d" }
+    ]
+  },
+  "matches": [
+    { "seed": 1, "outcome": "victory", "winner": "rome", "victoryReason": "stronghold", "ticks": 6651, "decisions": 13356, "commands": 13130, "hash": "5f6ee34847ce5b65" }
+  ]
+}
+```
+
+That report is the batch of seeds 1 to 200, and it is the first thing that says
+something about the game rather than about a Match: Carthage wins nine Matches in
+ten, the middle Match is over in fourteen game minutes rather than the twenty-five
+to forty-five the plan asks for, and eight Matches — seeds 10, 18, 57, 75, 151,
+171, 184 and 196 — ran their whole three-year bound with nobody able to win.
+Nothing in this batch was lopsided: the shortest Match is 5,401 ticks against a
+median of 8,400, and no Faction was ever annihilated. The numbers are stated, not
+judged: rebalancing is F1's ticket, and a report that had already decided would
+make F1's first job auditing the report.
+
+Everything in it is a function of the seeds and the build. There is no timing, no
+path and no wall clock in the report, so two runs of the same batch print the
+same bytes — which is what lets a later ticket gate on it, and what lets a reader
+diff this week's against last week's and see only what changed in the game. The
+Matches themselves are independent, so they are played on the machine's other
+cores: one core would take half an hour over this batch, and twelve take a few
+minutes (`--workers` says how many, `--workers 1` says one). In a terminal the
+run says how far it has got, on standard error; a pipe or a CI log gets the report
+and nothing else.
+
+A Match's decisions are not in the report — one Match's log is some twenty
+megabytes of JSON, every candidate every behaviour proposed and the utility that
+decided — so `--keep <dir>` writes them beside it, one file per seed:
+
+```
+npm run tournament -- --seeds 200 --keep artifacts/tournament   # every Match's decisions
+npm run match -- --rules ai --seed 10 --difficulty centurio --ticks 25200
+```
+
+The file is the very report `npm run match --rules ai` prints for that Match,
+decisions and all, and it is named after its seed by a rule rather than by a path
+in the report — so the report does not even depend on whether logs were kept.
+Without `--keep` a Match is retrieved by playing it again, which determinism makes
+exact: name the seed the report names, at the `--difficulty` and `--ticks` it
+states, and the `hash` it gives that Match is what proves the Match retrieved is
+the Match measured. `--difficulty` is therefore a flag on `npm run match` too —
+and it is refused beside any `--rules` that has no AI in it, because a level that
+changed nothing would be a flag that lies.
+
+Two Matches are a balance reader's business rather than a distribution's:
+**stalled** is a Match the clock ended — nobody could win it — and **lopsided** is
+a victory that was not a contest, either won in at most half the batch's median
+duration or won outright by leaving the loser neither settlement nor Squad. Both
+are listed by seed, so the Match behind an odd number can be opened and read.
+
+The flags worth knowing before reading a report: `--first-seed` moves the batch,
+`--ticks` moves the bound every Match is given, and `--difficulty` picks the level
+both AIs play at, because a win rate means nothing without it.
+The command exits 0 however the game turned out — a report is a measurement — 1
+when a Match of the batch could not be played, naming its seed, and 2 when the
+command line was misused or a decision log could not be written where `--keep`
+asked for it.
+
+Building this batch found the game's own hot spot: a Match spent most of its time
+in the scouting behaviour, walking the whole theatre for frontier ground on every
+tick, and planning the same patrols twice per tick for two different callers.
+Computing the frontier once per theatre per call, and planning the patrols once per
+Observation, cut a Match's cost by about two and a half times without changing a
+single decision — the same state hashes, the same Command logs, the same decision
+logs — which is what turned this batch from eleven minutes into four
+(`src/ai/scouting.ts`, `src/cli/ai-match.ts`).
 
 ## Layout
 

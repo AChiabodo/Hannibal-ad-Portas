@@ -53,6 +53,26 @@ The first checkpoint at which a Replay's state hash disagrees with its Record's,
 _UI_: —
 _Avoid_: Mismatch, desync, drift, hash failure
 
+**Tournament**:
+A batch of AI-vs-AI Matches on distinct seeds, played at one difficulty and one bound, and reduced to one Balance report. It is a CLI instrument, like the Record and the Replay, and not something the player ever sees.
+_UI_: —
+_Avoid_: League, ladder, season, benchmark
+
+**Balance report**:
+What a Tournament adds up to: each Faction's win rate over the batch, the median and the spread of how long a Match lasts, the share of Matches the clock decided, and the seed of every Match that was lopsided or stalled. It states measurements and no verdict.
+_UI_: —
+_Avoid_: Scoreboard, leaderboard, results table
+
+**Lopsided**:
+A victory that was not a contest: one won in at most half the batch's median duration, or one that left the loser neither settlement nor Squad. A reader has to look at it.
+_UI_: —
+_Avoid_: Blowout, stomp, rout
+
+**Stalled**:
+A Match no Faction could win, because the tick bound ended it. The clock decided it, which is the outcome the Definition of Done puts a ceiling on.
+_UI_: —
+_Avoid_: Draw, stalemate, timeout
+
 ### The theatre
 
 **Tile**:

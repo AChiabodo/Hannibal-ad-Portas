@@ -77,6 +77,39 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
 
   const fieldOf = (context: BehaviourContext<SiegeVisible>) => bestCandidate(military.tactical!(context));
 
+  /** One candidate the scouting behaviour proposed: a march, and the reason for it. */
+  type Patrol = ReturnType<NonNullable<typeof scouting.tactical>>[number];
+
+  /**
+   * The patrols planned for one Observation, worked out once.
+   *
+   * The scouting behaviour is asked twice in a tick — once as a behaviour in its
+   * own right, and once again by whoever is sharing out the Squads that are left
+   * — and what it answers is a function of the Observation and nothing else. The
+   * answer is expensive in a way the other behaviours' are not: it walks the
+   * whole theatre looking for ground nobody has seen, per light Squad, on every
+   * tick. Asking it once per Observation and handing both callers the same plan is
+   * therefore worth the four lines, and it changes no decision: the second answer
+   * would have been the first answer.
+   *
+   * Keyed by the Observation itself, so nothing is cached across a tick: the
+   * driver builds a fresh one for each Player each tick, which makes "the same
+   * Observation" mean "the same question", and a `WeakMap` means the answers go
+   * away with the Observations they were for (E3 found this: a Match spent most of
+   * its time planning patrols that had already been planned).
+   */
+  const patrolsPlanned = new WeakMap<object, readonly Patrol[]>();
+
+  const patrolsOf = (context: BehaviourContext<SiegeVisible>): readonly Patrol[] => {
+    const cached = patrolsPlanned.get(context.observation);
+    if (cached !== undefined) return cached;
+
+    const planned = scouting.tactical!(context);
+    patrolsPlanned.set(context.observation, planned);
+
+    return planned;
+  };
+
   /** The flat batch a candidate emits, in contribution order. */
   const commandsOf = (contributions: readonly Contribution<Command>[]): readonly Command[] =>
     contributions.flatMap((contribution) => contribution.commands);
@@ -99,7 +132,7 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
     });
     const owned = new Set(held.filter((command) => command.kind !== 'hold').flatMap((command) => command.squads));
     const blocked = new Set([...exclusions, ...owned]);
-    const patrols = scouting.tactical!(context).flatMap((candidate) => candidate.commands)
+    const patrols = patrolsOf(context).flatMap((candidate) => candidate.commands)
       .filter((command) => !command.squads.some((id) => blocked.has(id)));
     const scouts = new Set(patrols.flatMap((command) => command.squads));
     return [
@@ -113,7 +146,7 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
   const scoutingBehaviour: Behaviour<SiegeVisible, Command> = { ...scouting, tactical: (context) => {
     const field = fieldOf(context);
     const contributions = share(context, field, new Set());
-    return scouting.tactical!(context).map((candidate) => ({ ...candidate,
+    return patrolsOf(context).map((candidate) => ({ ...candidate,
       reason: `${candidate.reason} ${field?.reason ?? ''}`.trim(),
       commands: commandsOf(contributions), contributions }));
   } };
