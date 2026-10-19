@@ -1,4 +1,4 @@
-import { createAi, type AiDecision } from '../ai/controller.ts';
+import { createAi, bestCandidate, type AiDecision } from '../ai/controller.ts';
 import { createEconomyBehaviour } from '../ai/economy.ts';
 import { createMilitaryBehaviour, createMilitaryRecruitment } from '../ai/military.ts';
 import { createScoutingBehaviour } from '../ai/scouting.ts';
@@ -36,12 +36,6 @@ const garrisonEstimate = Math.max(...SQUAD_TYPES.filter((type) => type.tier === 
   .map((type) => type.strength * type.morale));
 const siegeContent = { canAssault, ramCost: RAM_COST, siegeRadius: SIEGE_RADIUS, reliefRadius: RELIEF_RADIUS,
   garrisonEstimate, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES };
-
-/** The strongest candidate of a layer; a tie keeps the first, as the proposals arrive. */
-function strongest<T>(candidates: readonly Candidate<T>[]): Candidate<T> | undefined {
-  return candidates.reduce<Candidate<T> | undefined>((best, candidate) =>
-    best === undefined || candidate.utility > best.utility ? candidate : best, undefined);
-}
 
 /** Economy alone at one difficulty: what `economyRegistry` is to Centurio. */
 export function economyRegistryAt(difficulty: Difficulty = DIFFICULTY.centurio):
@@ -81,7 +75,7 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
   const scouting = createScoutingBehaviour(scoutingContent, difficulty);
   const siege = createSiegeBehaviour(siegeContent, difficulty);
 
-  const fieldOf = (context: BehaviourContext<SiegeVisible>) => strongest(military.tactical!(context));
+  const fieldOf = (context: BehaviourContext<SiegeVisible>) => bestCandidate(military.tactical!(context));
 
   /** The flat batch a candidate emits, in contribution order. */
   const commandsOf = (contributions: readonly Contribution<Command>[]): readonly Command[] =>

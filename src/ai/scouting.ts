@@ -1,12 +1,13 @@
 import type { Observation } from '../sim/observation.ts';
+import type { Season } from './calendar.ts';
 import type { Behaviour } from './registry.ts';
 import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, type Difficulty } from './difficulty.ts';
+import { distance, type Site } from './site.ts';
 
-interface Site { readonly x: number; readonly y: number }
 export interface ScoutingObservation {
   readonly year: number;
-  readonly season: string;
+  readonly season: Season;
   readonly fog: { readonly terrain: Uint8Array; readonly visible: Uint8Array };
   readonly contacts: readonly Contact[];
   readonly settlements: readonly Site[];
@@ -38,7 +39,6 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
   const types = new Map(content.squadTypes.map((type) => [type.id, type]));
   const { width, height, vision } = content;
   const index = (site: Site) => site.y * width + site.x;
-  const distance = (a: Site, b: Site) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
   function withinVision(a: Site, b: Site): boolean {
     const dx = a.x - b.x;
     const dy = a.y - b.y;

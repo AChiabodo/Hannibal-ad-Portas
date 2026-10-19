@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createAi } from '../../src/ai/controller.ts';
+import type { Season } from '../../src/ai/calendar.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from '../../src/ai/difficulty.ts';
 import { createBehaviourRegistry } from '../../src/ai/registry.ts';
 import { armyRegistry } from '../../src/cli/ai-match.ts';
@@ -11,12 +12,12 @@ import { TICK_HZ } from '../../src/sim/clock.ts';
 import type { Observation } from '../../src/sim/observation.ts';
 
 function operationalTicks(reactionSeconds: number): number[] {
-  const ai = createAi<{ year: number; season: string }, never>({
+  const ai = createAi<{ year: number; season: Season }, never>({
     ticksPerSecond: 10, operationalSeconds: reactionSeconds, registry: createBehaviourRegistry([]),
   });
   const ticks: number[] = [];
   for (let tick = 0; tick <= reactionSeconds * 10 + 1; tick += 1) {
-    const observation: Observation<{ year: number; season: string }> = {
+    const observation: Observation<{ year: number; season: Season }> = {
       faction: 'rome', tick, visible: { year: 1, season: 'spring' },
     };
     ai.decide(observation);

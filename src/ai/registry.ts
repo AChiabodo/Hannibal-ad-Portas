@@ -24,11 +24,31 @@ export interface Candidate<Command> {
   readonly contributions?: readonly Contribution<Command>[];
 }
 
+/**
+ * The strategic postures a plan may name. A word outside this set is a type
+ * error rather than a candidate whose comparison silently falls through, so the
+ * vocabulary is closed by construction.
+ */
+export type Posture = 'growth' | 'commerce' | 'recovery';
+
+/**
+ * The settlement a plan works toward, named by its id as the decimal word the
+ * decision log already carries; `null` while it has none. The template keeps a
+ * plain string from standing in for a settlement id without changing what a
+ * plan logs.
+ */
+export type Objective = `${number}`;
+
+/** Names a settlement id as a plan's objective, or `null` when there is none. */
+export function objectiveOf(settlement: number | undefined): Objective | null {
+  return settlement === undefined ? null : `${settlement}` as Objective;
+}
+
 /** AI memory, never Match state. Its meaning belongs to the registered behaviours. */
 export interface StrategicPlan {
-  readonly posture: string | null;
+  readonly posture: Posture | null;
   readonly budget: Readonly<Record<string, number>>;
-  readonly objective: string | null;
+  readonly objective: Objective | null;
 }
 
 export interface StrategicCandidate<Command> extends Candidate<Command> {

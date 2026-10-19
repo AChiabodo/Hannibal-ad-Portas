@@ -1,11 +1,11 @@
 import type { Observation } from '../sim/observation.ts';
+import type { Season } from './calendar.ts';
 import type { Behaviour, Candidate } from './registry.ts';
 import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
+import { distance, type Site } from './site.ts';
 
 type Faction = Observation<unknown>['faction'];
-
-interface Site { readonly x: number; readonly y: number }
 
 interface SiegeSquad extends Site {
   readonly id: number;
@@ -29,7 +29,7 @@ interface VisibleSiegeFront {
 export interface SiegeObservation {
   /** The calendar the Controller seam requires of every Observation; the policy reads neither. */
   readonly year: number;
-  readonly season: string;
+  readonly season: Season;
   readonly treasury: number;
   readonly squads: readonly SiegeSquad[];
   readonly enemies: readonly (Site & { readonly type: string })[];
@@ -60,10 +60,6 @@ export type SiegeCommand =
   | { readonly kind: 'assault'; readonly faction: Faction; readonly squads: readonly number[]; readonly settlement: number }
   | { readonly kind: 'blockade'; readonly faction: Faction; readonly squads: readonly number[]; readonly settlement: number }
   | { readonly kind: 'withdraw'; readonly faction: Faction; readonly squads: readonly number[] };
-
-function distance(a: Site, b: Site): number {
-  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
-}
 
 /**
  * Lays, sustains and gives up Sieges: the one policy that decides between an

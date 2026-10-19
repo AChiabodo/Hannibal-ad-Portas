@@ -1,10 +1,12 @@
 import type { Observation } from '../sim/observation.ts';
+import type { Season } from './calendar.ts';
 import type { Behaviour, Candidate } from './registry.ts';
 import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
+import { distance, type Site } from './site.ts';
 
 type Faction = Observation<unknown>['faction'];
-interface Site { readonly x: number; readonly y: number }
+
 interface Enemy extends Site { readonly id: number; readonly type: string }
 interface Squad extends Enemy {
   readonly men: number;
@@ -18,7 +20,7 @@ interface Squad extends Enemy {
 
 export interface MilitaryObservation {
   readonly year: number;
-  readonly season: string;
+  readonly season: Season;
   readonly settlements: readonly (Site & { readonly id: number })[];
   readonly squads: readonly Squad[];
   readonly enemies: readonly Enemy[];
@@ -76,27 +78,41 @@ type MilitaryCommand = {
   readonly kind: 'move'; readonly faction: Faction; readonly squads: readonly number[]; readonly x: number; readonly y: number;
 };
 
+/** The side of the threat map, in tiles, that one region covers. */
 const REGION_SIZE = 16;
+
+/** How far from an owned settlement an enemy still counts as threatening it, in tiles. */
 const DEFENCE_RADIUS = 12;
 
-function distance(a: Site, b: Site): number {
-  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
-}
+/** How close two bodies have to be to count as in contact, in tiles. */
+const CONTACT_RADIUS = 4;
+
+/** The scale a power or margin is stated on: a hundred is parity. */
+const PERCENT = 100;
+
+/** The divisor of nominal morale or strength below which a Squad counts as spent. */
+const SPENT_DIVISOR = 2;
+
+/** The fatigue scale: a fresh Squad keeps its whole power, a spent one half. */
+const FATIGUE_SCALE = 2;
+
+/** The morale an unread enemy type is priced at when the roster cannot name it. */
+const UNKNOWN_MORALE = 10;
 
 /** Only public content and the looking Faction's Observation enter this policy. */
 export function createMilitaryBehaviour(content: MilitaryContent, difficulty: Difficulty = DIFFICULTY.centurio):
 Behaviour<MilitaryObservation, MilitaryCommand> {
   const types = new Map(content.squadTypes.map((type) => [type.id, type]));
   const margin = attackPercent(difficulty);
-  const enemyPower = (enemy: Enemy) => (types.get(enemy.type)?.morale ?? 10) * 100;
+  const enemyPower = (enemy: Enemy) => (types.get(enemy.type)?.morale ?? UNKNOWN_MORALE) * PERCENT;
   function power(squad: Squad): number {
     const type = types.get(squad.type);
-    return type === undefined ? 0 : Math.floor(squad.men * squad.morale * 100 *
-      (2 * content.fatigueMax - squad.fatigue) / (type.strength * 2 * content.fatigueMax));
+    return type === undefined ? 0 : Math.floor(squad.men * squad.morale * PERCENT *
+      (FATIGUE_SCALE * content.fatigueMax - squad.fatigue) / (type.strength * FATIGUE_SCALE * content.fatigueMax));
   }
   function spent(squad: Squad): boolean {
     const type = types.get(squad.type);
-    return type === undefined || squad.morale * 2 <= type.morale || squad.men * 2 <= type.strength;
+    return type === undefined || squad.morale * SPENT_DIVISOR <= type.morale || squad.men * SPENT_DIVISOR <= type.strength;
   }
 
   return {
@@ -148,8 +164,8 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
           return false;
         }
         const exhausted = spent(squad);
-        const enemies = visible.enemies.filter((enemy) => distance(squad, enemy) <= 4);
-        const support = supportSquads.filter((other) => distance(squad, other) <= 4)
+        const enemies = visible.enemies.filter((enemy) => distance(squad, enemy) <= CONTACT_RADIUS);
+        const support = supportSquads.filter((other) => distance(squad, other) <= CONTACT_RADIUS)
           .reduce((sum, other) => sum + power(other), 0);
         const threat = enemies.reduce((sum, enemy) => sum + enemyPower(enemy), 0);
         const lost = threat > support;
@@ -195,21 +211,21 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
       }
       for (const target of [...visible.enemies].sort((a, b) => a.id - b.id)) {
         if (covered.has(target.id)) continue;
-        const line = ready.filter((squad) => squad !== reserve && !assigned.has(squad.id) && distance(squad, target) <= 4);
-        const threat = visible.enemies.filter((enemy) => distance(enemy, target) <= 4)
+        const line = ready.filter((squad) => squad !== reserve && !assigned.has(squad.id) && distance(squad, target) <= CONTACT_RADIUS);
+        const threat = visible.enemies.filter((enemy) => distance(enemy, target) <= CONTACT_RADIUS)
           .reduce((sum, enemy) => sum + enemyPower(enemy), 0);
         let available = line.reduce((sum, squad) => sum + power(squad), 0);
-        if (available * 100 < threat * margin && reserve !== undefined && !assigned.has(reserve.id) && distance(reserve, target) <= 4) {
+        if (available * PERCENT < threat * margin && reserve !== undefined && !assigned.has(reserve.id) && distance(reserve, target) <= CONTACT_RADIUS) {
           const reinforced = available + power(reserve);
-          if (reinforced * 100 >= threat * margin) {
+          if (reinforced * PERCENT >= threat * margin) {
             line.push(reserve);
             available = reinforced;
           }
         }
-        if (available * 100 < threat * margin) continue;
+        if (available * PERCENT < threat * margin) continue;
         let allocated = 0;
         for (const squad of line) {
-          if (allocated * 100 >= threat * margin) break;
+          if (allocated * PERCENT >= threat * margin) break;
           allocated += assign(squad, target, `against observed enemy ${target.id}: reinforce a winnable field engagement.`);
         }
         reasons.push(`Attack observed weakness ${target.id}: line ${available} against threat ${threat}.`);
@@ -222,12 +238,12 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
       // Keep the reserve and require a favourable line before committing.
       for (const contact of remembered.sort((a, b) => b.seen - a.seen || a.id - b.id)) {
         const line = ready.filter((squad) => squad !== reserve && !assigned.has(squad.id));
-        const threat = remembered.filter((enemy) => distance(enemy, contact) <= 4)
+        const threat = remembered.filter((enemy) => distance(enemy, contact) <= CONTACT_RADIUS)
           .reduce((sum, enemy) => sum + enemyPower(enemy), 0);
-        if (line.reduce((sum, squad) => sum + power(squad), 0) * 100 < threat * margin) continue;
+        if (line.reduce((sum, squad) => sum + power(squad), 0) * PERCENT < threat * margin) continue;
         let allocated = 0;
         for (const squad of line) {
-          if (allocated * 100 >= threat * margin) break;
+          if (allocated * PERCENT >= threat * margin) break;
           commands.push({ kind: 'move', faction, squads: [squad.id], x: contact.x, y: contact.y });
           assigned.add(squad.id);
           allocated += power(squad);

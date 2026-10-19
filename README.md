@@ -1204,6 +1204,7 @@ src/                application code
     movement.ts     the moving half of a Squad: routes, refused orders, and the Commands obeyed
     combat.ts       the fight: contact, the matchup, flanking, fatigue, missiles, rout and rally
     siege.ts        walls, the Roman ram, the assault, the blockade and the fall of a Stronghold
+    siege-fog.ts    the siege world's fog contacts, and the typed kind each memory holds
     territory.ts    the country a Faction's settlements give it, and what a Season outside it costs
     residue.ts      the dead, kept beside the Match because they fade and never enter a hash
   content/          the typed tables the rules read: resources, Squad types, arms, buildings
@@ -1234,6 +1235,8 @@ src/                application code
     military.ts     field defence, counters, reserves and withdrawal
     scouting.ts     exploration and last-known contact patrols
     contacts.ts     the last-known contact memory and the age limit every planner reads
+    calendar.ts     the four Seasons a policy reads, as the AI's own closed word set
+    site.ts         the tile a policy plans about, and the one Chebyshev distance between two
     siege.ts        Assault and Blockade prosecution
     difficulty.ts   Tiro, Centurio and Imperator settings
   input/            the Player's hands: a selection, control groups and a Controller (no engine imports)

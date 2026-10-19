@@ -1,10 +1,11 @@
 import type { Observation } from '../sim/observation.ts';
-import { createBehaviourRegistry, type BehaviourRegistry, type Contribution, type StrategicCandidate, type StrategicPlan } from './registry.ts';
+import type { Season } from './calendar.ts';
+import { createBehaviourRegistry, type BehaviourRegistry, type Candidate, type Contribution, type StrategicCandidate, type StrategicPlan } from './registry.ts';
 
 /** The calendar facts an AI reads; the simulation remains the calendar's owner. */
 export interface CalendarVisible {
   readonly year: number;
-  readonly season: string;
+  readonly season: Season;
 }
 
 export type AiLayer = 'strategic' | 'operational' | 'tactical';
@@ -24,7 +25,7 @@ export interface AiDecision<Command> {
   readonly faction: Observation<unknown>['faction'];
   readonly tick: number;
   readonly year: number;
-  readonly season: string;
+  readonly season: Season;
   readonly layer: AiLayer;
   readonly candidates: readonly ScoredCandidate<Command>[];
   readonly selected: { readonly behaviour: string | null; readonly id: string;
@@ -36,6 +37,18 @@ export interface AiController<Visible, Command> {
   decide(observation: Observation<Visible>): readonly Command[];
   /** A detached snapshot: inspecting a decision cannot rewrite its history. */
   readLog(): readonly AiDecision<Command>[];
+}
+
+/**
+ * The one rule that decides a contested decision: the highest utility wins, and
+ * a tie keeps the candidate proposed first. The Controller proposes idle first,
+ * then behaviour id and candidate id, so that is the order this rule applies
+ * there; a harness that folds behaviours calls the same rule rather than
+ * restating it and drifting.
+ */
+export function bestCandidate<C extends Candidate<unknown>>(candidates: readonly C[]): C | undefined {
+  return candidates.reduce<C | undefined>(
+    (best, candidate) => best === undefined || candidate.utility > best.utility ? candidate : best, undefined);
 }
 
 /**
@@ -61,7 +74,7 @@ export function createAi<Visible extends CalendarVisible, Command = never>(
   const log: AiDecision<Command>[] = [];
   const registry = createBehaviourRegistry(options.registry?.behaviours);
   const operationalTicks = options.ticksPerSecond * operationalSeconds;
-  let calendar: { year: number; season: string } | undefined;
+  let calendar: { year: number; season: Season } | undefined;
   let operationalWindow = -1;
   let plan: StrategicPlan = { posture: null, budget: {}, objective: null };
   let faction: Observation<unknown>['faction'] | undefined;
@@ -114,11 +127,7 @@ export function createAi<Visible extends CalendarVisible, Command = never>(
             candidates.push(structuredClone({ ...candidate, behaviour: behaviour.id, contributions }));
           }
         }
-        // First wins a tie: idle at zero, then behaviour id and candidate id.
-        let selected = candidates[0]!;
-        for (const candidate of candidates) {
-          if (candidate.utility > selected.utility) selected = candidate;
-        }
+        const selected = bestCandidate(candidates)!;
         if (layer === 'strategic' && selected.plan !== undefined) {
           plan = structuredClone(selected.plan);
         }

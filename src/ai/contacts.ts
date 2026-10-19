@@ -9,7 +9,13 @@
  * on this leaf and never on another behaviour.
  */
 
-interface Site { readonly x: number; readonly y: number }
+import type { Site } from './site.ts';
+
+/** How long a Squad sighting stays planning evidence, in seconds (D4). */
+const SQUAD_CONTACT_SECONDS = 120;
+
+/** How long a settlement sighting stays planning evidence, in seconds (D4). */
+const SETTLEMENT_CONTACT_SECONDS = 600;
 
 /** One remembered enemy thing, as a planning policy may read it: never a live position. */
 export interface Contact extends Site {
@@ -23,6 +29,6 @@ export interface Contact extends Site {
 
 /** Stale sightings remain historical fog data, but cease to be planning evidence. */
 export function planningContacts(contacts: readonly Contact[], tick: number, ticksPerSecond: number): Contact[] {
-  return contacts.filter((contact) => tick >= contact.seen &&
-    tick - contact.seen < ticksPerSecond * (contact.kind === 'squad' ? 120 : 600));
+  return contacts.filter((contact) => tick >= contact.seen && tick - contact.seen <
+    ticksPerSecond * (contact.kind === 'squad' ? SQUAD_CONTACT_SECONDS : SETTLEMENT_CONTACT_SECONDS));
 }

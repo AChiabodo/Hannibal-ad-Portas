@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { createAi } from '../../src/ai/controller.ts';
+import { createAi, bestCandidate } from '../../src/ai/controller.ts';
+import type { Season } from '../../src/ai/calendar.ts';
 import { createBehaviourRegistry } from '../../src/ai/registry.ts';
 import type { Command } from '../../src/sim/command.ts';
 import type { Observation } from '../../src/sim/observation.ts';
 
 interface Visible {
   readonly year: number;
-  readonly season: string;
+  readonly season: Season;
 }
 
-function look(tick: number, season = 'spring', year = 1): Observation<Visible> {
+function look(tick: number, season: Season = 'spring', year = 1): Observation<Visible> {
   return { faction: 'rome', tick, visible: { year, season } };
 }
 
@@ -107,7 +108,7 @@ describe('the AI Controller', () => {
       id: 'military',
       strategic: () => [{
         id: 'defend', utility: 8, reason: 'Winter quarters take priority.', commands: [],
-        plan: { posture: 'defensive', budget: { reserve: 100 }, objective: 'home' },
+        plan: { posture: 'growth', budget: { reserve: 100 }, objective: '0' },
       }],
       operational: ({ observation, plan }) => [{
         id: 'reserve', utility: plan.budget.reserve === 100 ? 5 : -1,
@@ -115,7 +116,7 @@ describe('the AI Controller', () => {
         commands: [{ kind: 'hold', faction: observation.faction, squads: [1] }],
       }],
       tactical: ({ observation, plan }) => [{
-        id: 'hold', utility: plan.posture === 'defensive' ? 4 : -1,
+        id: 'hold', utility: plan.posture === 'growth' ? 4 : -1,
         reason: `Follow ${plan.posture} posture.`,
         commands: [{ kind: 'hold', faction: observation.faction, squads: [2] }],
       }],
@@ -127,7 +128,7 @@ describe('the AI Controller', () => {
     ]);
     expect(ai.decide(look(1, 'winter'))).toEqual([{ kind: 'hold', faction: 'rome', squads: [2] }]);
     expect(ai.readLog()[0]?.candidates[1]).toMatchObject({
-      plan: { posture: 'defensive', budget: { reserve: 100 }, objective: 'home' },
+      plan: { posture: 'growth', budget: { reserve: 100 }, objective: '0' },
     });
   });
 
@@ -182,5 +183,12 @@ describe('the AI Controller', () => {
 
   it('rejects duplicate registrations instead of merging unrelated modules under one name', () => {
     expect(() => createBehaviourRegistry([{ id: 'economy' }, { id: 'economy' }])).toThrow(/unique.*economy/);
+  });
+
+  it('states the one tie rule the Controller and the composition harness both read', () => {
+    const candidate = (id: string, utility: number) => ({ id, utility, reason: id, commands: [] });
+    expect(bestCandidate([])).toBeUndefined();
+    expect(bestCandidate([candidate('low', 1), candidate('high', 7), candidate('tie', 7)])?.id).toBe('high');
+    expect(bestCandidate([candidate('first', 7), candidate('second', 7)])?.id).toBe('first');
   });
 });

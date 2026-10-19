@@ -37,7 +37,7 @@ Each independent module exports a `Behaviour<Visible, Command>` with a stable
   reason: 'Winter quarters take priority.',
   commands: [],
   // Strategic candidates alone may replace the plan:
-  plan: { posture: 'defensive', budget: { reserve: 100 }, objective: 'home' },
+  plan: { posture: 'growth', budget: { reserve: 100 }, objective: '0' },
 }
 ```
 
@@ -45,13 +45,21 @@ Each independent module exports a `Behaviour<Visible, Command>` with a stable
 adding one needs no edit to the registry or Controller. The registry snapshots
 the registrations and rejects duplicate or blank behaviour ids. No behaviour
 module imports another: the contact memory and its age limit live in
-`ai/contacts.ts`, and each module reaches only for shared leaves. Hooks are pure
+`ai/contacts.ts`, the tile and its Chebyshev distance in `ai/site.ts`, and each
+module reaches only for shared leaves. Hooks are pure
 functions of their context; retained strategic memory belongs in the plan,
 which is copied for each hook. A module may describe the narrow visible fields
 it needs and return inferred Command records (`kind: 'build' as const`, for
 example); concrete simulation types are checked at the composition root outside
 `ai/`. The three modules under `tests/ai/behaviours/` are test adapters showing
 independent registration, not shipped policies.
+
+The closed vocabularies are types: `posture` is a `Posture` (growth, commerce or
+recovery), `objective` is the decimal word naming the settlement a plan works
+toward, and every Observation's `season` is a `Season`, so a misspelt word is a
+type error rather than a comparison that silently never matches. `objective`
+stays the word the decision log already carried, so typed it changes nothing a
+Match logs.
 
 On each due layer, all registered hooks propose alternatives against the same
 plan. One candidate wins across all behaviours on that layer. It may emit a
@@ -111,8 +119,9 @@ Every operational decision recomputes recurring tax and staffed, standing Market
 income. Unfinished or unstaffed works and blockaded settlements contribute no
 Market income; blockaded settlements contribute no tax either. Recruitment emits
 one Squad at a time, requires total Payroll no greater than recurring income,
-retains two Seasons of the proposed Payroll plus six denarii, and leaves three
-Seasons of population food in stock. Unpaid Squads suspend recruitment and put
+retains two Seasons of the proposed Payroll plus `WORKING_TREASURY` (six)
+denarii, and leaves three Seasons of population food in stock. Unpaid Squads
+suspend recruitment and put
 the next strategic plan into recovery posture. Externally imposed bankruptcy
 still follows the ordinary morale and desertion rules; there is no rescue grant.
 
@@ -140,12 +149,12 @@ open settlement has no wall to keep a secret, and that is what a hold takes and
 an assault refuses (ADR-0008); it is not a licence to skip the fog, because a
 front read for free would be knowledge the fog beside it never recorded.
 
-Every tactical decision rebuilds a sparse threat map of 16×16-tile regions from
+Every tactical decision rebuilds a sparse threat map of `REGION_SIZE`×`REGION_SIZE`-tile regions from
 that Observation. Unoccupied regions have zero threat. Friendly power scales
 the Squad's remaining strength and morale, discounted up to half by fatigue.
 Enemy power uses the observed type's full nominal morale, since its actual
 condition is private; an unknown type gets a conservative default estimate.
-An owned settlement's region also includes enemies within twelve tiles of the
+An owned settlement's region also includes enemies within `DEFENCE_RADIUS` tiles of the
 settlement, including across region edges. Regions with the largest deficit
 between threat and friendly power receive defensive allocation first. The
 `threat-map` candidate logs the region totals and deficits on every tick.
@@ -155,15 +164,14 @@ Squads are available.
 The line answers settlement threats first. It commits that reserve only when
 the remaining line cannot cover a defensible threat. It declines a defence
 whose observed enemy power exceeds all available ready power, rather than
-feeding in reinforcements. In the field, attacks require a quarter more ready
-power than the observed local enemy; a nearby reserve may provide that margin.
+feeding in reinforcements. In the field, attacks require `attackPercent` of the observed local enemy power; a nearby reserve may provide that margin.
 Each Squad receives at most one military Command per tick. Commands and reasons
 are batched under `defend`, `commit-reserve` or `withdraw`; commitment reasons
 name the reserve and the enemy or settlement that needs it. Unassigned Squads
 hold the line instead of pursuing an unobserved target.
 
-A Squad at half nominal morale or strength, or facing greater local enemy power
-than its nearby support, leaves the ready pool. It withdraws from contact or a
+A Squad at half nominal morale or strength, or facing greater enemy power
+within `CONTACT_RADIUS` tiles than its nearby support, leaves the ready pool. It withdraws from contact or a
 nearby threat, replacing an existing attack march when necessary. A march back
 to an owned settlement continues until arrival; it is not overwritten by the
 next allocation. Routed Squads and garrisons receive no field Commands.
@@ -193,7 +201,9 @@ vision as current sight. Enemy field Squads and enemy-owned settlements enter
 memory only in vision. A contact keeps its observed type, tile and tick after
 losing sight. Looking at its empty tile disproves it; hidden movement, death or
 capture cannot erase it. Settlement ids are negative within the fog's contact
-namespace and Squad ids positive, so the two cannot overwrite each other. The
+namespace and Squad ids positive, so the two cannot overwrite each other. A
+contact's kind is a typed value (`ContactKind`) over the one integer the fog
+holds, so a reader never unpacks a category and a Squad type index by hand. The
 Observation decodes these records into `squad`, `settlement` or `stronghold`,
 without consulting the live enemy. Memory is state, hashed and replayed.
 
@@ -218,7 +228,8 @@ Match rules. Exploration continues after discovery.
 Military planning includes recent remembered enemy Squads in its regional
 threat map. A favourable line may investigate their last-known tile with a
 `move`; an `attack` always requires current sight. Squad sightings expire as
-planning evidence after 120 seconds, settlement sightings after 600. This
+planning evidence after `SQUAD_CONTACT_SECONDS` (120) seconds, settlement
+sightings after `SETTLEMENT_CONTACT_SECONDS` (600). This
 forgets their tactical relevance, leaving the historical fog record intact;
 there is no second espionage memory. Visible contacts refresh their timestamps
 and never expire while in sight.
@@ -228,7 +239,9 @@ Attacks, investigations and withdrawals take precedence; idle holds release
 the patrols. A higher-utility scouting candidate carries the combined Commands,
 both explanations, and a `contributions` list naming scouting and the field with
 the Commands each authored. The general utility registry and its one-winner rule
-remain unchanged. Independent military and economy registries still work.
+remain unchanged; the highest utility wins and a tie keeps the first candidate,
+the rule `bestCandidate` states once and the composition harness reads.
+Independent military and economy registries still work.
 
 `tests/ai/scouting.test.ts` checks frontier orders, eligibility, quota reduction,
 continued patrols, contact refresh and age limits through the Controller.
