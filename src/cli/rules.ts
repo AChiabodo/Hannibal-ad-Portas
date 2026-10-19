@@ -68,6 +68,7 @@ import {
   blockade,
   build,
   CAMP_RADIUS,
+  replayCommands,
   runMatch,
   scriptedController,
   seasonMatchOutcome,
@@ -87,10 +88,13 @@ import {
   type FogMatchVisible,
   type FogMatchWorld,
   type MapGrid,
+  type MatchResult,
   type MatchRules,
   type MatchRun,
   type MatchSetup,
+  type Outcome,
   type Players,
+  type ReplayResult,
   type SeasonMatchVisible,
   type SeasonMatchWorld,
   type SiegePath,
@@ -99,7 +103,8 @@ import {
   type Site,
 } from '../sim/index.ts';
 import { squadTypesOf } from '../content/index.ts';
-import { playAiMatch } from './ai-match.ts';
+import { playAiMatchAt } from './ai-match.ts';
+import type { DifficultyName } from '../ai/difficulty.ts';
 
 /**
  * What the rules own in the drawing Match: integers, and nothing else.
@@ -305,6 +310,16 @@ export function marchWorld(seed: number): EconomyWorld {
 }
 
 /**
+ * The march Match's rules: the economy's own tick, on the world the march musters
+ * onto the seed's theatre.
+ *
+ * A value of its own, and built from the seed rather than from a world in hand,
+ * because a replay has no world in hand: it is handed a seed and a log, and the
+ * theatre the log was played on is the one this builds from that seed (E2).
+ */
+const marchRules = rulesOn(marchWorld, economyMatchRules);
+
+/**
  * The Commands the march Match is played by: one `move` a Faction, on the first
  * tick, sending every Squad it owns to the other Faction's Stronghold.
  *
@@ -333,14 +348,11 @@ export function marchLog(world: EconomyWorld): CommandLog<Command> {
  * on the Stronghold it was ordered to.
  */
 function playMarch(seed: number, ticks: number): MatchRun {
-  const world = marchWorld(seed);
-  const log: CommandLog<Command> = marchLog(world);
+  const log: CommandLog<Command> = marchLog(marchWorld(seed));
 
   return runMatch<EconomyWorld, EconomyVisible>({
     seed,
-    // The world is already in hand — the Commands were read off it — and a Match
-    // plays on the world its seed builds, which is this one.
-    rules: { createWorld: () => world, step: economyMatchRules.step },
+    rules: marchRules,
     observe: observeEconomy,
     outcome: economyMatchOutcome,
     players: [
@@ -389,6 +401,9 @@ export function rosterWorld(seed: number): EconomyWorld {
   return world;
 }
 
+/** The roster Match's rules: the same economy tick, on a theatre holding both rosters. */
+const rosterRules = rulesOn(rosterWorld, economyMatchRules);
+
 /**
  * Plays the roster Match: the economy's own rules on a theatre with both
  * rosters on it, and the orders that send them across it.
@@ -401,12 +416,11 @@ export function rosterWorld(seed: number): EconomyWorld {
  * decision in review (ADR-0006).
  */
 function playRoster(seed: number, ticks: number): MatchRun {
-  const world = rosterWorld(seed);
-  const log: CommandLog<Command> = marchLog(world);
+  const log: CommandLog<Command> = marchLog(rosterWorld(seed));
 
   return runMatch<EconomyWorld, EconomyVisible>({
     seed,
-    rules: { createWorld: () => world, step: economyMatchRules.step },
+    rules: rosterRules,
     observe: observeEconomy,
     outcome: economyMatchOutcome,
     players: [
@@ -546,6 +560,9 @@ export function attritionWorld(seed: number): EconomyWorld {
   return world;
 }
 
+/** The Attrition Match's rules: the economy tick, on the two armies' own ground. */
+const attritionRules = rulesOn(attritionWorld, economyMatchRules);
+
 /**
  * The Commands the Attrition Match is played by: Rome raises the camp it winters in.
  *
@@ -571,12 +588,11 @@ export function attritionLog(world: EconomyWorld): CommandLog<Command> {
  * one that has them (ADR-0005, ADR-0006).
  */
 function playAttrition(seed: number, ticks: number): MatchRun {
-  const world = attritionWorld(seed);
-  const log = attritionLog(world);
+  const log = attritionLog(attritionWorld(seed));
 
   return runMatch<EconomyWorld, EconomyVisible>({
     seed,
-    rules: { createWorld: () => world, step: economyMatchRules.step },
+    rules: attritionRules,
     observe: observeEconomy,
     outcome: economyMatchOutcome,
     players: [
@@ -647,6 +663,9 @@ export function siegeWorld(seed: number): SiegeWorld {
   return world;
 }
 
+/** The Siege harness Matches' rules: the siege tick, on the army at Carthage's gate. */
+const siegeHarnessRules = rulesOn(siegeWorld, siegeMatchRules);
+
 /**
  * The Commands a Siege Match is played by: Carthage mans its walls, and Rome lays
  * one of the two Sieges against its Stronghold.
@@ -677,18 +696,38 @@ export function siegeLog(world: SiegeWorld, path: SiegePath): CommandLog<Command
  * a whole Match can be won headless, which is the ticket's last criterion.
  */
 function playSiege(seed: number, ticks: number, path: SiegePath): MatchRun {
-  const world = siegeWorld(seed);
-  const log = siegeLog(world, path);
+  const log = siegeLog(siegeWorld(seed), path);
 
   return runMatch<SiegeWorld, SiegeVisible>({
     seed,
-    rules: { createWorld: () => world, step: siegeMatchRules.step },
+    rules: siegeHarnessRules,
     observe: observeSiege,
     outcome: siegeMatchOutcome,
     players: [
       { faction: 'rome', controller: scriptedController<SiegeVisible>(log) },
       { faction: 'carthage', controller: scriptedController<SiegeVisible>(log) },
     ],
+    ticks,
+  });
+}
+
+/**
+ * Plays the bare theatre: the map, the economy, the Squads and the Siege on it,
+ * with nobody commanding either side.
+ *
+ * This is the Match the external-agent harness plays (`agent.ts` hands it the
+ * same `siegeMatchRules` and puts the process and the AI or an idle Player on
+ * the two Factions), so it is the one a record made over the protocol names: a
+ * replay of an agent's Match needs the rules, not the Players, and the Players
+ * an agent's Match ran on are not in its log (E2).
+ */
+function playSiegeTheatre(seed: number, ticks: number): MatchRun {
+  return runMatch<SiegeWorld, SiegeVisible>({
+    seed,
+    rules: siegeMatchRules,
+    observe: observeSiege,
+    outcome: siegeMatchOutcome,
+    players: idlePlayers(),
     ticks,
   });
 }
@@ -732,6 +771,7 @@ export const RULES_NAMES = [
   'draws',
   'march',
   'roster',
+  'siege',
   'assault',
   'blockade',
   'attrition',
@@ -739,6 +779,36 @@ export const RULES_NAMES = [
 
 /** A name `--rules` accepts, which is also the only thing the table below is keyed by. */
 export type RulesName = (typeof RULES_NAMES)[number];
+
+/**
+ * A recorded Match, as the rules of one name replay it (E2).
+ *
+ * What a record holds and a replay needs: the seed, the Commands that were
+ * applied and the tick they were applied on, how many ticks the Match ran, and
+ * how often to fingerprint it. Nothing about who decided — a replay has no
+ * Controllers, and the log is the whole of what they contributed (E2).
+ */
+export interface ReplayRequest {
+  readonly seed: number;
+  readonly log: CommandLog<Command>;
+  /** How many ticks the Match ran: the tick it ended on. */
+  readonly ticks: number;
+  /** Hash every this many ticks. Default: every tick. */
+  readonly everyTicks?: number;
+}
+
+/**
+ * What replaying one name produced: the checkpoints, and how its own rules say the
+ * Match ended.
+ *
+ * The ending is narrowed from `ReplayResult`'s because a name always has a verdict
+ * to offer — every Match in the table is played by an `outcome` — and a replay
+ * that reported "I did not ask" would leave a record's ending unchecked, which is
+ * the one thing a record exists to have checked (E2).
+ */
+export interface MatchReplay extends ReplayResult {
+  readonly ending: MatchResult;
+}
 
 /** What the table holds for one name: the line `--help` prints, and the Match it plays. */
 interface RulesEntry {
@@ -752,8 +822,64 @@ interface RulesEntry {
    * A run, not a `MatchSetup`: what a caller wants from a name is the run's
    * result, its log and, above all, the hash CI records. The bound always
    * terminates the Match, so this always returns.
+   *
+   * The difficulty is the one name that has an AI to name it for: with `ai` it
+   * picks the level both Controllers play at, and with every other name it is
+   * absent because the flag is refused there. So a Match of a tournament can be
+   * played again at the level the tournament played it at (E3).
    */
-  readonly play: (seed: number, ticks: number) => MatchRun;
+  readonly play: (seed: number, ticks: number, difficulty?: DifficultyName) => MatchRun;
+
+  /**
+   * Re-enacts a log of this Match from its seed, hashing it at checkpoints.
+   *
+   * The other half of a name, and the one that has to be a `MatchRules` rather
+   * than a set of Players: a record is replayed with no Controllers at all. It is
+   * a function per name because a name is not only rules — the march, roster and
+   * attrition Matches muster their armies onto the seed's theatre — and a replay
+   * that started from the bare economy world would part from its record at tick
+   * zero.
+   */
+  readonly replay: (request: ReplayRequest) => MatchReplay;
+}
+
+/**
+ * The replay one Match's rules give, as the table wants it.
+ *
+ * `replayCommands` rather than `replay`, because a log read back off disk is a
+ * log that arrived from outside a Match: nothing has said its entries are
+ * Commands until the vocabulary has read them (see `sim/replay.ts`).
+ *
+ * The verdict comes along with the rules and is not optional, because a Match is
+ * its rules *and* how they end it: a rule can change when a Match is decided
+ * without moving a number in the world, and a replay that only compared hashes
+ * would call that run a reproduction.
+ */
+function replayer<World>(
+  rules: MatchRules<World, Command>,
+  outcome: (world: World) => Outcome | null,
+): RulesEntry['replay'] {
+  return (request) => {
+    const replayed = replayCommands({ ...request, rules, outcome });
+
+    return { ...replayed, ending: replayed.ending ?? { kind: 'clock', tick: replayed.ticks } };
+  };
+}
+
+/**
+ * One Match's rules, on a world a harness builds rather than the bare one the
+ * name's own rules create — the march, roster and attrition Matches muster their
+ * armies onto the seed's theatre before the first tick.
+ *
+ * A helper rather than four object literals because the replay half of E2 needs
+ * the same world the play half used, built from the same seed: a record whose
+ * replay started from the bare economy world would part from it at tick zero.
+ */
+function rulesOn<World>(
+  createWorld: (seed: number) => World,
+  of: MatchRules<World, Command>,
+): MatchRules<World, Command> {
+  return { createWorld, step: of.step };
 }
 
 /**
@@ -762,57 +888,74 @@ interface RulesEntry {
  */
 export const RULES = {
   ai: {
-    description: 'two AI Controllers — economy, field, scouting and siege at Centurio — with scored decision logs',
-    play: playAiMatch,
+    description: 'two AI Controllers — economy, field, scouting and siege — with scored decision logs',
+    play: playAiMatchAt,
+    replay: replayer(siegeMatchRules, siegeMatchOutcome),
   },
   economy: {
     description: 'the Match on the theatre and the economy: map, seasons, settlements, Payroll',
     play: playEconomy,
+    replay: replayer(economyMatchRules, economyMatchOutcome),
   },
 
   seasons: {
     description: 'the Match on the strategic clock: seasons advance, and the bound ends it',
     play: playSeasons,
+    replay: replayer(seasonMatchRules, seasonMatchOutcome),
   },
 
   empty: {
     description: 'the Match with no systems in it: the bound ends it',
     play: playEmpty,
+    replay: replayer(emptyMatchRules, emptyMatchOutcome),
   },
 
   fog: {
     description: "B1's theatre and B4's two fogs: the map and what each Faction knows, in state",
     play: playFog,
+    replay: replayer(fogMatchRules, fogMatchOutcome),
   },
 
   draws: {
     description: 'a Match whose rules draw every tick, so CI gates the draw loop',
     play: playDraws,
+    replay: replayer(drawsRules, drawsOutcome),
   },
 
   march: {
     description: 'a dozen Squads on the theatre, each Faction ordered across it',
     play: playMarch,
+    replay: replayer(marchRules, economyMatchOutcome),
   },
 
   roster: {
     description: 'both rosters on the theatre, elephants included, sent at each other',
     play: playRoster,
+    replay: replayer(rosterRules, economyMatchOutcome),
+  },
+
+  siege: {
+    description: 'the bare theatre under a Siege, with nobody commanding: what the agent harness plays',
+    play: playSiegeTheatre,
+    replay: replayer(siegeMatchRules, siegeMatchOutcome),
   },
 
   assault: {
     description: "a Roman army storms Carthage's Stronghold with the ram, and the Match is won",
     play: (seed: number, ticks: number) => playSiege(seed, ticks, 'assault'),
+    replay: replayer(siegeHarnessRules, siegeMatchOutcome),
   },
 
   blockade: {
     description: "Carthage's Stronghold is starved into surrender, and the Match is won",
     play: (seed: number, ticks: number) => playSiege(seed, ticks, 'blockade'),
+    replay: replayer(siegeHarnessRules, siegeMatchOutcome),
   },
 
   attrition: {
     description: 'two armies in the field through the Seasons, and only one of them in a camp',
     play: playAttrition,
+    replay: replayer(attritionRules, economyMatchOutcome),
   },
 } as const satisfies Readonly<Record<RulesName, RulesEntry>>;
 

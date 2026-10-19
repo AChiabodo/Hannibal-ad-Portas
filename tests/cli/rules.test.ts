@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CHECKPOINT_TICKS } from '../../src/cli/record';
 import {
   DEFAULT_RULES,
   attritionLog,
@@ -9,6 +10,7 @@ import {
   marchWorld,
   rosterWorld,
   RULES,
+  RULES_NAMES,
   type DrawsWorld,
 } from '../../src/cli/rules';
 import type { Command } from '../../src/sim/command';
@@ -460,6 +462,36 @@ describe('the Attrition Match, where the country an army stands in is the whole 
   });
 });
 
+describe('every Match the command line can play replays from its own log (E2)', () => {
+  /** Long enough for every name to have ticked something, short enough to be a unit test. */
+  const TICKS = 40;
+
+  it('replays each name to the hash its own play ended on, checkpoints and all', () => {
+    for (const name of RULES_NAMES) {
+      const run = RULES[name].play(1, TICKS);
+      const replayed = RULES[name].replay({
+        seed: run.seed,
+        log: run.log,
+        ticks: run.result.tick,
+        everyTicks: CHECKPOINT_TICKS,
+      });
+
+      expect(replayed.checkpoints.at(-1), name).toEqual({ tick: run.result.tick, hash: run.hash });
+    }
+  });
+
+  it('replays a Match that fields its own armies, which is not the Match its rules alone play', () => {
+    const run = RULES.march.play(1, TICKS);
+    const replayed = RULES.march.replay({ seed: 1, log: run.log, ticks: run.result.tick });
+
+    // The march musters its Squads onto the world its seed builds, so a replay
+    // that started from the bare economy world would part from it at tick 0.
+    expect(RULES.economy.replay({ seed: 1, log: run.log, ticks: run.result.tick }).checkpoints).not.toEqual(
+      replayed.checkpoints,
+    );
+  });
+});
+
 describe('the names of the Matches the command line ships', () => {
   it('names the Matches it ships, and nothing else', () => {
     expect(isRulesName('economy')).toBe(true);
@@ -472,6 +504,7 @@ describe('the names of the Matches the command line ships', () => {
     expect(isRulesName('assault')).toBe(true);
     expect(isRulesName('blockade')).toBe(true);
     expect(isRulesName('attrition')).toBe(true);
+    expect(isRulesName('siege')).toBe(true);
     expect(isRulesName(DEFAULT_RULES)).toBe(true);
 
     for (const value of ['', 'Empty', 'empty ', 'draws\n', 'anything else']) {

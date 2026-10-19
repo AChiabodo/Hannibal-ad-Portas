@@ -34,9 +34,44 @@ _UI_: Stagione
 _Avoid_: Turn, phase, cycle
 
 **Year**:
-Four Seasons of Match time, counted from one. A human Match has no limit on them; a headless Match is bound to three so that it always terminates.
+Four Seasons of Match time, counted from one. A Match is bound to three of them — twenty-five thousand two hundred ticks, in a browser and headless alike — and a caller may hand over another bound, but not none.
 _UI_: Anno
 _Avoid_: Cycle, age, era
+
+**Record**:
+A Match written down as a seed, the Command log it applied, how it ended, and the state hash at every checkpoint it was fingerprinted at — one small file, and everything a replay needs. It is not a video and not a snapshot of the world.
+_UI_: —
+_Avoid_: Replay file, savegame, demo, capture
+
+**Replay**:
+Running a Record again through the rules, with no Controllers at all, and comparing the hashes it reaches with the ones the Record was made with. It is a CLI and CI instrument in v1, not something the player watches.
+_UI_: —
+_Avoid_: Playback, video, recap
+
+**Divergence**:
+The first checkpoint at which a Replay's state hash disagrees with its Record's, quoted beside the last checkpoint the two still agreed on. It is either a bug or a decision, and which one is a reviewer's question.
+_UI_: —
+_Avoid_: Mismatch, desync, drift, hash failure
+
+**Tournament**:
+A batch of AI-vs-AI Matches on distinct seeds, played at one difficulty and one bound, and reduced to one Balance report. It is a CLI instrument, like the Record and the Replay, and not something the player ever sees.
+_UI_: —
+_Avoid_: League, ladder, season, benchmark
+
+**Balance report**:
+What a Tournament adds up to: each Faction's win rate over the batch, the median and the spread of how long a Match lasts, the share of Matches the clock decided, and the seed of every Match that was lopsided or stalled. It states measurements and no verdict.
+_UI_: —
+_Avoid_: Scoreboard, leaderboard, results table
+
+**Lopsided**:
+A victory that was not a contest: one won in at most half the batch's median duration, or one that left the loser neither settlement nor Squad. A reader has to look at it.
+_UI_: —
+_Avoid_: Blowout, stomp, rout
+
+**Stalled**:
+A Match no Faction could win, because the tick bound ended it. The clock decided it, which is the outcome the Definition of Done puts a ceiling on.
+_UI_: —
+_Avoid_: Draw, stalemate, timeout
 
 ### The theatre
 
@@ -316,3 +351,13 @@ _Avoid_: Hotkey group, squad slot
 The theatre at one pixel per tile, drawn through the Faction's Fog of war: it shows what the Faction knows and nothing more.
 _UI_: Mappa
 _Avoid_: Overview, radar, small map
+
+**Debug hook**:
+One call a page publishes on `window.__SPQR`, so that a test or an inspecting agent can move the camera, drive the Match and read what it drew. The hooks a Player's hands use are the same calls the page makes for them, and none of them issues a Command a Player could not; the rest step the clock, move the camera or read back what was drawn.
+_UI_: —
+_Avoid_: API, test helper, cheat
+
+**Snapshot**:
+The whole of what a running page believes, frozen at one tick and handed over as a plain-data copy: the result, the state hash, the Faction's Observation, the interface's model, the picked set and the Commands it has applied lately. It is data and not a handle — writing through it reaches neither the Match nor the interface — and it holds an Observation and its drawing, never the rules' own state.
+_UI_: —
+_Avoid_: State dump, save game, screenshot (a screenshot is pixels; a snapshot is data)

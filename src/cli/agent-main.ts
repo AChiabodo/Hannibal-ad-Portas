@@ -6,7 +6,9 @@
  * standard input and output, and plays the Match to its end. Standard output
  * carries the JSON report and nothing else — the protocol lives on the *agent's*
  * pipes, not on this command's — so the report still pipes into `jq`, and
- * `--log` writes the Command log a replay is made of.
+ * `--log` writes the Command log while `--record` writes the record a replay is
+ * made of. The Match an agent plays is the `siege` one (`rules.ts`), which is
+ * what its record is filed under.
  *
  * It is thin on purpose, like `main.ts`: reading the command line is
  * `agent-arguments.ts`, playing the Match is `agent.ts`, the messages are
@@ -28,9 +30,11 @@
 import { existsSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { USAGE, parseAgentArguments } from './agent-arguments.ts';
+import { AGENT_RULES } from './agent.ts';
 import { UsageError, describe } from './arguments.ts';
 import { playAgentMatch } from './agent.ts';
 import { formatFailure, exitCodeFor } from './failure.ts';
+import { recordOf, writeRecord } from './record.ts';
 import { requireExpectedHash } from './run.ts';
 import { agentReportOf, formatCommandLog, formatReport } from './report.ts';
 
@@ -45,6 +49,8 @@ try {
 
     process.stdout.write(formatReport(agentReportOf(run)));
     if (parsed.options.log !== null) writeFileSync(parsed.options.log, formatCommandLog(run.log));
+
+    if (parsed.options.record !== null) writeRecord(parsed.options.record, recordOf(run, AGENT_RULES));
 
     requireExpectedHash(run, parsed.options);
   }

@@ -16,7 +16,8 @@
  *
  * - **Standard output** carries the report and nothing else, so `| jq` works —
  *   or, with `--map`, the map and nothing else, so the grid can be read and
- *   diffed.
+ *   diffed, or, with `--record`, nothing but the report while the record goes to
+ *   the file it named.
  * - **Standard error** carries one message, prefixed `cli:`, when something went
  *   wrong; the usage accompanies a misuse.
  * - **Exit 0** the Match ran; **1** a game invariant was violated, the expected
@@ -25,11 +26,14 @@
  *
  * A violated hash is reported *after* the report is printed: the interesting
  * number is the one the Match ended on, and a reader who gets only an exit code
- * has to run it again to find out.
+ * has to run it again to find out. A record is written before that check for the
+ * same reason — a Match that failed its hash is exactly the Match somebody wants
+ * to replay — and it is written before the process exits either way.
  */
 import { parseArguments, USAGE } from './arguments.ts';
 import { exitCodeFor, formatFailure } from './failure.ts';
 import { formatMap } from './dump.ts';
+import { recordOf, writeRecord } from './record.ts';
 import { formatReport, reportOf } from './report.ts';
 import { playMatch, requireExpectedHash } from './run.ts';
 
@@ -43,6 +47,11 @@ try {
   } else {
     const run = playMatch(parsed.options);
     process.stdout.write(formatReport(reportOf(run)));
+
+    if (parsed.options.record !== null) {
+      writeRecord(parsed.options.record, recordOf(run, parsed.options.rules));
+    }
+
     requireExpectedHash(run, parsed.options);
   }
 } catch (error: unknown) {

@@ -34,7 +34,14 @@ export interface ScoutingContent {
 type Move = { readonly kind: 'move'; readonly faction: Observation<unknown>['faction'];
   readonly squads: readonly number[]; readonly x: number; readonly y: number };
 
-/** A light detachment explores reachable known ground at the edge of the unknown. */
+/**
+ * A light detachment explores reachable known ground at the edge of the unknown.
+ *
+ * What this behaviour decides is a function of the Observation and nothing else —
+ * it is handed the whole context and reads only `observation`, which the
+ * composition root can see and rely on when it asks for the same plan twice in a
+ * tick (E3).
+ */
 export function createScoutingBehaviour(content: ScoutingContent, difficulty: Difficulty = DIFFICULTY.centurio): Behaviour<ScoutingObservation, Move> {
   const types = new Map(content.squadTypes.map((type) => [type.id, type]));
   const { width, height, vision } = content;
@@ -44,11 +51,60 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const dy = a.y - b.y;
     return dx * dx + dy * dy <= vision * vision;
   }
-  function neighbours(tile: number): number[] {
-    const x = tile % width;
-    const y = Math.floor(tile / width);
-    return [x > 0 ? tile - 1 : -1, x + 1 < width ? tile + 1 : -1,
-      y > 0 ? tile - width : -1, y + 1 < height ? tile + width : -1].filter((at) => at >= 0);
+  /**
+   * How much unknown ground stands within vision of every tile, in one pass.
+   *
+   * The search below asks this of every tile it walks, and a whole-map walk asks
+   * it of nine thousand of them: scanning the disc around each one is how a
+   * Match spent nineteen of its twenty seconds, because a *tactical* decision is
+   * taken on every tick and a Match is tens of thousands of ticks (E3's own
+   * finding). Nothing about the answer changes here — it is the same count of the
+   * same unseen tiles, from the same `terrain` — only the number of times each
+   * tile is looked at: a row of the map is summed once, and a disc is then a
+   * handful of those sums subtracted from each other.
+   *
+   * The disc is cut into rows here for exactly that reason: for a row `dy` away
+   * the disc is wide by `w`, where `w * w + dy * dy <= vision * vision`, and the
+   * row's half-width is found by counting up rather than by a square root, so the
+   * whole thing stays in integers (ADR-0006).
+   */
+  function unknownNear(terrain: Uint8Array): Int32Array {
+    const halfWidths: number[] = [];
+    for (let dy = -vision; dy <= vision; dy += 1) {
+      let half = 0;
+      while ((half + 1) * (half + 1) + dy * dy <= vision * vision) half += 1;
+      halfWidths.push(half);
+    }
+
+    // `rows[row * width + x]`: how many unseen tiles the row has up to `x`.
+    const rows = new Int32Array(width * height);
+    for (let y = 0; y < height; y += 1) {
+      const origin = y * width;
+      let running = 0;
+      for (let x = 0; x < width; x += 1) {
+        if (terrain[origin + x] === content.unseen) running += 1;
+        rows[origin + x] = running;
+      }
+    }
+
+    const gains = new Int32Array(width * height);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        let unknown = 0;
+        for (let dy = -vision; dy <= vision; dy += 1) {
+          const row = y + dy;
+          if (row < 0 || row >= height) continue;
+          const half = halfWidths[dy + vision]!;
+          const low = Math.max(0, x - half);
+          const high = Math.min(width - 1, x + half);
+          const origin = row * width;
+          unknown += rows[origin + high]! - (low === 0 ? 0 : rows[origin + low - 1]!);
+        }
+        gains[y * width + x] = unknown;
+      }
+    }
+
+    return gains;
   }
   return { id: 'scouting', tactical: ({ observation }) => {
     const { visible, tick, faction } = observation;
@@ -64,19 +120,16 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
         !(squad.goal !== null && visible.settlements.some((home) => distance(home, squad.goal!) === 0));
     }).sort((a, b) => (types.get(b.type)!.pace - types.get(a.type)!.pace) || a.id - b.id).slice(0, quota);
     const terrain = visible.fog.terrain;
-    const walkable = (tile: number) => terrain[tile] !== content.unseen && terrain[tile] !== content.water;
+    const unseen = content.unseen;
+    const water = content.water;
+    /** Ground a scout can walk: anything the terrain says is neither unseen nor water. */
+    const blocked = (tile: number) => terrain[tile] === unseen || terrain[tile] === water;
+    const walkable = (tile: number) => !blocked(tile);
+    let gains: Int32Array | null = null;
     function gain(tile: number): number {
-      const x = tile % width;
-      const y = Math.floor(tile / width);
-      let unknown = 0;
-      for (let dy = -vision; dy <= vision; dy += 1) {
-        for (let dx = -vision; dx <= vision; dx += 1) {
-          if (dx * dx + dy * dy > vision * vision || x + dx < 0 || x + dx >= width ||
-            y + dy < 0 || y + dy >= height) continue;
-          if (terrain[(y + dy) * width + x + dx] === content.unseen) unknown += 1;
-        }
-      }
-      return unknown;
+      gains ??= unknownNear(terrain);
+
+      return gains[tile]!;
     }
     const commands: Move[] = [];
     const reasons: string[] = [];
@@ -94,7 +147,10 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
         let best = -Infinity;
         for (let cursor = 0; cursor < queue.length; cursor += 1) {
           const tile = queue[cursor]!;
-          const site = { x: tile % width, y: Math.floor(tile / width) };
+          // Exact integer division for a tile of this map: `tile` is never negative.
+          const x = tile % width;
+          const y = (tile - x) / width;
+          const site = { x, y };
           const travel = distances[tile]!;
           if (travel > 0 && !targets.some((other) => distance(other, site) < vision * 2)) {
             const refresh = contacts.some((contact) => tick - contact.seen >= content.ticksPerSecond * difficulty.refreshSeconds &&
@@ -109,8 +165,17 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
               if (score > best) { best = score; target = site; }
             }
           }
-          for (const next of neighbours(tile)) {
-            if (distances[next] !== -1 || !walkable(next)) continue;
+          // The four neighbours are stood here rather than in an array, in the
+          // order `neighbours` used to list them: left, right, up, down. A whole
+          // theatre is walked for each light Squad on every tick, and building and
+          // filtering an array per tile was a measurable part of what that cost
+          // (E3). The `-1` is the same "off the map" the filter used to drop.
+          for (let direction = 0; direction < 4; direction += 1) {
+            const next = direction === 0 ? (x > 0 ? tile - 1 : -1)
+              : direction === 1 ? (x + 1 < width ? tile + 1 : -1)
+                : direction === 2 ? (y > 0 ? tile - width : -1)
+                  : (y + 1 < height ? tile + width : -1);
+            if (next < 0 || distances[next] !== -1 || blocked(next)) continue;
             distances[next] = travel + 1;
             queue.push(next);
           }

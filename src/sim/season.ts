@@ -61,25 +61,43 @@ export const SEASON_TICKS = 210 * TICK_HZ;
 export const YEAR_TICKS = SEASON_TICKS * SEASONS_PER_YEAR;
 
 /**
- * How many game years a headless Match may run (PLAN §4).
+ * How many game years a Match is played over (PLAN §4).
  *
- * A human Match has no time limit, but a headless or AI-versus-AI Match that can
- * never end is a test that can never finish, so the CLI's default bound is three
- * game years rather than an open horizon.
+ * Three, and the same three wherever the Match is played: a headless run, an
+ * AI-versus-AI tournament and the page a Player watches all have the same
+ * horizon, because a Match that can never end is a Match nothing can watch to
+ * the end — and since E4 that includes an agent inspecting the browser
+ * (ADR-0022).
  */
-export const HEADLESS_YEARS = 3;
+export const MATCH_YEARS = 3;
+
+/**
+ * The horizon of a Match, in ticks: three whole game years.
+ *
+ * A Match always terminates, and structurally so: every driver requires a whole
+ * tick bound, so there is no way to ask for an unbounded one. The page plays to
+ * this bound (`render/game.ts`) and so does the CLI by default; a caller may
+ * deliberately hand over another length for a tournament or a long test, but it
+ * cannot hand over none.
+ */
+export const MATCH_TICKS = YEAR_TICKS * MATCH_YEARS;
+
+/**
+ * How many game years a headless Match may run: a Match's own horizon.
+ *
+ * The name the CLI's arguments use. It is `MATCH_YEARS` rather than a second
+ * number, so a headless Match and one played in a browser cannot disagree about
+ * how long a Match is.
+ */
+export const HEADLESS_YEARS = MATCH_YEARS;
 
 /**
  * The bound of a headless Match, in ticks: three whole game years.
  *
- * A headless Match always terminates, and structurally so: `runMatch` requires a
- * whole, non-negative tick bound, so there is no way to ask for an unbounded one.
- * This is the length the CLI plays by default, and the three-game-year horizon
- * the plan puts on a headless or AI-versus-AI Match; a caller may deliberately
- * hand over another length for a tournament or a long test, but it cannot hand
- * over none.
+ * The default bound of `npm run match` and of every harness it plays: a Match's
+ * own horizon under the name a headless caller reads it by.
  */
-export const HEADLESS_TICKS = YEAR_TICKS * HEADLESS_YEARS;
+export const HEADLESS_TICKS = MATCH_TICKS;
 
 /**
  * The authoritative calendar: the year, and which Season of it.

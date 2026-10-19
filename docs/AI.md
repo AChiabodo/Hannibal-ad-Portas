@@ -225,6 +225,17 @@ lookup or enemy-position hint. After thirty seconds a remembered contact can
 draw a patrol back within circular vision, refreshing it through the ordinary
 Match rules. Exploration continues after discovery.
 
+The search is the most expensive thing the AI does, and it is done on every tick:
+a whole-theatre walk per light Squad, asking of every tile how much unknown ground
+stands within vision of it. Both halves are paid once rather than repeatedly, and
+neither answer changes — the unknown count around every tile is summed for the
+whole theatre in one pass (a row of it summed once, a disc then being a handful of
+those sums subtracted from each other), and the composition root plans a patrol
+once per Observation and hands the same plan to the two callers that want it in a
+tick. E3 found this: a Match spent about five sixths of its time in that search, and a
+two-hundred-Match tournament took eleven minutes rather than four. The decisions, the Commands and
+the state hashes are identical either way, which is how the change was checked.
+
 Military planning includes recent remembered enemy Squads in its regional
 threat map. A favourable line may investigate their last-known tile with a
 `move`; an `attack` always requires current sight. Squad sightings expire as

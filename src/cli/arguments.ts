@@ -20,10 +20,12 @@
  * Nothing here reads `process.argv` or writes anything: the arguments arrive as
  * a list of strings and leave as a value, so every refusal above is a test.
  */
+import { DIFFICULTY_NAMES, isDifficultyName, type DifficultyName } from '../ai/difficulty.ts';
 import { TICK_HZ } from '../sim/clock.ts';
 import { MAX_SEED } from '../sim/rng.ts';
 import { HEADLESS_TICKS } from '../sim/season.ts';
 import { DEFAULT_RULES, isRulesName, RULES, RULES_NAMES, type RulesName } from './rules.ts';
+import { continuationAt, optionAt } from './usage.ts';
 
 /** The seed a Match runs on when the command line does not name one. */
 export const DEFAULT_SEED = 1;
@@ -38,6 +40,9 @@ export const DEFAULT_SEED = 1;
  * bound describing last year's calendar.
  */
 export const DEFAULT_TICKS = HEADLESS_TICKS;
+
+/** The level the built-in AI plays at when a command line does not say: the engine's baseline. */
+export const DEFAULT_DIFFICULTY: DifficultyName = 'centurio';
 
 /** What one command line asked for: a seed, a bound, which rules, and maybe a hash to expect. */
 export interface RunOptions {
@@ -65,6 +70,26 @@ export interface RunOptions {
    * in the message.
    */
   readonly expectedHash: string | null;
+
+  /**
+   * The level the built-in AI plays at, when `--rules` names a Match with an AI
+   * on one side.
+   *
+   * Only `ai` has a level to name, and it is here for one reason: a tournament
+   * plays its Matches at a chosen difficulty, so a Match of a batch can only be
+   * replayed — its decision log retrieved, its hash confirmed — by a command that
+   * can be told which level the batch played at (E3, ADR-0024).
+   */
+  readonly difficulty: DifficultyName;
+
+  /**
+   * Where to write the Match's record, or `null` to write none.
+   *
+   * A record is what a replay is made of — the seed, the Command log and the
+   * state hashes the Match passed through (E2) — so this is the one flag that
+   * turns a Match that ran into a Match somebody else can run again.
+   */
+  readonly record: string | null;
 }
 
 /** A command line, read: either a Match to play, a map to print, or a request for the usage. */
@@ -91,15 +116,12 @@ export class UsageError extends Error {
 /** Where `--help` starts a description: every option line pads its flag to this column. */
 const DESCRIPTION_COLUMN = 23;
 
-/** One option as `--help` prints it: the flag, then its description in the shared column. */
-function option(flag: string, description: string): string {
-  return `  ${flag.padEnd(DESCRIPTION_COLUMN - 2)}${description}`;
-}
+/** One option as this command's `--help` prints it, in the shared layout (`usage.ts`). */
+const option = (flag: string, description: string): string =>
+  optionAt(DESCRIPTION_COLUMN, flag, description);
 
-/** A line continuing the option above it, starting where that option's description starts. */
-function continuation(text: string): string {
-  return `${' '.repeat(DESCRIPTION_COLUMN)}${text}`;
-}
+/** A line continuing the option above it, starting where its description starts. */
+const continuation = (text: string): string => continuationAt(DESCRIPTION_COLUMN, text);
 
 /** Wide enough for the longest rules name, plus the gap before its description. */
 const RULES_NAME_WIDTH = Math.max(...RULES_NAMES.map((name) => name.length)) + 2;
@@ -123,6 +145,9 @@ const OPTION_LINES = [
   option('--ticks <n>', 'The tick bound: how long the Match may run, in whole ticks,'),
   continuation(`at ${TICK_HZ} ticks a second (default ${DEFAULT_TICKS}, three game years).`),
   option('--expect-hash <hex>', 'Fail unless the Match ends on this 16-digit state hash.'),
+  option('--difficulty <name>', "The AI's level, with --rules ai:"),
+  continuation(`${DIFFICULTY_NAMES.join(', ')} (default centurio).`),
+  option('--record <file>', 'Write the record `npm run replay` re-runs here.'),
   option('--rules <name>', `Which Match to play (default ${DEFAULT_RULES}):`),
   ...RULES_MENU,
   option('--map', 'Print the map this seed generates, and play nothing.'),
@@ -160,7 +185,9 @@ export function parseArguments(argv: readonly string[]): ParsedArguments {
     seed: DEFAULT_SEED,
     ticks: DEFAULT_TICKS,
     rules: DEFAULT_RULES,
+    difficulty: DEFAULT_DIFFICULTY,
     expectedHash: null,
+    record: null,
     map: false,
   };
   const given = new Set<string>();
@@ -191,9 +218,18 @@ export function parseArguments(argv: readonly string[]): ParsedArguments {
     return { kind: 'map', seed: asked.seed };
   }
 
+  requireDifficultyWhereItMeansSomething(given, asked.rules);
+
   return {
     kind: 'run',
-    options: { seed: asked.seed, ticks: asked.ticks, rules: asked.rules, expectedHash: asked.expectedHash },
+    options: {
+      seed: asked.seed,
+      ticks: asked.ticks,
+      rules: asked.rules,
+      difficulty: asked.difficulty,
+      expectedHash: asked.expectedHash,
+      record: asked.record,
+    },
   };
 }
 
@@ -202,7 +238,9 @@ interface Asked {
   seed: number;
   ticks: number;
   rules: RulesName;
+  difficulty: DifficultyName;
   expectedHash: string | null;
+  record: string | null;
   map: boolean;
 }
 
@@ -239,6 +277,19 @@ const OPTIONS: Readonly<Record<string, Option>> = {
     },
   },
 
+  '--difficulty': {
+    value: 'one',
+    read: (asked, value) => {
+      if (!isDifficultyName(value)) {
+        throw new UsageError(
+          `--difficulty must name a level — ${DIFFICULTY_NAMES.join(', ')} — got ${describe(value)}`,
+        );
+      }
+
+      asked.difficulty = value;
+    },
+  },
+
   '--expect-hash': {
     value: 'one',
     read: (asked, value) => {
@@ -250,6 +301,13 @@ const OPTIONS: Readonly<Record<string, Option>> = {
     value: 'one',
     read: (asked, value) => {
       asked.rules = readRulesName(value);
+    },
+  },
+
+  '--record': {
+    value: 'one',
+    read: (asked, value) => {
+      asked.record = readPath(value, '--record');
     },
   },
 
@@ -266,11 +324,28 @@ const OPTIONS: Readonly<Record<string, Option>> = {
  *   asked for beside `--map`, which plays no Match.
  */
 function requireNothingToPlay(given: ReadonlySet<string>): void {
-  for (const flag of ['--ticks', '--expect-hash', '--rules']) {
+  for (const flag of ['--ticks', '--expect-hash', '--rules', '--record', '--difficulty']) {
     if (!given.has(flag)) continue;
 
     throw new UsageError(`--map prints a map and plays nothing, so ${flag} cannot come with it`);
   }
+}
+
+/**
+ * @throws UsageError when `--difficulty` names a level for a Match that has no AI
+ *   to play at it.
+ *
+ * Only `ai` is two AIs. The other names are harness Matches played by scripted or
+ * idle Controllers, and a level that changed nothing about them would be a flag
+ * that lies: accepted, and pointless.
+ */
+function requireDifficultyWhereItMeansSomething(given: ReadonlySet<string>, rules: RulesName): void {
+  if (!given.has('--difficulty') || rules === 'ai') return;
+
+  throw new UsageError(
+    `--difficulty names the level an AI plays at, and --rules ${rules} has no AI in it: ` +
+      'give it with --rules ai',
+  );
 }
 
 /** @throws UsageError when the same flag is given twice, because one of the two was not meant. */
@@ -315,6 +390,19 @@ export function readStateHash(value: string): string {
   if (!STATE_HASH.test(value)) {
     throw new UsageError(`--expect-hash must be a 16-digit hexadecimal state hash, got ${describe(value)}`);
   }
+
+  return value;
+}
+
+/**
+ * A path a command writes to or reads from: anything a shell can hand over, but
+ * not nothing, because `--record ''` names no file and saying so is cheaper than
+ * a filesystem error about it.
+ *
+ * @throws UsageError when the value is empty.
+ */
+export function readPath(value: string, flag: string): string {
+  if (value === '') throw new UsageError(`${flag} must name a file, got ${describe(value)}`);
 
   return value;
 }

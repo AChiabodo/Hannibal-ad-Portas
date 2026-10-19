@@ -41,7 +41,7 @@ import type { ReportableRun } from './report.ts';
  *   those and exits 1.
  */
 export function playMatch(options: RunOptions): ReportableRun {
-  return RULES[options.rules].play(options.seed, options.ticks);
+  return RULES[options.rules].play(options.seed, options.ticks, options.difficulty);
 }
 
 /**

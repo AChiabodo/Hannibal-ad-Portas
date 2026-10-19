@@ -11,7 +11,8 @@
  * page is driven exactly as a player drives it: the hooks are the same calls a
  * wheel, a drag and, one day, a Match make.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import type { Page } from '@playwright/test';
 import { blit, pixelAt, type PixelBuffer, type Rgba } from '../src/art/pixel-buffer';
 import { TERRAIN_TILE } from '../src/art/terrain';
 import { createFog, eyeOf, inspectionView, refreshVision, viewOf, SETTLEMENT_VISION, type FogView } from '../src/sim/fog';
