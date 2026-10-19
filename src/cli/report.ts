@@ -17,6 +17,8 @@ import type { Command, SiegePath } from '../sim/command.ts';
 import type { AiDecision } from '../ai/controller.ts';
 import type { MatchResult, MatchRun, VictoryReason } from '../sim/driver.ts';
 import type { Faction } from '../sim/faction.ts';
+import type { CommandLog } from '../sim/replay.ts';
+import type { AgentRun, AgentVerdict } from './agent.ts';
 
 /** Ordinary harness runs keep their existing report; AI runs add explanations. */
 export interface ReportableRun extends MatchRun {
@@ -48,6 +50,9 @@ export interface MatchReport {
 
   /** Present for AI runs, in tick/Faction/layer order, including idle decisions. */
   readonly decisions?: readonly AiDecision<Command>[];
+
+  /** Present for runs with an external agent on one side: how its Player did (E1). */
+  readonly agent?: AgentVerdict;
 }
 
 /** Reads a finished Match into the shape the CLI prints. */
@@ -60,6 +65,32 @@ export function reportOf(run: ReportableRun): MatchReport {
     hash: run.hash,
     ...(run.decisions === undefined ? {} : { decisions: run.decisions }),
   };
+}
+
+/**
+ * The report of a Match an external agent played: the ordinary one, and how its
+ * Player did.
+ *
+ * The verdict is last because it is the answer to the question the report
+ * provokes — "the agent was asked 306 times and issued 61 Commands, so why was
+ * this a defeat?" — and because the run's own facts come first in every report
+ * this project prints.
+ */
+export function agentReportOf(run: AgentRun): MatchReport {
+  return { ...reportOf(run), agent: run.agent };
+}
+
+/**
+ * The Match's Command log, as the file a replay is made of (E2).
+ *
+ * One JSON line per applied Command, stamped with the tick it applied on, in
+ * application order — exactly the shape `replayCommands` reads back. It is
+ * written beside the report rather than in it: a log of a whole Match is
+ * thousands of lines, and the report is a thing to read and diff.
+ */
+export function formatCommandLog(log: CommandLog<Command>): string {
+  return log.map((entry) => `${JSON.stringify(entry)}
+`).join('');
 }
 
 /** How a Match ended, as the three fields the report says it with. */

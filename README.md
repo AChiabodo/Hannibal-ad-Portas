@@ -30,6 +30,7 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | `npm run lint`      | ESLint over the repository                                             |
 | `npm run guard`     | The seven fences: rendering boundaries, deterministic simulation, no committed asset, AI Observation imports |
 | `npm run match`     | One whole Match headless as a JSON report, or — with `--map` — the map a seed generates, with no build step |
+| `npm run agent`     | One whole Match with an outside process playing one Faction over the protocol in [docs/PROTOCOL.md](docs/PROTOCOL.md) |
 | `npm run bake`      | Writes the whole generated catalogue into `artifacts/` as PNGs, with the pixel hash of each, for inspection |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
 | `npm run test:e2e`  | Browser tests (Playwright, headless Chromium, software WebGL)           |
@@ -1172,6 +1173,57 @@ The command needs no build step. Node strips the types and runs `src/cli/main.ts
 as it stands, which is why every relative import under `src/` names its extension
 (`./command.ts`) — see [ADR-0009](docs/adr/0009-the-cli-runs-the-source-with-node.md).
 
+## The outside agent
+
+```
+npm run agent -- --agent examples/agent.ts --seed 7 --opponent idle
+```
+
+```json
+{
+  "seed": 7,
+  "ticks": 3401,
+  "outcome": "victory",
+  "winner": "rome",
+  "reason": "rome won the Match: the carthage Stronghold fell to an assault",
+  "commands": 61,
+  "hash": "a4ae5836bdba8e8d",
+  "agent": {
+    "faction": "rome",
+    "opponent": "idle",
+    "status": "played",
+    "stoppedBy": null,
+    "detail": null,
+    "decisions": 341,
+    "commands": 61
+  }
+}
+```
+
+A process that is not this codebase plays a whole Match: the harness starts the
+file `--agent` names, speaks [the protocol](docs/PROTOCOL.md) to it over that
+process's standard input and output, and puts the built-in AI — or nobody at all —
+on the other side. What crosses the pipe is the seam and only the seam: one
+**Observation** per decision, filtered through the agent's own fog, and the
+**Commands** it answers with, read through the vocabulary before anything is
+applied. No state, no seed of its own, no privileged window into the Match.
+
+The ticket's fourth rule is the one that shapes the command: a malformed reply, a
+reply that never arrives and a process that dies are all a **Player who stopped
+playing**. The harness says `stopped` with the reason, asks nothing more, leaves
+that Faction idle and plays the Match to its own end — so an agent whose answers
+are not trusted can run in CI, and the exit code stays 0 because a Match was
+played. `--decision-ticks` and `--deadline` are how often a process is asked and
+how long it has, `--log` writes the Command log, and `--expect-hash` gates it.
+
+A Match played this way is a seed plus the log it wrote, like any other: replay it
+with `replayCommands` and it ends on the hash the report prints, which is the
+whole of "an external agent completes a Match" as a thing CI can check.
+`examples/agent.ts` is an agent written from the document alone — raise two
+Squads, sweep the theatre until the enemy Stronghold is seen, assault it — and it
+imports nothing from this repository. The suite runs it to a victory, replays the
+Match from its log, and runs the skeleton agent the document ends with.
+
 ## Layout
 
 ```
@@ -1225,6 +1277,10 @@ src/                application code
     dump.ts         the map a seed generates, written out for inspection
     report.ts       the JSON report, ordered and free of anything that varies
     main.ts         the entry: standard output, standard error, exit codes
+    protocol.ts     the external agent protocol's messages, the wire Observation, the reply reader
+    agent.ts        an outside process as a Player: the pipe, the deadline, a Player who stopped
+    agent-arguments.ts  what the agent command line means, and what it refuses
+    agent-main.ts   the agent command: standard output, standard error, exit codes
     png.ts          a PNG encoder in the repository's own code, for the bake step
     bake.ts         the catalogue written out as files, and the table it prints
     bake-main.ts    the bake command: standard output, standard error, exit codes
@@ -1272,6 +1328,8 @@ tests/              Vitest unit tests
 e2e/                Playwright browser tests (a real browser, so `pixi.js` is allowed)
 docs/PLAN.md        the plan of record
 docs/COMMANDS.md    the Command vocabulary an external agent is written from
+docs/PROTOCOL.md    the protocol an external agent is written from, and a skeleton agent
+examples/agent.ts   an agent written from that document, importing nothing from this repository
 ```
 
 Further modules from the plan's architecture (`audio/`) arrive with the tickets

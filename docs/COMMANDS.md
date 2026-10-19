@@ -34,10 +34,21 @@ is `replayCommands` (`src/sim/replay.ts`), and it reads every line through the
 vocabulary below before the first tick runs, so a word that is not a Command is
 refused with the field named instead of reaching the rules.
 
+This file is the vocabulary; the *transport* an external agent uses — the messages
+it is handed, how often it is asked, what a deadline means — is
+[docs/PROTOCOL.md](PROTOCOL.md). The Commands below are what it writes on that
+wire, unchanged: a process emits exactly what a human's hands and the built-in AI
+emit.
+
 A Controller can read nothing else: not the other Faction's Squads, not the
 Match state, not the seed. `Observation` carries a projection of the world that
 the rules supply, and a Controller that reaches for anything else fails to
 compile — that is tested, not promised.
+
+The one thing an external agent is told that is not in its Observation is the
+run's own paperwork — its Faction, the seed, the tick bound, its roster — in the
+protocol's `hello`, which is the harness speaking and not a second window on the
+world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 
 ## What every Command carries
 

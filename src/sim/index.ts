@@ -210,8 +210,22 @@ export type {
 export type { Observation } from './observation.ts';
 export { scriptedController, idleController } from './controller.ts';
 export type { Controller, Player, Players } from './controller.ts';
-export { ForeignCommandError, ObservationProjectionError, runMatch } from './driver.ts';
-export type { MatchResult, MatchRun, MatchSetup, Outcome, VictoryReason } from './driver.ts';
+export {
+  ForeignCommandError,
+  ObservationProjectionError,
+  matchQuestions,
+  runMatch,
+  runMatchAsync,
+} from './driver.ts';
+export type {
+  Answer,
+  MatchResult,
+  MatchRun,
+  MatchSetup,
+  Outcome,
+  Question,
+  VictoryReason,
+} from './driver.ts';
 export { emptyMatchOutcome, emptyMatchRules, observeEmptyMatch } from './empty.ts';
 export type { EmptyMatchVisible, EmptyMatchWorld } from './empty.ts';
 

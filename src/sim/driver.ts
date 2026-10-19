@@ -199,6 +199,89 @@ export interface MatchRun {
 }
 
 /**
+ * One question the loop asks: a Player, its Observation, and a tick to decide.
+ *
+ * The question is the seam made into a value, so that the loop that plays a Match
+ * is written once and can be *driven* two ways: synchronously, by a Controller
+ * that answers in the same call (`runMatch`), or asynchronously, by an answerer
+ * that has to wait for something outside this process (`runMatchAsync`) — which
+ * is what the external agent protocol needs (E1). Neither drive changes the
+ * rules, the order of the log or the hash: the loop is the same loop, and what it
+ * asks is a Question.
+ *
+ * Not a "turn": the glossary reserves that word for a Season's neighbours, which
+ * this is not (`GLOSSARY.md`, Season).
+ */
+export interface Question<Visible> {
+  /** The Player being asked. */
+  readonly player: Player<Visible>;
+
+  /** What it is being asked about: its own Faction, the tick, and what it may see. */
+  readonly observation: Observation<Visible>;
+}
+
+/**
+ * The Match as a sequence of questions: ask a Player, take its answer, step.
+ *
+ * Each yielded `Question` is where the loop waits for a decision, and the value
+ * passed back to `next` is what that Player returned — validated, checked for a
+ * foreign Faction, and logged, before the loop moves on. The generator's return
+ * value is the finished `MatchRun`, so a driver has exactly two things to do: ask
+ * whoever is behind the Player, and pass the answer along.
+ *
+ * The loop is `runMatch`'s, unchanged, and everything the sync driver promises
+ * is promised here: the bound is checked after the rules have had their say, the
+ * Observational copy is made before a Player sees anything, Rome decides first
+ * whatever order the Players were handed in, and every applied Command is in the
+ * log.
+ *
+ * @throws RangeError when the bound is not a whole non-negative number of
+ *   ticks, or when both Players drive the same Faction.
+ * @throws CommandValidationError when an answer is not a Command in the vocabulary.
+ * @throws ForeignCommandError when an answer names the other Faction.
+ * @throws ObservationProjectionError when `observe` returns a projection that is
+ *   not structured-cloneable plain data.
+ * @throws StateSerializationError when a tick leaves anything but integers in state.
+ */
+export function* matchQuestions<World, Visible>(
+  setup: MatchSetup<World, Visible>,
+): Generator<Question<Visible>, MatchRun, readonly Command[]> {
+  const ticks = requireTickCount(setup.ticks, 'ticks', 0);
+  requireTwoFactions(setup.players);
+
+  const match = createMatch({ seed: setup.seed, rules: setup.rules });
+  const log: LoggedCommand<Command>[] = [];
+
+  for (let tick = 0; ; tick += 1) {
+    const decided = setup.outcome(match.state.world);
+    if (decided !== null) return report(match, log, decided, tick);
+    if (tick >= ticks) return report(match, log, null, tick);
+
+    const entries: LoggedCommand<Command>[] = [];
+
+    for (const player of decidingOrder(setup.players)) {
+      const question: Question<Visible> = {
+        player,
+        observation: observationOf(setup, tick, match.state.world, player.faction),
+      };
+
+      for (const emitted of yield question) {
+        const command = validateCommand(emitted);
+
+        if (command.faction !== player.faction) {
+          throw new ForeignCommandError(player.faction, command.faction);
+        }
+
+        entries.push({ tick, command });
+      }
+    }
+
+    match.step(entries.map((entry) => entry.command));
+    log.push(...entries);
+  }
+}
+
+/**
  * Plays a Match to its end, or to the tick bound, with two Controllers and no
  * browser anywhere.
  *
@@ -219,65 +302,88 @@ export interface MatchRun {
  * @throws StateSerializationError when a tick leaves anything but integers in state.
  */
 export function runMatch<World, Visible>(setup: MatchSetup<World, Visible>): MatchRun {
-  const ticks = requireTickCount(setup.ticks, 'ticks', 0);
-  requireTwoFactions(setup.players);
+  const questions = matchQuestions(setup);
+  let step = questions.next();
 
-  const match = createMatch({ seed: setup.seed, rules: setup.rules });
-  const log: LoggedCommand<Command>[] = [];
-
-  for (let tick = 0; ; tick += 1) {
-    const decided = setup.outcome(match.state.world);
-    if (decided !== null) return report(match, log, decided, tick);
-    if (tick >= ticks) return report(match, log, null, tick);
-
-    const entries = decide(setup, tick, match.state.world);
-    match.step(entries.map((entry) => entry.command));
-    log.push(...entries);
+  while (!step.done) {
+    step = questions.next(step.value.player.controller.decide(step.value.observation));
   }
+
+  return step.value;
 }
 
-/** Asks both Players what they want on this tick, and refuses anything the seam cannot allow. */
-function decide<World, Visible>(
+/**
+ * How a Match is played when a Player cannot answer in the same tick: it is
+ * handed the question and returns its Commands later, or at once.
+ */
+export type Answer<Visible> = (
+  question: Question<Visible>,
+) => readonly Command[] | Promise<readonly Command[]>;
+
+/**
+ * Plays a Match whose Players answer asynchronously.
+ *
+ * The loop, the bound, the log, the validation and the hash are `runMatch`'s to
+ * the letter — this only changes who is asked and how the answer comes back. It
+ * exists for a Player that is a process on the other end of a pipe: the external
+ * agent protocol waits for a line, so its driver has to await (E1, docs/PROTOCOL.md).
+ *
+ * `answer` is asked for every question, and it answers for both Players: a harness
+ * that stands in for one of them by other means — a pipe, a queue, a person —
+ * returns that Player's Commands itself, and one that does not can hand the
+ * question to its own `controller`. The Players in `setup` are therefore not consulted;
+ * what they still decide is who plays which Faction and in what order, which is
+ * the loop's own business and the log's canonical order.
+ *
+ * Nothing here reads a clock: `answer` may, and the protocol's own timeout does,
+ * but a Match is still a seed plus the log it produced, so a Match that was
+ * interrupted by a deadline replays as the Match the log describes.
+ *
+ * @throws the same failures `runMatch` throws, plus whatever `answer` throws.
+ */
+export async function runMatchAsync<World, Visible>(
+  setup: MatchSetup<World, Visible>,
+  answer: Answer<Visible>,
+): Promise<MatchRun> {
+  const questions = matchQuestions(setup);
+  let step = questions.next();
+
+  while (!step.done) {
+    step = questions.next(await answer(step.value));
+  }
+
+  return step.value;
+}
+
+/**
+ * What one Faction may see of the world, stamped with who is looking and when.
+ *
+ * The Observation is the Controller's own, the way IN is copied too, in
+ * `validateCommand`: the driver deep-copies what `observe` returned, so a
+ * projection that aliases the world — the world itself, or a part of it —
+ * cannot be written back through.
+ *
+ * `structuredClone` is the whole contract on a projection, and it is a data
+ * copy, not a check. Arrays, plain objects, typed arrays and cycles come
+ * through; everything else is silently flattened — a class instance loses its
+ * prototype and its methods, an accessor becomes a data property, and symbol
+ * keys and non-enumerable own fields are dropped. So a projection must be
+ * structured-cloneable plain data, and nothing it holds may rely on prototype
+ * identity, accessors, symbol keys or non-enumerable fields. Only what the clone
+ * cannot carry at all — a function, a proxy — is refused, and that refusal is
+ * the seam's own (`ObservationProjectionError`), naming the Faction it was built
+ * for.
+ *
+ * @throws ObservationProjectionError when the projection is not
+ *   structured-cloneable plain data.
+ */
+function observationOf<World, Visible>(
   setup: MatchSetup<World, Visible>,
   tick: number,
   world: World,
-): LoggedCommand<Command>[] {
-  const entries: LoggedCommand<Command>[] = [];
-
-  for (const player of decidingOrder(setup.players)) {
-    const observation: Observation<Visible> = {
-      faction: player.faction,
-      tick,
-      // The Observation is the Controller's own, the way IN is copied too, in
-      // `validateCommand`: the driver deep-copies what `observe` returned, so a
-      // projection that aliases the world — the world itself, or a part of it —
-      // cannot be written back through.
-      //
-      // `structuredClone` is the whole contract on a projection, and it is a
-      // data copy, not a check. Arrays, plain objects, typed arrays and cycles
-      // come through; everything else is silently flattened — a class instance
-      // loses its prototype and its methods, an accessor becomes a data
-      // property, and symbol keys and non-enumerable own fields are dropped. So
-      // a projection must be structured-cloneable plain data, and nothing it
-      // holds may rely on prototype identity, accessors, symbol keys or
-      // non-enumerable fields. Only what the clone cannot carry at all — a
-      // function, a proxy — is refused, and that refusal is the seam's own
-      // (`ObservationProjectionError`), naming the Faction it was built for.
-      visible: projectionOf(setup, world, player.faction),
-    };
-
-    for (const emitted of player.controller.decide(observation)) {
-      const command = validateCommand(emitted);
-
-      if (command.faction !== player.faction) {
-        throw new ForeignCommandError(player.faction, command.faction);
-      }
-
-      entries.push({ tick, command });
-    }
-  }
-
-  return entries;
+  faction: Faction,
+): Observation<Visible> {
+  return { faction, tick, visible: projectionOf(setup, world, faction) };
 }
 
 /**
