@@ -144,6 +144,7 @@ test('selects the row a Player clicks', async ({ page }) => {
 /** A canvas point no Squad's block covers, which is where a click lands on the theatre alone. */
 async function emptyCanvasPoint(page: Page): Promise<{ readonly x: number; readonly y: number }> {
   const view = await describeView(page);
+  const panels = await hudRects(page);
   const blocks = (await squads(page)).map((squad) => ({
     x: (squad.rect.x - view.camera.x) * view.camera.zoom,
     y: (squad.rect.y - view.camera.y) * view.camera.zoom,
@@ -153,6 +154,7 @@ async function emptyCanvasPoint(page: Page): Promise<{ readonly x: number; reado
 
   for (let y = 40; y < view.height - 40; y += 20) {
     for (let x = 160; x < view.width - 40; x += 20) {
+      if (panels.some((panel) => x >= panel.x && x < panel.x + panel.width && y >= panel.y && y < panel.y + panel.height)) continue;
       if (blocks.some((block) => x >= block.x && x < block.x + block.width && y >= block.y && y < block.y + block.height)) {
         continue;
       }

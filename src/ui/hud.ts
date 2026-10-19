@@ -98,10 +98,40 @@ export interface HudDetail {
   readonly title: string;
   /** The figures that matter, in the order a Player reads them. */
   readonly lines: readonly HudLine[];
+  /** Order/refusal, or the first active Work: kept above the scrolling figures. */
+  readonly priority: readonly HudLine[];
+}
+
+/** Presentation memory only; never part of the Match. Offsets count bitmap text lines. */
+export interface HudView {
+  readonly paused?: boolean;
+  readonly listOffset?: number;
+  readonly detailOffset?: number;
+}
+
+export interface HudText {
+  readonly text: string;
+  readonly rect: Rect;
+}
+
+export interface HudScroll {
+  readonly offset: number;
+  readonly max: number;
+  readonly page: number;
+}
+
+export type HudAction = 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext';
+
+export interface HudButton {
+  readonly action: HudAction;
+  readonly text: string;
+  readonly rect: Rect;
+  readonly enabled: boolean;
 }
 
 /** Everything the HUD says, at one moment, with nothing about where it goes. */
 export interface HudModel {
+  readonly view: HudView;
   /** The top bar, in reading order. */
   readonly readouts: readonly HudReadout[];
   /** Every settlement and Squad the Faction holds, in list order. */
@@ -163,6 +193,11 @@ export interface HudLayout {
   readonly readouts: readonly ReadoutRect[];
   readonly headers: readonly HudHeader[];
   readonly rows: readonly RowRect[];
+  readonly text: readonly HudText[];
+  readonly priority: readonly HudText[];
+  readonly buttons: readonly HudButton[];
+  readonly listScroll: HudScroll;
+  readonly detailScroll: HudScroll;
 }
 
 /** Air between a panel's edge and its text. */
@@ -186,17 +221,8 @@ const READOUT_INK_GAP = 2;
 /** The left column's width: wide enough for `Insediamento minore 3` and its note. */
 const LIST_WIDTH = 150;
 
-/** The selection panel's height: a title and seven lines, which is what a settlement needs. */
-const DETAIL_HEIGHT = 3 * PADDING + LINE_STEP + 7 * LINE_STEP;
-
-/** A row's height: a line of text and the air that separates it from the next. */
-const ROW_HEIGHT = LINE_STEP + 2;
-
-/** A heading's height. */
-const HEADER_HEIGHT = LINE_STEP + 1;
-
-/** Air between the settlement list and the Squad list. */
-const SECTION_GAP = 2;
+/** Room for a pinned Order/Work and a scrolling body within the existing column. */
+const DETAIL_HEIGHT = 128;
 
 /** Air between the minimap and the screen's edge. */
 const MINIMAP_MARGIN = 2;
@@ -230,12 +256,14 @@ export function hudModel(
   strongholds: readonly number[],
   selection: Selection | null,
   squadSelection: readonly number[] = [],
+  view: HudView = {},
 ): HudModel {
-  const selected = findSelection(visible, selection);
-  const focus = focusSettlement(visible, selected);
   const picked = pickedSquads(visible, squadSelection);
+  const selected = findSelection(visible, selection) ?? (selection?.kind === 'squad' ? picked[0] ?? null : null);
+  const focus = focusSettlement(visible, selected);
 
   return {
+    view,
     readouts: readouts(visible, focus, strongholds),
     rows: rows(visible, strongholds),
     detail: selected === null ? null : detail(visible, strongholds, selected),
@@ -257,7 +285,8 @@ function pickedSquads(visible: EconomyVisible, ids: readonly number[]): readonly
 export function hudLayout(model: HudModel, size: HudSize): HudLayout {
   const readouts = placeReadouts(model.readouts, size);
   const rowsHeight = readouts.reduce((tallest, placed) => Math.max(tallest, placed.rect.y + placed.rect.height), 0);
-  const bar: Rect = { x: 0, y: 0, width: size.width, height: rowsHeight + PADDING };
+  const pauseY = rowsHeight + PADDING;
+  const bar: Rect = { x: 0, y: 0, width: size.width, height: pauseY + 2 * LINE_STEP + PADDING };
   const detail: Rect = {
     x: 0,
     y: Math.max(bar.height, size.height - DETAIL_HEIGHT),
@@ -274,29 +303,92 @@ export function hudLayout(model: HudModel, size: HudSize): HudLayout {
 
   const headers: HudHeader[] = [];
   const rows: RowRect[] = [];
-  let y = list.y;
+  const text: HudText[] = [];
+  const buttons: HudButton[] = [{
+    action: 'pause', text: translate(model.view.paused ? 'ui.resume' : 'ui.pause'),
+    rect: { x: PADDING, y: pauseY, width: 142, height: 2 * LINE_STEP }, enabled: true,
+  }];
+  text.push({ text: translate(model.view.paused ? 'ui.paused' : 'ui.running'),
+    rect: { x: LIST_WIDTH + PADDING, y: pauseY + 4, width: size.width - LIST_WIDTH - 2 * PADDING, height: LINE_STEP } });
 
-  const section = (heading: string, sectionRows: readonly HudRow[]): void => {
-    if (sectionRows.length === 0) return;
+  for (const [index, kind] of (['settlement', 'squad'] as const).entries()) {
+    headers.push({ text: message('ui.listCount', {
+      name: translate(kind === 'settlement' ? 'ui.settlements' : 'ui.squads'),
+      count: model.rows.filter((row) => row.selection.kind === kind).length,
+    }), rect: { x: PADDING + 1, y: list.y + PADDING + index * LINE_STEP, width: LIST_WIDTH - 2 * PADDING - 2, height: LINE_STEP } });
+  }
 
-    if (rows.length > 0) y += SECTION_GAP;
-    headers.push({ text: heading, rect: { x: list.x, y, width: list.width, height: HEADER_HEIGHT } });
-    y += HEADER_HEIGHT;
+  const width = LIST_WIDTH - 2 * PADDING - 2;
+  const listLines = model.rows.flatMap((row) => [
+    ...wrapText(message('ui.listItem', { name: row.label, id: row.selection.id }), width),
+    ...wrapText(row.note, width),
+  ].map((line) => ({ text: line, selection: row.selection })));
+  const listBody = { x: PADDING + 1, y: list.y + PADDING + 2 * LINE_STEP, width, height: list.height - 2 * PADDING - 4 * LINE_STEP };
+  const listScroll = scrollWindow(model.view.listOffset ?? 0, listLines.length, listBody.height);
+  for (const [index, line] of listLines.slice(listScroll.offset, listScroll.offset + listScroll.page).entries()) {
+    const rect = { x: listBody.x, y: listBody.y + index * LINE_STEP, width, height: LINE_STEP };
+    text.push({ text: line.text, rect });
+    const previous = rows.at(-1);
+    if (previous !== undefined && sameSelection(previous.selection, line.selection)) {
+      rows[rows.length - 1] = { selection: line.selection, rect: { ...previous.rect, height: previous.rect.height + LINE_STEP } };
+    } else rows.push({ selection: line.selection, rect: { ...rect, x: 1, width: LIST_WIDTH - 2 } });
+  }
+  addScrollButtons(buttons, list, 'list', listScroll);
 
-    for (const row of sectionRows) {
-      // A list longer than its panel stops at the panel: a row drawn over the
-      // selection panel would be a row a Player could read and not press.
-      if (y + ROW_HEIGHT > list.y + list.height) break;
-
-      rows.push({ selection: row.selection, rect: { x: list.x, y, width: list.width, height: ROW_HEIGHT } });
-      y += ROW_HEIGHT;
+  let detailY = detail.y + PADDING;
+  const place = (words: readonly string[], destination: HudText[]): void => {
+    for (const word of words) {
+      destination.push({ text: word, rect: { x: PADDING + 1, y: detailY, width, height: LINE_STEP } });
+      detailY += LINE_STEP;
     }
   };
+  const priority: HudText[] = [];
+  let secondary: string[] = [];
+  if (model.detail !== null) {
+    place(wrapText(model.detail.title, width), priority);
+    for (const line of model.detail.priority) place(wrapText(`${line.label}: ${line.value}`, width), priority);
+    detailY += PADDING;
+    secondary = model.detail.lines
+      .filter((line) => !model.detail?.priority.some((pinned) => pinned.label === line.label && pinned.value === line.value))
+      .flatMap((line) => wrapText(`${line.label}: ${line.value}`, width));
+  }
+  const detailScroll = scrollWindow(model.view.detailOffset ?? 0, secondary.length, detail.y + detail.height - 2 * LINE_STEP - PADDING - detailY);
+  place(secondary.slice(detailScroll.offset, detailScroll.offset + detailScroll.page), text);
+  addScrollButtons(buttons, detail, 'detail', detailScroll);
 
-  section(translate('ui.settlements'), model.rows.filter((row) => row.selection.kind === 'settlement'));
-  section(translate('ui.squads'), model.rows.filter((row) => row.selection.kind === 'squad'));
+  return { size, bar, list, detail, minimap, readouts, headers, rows, text, priority, buttons, listScroll, detailScroll };
+}
 
-  return { size, bar, list, detail, minimap, readouts, headers, rows };
+/** Wraps every glyph, including a value with no spaces; nothing is ellipsised away. */
+function wrapText(text: string, width: number): string[] {
+  const lines: string[] = [];
+  let remaining = text;
+  while (measureText(remaining) > width) {
+    let end = 1;
+    while (end < remaining.length && measureText(remaining.slice(0, end + 1)) <= width) end += 1;
+    const space = remaining.lastIndexOf(' ', end);
+    if (space > 0) end = space;
+    lines.push(remaining.slice(0, end));
+    remaining = remaining.slice(end).trimStart();
+  }
+  if (remaining !== '') lines.push(remaining);
+  return lines;
+}
+
+function scrollWindow(requested: number, total: number, height: number): HudScroll {
+  const page = Math.max(1, Math.floor(height / LINE_STEP));
+  const max = Math.max(0, total - page);
+  const offset = Math.min(max, Math.max(0, Math.trunc(requested)));
+  return { offset, max, page };
+}
+
+function addScrollButtons(buttons: HudButton[], rect: Rect, region: 'list' | 'detail', scroll: HudScroll): void {
+  if (scroll.max === 0) return;
+  const y = rect.y + rect.height - 2 * LINE_STEP - 1;
+  buttons.push({ action: `${region}Previous`, text: translate('ui.previous'),
+    rect: { x: rect.x + 1, y, width: 70, height: 2 * LINE_STEP }, enabled: scroll.offset > 0 });
+  buttons.push({ action: `${region}Next`, text: translate('ui.next'),
+    rect: { x: rect.x + 74, y, width: 75, height: 2 * LINE_STEP }, enabled: scroll.offset < scroll.max });
 }
 
 /**
@@ -365,11 +457,21 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
   drawReadouts(buffer, layout.readouts);
 
   for (const header of layout.headers) {
-    drawText(buffer, header.text, header.rect.x + PADDING + 1, header.rect.y, HUD_LABEL);
+    drawText(buffer, header.text, header.rect.x, header.rect.y, HUD_LABEL);
   }
 
-  drawRows(buffer, model, layout.rows);
-  if (model.detail !== null) drawDetail(buffer, model.detail, layout.detail);
+  for (const row of layout.rows) {
+    if (model.picked.some((picked) => sameSelection(picked, row.selection)) ||
+      (model.selected !== null && sameSelection(model.selected, row.selection))) {
+      fillRect(buffer, row.rect.x, row.rect.y, row.rect.width, row.rect.height, HUD_SELECTED);
+    }
+  }
+  for (const line of layout.text) drawText(buffer, line.text, line.rect.x, line.rect.y, HUD_LABEL);
+  for (const line of layout.priority) drawText(buffer, line.text, line.rect.x, line.rect.y, HUD_VALUE);
+  for (const button of layout.buttons) {
+    panel(buffer, button.rect);
+    drawText(buffer, button.text, button.rect.x + PADDING, button.rect.y + 5, button.enabled ? HUD_VALUE : HUD_BORDER);
+  }
 
   return buffer;
 }
@@ -458,18 +560,24 @@ function detail(
     const settlement = visible.settlements.find((candidate) => candidate.id === selected.id);
     if (settlement === undefined) return null;
 
+    const lines = settlementLines(settlement);
+    const active = settlement.works.findIndex((work) => !work.standing);
+    const work = lines.filter((line) => line.label === translate('ui.works'))[Math.max(0, active)];
     return {
       title: message('ui.listItem', { name: settlementName(settlement, strongholds), id: settlement.id }),
-      lines: settlementLines(settlement),
+      lines,
+      priority: work === undefined ? [] : [work],
     };
   }
 
   const squad = visible.squads.find((candidate) => candidate.id === selected.id);
   if (squad === undefined) return null;
 
+  const lines = squadLines(squad);
   return {
     title: message('ui.listItem', { name: translate('ui.squad'), id: squad.id }),
-    lines: squadLines(squad),
+    lines,
+    priority: lines.filter((line) => line.label === translate('ui.order')),
   };
 }
 
@@ -497,7 +605,7 @@ function settlementLines(settlement: VisibleSettlement): readonly HudLine[] {
   for (const work of settlement.works) {
     lines.push({
       label: translate('ui.works'),
-      value: `${workLabel(work.building)} — ${
+      value: `${workLabel(work.building)} - ${
         work.standing
           ? translate('ui.workStanding')
           : `${translate('ui.workBuilding')} ${message('ui.ticksLeft', { ticks: work.remaining })}`
@@ -597,44 +705,6 @@ function drawReadouts(buffer: PixelBuffer, readouts: readonly ReadoutRect[]): vo
 
     drawText(buffer, line.label, rect.x, rect.y + (VALUE_SCALE - 1) * LINE_HEIGHT, HUD_LABEL);
     drawText(buffer, line.value, valueX, rect.y, HUD_VALUE, scale);
-  }
-}
-
-/** The list: every row, with the selected one standing on its own ground. */
-function drawRows(buffer: PixelBuffer, model: HudModel, rows: readonly RowRect[]): void {
-  for (const row of rows) {
-    const text = model.rows.find((candidate) => sameSelection(candidate.selection, row.selection));
-    if (text === undefined) continue;
-
-    // Every picked row stands on the selected ground: a box selection picks
-    // several Squads, and the list has to say so.
-    const picked = model.picked.some((candidate) => sameSelection(candidate, row.selection));
-    if (picked || (model.selected !== null && sameSelection(model.selected, row.selection))) {
-      fillRect(buffer, row.rect.x + 1, row.rect.y, row.rect.width - 2, row.rect.height, HUD_SELECTED);
-    }
-
-    drawText(buffer, text.label, row.rect.x + PADDING + 1, row.rect.y + 1, HUD_LABEL);
-    const noteX = row.rect.x + row.rect.width - PADDING - measureText(text.note);
-    drawText(buffer, text.note, noteX, row.rect.y + 1, HUD_LABEL);
-  }
-}
-
-/** The selection panel: a title, and as many lines as it has room for. */
-function drawDetail(buffer: PixelBuffer, detail: HudDetail, rect: Rect): void {
-  drawText(buffer, detail.title, rect.x + PADDING + 1, rect.y + PADDING, HUD_VALUE);
-
-  const room = Math.max(0, Math.floor((rect.height - 2 * PADDING - LINE_STEP) / LINE_STEP));
-  const lines = detail.lines.slice(0, room);
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (line === undefined) continue;
-
-    const y = rect.y + 2 * PADDING + LINE_STEP + index * LINE_STEP;
-    drawText(buffer, line.label, rect.x + PADDING + 1, y, HUD_LABEL);
-
-    const valueX = rect.x + rect.width - PADDING - measureText(line.value);
-    drawText(buffer, line.value, valueX, y, HUD_VALUE);
   }
 }
 

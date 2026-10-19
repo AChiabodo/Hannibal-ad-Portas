@@ -278,6 +278,50 @@ describe('the HUD model', () => {
 });
 
 describe('the HUD on screen', () => {
+  it('reaches every crowded list row without losing the selected entity', () => {
+    const squads = Array.from({ length: 80 }, (_, index) => ({ ...VISIBLE.squads[0]!, id: index + 1 }));
+    const model = hudModel({ ...VISIBLE, squads }, STRONGHOLDS, { kind: 'squad', id: 80 }, [80], { listOffset: 99999 });
+    const layout = hudLayout(model, SIZE);
+    expect(layout.headers.map((header) => header.text)).toContain('Reparti: 80');
+    const last = layout.rows.at(-1)!;
+    expect(last.selection).toEqual({ kind: 'squad', id: 80 });
+    expect(hitTest(model, SIZE, last.rect.x + 4, last.rect.y + 2)).toEqual(last.selection);
+    expect(model.selected).toEqual(last.selection);
+    const survivor = hudModel({ ...VISIBLE, squads: squads.slice(0, 79) }, STRONGHOLDS,
+      { kind: 'squad', id: 80 }, [80, 79], model.view);
+    expect(survivor.selected).toEqual({ kind: 'squad', id: 79 });
+    const shrunk = hudLayout(hudModel(VISIBLE, STRONGHOLDS, null, [], model.view), SIZE);
+    expect(shrunk.listScroll.offset).toBe(0);
+  });
+  it('keeps a refused Order visible while secondary detail scrolls', () => {
+    const visible = { ...VISIBLE, squads: VISIBLE.squads.map((squad) => ({ ...squad, refused: 'water' as const })) };
+    const model = hudModel(visible, STRONGHOLDS, { kind: 'squad', id: 1 }, [], { detailOffset: 999 });
+    const layout = hudLayout(model, SIZE);
+    expect(layout.priority.map((line) => line.text).join(' ')).toContain('Ordine: Acque profonde');
+    expect(layout.detailScroll.offset).toBeGreaterThan(0);
+    expect(layout.text.every((line) => measureText(line.text) <= line.rect.width)).toBe(true);
+  });
+  it('pins an active Work and makes all wrapped secondary text reachable', () => {
+    const selected = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 2 });
+    expect(hudLayout(selected, SIZE).priority.map((line) => line.text).join(' '))
+      .toContain('Cantieri: Villa - In costruzione 120 tick');
+    const long = { label: 'Una descrizione molto lunga del lavoro', value: '1234567890123456789012345678901234567890' };
+    const model = { ...selected, detail: { ...selected.detail!, lines: [...selected.detail!.lines, long] } };
+    const reached: string[] = [];
+    const max = hudLayout(model, SIZE).detailScroll.max;
+    for (let offset = 0; offset <= max; offset += 1) {
+      const page = { ...model, view: { detailOffset: offset } };
+      const layout = hudLayout(page, SIZE);
+      expect(() => renderPanels(page, SIZE)).not.toThrow();
+      for (const line of [...layout.text, ...layout.priority]) {
+        expect(measureText(line.text)).toBeLessThanOrEqual(line.rect.width);
+        expect(line.rect.y + line.rect.height).toBeLessThanOrEqual(SIZE.height);
+      }
+      reached.push(...layout.text.map((line) => line.text));
+    }
+    expect(reached.join(' ')).toContain('Una descrizione molto');
+    expect([...new Set(reached)].join('').replaceAll(' ', '')).toContain(long.value);
+  });
   const MAP = generateMap(7);
   const MINIMAP = minimapPlate(MAP, inspectionView(MAP), null);
 

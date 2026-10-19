@@ -69,6 +69,8 @@ export const GAME_HOOKS = [
   'select',
   'hudRects',
   'hudRows',
+  'hudLayout',
+  'scrollHud',
   'squads',
   'corpses',
   'selectAt',

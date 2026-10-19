@@ -62,6 +62,8 @@ the camera's hooks and the Match's hooks, and nothing else:
 | `select` | `(selection), null to clear` | game | Selects a settlement or a Squad as the panel does |
 | `hudRects` | `() → Rect[]` | game | Every rectangle the interface covers, which is what the theatre cannot be read through |
 | `hudRows` | `() → RowRect[]` | game | Where each selectable row stands, so a test presses the row a Player would |
+| `hudLayout` | `() → HudLayout` | game | The text, button rectangles, enabled states and scroll windows actually drawn |
+| `scrollHud` | `(region, lines)` | game | Scrolls `list` or `detail` by whole bitmap text lines, without changing selection or the Match |
 | `squads` | `() → SquadReport[]` | game | The Faction's Squads, each with the theatre rectangle its men are drawn in |
 | `corpses` | `() → Corpse[]` | game | The men who fell lately where this Faction can see them, as residue |
 | `selectAt` | `(screenX, screenY, additive?)` | game | Picks whatever is under a screen point: one click, with or without a shift |
@@ -142,6 +144,15 @@ the fog, so an inspector may keep it, diff two of them, or carry it wherever it 
 It holds an Observation and its drawing, and no part of the rules' own state.
 
 ## Pause, fast-forward and the end of a Match
+
+The top bar always says `IN PAUSA` or `IN CORSO`. Its visible pause/resume control,
+Space and the `pause`/`resume` hooks update the same state and redraw immediately.
+The list headings include entity counts. Use its Su/Giu controls, the wheel over
+the column, or PageUp/PageDown to reach overflow. Shift+PageUp/PageDown scrolls
+secondary detail; the Order/refusal or first active Work stays above it. Scrolling
+never changes selection or zoom. Clicking panel backgrounds keeps selection.
+Detail scrolling resets when the selected entity changes, and both offsets clamp
+when their contents shrink. These are presentation values, outside the state hash.
 
 The Match's time is whole ticks, and the page plays them in real time at ten hertz:
 a Season is three and a half minutes, and a Match is three game years — twenty-five

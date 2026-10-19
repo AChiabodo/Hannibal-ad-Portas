@@ -79,6 +79,13 @@ export const STRINGS = {
   'ui.year': { it: 'Anno', en: 'Year' },
   'ui.season': { it: 'Stagione', en: 'Season' },
   'ui.treasury': { it: 'Tesoreria', en: 'Treasury' },
+  'ui.paused': { it: 'IN PAUSA', en: 'PAUSED' },
+  'ui.running': { it: 'IN CORSO', en: 'RUNNING' },
+  'ui.pause': { it: 'Pausa [Spazio]', en: 'Pause [Space]' },
+  'ui.resume': { it: 'Riprendi [Spazio]', en: 'Resume [Space]' },
+  'ui.previous': { it: 'Su', en: 'Up' },
+  'ui.next': { it: 'Giu', en: 'Down' },
+  'ui.listCount': { it: '{name}: {count}', en: '{name}: {count}' },
 
   // The panels.
   'ui.settlements': { it: 'Insediamenti', en: 'Settlements' },
@@ -110,7 +117,7 @@ export const STRINGS = {
   'refusal.water': { it: 'Acque profonde', en: 'Deep water' },
   'refusal.unreachable': { it: 'Nessuna via', en: 'No way through' },
   'ui.nothingSelected': { it: 'Nessuna selezione', en: 'Nothing selected' },
-  'ui.none': { it: '—', en: '—' },
+  'ui.none': { it: '-', en: '-' },
   'ui.listItem': { it: '{name} {id}', en: '{name} {id}' },
 
   // The Factions, as a Player reads them.

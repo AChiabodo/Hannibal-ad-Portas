@@ -88,7 +88,7 @@ import {
   type Selection as PlayerSelection,
 } from '../input/selection.ts';
 import { createHuman, type HumanController } from '../input/human.ts';
-import { hudLayout, hudModel, hitTest, type HudModel, type HudSize, type Rect, type RowRect, type Selection } from '../ui/hud.ts';
+import { hudLayout, hudModel, hitTest, type HudLayout, type HudModel, type HudSize, type Rect, type RowRect, type Selection } from '../ui/hud.ts';
 import { minimapPlate, type ViewportRect } from '../ui/minimap.ts';
 import { createHudLayer, type HudLayer } from './hud.ts';
 import { screenToStage, type Camera } from './camera.ts';
@@ -181,6 +181,10 @@ export interface GameHooks {
   hudRects(): readonly Rect[];
   /** Where each selectable row stands, so that a test can press the row a Player would. */
   hudRows(): readonly RowRect[];
+  /** The exact text, controls and scrolling windows drawn by the HUD. */
+  hudLayout(): HudLayout;
+  /** Scrolls a HUD region by bitmap text lines; presentation only. */
+  scrollHud(region: 'list' | 'detail', lines: number): void;
   /** The Faction's own Squads, with the rectangle each is drawn in. */
   squads(): readonly SquadReport[];
   /**
@@ -341,6 +345,9 @@ export function createGame(options: GameOptions): Game {
   let lastFrame = 0;
   let scheduled: number | null = null;
   let seenEyes = '';
+  let listOffset = 0;
+  let detailOffset = 0;
+  let detailSelection: Selection | null = null;
   const applied: LoggedCommand<Command>[] = [];
 
   /**
@@ -378,6 +385,14 @@ export function createGame(options: GameOptions): Game {
       return [layout.bar, layout.list, layout.detail, layout.minimap];
     },
     hudRows: () => hudLayout(model, options.size).rows,
+    hudLayout: () => hudLayout(model, options.size),
+    scrollHud: (region, lines) => {
+      if (!Number.isSafeInteger(lines)) throw new RangeError('HUD scroll must be whole text lines');
+      const layout = hudLayout(model, options.size);
+      if (region === 'list') listOffset = layout.listScroll.offset + lines;
+      else detailOffset = layout.detailScroll.offset + lines;
+      repaint();
+    },
     squads: () => squadReports(),
     corpses: () => dead,
     selectAt: (x, y, additive = false) => {
@@ -414,10 +429,12 @@ export function createGame(options: GameOptions): Game {
     fastForward: () => playToEnd(),
     pause: () => {
       pacing.pause();
+      repaint();
     },
     resume: () => {
       pacing.resume();
       lastFrame = performance.now();
+      repaint();
     },
     paused: () => pacing.paused,
     speed: () => pacing.speed,
@@ -659,8 +676,11 @@ export function createGame(options: GameOptions): Game {
   /** The HUD's model, with the panel's selection and every picked Squad. */
   function readModel(): HudModel {
     const window = visible();
-
-    return hudModel(window, strongholdIds(window), panelSelection(), human.selection.squads);
+    const next = hudModel(window, strongholdIds(window), panelSelection(), human.selection.squads,
+      { paused: pacing.paused, listOffset, detailOffset });
+    if (next.selected?.id !== detailSelection?.id || next.selected?.kind !== detailSelection?.kind) detailOffset = 0;
+    detailSelection = next.selected;
+    return { ...next, view: { paused: pacing.paused, listOffset, detailOffset } };
   }
 
   /** What the panel is showing: the picked settlement, or the first Squad that was picked. */
@@ -690,6 +710,9 @@ export function createGame(options: GameOptions): Game {
   /** Both plates, every block, and a frame drawn. */
   function repaint(): void {
     model = readModel();
+    const layout = hudLayout(model, options.size);
+    listOffset = layout.listScroll.offset;
+    detailOffset = layout.detailScroll.offset;
     dead = readCorpses();
     layer.panels(model, options.size);
     field.update({
@@ -740,12 +763,28 @@ export function createGame(options: GameOptions): Game {
 
   /** A click at a screen point: the interface's rows first, then the men on the map. */
   function pickAt(screenX: number, screenY: number, additive: boolean): void {
+    const layout = hudLayout(model, options.size);
+    const button = layout.buttons.find(({ rect }) => containsPoint(rect, screenX, screenY));
+    if (button !== undefined) {
+      if (!button.enabled) return;
+      if (button.action === 'pause') {
+        if (pacing.paused) hooks.resume();
+        else hooks.pause();
+      } else {
+        const region = button.action.startsWith('list') ? 'list' : 'detail';
+        const scroll = region === 'list' ? layout.listScroll : layout.detailScroll;
+        hooks.scrollHud(region, button.action.endsWith('Next') ? scroll.page : -scroll.page);
+      }
+      return;
+    }
     const row = hitTest(model, options.size, screenX, screenY);
     if (row !== null) {
       human.select(asPicked(row));
       repaint();
       return;
     }
+
+    if (underInterface(screenX, screenY)) return;
 
     const at = screenToStage(options.camera(), screenX, screenY);
     human.select(selectAt(human.selection, pickables(), at, additive));
@@ -763,6 +802,7 @@ export function createGame(options: GameOptions): Game {
 
   /** A drag between two screen points: every block it touched. */
   function pickInBox(fromX: number, fromY: number, toX: number, toY: number, additive: boolean): void {
+    if (underInterface(fromX, fromY)) return;
     const camera = options.camera();
     const box = boxBetween(screenToStage(camera, fromX, fromY), screenToStage(camera, toX, toY));
 
@@ -801,4 +841,8 @@ export function createGame(options: GameOptions): Game {
       .filter((settlement) => sites.some((site) => site.x === settlement.x && site.y === settlement.y))
       .map((settlement) => settlement.id);
   }
+}
+
+function containsPoint(rect: Rect, x: number, y: number): boolean {
+  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
 }
