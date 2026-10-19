@@ -4,7 +4,7 @@ import { createMilitaryBehaviour, createMilitaryRecruitment } from '../ai/milita
 import { createScoutingBehaviour } from '../ai/scouting.ts';
 import { createSiegeBehaviour } from '../ai/siege.ts';
 import { createBehaviourRegistry, type Behaviour, type BehaviourContext, type BehaviourRegistry,
-  type Candidate } from '../ai/registry.ts';
+  type Candidate, type Contribution } from '../ai/registry.ts';
 import { DIFFICULTY, type Difficulty, type DifficultyName } from '../ai/difficulty.ts';
 import { BUILDINGS } from '../content/buildings.ts';
 import { MATCHUP } from '../content/arms.ts';
@@ -83,16 +83,22 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
 
   const fieldOf = (context: BehaviourContext<SiegeVisible>) => strongest(military.tactical!(context));
 
+  /** The flat batch a candidate emits, in contribution order. */
+  const commandsOf = (contributions: readonly Contribution<Command>[]): readonly Command[] =>
+    contributions.flatMap((contribution) => contribution.commands);
+
   /**
    * The field's orders for the Squads it keeps, then patrols on what is left
-   * over. A `hold` yields to a patrol so one Squad is not told both to stand and
-   * to march, and a Squad in `exclusions` belongs to neither.
+   * over, each attributed to the behaviour that authored it. A `hold` yields to
+   * a patrol so one Squad is not told both to stand and to march, and a Squad in
+   * `exclusions` belongs to neither. A contribution may name a behaviour whose
+   * every order was superseded: it took part, and says so with no Commands.
    */
   function share<C extends Command & { readonly squads: readonly number[] }>(
     context: BehaviourContext<SiegeVisible>,
     field: Candidate<C> | undefined,
     exclusions: ReadonlySet<number>,
-  ): readonly Command[] {
+  ): readonly Contribution<Command>[] {
     const held = (field?.commands ?? []).flatMap((command) => {
       const squads = command.squads.filter((id) => !exclusions.has(id));
       return squads.length === 0 ? [] : [{ ...command, squads }];
@@ -102,15 +108,20 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
     const patrols = scouting.tactical!(context).flatMap((candidate) => candidate.commands)
       .filter((command) => !command.squads.some((id) => blocked.has(id)));
     const scouts = new Set(patrols.flatMap((command) => command.squads));
-    return [...held.filter((command) => command.kind !== 'hold' || !command.squads.some((id) => scouts.has(id))),
-      ...patrols];
+    return [
+      { behaviour: military.id, commands: held.filter((command) =>
+        command.kind !== 'hold' || !command.squads.some((id) => scouts.has(id))) },
+      { behaviour: scouting.id, commands: patrols },
+    ];
   }
 
-  /** The D4 army: the field's orders, with patrols on the Squads the field left. */
+  /** The D4 army: the field's orders, with patrols on the Squads the field left, each named. */
   const scoutingBehaviour: Behaviour<SiegeVisible, Command> = { ...scouting, tactical: (context) => {
     const field = fieldOf(context);
+    const contributions = share(context, field, new Set());
     return scouting.tactical!(context).map((candidate) => ({ ...candidate,
-      reason: `${candidate.reason} ${field?.reason ?? ''}`.trim(), commands: share(context, field, new Set()) }));
+      reason: `${candidate.reason} ${field?.reason ?? ''}`.trim(),
+      commands: commandsOf(contributions), contributions }));
   } };
 
   /** The D5 army: the siege owns its Squads, and the field owns the rest. */
@@ -130,9 +141,15 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
     if (trimmed.length === 0) return [];
     const committed = new Set(trimmed.flatMap((candidate) => candidate.commands)
       .flatMap((command) => command.squads));
-    return trimmed.map((candidate) => ({ ...candidate,
-      reason: `${candidate.reason} ${field?.reason ?? ''}`.trim(),
-      commands: [...candidate.commands, ...share(context, field, committed)] }));
+    const shared = share(context, field, committed);
+    return trimmed.map((candidate) => {
+      const contributions: readonly Contribution<Command>[] = [
+        { behaviour: siege.id, commands: candidate.commands }, ...shared,
+      ];
+      return { ...candidate,
+        reason: `${candidate.reason} ${field?.reason ?? ''}`.trim(),
+        commands: commandsOf(contributions), contributions };
+    });
   } };
 
   const behaviours: Behaviour<SiegeVisible, Command>[] = [economy, military, scoutingBehaviour];

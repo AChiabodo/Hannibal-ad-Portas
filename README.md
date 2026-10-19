@@ -1233,6 +1233,7 @@ src/                application code
     economy.ts      settlement growth, production, recruitment and payroll planning
     military.ts     field defence, counters, reserves and withdrawal
     scouting.ts     exploration and last-known contact patrols
+    contacts.ts     the last-known contact memory and the age limit every planner reads
     siege.ts        Assault and Blockade prosecution
     difficulty.ts   Tiro, Centurio and Imperator settings
   input/            the Player's hands: a selection, control groups and a Controller (no engine imports)

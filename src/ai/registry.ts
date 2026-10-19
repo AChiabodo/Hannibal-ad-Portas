@@ -1,11 +1,27 @@
 import type { Observation } from '../sim/observation.ts';
 
+/**
+ * Which behaviour authored which Commands, when more than one contributed to a
+ * candidate. A contribution may be empty: the behaviour took part but every
+ * order it authored was superseded by another's.
+ */
+export interface Contribution<Command> {
+  readonly behaviour: string;
+  readonly commands: readonly Command[];
+}
+
 /** One proposed alternative; a signed whole utility and a reason explain its value. */
 export interface Candidate<Command> {
   readonly id: string;
   readonly utility: number;
   readonly reason: string;
   readonly commands: readonly Command[];
+  /**
+   * Who authored these Commands, when the composition root merged more than one
+   * behaviour into this candidate. A behaviour that stands alone leaves it unset
+   * and the Controller names it; the log always carries the attribution either way.
+   */
+  readonly contributions?: readonly Contribution<Command>[];
 }
 
 /** AI memory, never Match state. Its meaning belongs to the registered behaviours. */

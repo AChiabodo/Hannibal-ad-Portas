@@ -1,5 +1,5 @@
 import type { Observation } from '../sim/observation.ts';
-import { createBehaviourRegistry, type BehaviourRegistry, type StrategicCandidate, type StrategicPlan } from './registry.ts';
+import { createBehaviourRegistry, type BehaviourRegistry, type Contribution, type StrategicCandidate, type StrategicPlan } from './registry.ts';
 
 /** The calendar facts an AI reads; the simulation remains the calendar's owner. */
 export interface CalendarVisible {
@@ -12,6 +12,11 @@ export type AiLayer = 'strategic' | 'operational' | 'tactical';
 /** A scored alternative, including the Commands a selected alternative emits. */
 export interface ScoredCandidate<Command> extends StrategicCandidate<Command> {
   readonly behaviour: string | null;
+  /**
+   * Every behaviour that authored part of this candidate, with its own Commands.
+   * A single-behaviour candidate names itself; `idle` names none.
+   */
+  readonly contributions: readonly Contribution<Command>[];
 }
 
 /** One clock's decision, retained independently of the simulation's Command log. */
@@ -22,7 +27,8 @@ export interface AiDecision<Command> {
   readonly season: string;
   readonly layer: AiLayer;
   readonly candidates: readonly ScoredCandidate<Command>[];
-  readonly selected: { readonly behaviour: string | null; readonly id: string };
+  readonly selected: { readonly behaviour: string | null; readonly id: string;
+    readonly contributions: readonly Contribution<Command>[] };
 }
 
 /** Structurally a Controller: only Observation crosses in, only Commands cross out. */
@@ -88,7 +94,7 @@ export function createAi<Visible extends CalendarVisible, Command = never>(
       for (const layer of layers) {
         const candidates: ScoredCandidate<Command>[] = [
           { behaviour: null, id: 'idle', utility: 0,
-            reason: 'Keep the current plan and emit no Commands.', commands: [] },
+            reason: 'Keep the current plan and emit no Commands.', commands: [], contributions: [] },
         ];
         for (const behaviour of registry.behaviours) {
           const proposed = behaviour[layer]?.({ observation, plan: structuredClone(plan) }) ?? [];
@@ -103,7 +109,9 @@ export function createAi<Visible extends CalendarVisible, Command = never>(
             }
             if (candidate.reason.trim() === '') throw new Error(`${name}: a reason is required`);
             ids.add(candidate.id);
-            candidates.push(structuredClone({ ...candidate, behaviour: behaviour.id }));
+            const contributions = candidate.contributions ??
+              [{ behaviour: behaviour.id, commands: candidate.commands }];
+            candidates.push(structuredClone({ ...candidate, behaviour: behaviour.id, contributions }));
           }
         }
         // First wins a tie: idle at zero, then behaviour id and candidate id.
@@ -118,7 +126,7 @@ export function createAi<Visible extends CalendarVisible, Command = never>(
           faction: observation.faction, tick: observation.tick,
           year: observation.visible.year, season: observation.visible.season, layer,
           candidates,
-          selected: { behaviour: selected.behaviour, id: selected.id },
+          selected: { behaviour: selected.behaviour, id: selected.id, contributions: selected.contributions },
         });
         commands.push(...structuredClone(selected.commands));
       }

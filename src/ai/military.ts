@@ -1,7 +1,6 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Behaviour, Candidate } from './registry.ts';
-import type { EconomyObservation } from './economy.ts';
-import { planningContacts, type Contact } from './scouting.ts';
+import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 
 type Faction = Observation<unknown>['faction'];
@@ -40,10 +39,19 @@ interface MilitaryContent {
   readonly ticksPerSecond: number;
 }
 
+/**
+ * The slice of an economy Observation recruitment reads: the enemy composition
+ * it answers. Stated here rather than imported from `economy.ts`, so the
+ * military module depends on no other behaviour and can be registered alone.
+ */
+interface RecruitmentObservation {
+  readonly visible: { readonly enemies?: readonly { readonly type: string }[] };
+}
+
 /** Recruitment adjusts only preference; the economy retains all affordability gates. */
 export function createMilitaryRecruitment(content: MilitaryContent) {
   const types = new Map(content.squadTypes.map((type) => [type.id, type]));
-  return (observation: Observation<EconomyObservation>, typeId: string) => {
+  return (observation: RecruitmentObservation, typeId: string) => {
     const type = types.get(typeId);
     const observed = (observation.visible.enemies ?? []).flatMap((enemy) => {
       const known = types.get(enemy.type);

@@ -43,7 +43,9 @@ Each independent module exports a `Behaviour<Visible, Command>` with a stable
 
 `createBehaviourRegistry([economy, military, scouting])` composes the modules;
 adding one needs no edit to the registry or Controller. The registry snapshots
-the registrations and rejects duplicate or blank behaviour ids. Hooks are pure
+the registrations and rejects duplicate or blank behaviour ids. No behaviour
+module imports another: the contact memory and its age limit live in
+`ai/contacts.ts`, and each module reaches only for shared leaves. Hooks are pure
 functions of their context; retained strategic memory belongs in the plan,
 which is copied for each hook. A module may describe the narrow visible fields
 it needs and return inferred Command records (`kind: 'build' as const`, for
@@ -64,6 +66,13 @@ JSON. Every decision includes a built-in `idle` candidate at utility zero that
 keeps the current plan and emits nothing. Idle wins a zero tie; other ties use
 behaviour id then candidate id in UTF-16 code-unit order, independent of
 registration order. Negative candidates therefore cannot force an unwanted Command.
+
+A candidate may also carry `contributions`: the behaviours that took part in it,
+each with the Commands of its own that survived into the batch — possibly none,
+when another behaviour's orders superseded them. A module that stands alone
+leaves it unset and the Controller names the single author; the composition root
+sets it when it folds one behaviour's orders into another's candidate. Every
+logged candidate and the selected summary carry the attribution either way.
 
 ## Reading a Match
 
@@ -216,8 +225,9 @@ and never expire while in sight.
 
 The composition root merges patrols with the selected military field decision.
 Attacks, investigations and withdrawals take precedence; idle holds release
-the patrols. A higher-utility scouting candidate carries the combined Commands
-and both explanations. The general utility registry and its one-winner rule
+the patrols. A higher-utility scouting candidate carries the combined Commands,
+both explanations, and a `contributions` list naming scouting and the field with
+the Commands each authored. The general utility registry and its one-winner rule
 remain unchanged. Independent military and economy registries still work.
 
 `tests/ai/scouting.test.ts` checks frontier orders, eligibility, quota reduction,
@@ -234,7 +244,12 @@ not a tournament or browser rendering check.
 The JSON report adds `decisions`, sorted by tick, Rome before Carthage, and then
 strategic, operational, tactical. Each record names the Faction, tick, observed
 year and Season, layer, every candidate's behaviour/id/utility/reason/Commands
-(and proposed plan), and the selected behaviour/id. An absent hook contributes
+(and proposed plan), and the selected behaviour/id. `behaviour` names the
+proposer whose candidate won — for a merged candidate, the proposer alone, not
+the only author. Every candidate and the selected summary also carry
+`contributions`, so a merged candidate names each behaving module and the
+Commands it authored rather than attributing the whole batch to the proposer. An
+absent hook contributes
 no candidate; idle still explains the decision. `readLog()` returns the same
 history on an individual AI as a detached snapshot. Mutating a proposed
 candidate, a returned Command or a log snapshot cannot rewrite past decisions.

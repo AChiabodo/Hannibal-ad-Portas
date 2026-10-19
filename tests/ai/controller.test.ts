@@ -21,8 +21,8 @@ describe('the AI Controller', () => {
     expect(ai.readLog()).toEqual(['strategic', 'operational', 'tactical'].map((layer) => ({
       faction: 'rome', tick: 0, year: 1, season: 'spring', layer,
       candidates: [{ behaviour: null, id: 'idle', utility: 0,
-        reason: 'Keep the current plan and emit no Commands.', commands: [] }],
-      selected: { behaviour: null, id: 'idle' },
+        reason: 'Keep the current plan and emit no Commands.', commands: [], contributions: [] }],
+      selected: { behaviour: null, id: 'idle', contributions: [] },
     })));
   });
 
@@ -65,8 +65,41 @@ describe('the AI Controller', () => {
     expect(decision?.candidates.map(({ behaviour, id, utility }) => [behaviour, id, utility])).toEqual([
       [null, 'idle', 0], ['economy', 'granary', 7], ['economy', 'villa', 3], ['military', 'reserve', 7],
     ]);
-    expect(decision?.selected).toEqual({ behaviour: 'economy', id: 'granary' });
-    expect(ai.readLog().at(-1)?.selected).toEqual({ behaviour: null, id: 'idle' });
+    expect(decision?.selected).toEqual({ behaviour: 'economy', id: 'granary',
+      contributions: [{ behaviour: 'economy',
+        commands: [{ kind: 'build', faction: 'rome', settlement: 0, building: 'granary' }] }] });
+    expect(ai.readLog().at(-1)?.selected).toEqual({ behaviour: null, id: 'idle', contributions: [] });
+  });
+
+  it('names the behaviour that authored each candidate, and keeps a composed candidate\'s own attribution', () => {
+    const attack = { kind: 'attack' as const, faction: 'rome' as const, squads: [1], target: 9 };
+    const patrol = { kind: 'move' as const, faction: 'rome' as const, squads: [2], x: 4, y: 4 };
+    const registry = createBehaviourRegistry<Visible, Command>([
+      { id: 'economy', tactical: () => [
+        { id: 'granary', utility: 1, reason: 'Build the granary.',
+          commands: [{ kind: 'build', faction: 'rome', settlement: 0, building: 'granary' }] },
+      ] },
+      { id: 'scouting', tactical: () => [{ id: 'explore', utility: 5, reason: 'Explore with the field.',
+        commands: [patrol, attack],
+        contributions: [
+          { behaviour: 'military', commands: [attack] },
+          { behaviour: 'scouting', commands: [patrol] },
+        ] }] },
+    ]);
+    const ai = createAi({ ticksPerSecond: 10, registry });
+    ai.decide(look(0));
+    const tactical = ai.readLog().find((entry) => entry.layer === 'tactical')!;
+    const byId = (id: string) => tactical.candidates.find((candidate) => candidate.id === id)!;
+    expect(byId('idle').contributions).toEqual([]);
+    expect(byId('granary').contributions).toEqual([
+      { behaviour: 'economy', commands: [{ kind: 'build', faction: 'rome', settlement: 0, building: 'granary' }] },
+    ]);
+    expect(byId('explore').contributions).toEqual([
+      { behaviour: 'military', commands: [attack] },
+      { behaviour: 'scouting', commands: [patrol] },
+    ]);
+    expect(tactical.selected).toEqual({ behaviour: 'scouting', id: 'explore',
+      contributions: byId('explore').contributions });
   });
 
   it('carries the selected posture, budget and objective into the faster layers and later ticks', () => {
@@ -143,6 +176,7 @@ describe('the AI Controller', () => {
     expect(ai.readLog().at(-1)?.candidates[1]).toEqual({
       behaviour: 'military', id: 'hold', utility: 4, reason: 'Keep a reserve.',
       commands: [{ kind: 'hold', faction: 'rome', squads: [1] }],
+      contributions: [{ behaviour: 'military', commands: [{ kind: 'hold', faction: 'rome', squads: [1] }] }],
     });
   });
 

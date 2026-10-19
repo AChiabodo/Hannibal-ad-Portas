@@ -1,14 +1,9 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Behaviour } from './registry.ts';
+import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, type Difficulty } from './difficulty.ts';
 
 interface Site { readonly x: number; readonly y: number }
-export interface Contact extends Site {
-  readonly id: number;
-  readonly kind: 'squad' | 'settlement' | 'stronghold';
-  readonly seen: number;
-  readonly type: string | null;
-}
 export interface ScoutingObservation {
   readonly year: number;
   readonly season: string;
@@ -37,12 +32,6 @@ export interface ScoutingContent {
 }
 type Move = { readonly kind: 'move'; readonly faction: Observation<unknown>['faction'];
   readonly squads: readonly number[]; readonly x: number; readonly y: number };
-
-/** Stale sightings remain historical fog data, but cease to be planning evidence. */
-export function planningContacts(contacts: readonly Contact[], tick: number, ticksPerSecond: number): Contact[] {
-  return contacts.filter((contact) => tick >= contact.seen &&
-    tick - contact.seen < ticksPerSecond * (contact.kind === 'squad' ? 120 : 600));
-}
 
 /** A light detachment explores reachable known ground at the edge of the unknown. */
 export function createScoutingBehaviour(content: ScoutingContent, difficulty: Difficulty = DIFFICULTY.centurio): Behaviour<ScoutingObservation, Move> {

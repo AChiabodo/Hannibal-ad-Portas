@@ -74,6 +74,18 @@ describe('scouting through a Match Observation', () => {
     });
     expect(replay.hash).toBe(run.hash);
   });
+
+  it('attributes a composed scouting decision to the field and the patrols that authored its Commands', () => {
+    const run = playAiMatch(7, 601);
+    const entry = run.decisions.find((decision) => decision.selected.behaviour === 'scouting')!;
+    const selected = entry.candidates.find((candidate) => candidate.id === entry.selected.id)!;
+    expect(entry.selected.contributions.map((contribution) => contribution.behaviour)).toEqual(['military', 'scouting']);
+    expect(entry.selected.contributions).toEqual(selected.contributions);
+    const patrols = entry.selected.contributions.find((contribution) => contribution.behaviour === 'scouting')!.commands;
+    expect(patrols.length).toBeGreaterThan(0);
+    expect(patrols.every((command) => command.kind === 'move')).toBe(true);
+  }, 30000);
+
   it('does not expose changes to an unobserved minor settlement front', () => {
     const world = siegeMatchRules.createWorld(7);
     const before = structuredClone(observeSiege(world, 'rome'));

@@ -1,6 +1,6 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Behaviour, Candidate } from './registry.ts';
-import { planningContacts, type Contact } from './scouting.ts';
+import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 
 type Faction = Observation<unknown>['faction'];

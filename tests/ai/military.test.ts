@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { createAi } from '../../src/ai/controller.ts';
+import { createMilitaryBehaviour } from '../../src/ai/military.ts';
+import { createBehaviourRegistry } from '../../src/ai/registry.ts';
+import { DIFFICULTY } from '../../src/ai/difficulty.ts';
 import { militaryRegistry } from '../../src/cli/ai-match.ts';
+import { SQUAD_TYPES } from '../../src/content/squads.ts';
+import { MATCHUP } from '../../src/content/arms.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
 import type { Command } from '../../src/sim/command.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
+import { FATIGUE_MAX } from '../../src/sim/squad.ts';
 import { observeSiege, siegeMatchRules, type SiegeVisible } from '../../src/sim/siege.ts';
 
 function ai() {
@@ -25,6 +31,19 @@ function battlefield(): SiegeVisible {
 }
 
 describe('the military Controller', () => {
+  it('stands alone: registered without the economy or scouting, it still plans from its own contact memory', () => {
+    const registry = createBehaviourRegistry<SiegeVisible, Command>([
+      createMilitaryBehaviour({ squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX,
+        ticksPerSecond: TICK_HZ }, DIFFICULTY.centurio),
+    ]);
+    const controller = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry });
+    const visible: SiegeVisible = { ...battlefield(), enemies: [],
+      contacts: [{ kind: 'squad', id: 99, type: 'gaul', x: 30, y: 20, seen: 0 }] };
+    const commands = controller.decide({ faction: 'rome', tick: 1, visible });
+    expect(commands).toContainEqual({ kind: 'move', faction: 'rome', squads: [0], x: 30, y: 20 });
+    expect(controller.readLog().find((entry) => entry.layer === 'tactical')?.selected.behaviour).toBe('military');
+  });
+
   it('allocates a line to a threatened settlement and logs a per-region threat assessment', () => {
     const controller = ai();
     const commands = controller.decide({ faction: 'rome', tick: 0, visible: battlefield() });

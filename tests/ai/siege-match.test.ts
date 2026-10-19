@@ -52,6 +52,40 @@ describe('the shipped siege AI in a headless Match', () => {
     expect(replayOf(7, 'centurio')).toBe(runOf(7, HEADLESS_TICKS, 'centurio').hash);
   }, 60000);
 
+  it('attributes a composed siege decision to the siege, the field and the patrols that authored its Commands', () => {
+    const run = runOf(1, HEADLESS_TICKS, 'centurio');
+    const entry = run.decisions.find((decision) => decision.selected.behaviour === 'siege')!;
+    const selected = entry.candidates.find((candidate) => candidate.id === entry.selected.id)!;
+    expect(entry.selected.contributions.map((contribution) => contribution.behaviour))
+      .toEqual(['siege', 'military', 'scouting']);
+    expect(entry.selected.contributions).toEqual(selected.contributions);
+    const orders = entry.selected.contributions.find((contribution) => contribution.behaviour === 'siege')!.commands;
+    expect(orders.length).toBeGreaterThan(0);
+    expect(orders.every((command) => command.kind === 'assault' || command.kind === 'blockade'
+      || command.kind === 'withdraw')).toBe(true);
+  }, 60000);
+
+  it('never attributes the field\'s attack to the behaviour whose candidate merged it', () => {
+    const run = runOf(1, HEADLESS_TICKS, 'centurio');
+    // Only the field authors these: patrols move, and the siege assaults, blockades or withdraws.
+    const fieldOnly = new Set(['attack', 'hold']);
+    const merged = run.decisions.filter((entry) => entry.selected.behaviour !== 'military' &&
+      entry.selected.contributions.some((contribution) => contribution.behaviour === 'military'));
+    const fieldCommands = merged.flatMap((entry) => entry.selected.contributions
+      .filter((contribution) => contribution.behaviour === 'military')
+      .flatMap((contribution) => contribution.commands));
+    // The field really does act — including an attack — inside another behaviour's winning candidate.
+    expect(merged.length).toBeGreaterThan(0);
+    expect(fieldCommands.some((command) => command.kind === 'attack')).toBe(true);
+    // ...and no other contribution claims one of its orders, so the entry never reads as if the
+    // proposer ordered the attack itself.
+    const misattributed = merged.flatMap((entry) => entry.selected.contributions
+      .filter((contribution) => contribution.behaviour !== 'military')
+      .flatMap((contribution) => contribution.commands)
+      .filter((command) => fieldOnly.has(command.kind)));
+    expect(misattributed).toEqual([]);
+  }, 60000);
+
   /**
    * The whole army still finishes the war at every other level too: a Match
    * ends with a Stronghold fallen — Rome by Assault, Carthage by Blockade — and

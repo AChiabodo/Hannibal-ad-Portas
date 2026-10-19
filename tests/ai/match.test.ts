@@ -18,11 +18,14 @@ describe('two AI Controllers in a headless Match', () => {
       { tick: 0, command: { kind: 'build', faction: 'rome', settlement: 0, building: 'granary' } },
       { tick: 0, command: { kind: 'build', faction: 'carthage', settlement: 1, building: 'granary' } },
     ]);
-    expect(run.decisions[0]?.selected).toEqual({ behaviour: 'military', id: 'defend' });
-    expect(run.decisions[1]?.selected).toEqual({ behaviour: 'economy', id: 'granary' });
+    expect(run.decisions[0]?.selected).toEqual({ behaviour: 'military', id: 'defend',
+      contributions: [{ behaviour: 'military', commands: [] }] });
+    expect(run.decisions[1]?.selected).toEqual({ behaviour: 'economy', id: 'granary',
+      contributions: [{ behaviour: 'economy',
+        commands: [{ kind: 'build', faction: 'rome', settlement: 0, building: 'granary' }] }] });
     expect(run.decisions[2]?.candidates).toContainEqual({
       behaviour: 'scouting', id: 'explore', utility: -1,
-      reason: 'No light Squad has been observed.', commands: [],
+      reason: 'No light Squad has been observed.', commands: [], contributions: [{ behaviour: 'scouting', commands: [] }],
     });
     const replay = runMatch({
       seed: 7, ticks: 301, rules: siegeMatchRules, observe: observeSiege, outcome: siegeMatchOutcome,

@@ -1,14 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { createAi } from '../../src/ai/controller.ts';
-import { scoutingRegistry } from '../../src/cli/ai-match.ts';
+import { createScoutingBehaviour } from '../../src/ai/scouting.ts';
+import { createBehaviourRegistry } from '../../src/ai/registry.ts';
+import { DIFFICULTY } from '../../src/ai/difficulty.ts';
+import { scoutingRegistry, militaryRegistry } from '../../src/cli/ai-match.ts';
+import { SQUAD_TYPES } from '../../src/content/squads.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
 import type { Command } from '../../src/sim/command.ts';
+import { SQUAD_VISION, UNSEEN } from '../../src/sim/fog.ts';
+import { MAP_WIDTH, MAP_HEIGHT, TERRAIN } from '../../src/sim/map.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
 import { observeSiege, siegeMatchRules } from '../../src/sim/siege.ts';
 import type { SiegeVisible } from '../../src/sim/siege.ts';
-import { militaryRegistry } from '../../src/cli/ai-match.ts';
 
 describe('the scouting Controller', () => {
+  it('stands alone: registered without the field, it still sends a light Squad to the frontier', () => {
+    const registry = createBehaviourRegistry<SiegeVisible, Command>([
+      createScoutingBehaviour({ width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
+        vision: SQUAD_VISION, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
+        scoutTypes: ['hastati', 'gaul', 'numidian-horse'] }, DIFFICULTY.centurio),
+    ]);
+    const world = siegeMatchRules.createWorld(7);
+    const home = world.economy.settlements[0]!;
+    const squad = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: home.x, y: home.y });
+    const controller = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry });
+    const commands = controller.decide({ faction: 'rome', tick: 0, visible: observeSiege(world, 'rome') });
+    const move = commands.find((command) => command.kind === 'move');
+    expect(move).toBeDefined();
+    if (move?.kind !== 'move') return;
+    expect(move.squads).toEqual([squad.id]);
+    expect(controller.readLog().find((entry) => entry.layer === 'tactical')?.selected.behaviour).toBe('scouting');
+  });
+
   it('plans a march against a recent last-known enemy and stops trusting it after two minutes', () => {
     const world = siegeMatchRules.createWorld(7);
     const home = world.economy.settlements[0]!;
