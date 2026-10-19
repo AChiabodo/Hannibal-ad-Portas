@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { findAssetFiles } from '../../scripts/guards/asset-files.mjs';
+import { findAiSimulationImports } from '../../scripts/guards/ai-boundary.mjs';
 import { findAmbientNondeterminismReachableFromSimulation } from '../../scripts/guards/ambient-globals.mjs';
 import { findMathRandomViolations } from '../../scripts/guards/find-math-random.mjs';
 import { findRendererOutsideRender } from '../../scripts/guards/render-boundary.mjs';
@@ -25,6 +26,7 @@ describe('the repository itself', () => {
     expect(files.length).toBeGreaterThan(0);
     expect(findMathRandomViolations(files, { root: REPO_ROOT })).toEqual([]);
     expect(findRendererReachableFromSimulation(REPO_ROOT)).toEqual([]);
+    expect(findAiSimulationImports(REPO_ROOT)).toEqual([]);
     expect(findRendererOutsideRender(REPO_ROOT)).toEqual([]);
     expect(findTranscendentalMathReachableFromSimulation(REPO_ROOT)).toEqual([]);
     expect(findAmbientNondeterminismReachableFromSimulation(REPO_ROOT)).toEqual([]);

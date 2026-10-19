@@ -126,6 +126,11 @@ A single order a Controller emits. The set of Commands is the game's entire publ
 _UI_: Ordine
 _Avoid_: Action, instruction, order (as a synonym for Command)
 
+**Difficulty level**:
+How hard a built-in AI opponent thinks: Tiro, Centurio or Imperator. It changes planning horizon, aggression, reaction time and scouting quality, and nothing else — never resources, production or vision, which belong to the rules. “Level” here means one of these AI settings; a settlement's progression is its Tier.
+_UI_: —
+_Avoid_: setting
+
 **Squad**:
 The atomic unit that is ordered, moved and fought: one block of soldiers with aggregate strength, morale and facing. The individual soldiers inside a Squad exist only as rendering.
 _UI_: Reparto
@@ -152,6 +157,11 @@ _Avoid_: Speed (reserve "speed" for the three settings a Match runs at), rate, v
 The stretch of map a Faction draws supply from, inferred from the settlements it holds: the ground within reach of them, and nothing drawn by hand. A Squad outside its own Territory suffers Attrition.
 _UI_: Territorio
 _Avoid_: Borders, land, zone of control, influence
+
+**Front**:
+One settlement's Siege as a Faction reads it: the path being followed, any breach in its walls, the ram at them, the garrison on them, and how far a hold has got. A front is *sighted*, not announced: it is shown only to the settlement's owner, to the Faction besieging it, or to a Faction one of whose own eyes covers it — an open settlement with no wall to keep a secret included (ADR-0020).
+_UI_: Fronte
+_Avoid_: Sector, battle-line, and using "front" for the Aspect sense (that is a target's facing)
 
 **Siege**:
 The contest over a settlement, conducted either as an Assault or as a Blockade. The two paths are alternatives, not stages.
@@ -258,7 +268,7 @@ _Avoid_: City, town, base, colony (a Stronghold and a minor settlement are both 
 **Tier**:
 One of the three steps of a settlement's growth — raised by the building that raises it — and the gate on which Squad types it may raise. The progression is the tiers, and there is no technology tree beside them.
 _UI_: Livello
-_Avoid_: Level, age, era, upgrade
+_Avoid_: Level for a settlement's progression, age, era, upgrade
 
 **Labour allocation**:
 How a settlement's population is divided between its works and its land. There is no Command for it: it follows from what the settlement has built and who lives in it.

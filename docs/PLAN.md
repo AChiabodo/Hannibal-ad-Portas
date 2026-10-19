@@ -39,6 +39,10 @@ Boundaries are enforced in CI, because they are what makes headless testing poss
 - **`sim/`** — the Match: map, visibility, seasons, economy, Squads, combat, siege, victory. Pure TypeScript. Imports nothing from `render/`, `art/`, `ui/` or `ai/`, and never `pixi.js`.
 - **`content/`** — Factions, Squad types, buildings, costs, as typed TypeScript data. No runtime parsing, no fetching. Fenced as part of the simulation, on the same terms as `ai/`.
 - **`ai/`** — Controllers that reason. May import an Observation's *types*; never the internals of `sim/`. Fenced as part of the simulation: nothing reachable from here may import `pixi.js` or use arithmetic ECMA-262 leaves implementation-approximated.
+
+D1's [AI contract](AI.md) documents the three clocks, independent behaviour
+registration and scored decision logs. The AI import fence follows local helpers
+and re-exports, and is enforced by `guard` and `build`.
 - **`art/`** — pure pixel generators: `PixelBuffer` in, `PixelBuffer` out. Never imports `pixi.js`, enforced by the render allow-list.
 - **`audio/`** — score and effects described as data, synthesized by a WebAudio adapter.
 - **`render/`** — the only place `pixi.js` exists, enforced. Converts `PixelBuffer` into `BufferImageSource`; owns camera, culling and picking.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createFogs } from '../../src/sim/fog.ts';
 import { assault, blockade, garrison, hold, type Command } from '../../src/sim/command';
 import { engagedPairs } from '../../src/sim/combat';
 import { idleController } from '../../src/sim/controller';
@@ -62,6 +63,7 @@ function stage(options: { readonly minor?: Site } = {}): SiegeWorld {
     autumns: 0,
     winters: 0,
     siege: createSiege(map, economy),
+    fog: createFogs(),
   };
 }
 
@@ -137,9 +139,22 @@ describe('the walls a Siege has', () => {
 
   it('leaves a minor settlement open, so there is nothing to break and nothing to starve', () => {
     const world = stage({ minor: { x: 40, y: 40 } });
+    muster(world, 'rome', 'hastati', { x: 40, y: 39 });
     const seen = observeSiege(world, 'rome').fronts.find((front) => front.settlement === 2);
 
     expect(seen).toMatchObject({ structures: [], breached: false, siege: null });
+  });
+
+  it('sights an open settlement through the fog, and does not announce one nobody can see', () => {
+    const world = stage({ minor: { x: 40, y: 40 } });
+
+    // An open settlement has no wall to keep a secret, and that is still not a
+    // licence to skip the fog: no eye, no front (ADR-0020).
+    expect(observeSiege(world, 'rome').fronts.map((front) => front.settlement)).toEqual([0]);
+
+    muster(world, 'rome', 'hastati', { x: 40, y: 39 });
+
+    expect(observeSiege(world, 'rome').fronts.map((front) => front.settlement)).toEqual([0, 2]);
   });
 
   it('keeps the walls of a Stronghold a Faction has never marched on out of its Observation', () => {

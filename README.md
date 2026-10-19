@@ -24,11 +24,11 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | Command             | What it does                                                          |
 | ------------------- | --------------------------------------------------------------------- |
 | `npm run dev`       | Development server on `http://127.0.0.1:5173/`, with the Atelier on `/atelier.html` |
-| `npm run build`     | Type-checks, then builds the static site into `dist/`                  |
+| `npm run build`     | Checks the architectural fences and types, then builds into `dist/`   |
 | `npm run preview`   | Serves the built site on `http://127.0.0.1:5174/`                      |
 | `npm run check`     | TypeScript in strict mode, all three projects, no emit                 |
 | `npm run lint`      | ESLint over the repository                                             |
-| `npm run guard`     | The six fences: `pixi.js` under `render/`, no `Math.random`, transcendentals or ambient clock in the simulation, no committed asset |
+| `npm run guard`     | The seven fences: rendering boundaries, deterministic simulation, no committed asset, AI Observation imports |
 | `npm run match`     | One whole Match headless as a JSON report, or — with `--map` — the map a seed generates, with no build step |
 | `npm run bake`      | Writes the whole generated catalogue into `artifacts/` as PNGs, with the pixel hash of each, for inspection |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
@@ -40,7 +40,7 @@ with `--with-deps` in its own step.
 
 ## The fences
 
-Six architectural rules are cheap now and expensive later, so CI enforces them
+Seven architectural rules are cheap now and expensive later, so CI enforces them
 on every push:
 
 1. **Nothing reachable from the simulation may import the rendering engine**
@@ -75,6 +75,9 @@ on every push:
    generator the moment either changes (PLAN §2.1, ADR-0002). The fence reads file
    names, and says so: it does not look inside a file, and it cannot see an asset
    pasted into a source file as a string.
+7. **The AI may import only Observation types from the simulation.** The fence
+   follows local helpers and re-export barrels too, refuses unresolved imports,
+   and runs before every build. See [docs/AI.md](docs/AI.md) for the contract.
 
 The walk behind the `Math.random`, transcendental and ambient checks is
 syntactic, and it says so instead of pretending to be complete. It sees a global
@@ -85,7 +88,7 @@ spelled out — `Math.random`, `Math["random"]`, `Math?.random`,
 and `new Date()` all pass the guard today. A green tick means the ordinary
 spellings are absent, not that no other spelling exists.
 
-`npm run guard` walks all six fences. On a breach it prints the offending file,
+`npm run guard` walks all seven fences. On a breach it prints the offending file,
 the line, and — for reachability — the chain that got there. One file can breach
 two of them, which is why they stay separately labelled: naming the wrong rule is
 worse than reporting both.
@@ -103,6 +106,18 @@ through an import says so instead of staying quiet. None of the fences walks
 *inside* a bare package import — the guard does not resolve `node_modules` — so
 today's simulation imports nothing but its own modules, and the day it imports a
 package, the fence sees the dependency rather than what is inside it.
+
+## The AI foundation
+
+`npm run match -- --rules ai --seed 1 --ticks 2101` runs two AI Controllers
+headlessly across a Season boundary. Its JSON report includes every strategic,
+operational and tactical decision, all candidate utilities and reasons, and the
+selected candidate. The economy policy grows settlements and recruits against
+recurring Payroll capacity; the military policy defends observed threats,
+chooses counters, commits reserves and withdraws beaten Squads. Shipped scouting
+keeps last-known contacts current, and the siege policy chooses between Assault
+and Blockade. See
+[docs/AI.md](docs/AI.md) for clocks, registration and log interpretation.
 
 ## The deterministic core
 
@@ -578,8 +593,11 @@ besiegers — and the besieger has to close the ring again.
 **A minor settlement is taken by holding its centre**, and nothing is razed. An
 open settlement has no wall to break and nothing to starve: a Squad that stands on
 its tile, uncontested, for `CAPTURE_HOLDS` checks takes it, and its people, its
-works and its stocks stay. Only a Stronghold's fall ends the Match, and the result
-names it as the reason:
+works and its stocks stay. An open settlement is still seen through the Faction's
+own fog, though: no wall to keep a secret is not a licence to skip an eye, so an
+unseen village's front is absent from the Observation until a Squad or settlement
+of the Faction looks at it (ADR-0020). Only a Stronghold's fall ends the Match,
+and the result names it as the reason:
 
 ```
 npm run match -- --seed 1 --ticks 9000 --rules assault
@@ -590,7 +608,7 @@ npm run match -- --seed 1 --ticks 9000 --rules assault
   "winner": "rome",
   "reason": "rome won the Match: the carthage Stronghold fell to an assault",
   "commands": 2,
-  "hash": "f854cb39e4a9e78d"
+  "hash": "36bbe60e3694f897"
 }
 ```
 
@@ -606,7 +624,7 @@ npm run match -- --seed 1 --ticks 9000 --rules blockade
   "winner": "rome",
   "reason": "rome won the Match: the carthage Stronghold fell to a blockade",
   "commands": 2,
-  "hash": "fa7cc9b8808efefd"
+  "hash": "b83b7b0d7e917f0c"
 }
 ```
 
@@ -617,12 +635,16 @@ against the assault's 251 is the asymmetry the ticket is about, in one pair of
 numbers — three Seasons of siege to twenty-five seconds of storm. The blockade's
 hash moved when C6 landed, because the Roman army at those walls now winters
 outside its own country and Attrition takes its men: ADR-0006 says a moved hash is
-a decision in review, and that was the decision.
+a decision in review, and that was the decision. Both hashes moved again when D4
+landed: the Siege world now carries each Faction's fog, that fog is hashed state,
+and an open settlement's front is sighted through it rather than announced to
+everyone who can read the map (ADR-0020). ADR-0006 says a moved hash is a decision
+in review, and that was the decision too.
 
 **What C5 does not own.** No siege towers, multiple ladders, mines or artillery:
-the plan excludes them from v1. No decision about when to assault and when to
-blockade, which is D5's; `observeSiege` carries the walls, the breach, the ram,
-the hold and the garrison for it to decide with, and nothing more. The page still
+the plan excludes them from v1. The shipped D5 siege policy chooses when to
+Assault and when to Blockade from the walls, breach, ram, hold and garrison in
+`observeSiege`. The page still
 plays the economy Match, so a wall is something the CLI and the tests exercise
 rather than something drawn on screen yet: putting the walls in the interface is
 B7's and E4's, and `observeSiege` is the projection they will read.
@@ -1182,6 +1204,7 @@ src/                application code
     movement.ts     the moving half of a Squad: routes, refused orders, and the Commands obeyed
     combat.ts       the fight: contact, the matchup, flanking, fatigue, missiles, rout and rally
     siege.ts        walls, the Roman ram, the assault, the blockade and the fall of a Stronghold
+    siege-fog.ts    the siege world's fog contacts, and the typed kind each memory holds
     territory.ts    the country a Faction's settlements give it, and what a Season outside it costs
     residue.ts      the dead, kept beside the Match because they fade and never enter a hash
   content/          the typed tables the rules read: resources, Squad types, arms, buildings
@@ -1197,6 +1220,7 @@ src/                application code
   cli/              the headless Match as a command
     arguments.ts    what the command line means, and what it refuses
     rules.ts        the Matches a run can play, by name, and what each draws
+    ai-match.ts     composing economy, military, scouting and siege policies for headless AI Matches
     run.ts          playing one Match, and the hash invariant the CLI checks
     dump.ts         the map a seed generates, written out for inspection
     report.ts       the JSON report, ordered and free of anything that varies
@@ -1204,6 +1228,17 @@ src/                application code
     png.ts          a PNG encoder in the repository's own code, for the bake step
     bake.ts         the catalogue written out as files, and the table it prints
     bake-main.ts    the bake command: standard output, standard error, exit codes
+  ai/               the built-in Controller, registered behaviours and difficulty levels
+    controller.ts   three decision clocks, utility selection and replayable decision logs
+    registry.ts     behaviour registration and deterministic candidate ordering
+    economy.ts      settlement growth, production, recruitment and payroll planning
+    military.ts     field defence, counters, reserves and withdrawal
+    scouting.ts     exploration and last-known contact patrols
+    contacts.ts     the last-known contact memory and the age limit every planner reads
+    calendar.ts     the four Seasons a policy reads, as the AI's own closed word set
+    site.ts         the tile a policy plans about, and the one Chebyshev distance between two
+    siege.ts        Assault and Blockade prosecution
+    difficulty.ts   Tiro, Centurio and Imperator settings
   input/            the Player's hands: a selection, control groups and a Controller (no engine imports)
     selection.ts    what a Player has picked, and how a click or a drag picks it
     human.ts        the human Controller: an order becomes a Command on the next tick
@@ -1239,8 +1274,8 @@ docs/PLAN.md        the plan of record
 docs/COMMANDS.md    the Command vocabulary an external agent is written from
 ```
 
-Further modules from the plan's architecture (`ai/`, `audio/`)
-arrive with the tickets that need them, under `src/`.
+Further modules from the plan's architecture (`audio/`) arrive with the tickets
+that need them, under `src/`.
 
 ## Continuous integration
 

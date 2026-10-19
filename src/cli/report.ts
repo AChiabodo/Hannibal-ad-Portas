@@ -13,9 +13,15 @@
  * Stronghold falls or a Faction is annihilated, and the sentence says which, and
  * by which path of the Siege.
  */
-import type { SiegePath } from '../sim/command.ts';
+import type { Command, SiegePath } from '../sim/command.ts';
+import type { AiDecision } from '../ai/controller.ts';
 import type { MatchResult, MatchRun, VictoryReason } from '../sim/driver.ts';
 import type { Faction } from '../sim/faction.ts';
+
+/** Ordinary harness runs keep their existing report; AI runs add explanations. */
+export interface ReportableRun extends MatchRun {
+  readonly decisions?: readonly AiDecision<Command>[];
+}
 
 /** The report of one finished Match, in the order it is written to standard output. */
 export interface MatchReport {
@@ -39,16 +45,20 @@ export interface MatchReport {
 
   /** The state hash the Match ended on: the fingerprint two runs are compared by (ADR-0006). */
   readonly hash: string;
+
+  /** Present for AI runs, in tick/Faction/layer order, including idle decisions. */
+  readonly decisions?: readonly AiDecision<Command>[];
 }
 
 /** Reads a finished Match into the shape the CLI prints. */
-export function reportOf(run: MatchRun): MatchReport {
+export function reportOf(run: ReportableRun): MatchReport {
   return {
     seed: run.seed,
     ticks: run.result.tick,
     ...verdictOf(run.result),
     commands: run.log.length,
     hash: run.hash,
+    ...(run.decisions === undefined ? {} : { decisions: run.decisions }),
   };
 }
 
