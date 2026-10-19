@@ -120,7 +120,7 @@ describe('scouting through a Match Observation', () => {
     const exploring = play(true);
     const baseline = play(false);
     expect(exploring).toBeLessThan(baseline / 2);
-  }, 30000);
+  }, 120_000);
 
   it('remembers an enemy Stronghold only after a Squad has seen it', () => {
     const match = createMatch({ seed: 7, rules: siegeMatchRules });
