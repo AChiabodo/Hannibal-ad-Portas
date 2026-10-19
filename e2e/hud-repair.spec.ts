@@ -10,6 +10,65 @@ import type { Faction } from '../src/sim/faction';
 
 const EVIDENCE = join(tmpdir(), 'spqr-issue52');
 
+test('an overflowing live list keeps selection through wheel, page keys, buttons and hooks', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/e2e/hud-fixture.html');
+  // The public game composition accepts a size. A short test canvas makes the
+  // real opening roster overflow, without adding a scenario/Command backdoor.
+  await page.evaluate(async () => {
+    const stagePath = '/src/render/stage.ts';
+    const gamePath = '/src/render/game.ts';
+    const controlsPath = '/src/render/controls.ts';
+    const mapPath = '/src/sim/map.ts';
+    const fogPath = '/src/sim/fog.ts';
+    const { createStage, frameReport } = await import(stagePath);
+    const { createGame } = await import(gamePath);
+    const { bindControls } = await import(controlsPath);
+    const { generateMap } = await import(mapPath);
+    const { createFog, viewOf, refreshVision } = await import(fogPath);
+    const size = { width: 640, height: 320 };
+    const stage = await createStage(document.getElementById('app'), { ...size, background: [20, 17, 13, 255] });
+    const map = generateMap(7);
+    const fog = createFog();
+    const game = createGame({ stage, seed: 7, size, world: stage.root,
+      camera: () => ({ x: 0, y: 0, zoom: 2 }), viewport: () => ({ x: 0, y: 0, ...size }),
+      fog: () => viewOf(fog), vision: (eyes: unknown) => refreshVision(fog, map, eyes),
+    });
+    game.hooks.pause();
+    bindControls(stage, { ...game.hooks, zoom: () => 2, panBy: () => {}, zoomAbout: () => {},
+      clearSelection: () => game.hooks.select(null),
+      togglePause: () => game.hooks.paused() ? game.hooks.resume() : game.hooks.pause(),
+    });
+    window.__SPQR = { boot: { booted: true, render: frameReport(stage) }, game: game.hooks, view: null, atelier: null };
+  });
+  const getLayout = () => page.evaluate(() => window.__SPQR.game!.hudLayout());
+  const first = await getLayout();
+  expect(first.listScroll.max).toBeGreaterThan(0);
+  await page.evaluate(() => window.__SPQR.game!.select({ kind: 'squad', id: 1 }));
+  const hash = await page.evaluate(() => window.__SPQR.game!.hash());
+  const box = (await page.locator('#app canvas').boundingBox())!;
+  await page.mouse.move(box.x + 40, box.y + first.list.y + 40);
+  await page.mouse.wheel(0, 240);
+  await expect.poll(async () => (await getLayout()).listScroll.offset).toBeGreaterThan(0);
+  await page.keyboard.press('PageUp');
+  expect((await getLayout()).listScroll.offset).toBe(0);
+  await page.keyboard.press('a');
+  const down = first.buttons.find((button) => button.action === 'listNext')!;
+  await page.mouse.click(box.x + down.rect.x + 8, box.y + down.rect.y + 8);
+  expect((await getLayout()).listScroll.offset).toBeGreaterThan(0);
+  await page.keyboard.press('PageDown');
+  expect((await getLayout()).listScroll.offset).toBe(first.listScroll.max);
+  expect(await page.evaluate(() => window.__SPQR.game!.selection().squads)).toEqual([1]);
+  expect(await page.evaluate(() => window.__SPQR.game!.hash())).toBe(hash);
+  await page.evaluate(() => window.__SPQR.game!.scrollHud('list', -999));
+  expect((await getLayout()).listScroll.offset).toBe(0);
+  await page.evaluate(() => window.__SPQR.game!.scrollHud('list', 999));
+  await page.keyboard.press('Escape');
+  const last = (await getLayout()).rows.at(-1)!;
+  await page.mouse.click(box.x + last.rect.x + 4, box.y + last.rect.y + 2);
+  expect(await page.evaluate(() => window.__SPQR.game!.selection().squads)).toEqual([last.selection.id]);
+});
+
 for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
   test(`pause and secondary scrolling share pointer, keyboard and hooks at ${viewport.width}`, async ({ page, spqr }) => {
     await page.setViewportSize(viewport);
@@ -35,6 +94,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 108
     await page.keyboard.press('Shift+PageUp');
     expect((await getLayout()).detailScroll.offset).toBe(0);
     const down = initial.buttons.find((button) => button.action === 'detailNext')!;
+    await page.keyboard.press('a');
     await page.mouse.click(box.x + down.rect.x + 8, box.y + down.rect.y + 8);
     expect((await getLayout()).detailScroll.offset).toBeGreaterThan(0);
     await page.evaluate(() => window.__SPQR.game!.scrollHud('detail', -999));
@@ -45,6 +105,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 108
     await mkdir(EVIDENCE, { recursive: true });
     await page.screenshot({ path: join(EVIDENCE, `live-paused-${viewport.width}.png`) });
     const pause = initial.buttons.find((button) => button.action === 'pause')!;
+    await page.keyboard.press('a');
     await page.mouse.click(box.x + pause.rect.x + 8, box.y + pause.rect.y + 8);
     expect(await page.evaluate(() => window.__SPQR.game!.paused())).toBe(false);
     expect((await getLayout()).text.map((line) => line.text)).toContain('IN CORSO');

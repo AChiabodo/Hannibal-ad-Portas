@@ -98,8 +98,8 @@ export interface HudDetail {
   readonly title: string;
   /** The figures that matter, in the order a Player reads them. */
   readonly lines: readonly HudLine[];
-  /** Order/refusal, or the first active Work: kept above the scrolling figures. */
-  readonly priority: readonly HudLine[];
+  /** Indices of Order/refusal or the first active Work, above the scrolling figures. */
+  readonly priority: readonly number[];
 }
 
 /** Presentation memory only; never part of the Match. Offsets count bitmap text lines. */
@@ -346,10 +346,13 @@ export function hudLayout(model: HudModel, size: HudSize): HudLayout {
   let secondary: string[] = [];
   if (model.detail !== null) {
     place(wrapText(model.detail.title, width), priority);
-    for (const line of model.detail.priority) place(wrapText(`${line.label}: ${line.value}`, width), priority);
+    for (const index of model.detail.priority) {
+      const line = model.detail.lines[index];
+      if (line !== undefined) place(wrapText(`${line.label}: ${line.value}`, width), priority);
+    }
     detailY += PADDING;
     secondary = model.detail.lines
-      .filter((line) => !model.detail?.priority.some((pinned) => pinned.label === line.label && pinned.value === line.value))
+      .filter((_line, index) => !model.detail?.priority.includes(index))
       .flatMap((line) => wrapText(`${line.label}: ${line.value}`, width));
   }
   const detailScroll = scrollWindow(model.view.detailOffset ?? 0, secondary.length, detail.y + detail.height - 2 * LINE_STEP - PADDING - detailY);
@@ -560,29 +563,23 @@ function detail(
     const settlement = visible.settlements.find((candidate) => candidate.id === selected.id);
     if (settlement === undefined) return null;
 
-    const lines = settlementLines(settlement);
-    const active = settlement.works.findIndex((work) => !work.standing);
-    const work = lines.filter((line) => line.label === translate('ui.works'))[Math.max(0, active)];
     return {
       title: message('ui.listItem', { name: settlementName(settlement, strongholds), id: settlement.id }),
-      lines,
-      priority: work === undefined ? [] : [work],
+      ...settlementLines(settlement),
     };
   }
 
   const squad = visible.squads.find((candidate) => candidate.id === selected.id);
   if (squad === undefined) return null;
 
-  const lines = squadLines(squad);
   return {
     title: message('ui.listItem', { name: translate('ui.squad'), id: squad.id }),
-    lines,
-    priority: lines.filter((line) => line.label === translate('ui.order')),
+    ...squadLines(squad),
   };
 }
 
 /** A settlement's figures: what it is, what it has, and what it is raising. */
-function settlementLines(settlement: VisibleSettlement): readonly HudLine[] {
+function settlementLines(settlement: VisibleSettlement): Pick<HudDetail, 'lines' | 'priority'> {
   const lines: HudLine[] = [
     { label: translate('ui.tier'), value: String(settlement.tier) },
     { label: translate('ui.population'), value: String(settlement.population) },
@@ -599,6 +596,7 @@ function settlementLines(settlement: VisibleSettlement): readonly HudLine[] {
     value: RESOURCE_KINDS.map((kind) => String(landOf(settlement, kind))).join('/'),
   });
 
+  const workStart = lines.length;
   if (settlement.works.length === 0) {
     lines.push({ label: translate('ui.works'), value: translate('ui.none') });
   }
@@ -613,12 +611,13 @@ function settlementLines(settlement: VisibleSettlement): readonly HudLine[] {
     });
   }
 
-  return lines;
+  return { lines, priority: [workStart + Math.max(0, settlement.works.findIndex((work) => !work.standing))] };
 }
 
 /** A Squad's figures: what it is, what it has left to fight with, what it owes, and what it is doing. */
-function squadLines(squad: VisibleSquad): readonly HudLine[] {
-  return [
+function squadLines(squad: VisibleSquad): Pick<HudDetail, 'lines' | 'priority'> {
+  return { priority: [0], lines: [
+    { label: translate('ui.order'), value: orderLabel(squad) },
     { label: translate('ui.type'), value: squadLabel(squad.type) },
     { label: translate('ui.men'), value: String(squad.men) },
     { label: translate('ui.morale'), value: String(squad.morale) },
@@ -627,8 +626,7 @@ function squadLines(squad: VisibleSquad): readonly HudLine[] {
     { label: translate('ui.payroll'), value: String(squad.payroll) },
     { label: translate('ui.unpaid'), value: String(squad.unpaid) },
     { label: translate('ui.home'), value: String(squad.home) },
-    { label: translate('ui.order'), value: orderLabel(squad) },
-  ];
+  ] };
 }
 
 /**

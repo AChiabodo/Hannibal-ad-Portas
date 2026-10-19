@@ -84,7 +84,7 @@ export const STRINGS = {
   'ui.pause': { it: 'Pausa [Spazio]', en: 'Pause [Space]' },
   'ui.resume': { it: 'Riprendi [Spazio]', en: 'Resume [Space]' },
   'ui.previous': { it: 'Su', en: 'Up' },
-  'ui.next': { it: 'Giu', en: 'Down' },
+  'ui.next': { it: 'Giù', en: 'Down' },
   'ui.listCount': { it: '{name}: {count}', en: '{name}: {count}' },
 
   // The panels.

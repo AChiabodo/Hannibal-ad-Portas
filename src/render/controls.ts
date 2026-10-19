@@ -44,6 +44,7 @@
  */
 import { Container, Sprite } from 'pixi.js';
 import type { Formation } from '../sim/command.ts';
+import type { HudLayout, Rect } from '../ui/hud.ts';
 import { marquee } from '../ui/marquee.ts';
 import { textureOf, type Stage } from './stage.ts';
 
@@ -77,10 +78,9 @@ export interface ControlTarget {
   readonly clearSelection: () => void;
   /** Pauses the Match if it is running, and resumes it if it is paused. */
   readonly togglePause: () => void;
-  /** Consumes a wheel over the interface before map zoom. */
-  readonly scrollHudAt: (x: number, y: number, lines: number) => boolean;
-  /** Page keys scroll the list; Shift pages secondary details. */
-  readonly pageHud: (detail: boolean, direction: number) => void;
+  /** The geometry used for HUD clicks, wheel and page keys. */
+  readonly hudLayout: () => HudLayout;
+  readonly scrollHud: (region: 'list' | 'detail', lines: number) => void;
 }
 
 /** How far a press must travel, in screen pixels, before it is a drag and not a click. */
@@ -180,7 +180,9 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
       return;
     }
 
-    if (armed !== null) {
+    const layout = target.hudLayout();
+    const overHud = [layout.bar, layout.list, layout.detail, layout.minimap].some((rect) => contains(rect, to.x, to.y));
+    if (armed !== null && !overHud) {
       target.orderAt(armed, to.x, to.y);
       armed = null;
       return;
@@ -202,7 +204,13 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
 
       const at = local(event);
       if (event.deltaY === 0) return;
-      if (target.scrollHudAt(at.x, at.y, event.deltaY < 0 ? -3 : 3)) return;
+      const layout = target.hudLayout();
+      for (const region of ['list', 'detail'] as const) {
+        if (contains(layout[region], at.x, at.y)) {
+          target.scrollHud(region, event.deltaY < 0 ? -3 : 3);
+          return;
+        }
+      }
       const zoom = target.zoom() + (event.deltaY < 0 ? WHEEL_ZOOM : -WHEEL_ZOOM);
       target.zoomAbout(zoom, at.x, at.y);
     },
@@ -226,7 +234,8 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
     switch (event.key) {
       case 'PageUp':
       case 'PageDown':
-        target.pageHud(event.shiftKey, event.key === 'PageUp' ? -1 : 1);
+        target.scrollHud(event.shiftKey ? 'detail' : 'list',
+          (event.key === 'PageUp' ? -1 : 1) * (event.shiftKey ? target.hudLayout().detailScroll.page : target.hudLayout().listScroll.page));
         event.preventDefault();
         break;
       case 'a':
@@ -261,6 +270,10 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
         return;
     }
   });
+}
+
+function contains(rect: Rect, x: number, y: number): boolean {
+  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
 }
 
 /** One pointer move with the right button down: pan by the whole stage pixels travelled. */

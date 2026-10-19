@@ -334,22 +334,8 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       if (view.paused()) view.resume();
       else view.pause();
     },
-    scrollHudAt: (x, y, lines) => {
-      const layout = view.hudLayout();
-      for (const region of ['list', 'detail'] as const) {
-        const rect = layout[region];
-        if (x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height) {
-          view.scrollHud(region, lines);
-          return true;
-        }
-      }
-      return false;
-    },
-    pageHud: (detail, direction) => {
-      const region = detail ? 'detail' : 'list';
-      const layout = view.hudLayout();
-      view.scrollHud(region, direction * (detail ? layout.detailScroll.page : layout.listScroll.page));
-    },
+    hudLayout: () => view.hudLayout(),
+    scrollHud: (region, lines) => view.scrollHud(region, lines),
   });
 
   game.start();
