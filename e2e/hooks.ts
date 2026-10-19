@@ -1,9 +1,10 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import type { Rgba } from '../src/art/pixel-buffer';
 import type { AtelierLayout } from '../src/render/atelier-layout';
 import type { ViewState } from '../src/render/boot';
 import type { HudModel, Rect, RowRect, Selection } from '../src/ui/hud';
-import type { SquadReport } from '../src/render/game';
+import type { GameSnapshot, SquadReport } from '../src/render/game';
+import type { MatchResult } from '../src/sim/driver';
 import type { Selection as PlayerSelection } from '../src/input/selection';
 import type { Command } from '../src/sim/command';
 import type { LoggedCommand } from '../src/sim/replay';
@@ -25,6 +26,28 @@ import type { Knowledge } from '../src/sim/fog';
 
 /** Which page's pixels a caller is asking about. */
 export type HookName = 'view' | 'atelier';
+
+/**
+ * Opens the game page and waits for it, optionally with the clock stopped.
+ *
+ * A test that steps the Match wants the loop stopped first, so that one tick is
+ * one picture and not whatever the frame rate handed over; a test about the page
+ * booting wants it running. Either way this is the one place the page is opened,
+ * so no spec invents its own idea of what "booted" means.
+ */
+export async function bootGame(page: Page, options: { paused?: boolean } = {}): Promise<void> {
+  await page.goto('/');
+  await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
+
+  if (options.paused === true) {
+    await page.evaluate(() => {
+      const game = window.__SPQR.game;
+      if (game === null) throw new Error('the page published no game hooks');
+
+      game.pause();
+    });
+  }
+}
 
 /** Where the game page's camera is looking, and how big its viewport is. */
 export async function describeView(page: Page): Promise<ViewState> {
@@ -174,4 +197,40 @@ export async function groupOf(page: Page, index: number): Promise<readonly numbe
 
     return game.groupOf(which);
   }, index);
+}
+
+/** The Match's tick, which is what a pause or a fast-forward is measured in. */
+export async function tickOf(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.tick();
+  });
+}
+
+/**
+ * Everything the page believes, as the plain-data copy it hands an inspector.
+ *
+ * One call rather than nine, because that is the surface an agent is written
+ * against: the snapshot is what the page *is*, and the individual hooks are how it
+ * was built.
+ */
+export async function state(page: Page): Promise<GameSnapshot> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.state();
+  });
+}
+
+/** Plays the Match to its end without waiting for wall time, and says how it ended. */
+export async function fastForward(page: Page): Promise<MatchResult> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.fastForward();
+  });
 }

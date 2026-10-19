@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { cataloguePlate } from '../src/art/catalogue';
 import { pixelAt, type PixelBuffer } from '../src/art/pixel-buffer';
 import { ATELIER_ZOOMS, atelierLayout } from '../src/render/atelier-layout';

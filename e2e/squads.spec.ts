@@ -14,17 +14,16 @@
  * is avoided by rectangle, as everywhere else, because the panels are drawn over
  * the theatre.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import type { Page } from '@playwright/test';
 import { pixelAt } from '../src/art/pixel-buffer';
 import { blockPlacement, squadBlock, squadFrameKey } from '../src/render/squads';
 import { tilePixel } from '../src/render/terrain';
-import { describeView, hudRects, samples, squads } from './hooks';
+import { bootGame, describeView, hudRects, samples, squads } from './hooks';
 
 /** Boots the page with the clock stopped, so one tick is one picture. */
 async function boot(page: Page): Promise<void> {
-  await page.goto('/');
-  await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
-  await page.evaluate(() => window.__SPQR.game?.pause());
+  await bootGame(page, { paused: true });
 }
 
 /** The page's own tick, which is what a frame is chosen from. */

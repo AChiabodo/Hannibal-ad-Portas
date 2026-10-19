@@ -73,9 +73,10 @@
  *
  * - `season.ts` — the calendar: four Seasons to a game year, autumn and winter
  *   as the only two hooks another system needs, and a Season Match whose
- *   Observation carries the season and the year. The headless bound of three
- *   game years is `HEADLESS_TICKS` here, so the clock and the bound cannot
- *   disagree about how long a year is.
+ *   Observation carries the season and the year. A Match's horizon of three
+ *   game years is `MATCH_TICKS` here — `HEADLESS_TICKS` is the same number under
+ *   the name the CLI reads it by — so the clock, the CLI's default bound and the
+ *   page's bound cannot disagree about how long a year or a Match is.
  * - `pacing.ts` — the three speeds, the pause, and the orders given in it: a
  *   paused loop steps no ticks, and a `PausableController` holds what a Player
  *   decides until the Match resumes. Neither ever reaches state or the hash.
@@ -210,8 +211,22 @@ export type {
 export type { Observation } from './observation.ts';
 export { scriptedController, idleController } from './controller.ts';
 export type { Controller, Player, Players } from './controller.ts';
-export { ForeignCommandError, ObservationProjectionError, runMatch } from './driver.ts';
-export type { MatchResult, MatchRun, MatchSetup, Outcome, VictoryReason } from './driver.ts';
+export {
+  ForeignCommandError,
+  ObservationProjectionError,
+  matchQuestions,
+  runMatch,
+  runMatchAsync,
+} from './driver.ts';
+export type {
+  Answer,
+  MatchResult,
+  MatchRun,
+  MatchSetup,
+  Outcome,
+  Question,
+  VictoryReason,
+} from './driver.ts';
 export { emptyMatchOutcome, emptyMatchRules, observeEmptyMatch } from './empty.ts';
 export type { EmptyMatchVisible, EmptyMatchWorld } from './empty.ts';
 
@@ -223,6 +238,8 @@ export {
   announceSeasons,
   HEADLESS_TICKS,
   HEADLESS_YEARS,
+  MATCH_TICKS,
+  MATCH_YEARS,
   observeSeasonMatch,
   SEASON_TICKS,
   SEASONS,

@@ -85,7 +85,7 @@ A debug page that renders the entire generated catalogue: every Squad figure in 
 
 **Fog of war.** Unexplored black, explored-but-unobserved dimmed, visible clear, with memory of terrain and of the **last known enemy contact**. Vision by radius per tile; no elevation-based line of sight in v1. An omniscient inspection mode exists for debugging only: it is not a Player and cannot emit Commands.
 
-**Time.** A **Season** is 3–4 minutes; a game year is 13–16 minutes. Spring and summer are campaign season; autumn is harvest; **winter** brings Attrition outside friendly Territory and favours the defender, and the AI keeps winter quarters. Three speeds, and a real pause with queueable orders. Human Matches have no time limit; **headless and AI-vs-AI Matches run bound to 3 years** so that a match always terminates.
+**Time.** A **Season** is 3–4 minutes; a game year is 13–16 minutes. Spring and summer are campaign season; autumn is harvest; **winter** brings Attrition outside friendly Territory and favours the defender, and the AI keeps winter quarters. Three speeds, and a real pause with queueable orders. A Match is bound to **3 game years**, in a browser and headless alike, so that every Match always terminates and one can be watched — or fast-forwarded — to its end (ADR-0022).
 
 **Economy.** No worker units (ADR-0005). Population is a pool allocated to buildings and land; production matures on a timer; **resources accumulate per settlement** while denarii form one treasury. Construction is a labour allocation plus a timer. Three settlement tiers gate Squad tiers — the progression *is* the tiers, so there is no technology tree. **Payroll** is charged every Season: unpaid Carthaginian Squads lose morale and eventually desert.
 

@@ -289,7 +289,7 @@ function requireValue(argv: readonly string[], index: number, flag: string): str
 }
 
 /** @throws UsageError when the value is not a seed the random source would accept. */
-function readSeed(value: string): number {
+export function readSeed(value: string): number {
   const seed = readWholeNumber(value, '--seed');
 
   if (seed > MAX_SEED) {
@@ -300,7 +300,7 @@ function readSeed(value: string): number {
 }
 
 /** @throws UsageError when the value is not a whole non-negative number. */
-function readWholeNumber(value: string, flag: string): number {
+export function readWholeNumber(value: string, flag: string): number {
   const number = DIGITS.test(value) ? Number(value) : Number.NaN;
 
   if (!Number.isSafeInteger(number)) {
@@ -311,7 +311,7 @@ function readWholeNumber(value: string, flag: string): number {
 }
 
 /** @throws UsageError when the value is not the shape of a state hash. */
-function readStateHash(value: string): string {
+export function readStateHash(value: string): string {
   if (!STATE_HASH.test(value)) {
     throw new UsageError(`--expect-hash must be a 16-digit hexadecimal state hash, got ${describe(value)}`);
   }
@@ -335,6 +335,6 @@ function readRulesName(value: string): RulesName {
 }
 
 /** A value as a failure message says it: an empty string would otherwise trail off after "got ". */
-function describe(value: string): string {
+export function describe(value: string): string {
   return value === '' ? 'an empty string' : value;
 }

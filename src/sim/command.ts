@@ -46,10 +46,21 @@ export class CommandValidationError extends Error {
   /** Where in the Command the offending value is, e.g. `command.squads[1]`. */
   readonly path: string;
 
+  /**
+   * What is wrong with it, without the path: the second half of the message.
+   *
+   * Kept as a field as well as being in the sentence because a caller that has
+   * its own name for the path — a protocol line, where the same Command sits at
+   * `message.commands[3]` — has to say it in its own words rather than slice the
+   * message and hope it still parses.
+   */
+  readonly reason: string;
+
   constructor(path: string, reason: string) {
     super(`the command at ${path} ${reason}`);
     this.name = 'CommandValidationError';
     this.path = path;
+    this.reason = reason;
   }
 }
 

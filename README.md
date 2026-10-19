@@ -30,6 +30,7 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | `npm run lint`      | ESLint over the repository                                             |
 | `npm run guard`     | The seven fences: rendering boundaries, deterministic simulation, no committed asset, AI Observation imports |
 | `npm run match`     | One whole Match headless as a JSON report, or — with `--map` — the map a seed generates, with no build step |
+| `npm run agent`     | One whole Match with an outside process playing one Faction over the protocol in [docs/PROTOCOL.md](docs/PROTOCOL.md) |
 | `npm run bake`      | Writes the whole generated catalogue into `artifacts/` as PNGs, with the pixel hash of each, for inspection |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
 | `npm run test:e2e`  | Browser tests (Playwright, headless Chromium, software WebGL)           |
@@ -253,11 +254,12 @@ paused are held by the Player's Controller and applied on the first tick after
 the resume, in the order they were given, so thinking costs nothing. Pausing is
 idempotent, and the time spent paused is not banked and then replayed as a burst.
 
-A human Match has no time limit. A **headless Match is bound to three game
-years** — `HEADLESS_TICKS`, 25 200 ticks, 42 minutes of Match time — because a
-Match that can never end is a test that can never finish (ADR-0010). The CLI's
-default bound is exactly that, and its default Match is the one with the theatre
-and the economy in it.
+A **Match is bound to three game years** — `MATCH_TICKS`, 25 200 ticks, 42 minutes
+of Match time — wherever it is played: the CLI's default bound and the bound the
+page plays to are that one number, under the name (`HEADLESS_TICKS`) the CLI's
+arguments read it by, because a Match that can never end is one nothing can watch
+to the end (ADR-0022). A caller may hand over another length for a tournament or a
+long test, but not none.
 
 ## The economy
 
@@ -1172,6 +1174,114 @@ The command needs no build step. Node strips the types and runs `src/cli/main.ts
 as it stands, which is why every relative import under `src/` names its extension
 (`./command.ts`) — see [ADR-0009](docs/adr/0009-the-cli-runs-the-source-with-node.md).
 
+## The outside agent
+
+```
+npm run agent -- --agent examples/agent.ts --seed 7 --opponent idle
+```
+
+```json
+{
+  "seed": 7,
+  "ticks": 3401,
+  "outcome": "victory",
+  "winner": "rome",
+  "reason": "rome won the Match: the carthage Stronghold fell to an assault",
+  "commands": 61,
+  "hash": "a4ae5836bdba8e8d",
+  "agent": {
+    "faction": "rome",
+    "opponent": "idle",
+    "status": "played",
+    "stoppedBy": null,
+    "detail": null,
+    "decisions": 341,
+    "commands": 61
+  }
+}
+```
+
+A process that is not this codebase plays a whole Match: the harness starts the
+file `--agent` names, speaks [the protocol](docs/PROTOCOL.md) to it over that
+process's standard input and output, and puts the built-in AI — or nobody at all —
+on the other side. What crosses the pipe is the seam and only the seam: one
+**Observation** per decision, filtered through the agent's own fog, and the
+**Commands** it answers with, read through the vocabulary before anything is
+applied. No state, no seed of its own, no privileged window into the Match.
+
+The ticket's fourth rule is the one that shapes the command: a malformed reply, a
+reply that never arrives and a process that dies are all a **Player who stopped
+playing**. The harness says `stopped` with the reason, asks nothing more, leaves
+that Faction idle and plays the Match to its own end — so an agent whose answers
+are not trusted can run in CI, and the exit code stays 0 because a Match was
+played. `--decision-ticks` and `--deadline` are how often a process is asked and
+how long it has, `--log` writes the Command log, and `--expect-hash` gates it.
+
+A Match played this way is a seed plus the log it wrote, like any other: replay it
+with `replayCommands` and it ends on the hash the report prints, which is the
+whole of "an external agent completes a Match" as a thing CI can check.
+`examples/agent.ts` is an agent written from the document alone — raise two
+Squads, sweep the theatre until the enemy Stronghold is seen, assault it — and it
+imports nothing from this repository. The suite runs it to a victory, replays the
+Match from its log, and runs the skeleton agent the document ends with.
+
+## The browser's hooks
+
+`window.__SPQR` stops being a test's private convenience and becomes the product's
+second interface (E4, ADR-0003). The page publishes what it booted, where it is
+looking, what its Match believes, and the calls that drive it — and
+[the document an agent is written from](docs/BROWSER.md) is the sibling of the
+Command vocabulary and the external agent's protocol, written for whoever drives
+the page instead of a pipe.
+
+```js
+await page.goto('/');
+await page.locator('body[data-spqr-booted="true"]').waitFor();
+
+const before = await page.evaluate(() => window.__SPQR.game.state());
+await page.evaluate(() => window.__SPQR.game.pause());
+await page.evaluate(() => window.__SPQR.game.select({ kind: 'squad', id: 1 }));
+await page.evaluate(() => window.__SPQR.game.orderNow('hold'));
+await page.evaluate(() => window.__SPQR.game.resume());
+
+// 42 minutes of Match time, in about a second: the wall clock is skipped, not
+// accelerated, so the answer is the rules' and not the frame rate's.
+const result = await page.evaluate(() => window.__SPQR.game.fastForward());
+// { kind: 'clock', tick: 25200 }
+```
+
+**`state()` is the whole of it in one call**: the tick, the bound, the result, the
+state hash, the Faction's Observation, the interface's model, the picked set, the
+Squads, the dead, the fog and the Commands applied lately — a plain-data copy, so an inspector
+may keep it, diff two of them or carry it across the browser bridge. The hooks
+beside it are how it was assembled, and a test that wants one figure asks for one.
+
+The surface is deliberately narrower than a debugger's: **no hook takes a Command**.
+The five that issue one (`orderAt`, `orderNow`, `setFormation`, `bindGroup`,
+`recallGroup`) take a screen point, a kind with a fixed vocabulary, a Formation or a
+digit — what a pointer or a keyboard produces — and hand it to the human Controller,
+which validates it and refuses the other Faction's. That is the ticket's *without
+exposing Commands a Player could not issue* as a property rather than a promise, and
+`e2e/surface.spec.ts` proves it at the type level: a hook that took a Command would
+stop the build. The names themselves live in `src/hooks.ts` as data, because an
+interface erases when the page is built — one list is what the document, the
+interfaces and the running page are all held to.
+
+**A browser Match has an end**, which is what makes "one short Match played to its
+end" a thing Playwright can assert: the page plays to `MATCH_TICKS` and reports the
+`MatchResult` the CLI's report carries (ADR-0022). `advance` refuses to step past
+the bound rather than clamping to it, a Match that has ended answers a second
+`fastForward` with the ending it already had, and the frame loop stops with it.
+
+**A failing browser test explains itself without a picture.** Every spec runs on
+`e2e/fixtures.ts`, which watches its page from the moment it opens and, on a
+failure only, attaches the boot report, `describe()`, the snapshot with its state
+hash, the console, the uncaught errors and failed requests, the DOM as text, and the
+trace Playwright kept. The state hash is what makes that evidence: two runs that
+disagree about a pixel and agree about the hash are a rendering question, and two
+that disagree about the hash are a rules question, with the tick already narrowed.
+No screenshot is taken, because a picture of a canvas cannot say which tick it was.
+
 ## Layout
 
 ```
@@ -1225,6 +1335,10 @@ src/                application code
     dump.ts         the map a seed generates, written out for inspection
     report.ts       the JSON report, ordered and free of anything that varies
     main.ts         the entry: standard output, standard error, exit codes
+    protocol.ts     the external agent protocol's messages, the wire Observation, the reply reader
+    agent.ts        an outside process as a Player: the pipe, the deadline, a Player who stopped
+    agent-arguments.ts  what the agent command line means, and what it refuses
+    agent-main.ts   the agent command: standard output, standard error, exit codes
     png.ts          a PNG encoder in the repository's own code, for the bake step
     bake.ts         the catalogue written out as files, and the table it prints
     bake-main.ts    the bake command: standard output, standard error, exit codes
@@ -1254,7 +1368,7 @@ src/                application code
     fog.ts          the fog over that image: unexplored opaque, remembered veiled, visible clear
     view.ts         the seed, zoom, viewport and Faction the page opens on, with no engine in sight
     boot.ts         the game page's boot: the theatre, its fog, the Match, the camera, the hooks
-    game.ts         the Match behind the interface, and the real-time loop that drives it
+    game.ts         the Match behind the interface, the real-time loop that drives it, and its end
     opening.ts      the army the page musters, and the eyes it therefore has
     squads.ts       a Squad drawn as its soldiers in formation, from the simulation's own list
     squad-layer.ts  one sprite per Squad on the map, the mark of where it was told to go, and the dead
@@ -1265,13 +1379,20 @@ src/                application code
     atelier.ts      the Atelier page: the catalogue plate, one column per zoom level
   page.ts           where a page mounts, and what a failed boot looks like
   debug.ts          the hooks a page publishes: what booted, where the camera is, what it drew
+  hooks.ts          every hook and snapshot field a page publishes, by name, so a document can be held to it
   main.ts           the game page's entry
   atelier.ts        the Atelier page's entry
 scripts/guard.mjs   the fences
 tests/              Vitest unit tests
 e2e/                Playwright browser tests (a real browser, so `pixi.js` is allowed)
+  hooks.ts          reading a page's hooks from a test, one datum at a time
+  fixtures.ts       the `test` every spec runs on: a page watched for the evidence a failure needs
+  diagnostics.ts    what that evidence is: the boot report, the snapshot, the console, the errors, the DOM
 docs/PLAN.md        the plan of record
 docs/COMMANDS.md    the Command vocabulary an external agent is written from
+docs/PROTOCOL.md    the protocol an external agent is written from, and a skeleton agent
+docs/BROWSER.md     the hooks an agent driving the page is written from, and what a failure leaves
+examples/agent.ts   an agent written from that document, importing nothing from this repository
 ```
 
 Further modules from the plan's architecture (`audio/`) arrive with the tickets
@@ -1316,4 +1437,11 @@ a plan that includes Pages.
   reach the Match are read back through the page's hooks. The army is hidden with
   the page's own `showSquads(false)` lens for the comparisons that are about the
   ground, and one test composes a Squad's block in Node and compares it with the
-  GPU's pixels, so the men on screen are the generator's.
+  GPU's pixels, so the men on screen are the generator's. Since E4 a whole Match
+  is played in the browser too: the page is paused, ordered about and
+  fast-forwarded to its bound, which is 42 minutes of Match time in about a second
+  because the wall clock is skipped rather than accelerated (ADR-0022). Every spec
+  runs on `e2e/fixtures.ts`, so a failure attaches the page's own account of itself
+  — boot report, snapshot, state hash, console, errors, DOM — instead of a
+  screenshot, and the surface itself is held to its document and to its interfaces
+  by `e2e/surface.spec.ts` and `tests/render/browser-docs.test.ts`.

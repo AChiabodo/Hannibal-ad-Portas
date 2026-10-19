@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import type { Page } from '@playwright/test';
 import type { SpqrDebugHooks } from '../src/debug';
 import { blit, pixelAt, type PixelBuffer } from '../src/art/pixel-buffer';
 import { createFog, refreshVision, viewOf } from '../src/sim/fog';

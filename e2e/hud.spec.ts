@@ -15,7 +15,8 @@
  * seed the page reports, so "the minimap matches the map" is a comparison and
  * not a smoke test.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import type { Page } from '@playwright/test';
 import { pixelAt } from '../src/art/pixel-buffer';
 import { MAP_HEIGHT, MAP_WIDTH, generateMap, type MapGrid } from '../src/sim/map';
 import { KNOWLEDGE, createFog, knows, refreshVision, viewOf, type FogView } from '../src/sim/fog';

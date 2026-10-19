@@ -77,7 +77,10 @@ export class HashMismatchError extends Error {
  *
  * @throws HashMismatchError when the Match ended on any other hash.
  */
-export function requireExpectedHash(run: MatchRun, options: RunOptions): void {
+export function requireExpectedHash(
+  run: MatchRun,
+  options: { readonly expectedHash: string | null },
+): void {
   if (options.expectedHash !== null && run.hash !== options.expectedHash) {
     throw new HashMismatchError(options.expectedHash, run.hash);
   }

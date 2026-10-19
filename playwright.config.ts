@@ -19,7 +19,19 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['list'], ['html', { open: 'never' }]] : [['list']],
   use: {
     baseURL: BASE_URL,
-    trace: 'on-first-retry',
+    /**
+     * A kept trace on any failure, not `on-first-retry`: E4's evidence rule is
+     * that a failing browser test explains itself, and a first failure with no
+     * trace would need a second run to produce one.
+     */
+    trace: 'retain-on-failure',
+    /**
+     * No screenshots. Everything a diagnosis needs is attached by the fixture in
+     * `e2e/fixtures.ts` — the boot report, the snapshot, the state hash, the
+     * console and the DOM — and a picture of a canvas says less than any of them.
+     */
+    screenshot: 'off',
+    video: 'off',
   },
   projects: [
     {

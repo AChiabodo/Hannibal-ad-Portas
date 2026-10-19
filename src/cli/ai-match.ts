@@ -1,4 +1,4 @@
-import { createAi, bestCandidate, type AiDecision } from '../ai/controller.ts';
+import { createAi, bestCandidate, type AiController, type AiDecision } from '../ai/controller.ts';
 import { createEconomyBehaviour } from '../ai/economy.ts';
 import { createMilitaryBehaviour, createMilitaryRecruitment } from '../ai/military.ts';
 import { createScoutingBehaviour } from '../ai/scouting.ts';
@@ -161,6 +161,24 @@ export const economyRegistry = economyRegistryAt(DIFFICULTY.centurio);
 export const militaryRegistry = militaryRegistryAt(DIFFICULTY.centurio);
 export const scoutingRegistry = armyAt(DIFFICULTY.centurio, false);
 export const armyRegistry = difficultyRegistry('centurio');
+
+/**
+ * One fresh AI on the complete Siege Match: the opponent an external agent is
+ * matched against when it is not playing alone (E1).
+ *
+ * A Match with an outside process on one side is still a Match with two Players,
+ * and this is the one the harness puts on the other side. It shares the registry
+ * with any other Controller of the same Match, exactly as `playAiMatch` does.
+ */
+export function createArmyController(
+  name: DifficultyName = 'centurio',
+  registry: BehaviourRegistry<SiegeVisible, Command> = difficultyRegistry(name),
+): AiController<SiegeVisible, Command> {
+  const difficulty = DIFFICULTY[name];
+
+  return createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ,
+    operationalSeconds: difficulty.reactionSeconds, registry });
+}
 
 /**
  * Two fresh AIs against the complete Siege Match, at a stated difficulty. The

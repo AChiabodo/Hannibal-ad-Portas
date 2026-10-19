@@ -34,7 +34,7 @@ _UI_: Stagione
 _Avoid_: Turn, phase, cycle
 
 **Year**:
-Four Seasons of Match time, counted from one. A human Match has no limit on them; a headless Match is bound to three so that it always terminates.
+Four Seasons of Match time, counted from one. A Match is bound to three of them — twenty-five thousand two hundred ticks, in a browser and headless alike — and a caller may hand over another bound, but not none.
 _UI_: Anno
 _Avoid_: Cycle, age, era
 
@@ -316,3 +316,13 @@ _Avoid_: Hotkey group, squad slot
 The theatre at one pixel per tile, drawn through the Faction's Fog of war: it shows what the Faction knows and nothing more.
 _UI_: Mappa
 _Avoid_: Overview, radar, small map
+
+**Debug hook**:
+One call a page publishes on `window.__SPQR`, so that a test or an inspecting agent can move the camera, drive the Match and read what it drew. The hooks a Player's hands use are the same calls the page makes for them, and none of them issues a Command a Player could not; the rest step the clock, move the camera or read back what was drawn.
+_UI_: —
+_Avoid_: API, test helper, cheat
+
+**Snapshot**:
+The whole of what a running page believes, frozen at one tick and handed over as a plain-data copy: the result, the state hash, the Faction's Observation, the interface's model, the picked set and the Commands it has applied lately. It is data and not a handle — writing through it reaches neither the Match nor the interface — and it holds an Observation and its drawing, never the rules' own state.
+_UI_: —
+_Avoid_: State dump, save game, screenshot (a screenshot is pixels; a snapshot is data)
