@@ -42,6 +42,7 @@ describe('the agent command line', () => {
       decisionTicks: DEFAULT_DECISION_TICKS,
       deadlineMs: DEFAULT_DEADLINE_MS,
       log: null,
+      record: null,
       expectedHash: null,
     });
   });
@@ -57,6 +58,7 @@ describe('the agent command line', () => {
       '--decision-ticks', '25',
       '--deadline', '500',
       '--log', 'match.jsonl',
+      '--record', 'match.json',
       '--expect-hash', '0123456789abcdef',
     );
 
@@ -69,6 +71,7 @@ describe('the agent command line', () => {
       decisionTicks: 25,
       deadlineMs: 500,
       log: 'match.jsonl',
+      record: 'match.json',
       expectedHash: '0123456789abcdef',
     });
   });

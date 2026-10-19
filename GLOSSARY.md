@@ -38,6 +38,21 @@ Four Seasons of Match time, counted from one. A Match is bound to three of them 
 _UI_: Anno
 _Avoid_: Cycle, age, era
 
+**Record**:
+A Match written down as a seed, the Command log it applied, how it ended, and the state hash at every checkpoint it was fingerprinted at — one small file, and everything a replay needs. It is not a video and not a snapshot of the world.
+_UI_: —
+_Avoid_: Replay file, savegame, demo, capture
+
+**Replay**:
+Running a Record again through the rules, with no Controllers at all, and comparing the hashes it reaches with the ones the Record was made with. It is a CLI and CI instrument in v1, not something the player watches.
+_UI_: —
+_Avoid_: Playback, video, recap
+
+**Divergence**:
+The first checkpoint at which a Replay's state hash disagrees with its Record's, quoted beside the last checkpoint the two still agreed on. It is either a bug or a decision, and which one is a reviewer's question.
+_UI_: —
+_Avoid_: Mismatch, desync, drift, hash failure
+
 ### The theatre
 
 **Tile**:

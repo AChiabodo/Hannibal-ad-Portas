@@ -19,7 +19,8 @@
  * - `match.ts` — the tick itself: a clock, a world, a cursor, and a hash of all three.
  * - `replay.ts` — a seed plus a command log, run again and compared; `replay`
  *   re-enacts a log the caller holds, `replayCommands` closes the vocabulary on
- *   one that arrived from outside.
+ *   one that arrived from outside, and `divergenceOf` says where two runs of the
+ *   same Match stopped agreeing (E2).
  *
  * A3 made the seam real: one place where a decision enters the game.
  *
@@ -160,9 +161,13 @@ export { StateSerializationError, serializeState } from './state.ts';
 export { hashState } from './hash.ts';
 export { createMatch } from './match.ts';
 export type { Match, MatchOptions, MatchRules, MatchState } from './match.ts';
-export { replay, replayCommands } from './replay.ts';
+export { sameEnding } from './outcome.ts';
+export type { MatchResult, Outcome, VictoryReason } from './outcome.ts';
+
+export { divergenceOf, replay, replayCommands } from './replay.ts';
 export type {
   CommandLog,
+  Divergence,
   LoggedCommand,
   ReplayOptions,
   ReplayResult,
@@ -218,15 +223,7 @@ export {
   runMatch,
   runMatchAsync,
 } from './driver.ts';
-export type {
-  Answer,
-  MatchResult,
-  MatchRun,
-  MatchSetup,
-  Outcome,
-  Question,
-  VictoryReason,
-} from './driver.ts';
+export type { Answer, MatchRun, MatchSetup, Question } from './driver.ts';
 export { emptyMatchOutcome, emptyMatchRules, observeEmptyMatch } from './empty.ts';
 export type { EmptyMatchVisible, EmptyMatchWorld } from './empty.ts';
 

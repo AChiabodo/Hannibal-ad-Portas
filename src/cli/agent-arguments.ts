@@ -22,6 +22,7 @@ import {
   DEFAULT_SEED,
   UsageError,
   describe,
+  readPath,
   readSeed,
   readStateHash,
   readWholeNumber,
@@ -68,6 +69,16 @@ export interface AgentRunOptions {
 
   /** Where to write the Command log, or `null` to write none. */
   readonly log: string | null;
+
+  /**
+   * Where to write the Match's record, or `null` to write none (E2).
+   *
+   * The log beside it is the Commands and nothing else; a record is the same
+   * Match in the form a replay reads back — the seed, the log, the ending and the
+   * state hashes it passed through — which is what makes a Match played by an
+   * outside process a file that replays anywhere.
+   */
+  readonly record: string | null;
 
   /** The state hash the Match is required to end on, or `null` to accept any. */
   readonly expectedHash: string | null;
@@ -132,6 +143,7 @@ export function parseAgentArguments(argv: readonly string[]): ParsedAgentArgumen
     decisionTicks: DEFAULT_DECISION_TICKS,
     deadlineMs: DEFAULT_DEADLINE_MS,
     log: null,
+    record: null,
     expectedHash: null,
   };
   const given = new Set<string>();
@@ -170,6 +182,7 @@ export function parseAgentArguments(argv: readonly string[]): ParsedAgentArgumen
       decisionTicks: asked.decisionTicks,
       deadlineMs: asked.deadlineMs,
       log: asked.log,
+      record: asked.record,
       expectedHash: asked.expectedHash,
     },
   };
@@ -186,6 +199,7 @@ interface Asked {
   decisionTicks: number;
   deadlineMs: number;
   log: string | null;
+  record: string | null;
   expectedHash: string | null;
 }
 
@@ -224,6 +238,9 @@ const OPTIONS: Readonly<Record<string, (asked: Asked, value: string) => void>> =
   },
   '--log': (asked, value) => {
     asked.log = value;
+  },
+  '--record': (asked, value) => {
+    asked.record = readPath(value, '--record');
   },
   '--expect-hash': (asked, value) => {
     asked.expectedHash = readStateHash(value);

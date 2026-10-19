@@ -31,6 +31,7 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | `npm run guard`     | The seven fences: rendering boundaries, deterministic simulation, no committed asset, AI Observation imports |
 | `npm run match`     | One whole Match headless as a JSON report, or — with `--map` — the map a seed generates, with no build step |
 | `npm run agent`     | One whole Match with an outside process playing one Faction over the protocol in [docs/PROTOCOL.md](docs/PROTOCOL.md) |
+| `npm run replay`    | Re-runs a Match recorded with `--record` and reports whether it still happens, and where it first diverges |
 | `npm run bake`      | Writes the whole generated catalogue into `artifacts/` as PNGs, with the pixel hash of each, for inspection |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
 | `npm run test:e2e`  | Browser tests (Playwright, headless Chromium, software WebGL)           |
@@ -1129,7 +1130,8 @@ else, so it pipes into `jq`; the report holds no timing, no path and no wall
 clock, so two runs of the same command are byte-identical and a recorded hash can
 be gated on. `--seed` and `--ticks` choose the Match, `--rules` chooses which
 harness Match to play, `--expect-hash` requires it to end on a hash you
-recorded, and `--help` describes the lot.
+recorded, `--record` writes the record `npm run replay` re-runs (below), and
+`--help` describes the lot.
 
 CI plays that very command, with the hash above as its `--expect-hash`: a change
 that moves the hash is a decision in review (ADR-0006). It plays more than one:
@@ -1164,10 +1166,12 @@ of a Stronghold or the tick bound ends the run (`src/sim/siege.ts`,
 theatre with B4's two fogs in state, `march` is a dozen Squads ordered across the
 theatre, `roster` is both Factions' whole rosters sent at each other, `assault`
 and `blockade` are whole Matches won by the two paths of the Siege, `attrition`
-is two armies through the Seasons with only one of them in a camp, `empty` is the
-engine and the seam alone, and `draws` plays one whose rules draw from the seed on
-every tick, so the golden hash in CI covers the draw loop as well as the seed
-expansion (`src/cli/rules.ts`). The harness around it is the point, and the
+is two armies through the Seasons with only one of them in a camp, `siege` is the
+bare theatre with nobody commanding it — the Match the external-agent harness
+plays, and so the one an agent's record is filed under — `empty` is the engine and
+the seam alone, and `draws` plays one whose rules draw from the seed on every
+tick, so the golden hash in CI covers the draw loop as well as the seed expansion
+(`src/cli/rules.ts`). The harness around it is the point, and the
 waves that build the world change what is inside it rather than how it is driven.
 
 The command needs no build step. Node strips the types and runs `src/cli/main.ts`
@@ -1217,9 +1221,11 @@ are not trusted can run in CI, and the exit code stays 0 because a Match was
 played. `--decision-ticks` and `--deadline` are how often a process is asked and
 how long it has, `--log` writes the Command log, and `--expect-hash` gates it.
 
-A Match played this way is a seed plus the log it wrote, like any other: replay it
-with `replayCommands` and it ends on the hash the report prints, which is the
-whole of "an external agent completes a Match" as a thing CI can check.
+A Match played this way is a seed plus the log it wrote, like any other:
+`--record` writes it as the file `npm run replay` reads, and `npm run replay --
+match.json` re-runs it in a process that could not talk to the agent at all —
+which is the whole of "an external agent completes a Match" as a thing CI can
+check.
 `examples/agent.ts` is an agent written from the document alone — raise two
 Squads, sweep the theatre until the enemy Stronghold is seen, assault it — and it
 imports nothing from this repository. The suite runs it to a victory, replays the
@@ -1282,6 +1288,64 @@ disagree about a pixel and agree about the hash are a rendering question, and tw
 that disagree about the hash are a rules question, with the tick already narrowed.
 No screenshot is taken, because a picture of a canvas cannot say which tick it was.
 
+## The record, and the replay
+
+```
+npm run match -- --rules march --seed 1 --ticks 600 --record march.json
+npm run replay -- march.json
+```
+
+```json
+{
+  "seed": 1,
+  "rules": "march",
+  "ticks": 600,
+  "everyTicks": 10,
+  "checkpoints": 61,
+  "outcome": "clock",
+  "winner": null,
+  "reason": "the Match reached its tick bound of 600 ticks without a decision",
+  "hash": "dcc3c947981d98f7",
+  "verdict": "reproduced"
+}
+```
+
+A Match is reproducible by construction — integer state, a seeded generator, a
+fixed step — so a **record** is not a video and not a snapshot: it is the seed,
+the Command log, how the Match ended, and the state hash of every checkpoint it
+was fingerprinted at. `npm run match -- --record <file>` and `npm run agent
+-- --record <file>` write one; `npm run replay -- <file>` reads one back, re-runs
+the Match with no Controllers at all, and prints the verdict on standard output.
+
+The verdict is `reproduced` or `diverged`, and a divergence names the first
+checkpoint whose two hashes disagree, quoting both, and the last checkpoint the
+two still agreed on:
+
+```
+replay: the record and this replay diverged at tick 3400: the record has
+0f1e2d3c4b5a6978, and this run reached 9a8b7c6d5e4f3021. They were still the same
+Match at tick 3390
+```
+
+That is the instrument the ticket exists for: a bug an external agent reports
+arrives as a small text file — some thirty kilobytes for a Match an agent played,
+some hundred and sixty for one that ran its whole three-year bound, because a
+checkpoint is a game second apart — and it replays on the machine of whoever fixes
+it. A change to a game rule produces exactly this report, and the command exits 1
+for it; the report is printed first, so the divergence is readable in a CI log
+without a second run. The checkpoints are not the only check: the *ending* is
+derived again too, because a rule can change when a Match is decided without
+moving a single number in the world, and a record whose ending this build does not
+reach is reported the same way, in the words a Match's own report uses
+(`docs/adr/0023-a-record-is-a-seed-a-log-and-its-fingerprints.md`).
+
+`npm run replay` exits 0 when the record reproduced, 1 when the replay parted from
+it — the hashes at a tick, or the ending once every hash agrees — and 2 when the
+command line was misused or the file is not a record: a record
+arrives from outside, so it is read the way a Command from outside is — every
+field checked, an unknown field refused by name, and the checkpoints required to
+be the schedule a run keeps.
+
 ## Layout
 
 ```
@@ -1295,7 +1359,8 @@ src/                application code
     state.ts        the canonical form of authoritative state, and what it refuses
     hash.ts         the state hash, over that canonical form
     match.ts        the tick: a clock, a world, a random cursor, a hash
-    replay.ts       a seed plus a command log, run again and compared
+    replay.ts       a seed plus a command log, run again and compared; and where two runs part
+    outcome.ts      how a Match ended and why: the verdict the rules give, and two endings compared
     faction.ts      the two Factions, as words rather than as state
     command.ts      the closed Command vocabulary: constructors and a reader
     observation.ts  everything a Controller may know, and nothing else
@@ -1339,6 +1404,10 @@ src/                application code
     agent.ts        an outside process as a Player: the pipe, the deadline, a Player who stopped
     agent-arguments.ts  what the agent command line means, and what it refuses
     agent-main.ts   the agent command: standard output, standard error, exit codes
+    record.ts       a Match's record: the file a replay is made of, read strictly
+    replay.ts       replaying a record: two kinds of departure, and the verdict
+    replay-arguments.ts  what the replay command line means, and what it refuses
+    replay-main.ts  the replay command: standard output, standard error, exit codes
     png.ts          a PNG encoder in the repository's own code, for the bake step
     bake.ts         the catalogue written out as files, and the table it prints
     bake-main.ts    the bake command: standard output, standard error, exit codes

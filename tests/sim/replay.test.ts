@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { CommandValidationError, type Command } from '../../src/sim/command';
 import { createMatch, type MatchRules } from '../../src/sim/match';
-import { replay, replayCommands, type CommandLog } from '../../src/sim/replay';
-import { toyRules, type ToyCommand } from './toy-rules';
+import type { Outcome } from '../../src/sim/outcome';
+import {
+  divergenceOf,
+  replay,
+  replayCommands,
+  type CommandLog,
+  type StateCheckpoint,
+} from '../../src/sim/replay';
+import { toyRules, type ToyCommand, type ToyWorld } from './toy-rules';
 
 /** Two Commands on the same tick, because a busy tick is normal rather than special. */
 const LOG: CommandLog<ToyCommand> = [
@@ -118,6 +125,125 @@ describe('a replay', () => {
     expect(() => replay({ seed: 1, rules: toyRules, log: [], ticks: 1.5 })).toThrow(/ticks/);
     expect(() => replay({ seed: 1, rules: toyRules, log: [], ticks: -1 })).toThrow(/ticks/);
     expect(() => replay({ seed: 1, rules: toyRules, log: [], ticks: 5, everyTicks: 0 })).toThrow(/everyTicks/);
+  });
+});
+
+/** Checkpoints as a run produces them: one a tick, so a test can read the ticks off the indices. */
+function checkpoints(...hashes: readonly string[]): StateCheckpoint[] {
+  return hashes.map((hash, tick) => ({ tick, hash }));
+}
+
+/** Two runs of three ticks: the first two agree, the third does not. */
+const AGREES_EARLY: readonly string[] = ['aaa0', 'aaa1', 'aaa2'];
+const AGREES_LATER: readonly string[] = ['aaa0', 'bbb1', 'bbb2'];
+
+describe('the ending a replay reaches', () => {
+  /** The rules' verdict, as a Match's `outcome` gives it: a draw once `draws` has reached `by`. */
+  const decidedAfter = (by: number) => (world: ToyWorld): Outcome | null =>
+    world.draws >= by ? { kind: 'draw' } : null;
+
+  it('is not asked for at all when the caller gave no verdict', () => {
+    expect(replay({ seed: 1, rules: toyRules, log: [], ticks: 5 }).ending).toBeNull();
+  });
+
+  it('is the clock at the bound when no tick decided the Match', () => {
+    const replayed = replay({ seed: 1, rules: toyRules, log: [], ticks: 5, outcome: () => null });
+
+    expect(replayed.ending).toEqual({ kind: 'clock', tick: 5 });
+  });
+
+  it('is the first decision the rules gave, stamped with the tick it was given on', () => {
+    const replayed = replay({ seed: 1, rules: toyRules, log: [], ticks: 10, outcome: decidedAfter(3) });
+
+    // The rules for tick T turn the world from T into T+1, so a Match decided by
+    // the world at T ended at T — and the first decision is the one that counts.
+    expect(replayed.ending).toEqual({ kind: 'draw', tick: 3 });
+  });
+
+  it('notices a decision on the very last tick, which no step is left to carry', () => {
+    expect(replay({ seed: 1, rules: toyRules, log: [], ticks: 10, outcome: decidedAfter(10) }).ending).toEqual(
+      { kind: 'draw', tick: 10 },
+    );
+  });
+
+  it('says the hash the run ended on, which is the last checkpoint it took', () => {
+    const replayed = replay({ seed: 1, rules: toyRules, log: [], ticks: 25, everyTicks: 10 });
+
+    expect(replayed.hash).toBe(replayed.checkpoints.at(-1)?.hash);
+  });
+});
+
+describe('the divergence between a record and its replay', () => {
+  it('catches a rule that changed: the same seed and log part at the first tick the rule bites', () => {
+    // A levy is worth a hundred, and a levy is worth a hundred and one. Nothing
+    // else changes: same seed, same log, same ticks.
+    const paid = (bonus: number): MatchRules<ToyWorld, ToyCommand> => ({
+      ...toyRules,
+      step: (world, rng, tick, commands) => {
+        toyRules.step(world, rng, tick, commands);
+        if (commands.includes('levy') && tick >= 47) world.total += bonus;
+      },
+    });
+    const log: CommandLog<ToyCommand> = [
+      { tick: 47, command: 'levy' },
+      { tick: 120, command: 'levy' },
+    ];
+
+    const before = replay({ seed: 5, rules: paid(0), log, ticks: 200, everyTicks: 10 });
+    const after = replay({ seed: 5, rules: paid(1), log, ticks: 200, everyTicks: 10 });
+
+    expect(divergenceOf(before.checkpoints, after.checkpoints)).toEqual({
+      tick: 50,
+      recorded: before.checkpoints[5]?.hash,
+      replayed: after.checkpoints[5]?.hash,
+      agreedAt: 40,
+    });
+  });
+
+  it('finds no divergence when the two runs agree at every checkpoint', () => {
+    expect(divergenceOf(checkpoints(...AGREES_EARLY), checkpoints(...AGREES_EARLY))).toBeNull();
+  });
+
+  it('names the first tick the two disagree at, quoting both hashes and the last they agreed on', () => {
+    expect(divergenceOf(checkpoints(...AGREES_EARLY), checkpoints(...AGREES_LATER))).toEqual({
+      tick: 1,
+      recorded: 'aaa1',
+      replayed: 'bbb1',
+      agreedAt: 0,
+    });
+  });
+
+  it('says so when the runs had already parted before the first tick', () => {
+    const recorded = checkpoints('aaa0', 'aaa1');
+    const replayed = checkpoints('zzz0', 'zzz1');
+
+    expect(divergenceOf(recorded, replayed)).toEqual({
+      tick: 0,
+      recorded: 'aaa0',
+      replayed: 'zzz0',
+      agreedAt: null,
+    });
+  });
+
+  it('finds the first difference, not the last: a later one does not move the report', () => {
+    const recorded = checkpoints('aaa0', 'aaa1', 'aaa2', 'aaa3');
+    const replayed = checkpoints('aaa0', 'bbb1', 'bbb2', 'aaa3');
+
+    expect(divergenceOf(recorded, replayed)?.tick).toBe(1);
+  });
+
+  it('refuses two runs whose checkpoints are not the same schedule', () => {
+    expect(() => divergenceOf(checkpoints('aaa0'), checkpoints('aaa0', 'aaa1'))).toThrow(/tick 1/);
+    expect(() => divergenceOf(checkpoints('aaa0', 'aaa1'), checkpoints('aaa0'))).toThrow(/tick 1/);
+  });
+
+  it('refuses a run that stamps two checkpoints on the same tick', () => {
+    const twice: StateCheckpoint[] = [
+      { tick: 0, hash: 'aaa0' },
+      { tick: 0, hash: 'aaa0' },
+    ];
+
+    expect(() => divergenceOf(twice, checkpoints('aaa0'))).toThrow(/two checkpoints at tick 0/);
   });
 });
 

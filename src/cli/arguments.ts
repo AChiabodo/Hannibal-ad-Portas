@@ -65,6 +65,15 @@ export interface RunOptions {
    * in the message.
    */
   readonly expectedHash: string | null;
+
+  /**
+   * Where to write the Match's record, or `null` to write none.
+   *
+   * A record is what a replay is made of — the seed, the Command log and the
+   * state hashes the Match passed through (E2) — so this is the one flag that
+   * turns a Match that ran into a Match somebody else can run again.
+   */
+  readonly record: string | null;
 }
 
 /** A command line, read: either a Match to play, a map to print, or a request for the usage. */
@@ -123,6 +132,7 @@ const OPTION_LINES = [
   option('--ticks <n>', 'The tick bound: how long the Match may run, in whole ticks,'),
   continuation(`at ${TICK_HZ} ticks a second (default ${DEFAULT_TICKS}, three game years).`),
   option('--expect-hash <hex>', 'Fail unless the Match ends on this 16-digit state hash.'),
+  option('--record <file>', 'Write the record `npm run replay` re-runs here.'),
   option('--rules <name>', `Which Match to play (default ${DEFAULT_RULES}):`),
   ...RULES_MENU,
   option('--map', 'Print the map this seed generates, and play nothing.'),
@@ -161,6 +171,7 @@ export function parseArguments(argv: readonly string[]): ParsedArguments {
     ticks: DEFAULT_TICKS,
     rules: DEFAULT_RULES,
     expectedHash: null,
+    record: null,
     map: false,
   };
   const given = new Set<string>();
@@ -193,7 +204,13 @@ export function parseArguments(argv: readonly string[]): ParsedArguments {
 
   return {
     kind: 'run',
-    options: { seed: asked.seed, ticks: asked.ticks, rules: asked.rules, expectedHash: asked.expectedHash },
+    options: {
+      seed: asked.seed,
+      ticks: asked.ticks,
+      rules: asked.rules,
+      expectedHash: asked.expectedHash,
+      record: asked.record,
+    },
   };
 }
 
@@ -203,6 +220,7 @@ interface Asked {
   ticks: number;
   rules: RulesName;
   expectedHash: string | null;
+  record: string | null;
   map: boolean;
 }
 
@@ -253,6 +271,13 @@ const OPTIONS: Readonly<Record<string, Option>> = {
     },
   },
 
+  '--record': {
+    value: 'one',
+    read: (asked, value) => {
+      asked.record = readPath(value, '--record');
+    },
+  },
+
   '--map': {
     value: 'none',
     read: (asked) => {
@@ -266,7 +291,7 @@ const OPTIONS: Readonly<Record<string, Option>> = {
  *   asked for beside `--map`, which plays no Match.
  */
 function requireNothingToPlay(given: ReadonlySet<string>): void {
-  for (const flag of ['--ticks', '--expect-hash', '--rules']) {
+  for (const flag of ['--ticks', '--expect-hash', '--rules', '--record']) {
     if (!given.has(flag)) continue;
 
     throw new UsageError(`--map prints a map and plays nothing, so ${flag} cannot come with it`);
@@ -315,6 +340,19 @@ export function readStateHash(value: string): string {
   if (!STATE_HASH.test(value)) {
     throw new UsageError(`--expect-hash must be a 16-digit hexadecimal state hash, got ${describe(value)}`);
   }
+
+  return value;
+}
+
+/**
+ * A path a command writes to or reads from: anything a shell can hand over, but
+ * not nothing, because `--record ''` names no file and saying so is cheaper than
+ * a filesystem error about it.
+ *
+ * @throws UsageError when the value is empty.
+ */
+export function readPath(value: string, flag: string): string {
+  if (value === '') throw new UsageError(`${flag} must name a file, got ${describe(value)}`);
 
   return value;
 }

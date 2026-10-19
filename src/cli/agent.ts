@@ -42,6 +42,7 @@ import type { Faction } from '../sim/faction.ts';
 import { TICK_HZ } from '../sim/clock.ts';
 import { siegeMatchOutcome, siegeMatchRules, observeSiege, type SiegeVisible } from '../sim/siege.ts';
 import type { DifficultyName } from '../ai/difficulty.ts';
+import type { RulesName } from './rules.ts';
 import { createArmyController } from './ai-match.ts';
 import {
   DEFAULT_DEADLINE_MS,
@@ -59,6 +60,16 @@ import {
 
 /** Whom the agent is playing against: the built-in AI, or a Player that does nothing. */
 export type Opponent = 'ai' | 'idle';
+
+/**
+ * The Match the agent harness plays, by the name `--rules` uses: `siege`, the bare
+ * theatre with nobody commanding it.
+ *
+ * A record of an agent's Match is filed under the rules and not under the Players,
+ * because a replay has no Controllers at all: the process that decided is gone, and
+ * the log is the whole of what it contributed (E2).
+ */
+export const AGENT_RULES: RulesName = 'siege';
 
 /** Everything a run of the protocol needs: which Match, who is playing it, and how long it may take. */
 export interface AgentMatchOptions {
