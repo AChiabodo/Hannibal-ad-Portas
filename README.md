@@ -31,6 +31,8 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | `npm run guard`     | The seven fences: rendering boundaries, deterministic simulation, no committed asset, AI Observation imports |
 | `npm run match`     | One whole Match headless as a JSON report, or — with `--map` — the map a seed generates, with no build step |
 | `npm run agent`     | One whole Match with an outside process playing one Faction over the protocol in [docs/PROTOCOL.md](docs/PROTOCOL.md) |
+| `npm run replay`    | Re-runs a Match recorded with `--record` and reports whether it still happens, and where it first diverges |
+| `npm run tournament`| The balance instrument: a batch of AI-vs-AI Matches on distinct seeds, and one JSON report of what they add up to |
 | `npm run bake`      | Writes the whole generated catalogue into `artifacts/` as PNGs, with the pixel hash of each, for inspection |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
 | `npm run test:e2e`  | Browser tests (Playwright, headless Chromium, software WebGL)           |
@@ -1129,7 +1131,8 @@ else, so it pipes into `jq`; the report holds no timing, no path and no wall
 clock, so two runs of the same command are byte-identical and a recorded hash can
 be gated on. `--seed` and `--ticks` choose the Match, `--rules` chooses which
 harness Match to play, `--expect-hash` requires it to end on a hash you
-recorded, and `--help` describes the lot.
+recorded, `--record` writes the record `npm run replay` re-runs (below), and
+`--help` describes the lot.
 
 CI plays that very command, with the hash above as its `--expect-hash`: a change
 that moves the hash is a decision in review (ADR-0006). It plays more than one:
@@ -1164,10 +1167,12 @@ of a Stronghold or the tick bound ends the run (`src/sim/siege.ts`,
 theatre with B4's two fogs in state, `march` is a dozen Squads ordered across the
 theatre, `roster` is both Factions' whole rosters sent at each other, `assault`
 and `blockade` are whole Matches won by the two paths of the Siege, `attrition`
-is two armies through the Seasons with only one of them in a camp, `empty` is the
-engine and the seam alone, and `draws` plays one whose rules draw from the seed on
-every tick, so the golden hash in CI covers the draw loop as well as the seed
-expansion (`src/cli/rules.ts`). The harness around it is the point, and the
+is two armies through the Seasons with only one of them in a camp, `siege` is the
+bare theatre with nobody commanding it — the Match the external-agent harness
+plays, and so the one an agent's record is filed under — `empty` is the engine and
+the seam alone, and `draws` plays one whose rules draw from the seed on every
+tick, so the golden hash in CI covers the draw loop as well as the seed expansion
+(`src/cli/rules.ts`). The harness around it is the point, and the
 waves that build the world change what is inside it rather than how it is driven.
 
 The command needs no build step. Node strips the types and runs `src/cli/main.ts`
@@ -1217,9 +1222,11 @@ are not trusted can run in CI, and the exit code stays 0 because a Match was
 played. `--decision-ticks` and `--deadline` are how often a process is asked and
 how long it has, `--log` writes the Command log, and `--expect-hash` gates it.
 
-A Match played this way is a seed plus the log it wrote, like any other: replay it
-with `replayCommands` and it ends on the hash the report prints, which is the
-whole of "an external agent completes a Match" as a thing CI can check.
+A Match played this way is a seed plus the log it wrote, like any other:
+`--record` writes it as the file `npm run replay` reads, and `npm run replay --
+match.json` re-runs it in a process that could not talk to the agent at all —
+which is the whole of "an external agent completes a Match" as a thing CI can
+check.
 `examples/agent.ts` is an agent written from the document alone — raise two
 Squads, sweep the theatre until the enemy Stronghold is seen, assault it — and it
 imports nothing from this repository. The suite runs it to a victory, replays the
@@ -1282,6 +1289,164 @@ disagree about a pixel and agree about the hash are a rendering question, and tw
 that disagree about the hash are a rules question, with the tick already narrowed.
 No screenshot is taken, because a picture of a canvas cannot say which tick it was.
 
+## The record, and the replay
+
+```
+npm run match -- --rules march --seed 1 --ticks 600 --record march.json
+npm run replay -- march.json
+```
+
+```json
+{
+  "seed": 1,
+  "rules": "march",
+  "ticks": 600,
+  "everyTicks": 10,
+  "checkpoints": 61,
+  "outcome": "clock",
+  "winner": null,
+  "reason": "the Match reached its tick bound of 600 ticks without a decision",
+  "hash": "dcc3c947981d98f7",
+  "verdict": "reproduced"
+}
+```
+
+A Match is reproducible by construction — integer state, a seeded generator, a
+fixed step — so a **record** is not a video and not a snapshot: it is the seed,
+the Command log, how the Match ended, and the state hash of every checkpoint it
+was fingerprinted at. `npm run match -- --record <file>` and `npm run agent
+-- --record <file>` write one; `npm run replay -- <file>` reads one back, re-runs
+the Match with no Controllers at all, and prints the verdict on standard output.
+
+The verdict is `reproduced` or `diverged`, and a divergence names the first
+checkpoint whose two hashes disagree, quoting both, and the last checkpoint the
+two still agreed on:
+
+```
+replay: the record and this replay diverged at tick 3400: the record has
+0f1e2d3c4b5a6978, and this run reached 9a8b7c6d5e4f3021. They were still the same
+Match at tick 3390
+```
+
+That is the instrument the ticket exists for: a bug an external agent reports
+arrives as a small text file — some thirty kilobytes for a Match an agent played,
+some hundred and sixty for one that ran its whole three-year bound, because a
+checkpoint is a game second apart — and it replays on the machine of whoever fixes
+it. A change to a game rule produces exactly this report, and the command exits 1
+for it; the report is printed first, so the divergence is readable in a CI log
+without a second run. The checkpoints are not the only check: the *ending* is
+derived again too, because a rule can change when a Match is decided without
+moving a single number in the world, and a record whose ending this build does not
+reach is reported the same way, in the words a Match's own report uses
+(`docs/adr/0023-a-record-is-a-seed-a-log-and-its-fingerprints.md`).
+
+`npm run replay` exits 0 when the record reproduced, 1 when the replay parted from
+it — the hashes at a tick, or the ending once every hash agrees — and 2 when the
+command line was misused or the file is not a record: a record
+arrives from outside, so it is read the way a Command from outside is — every
+field checked, an unknown field refused by name, and the checkpoints required to
+be the schedule a run keeps.
+
+## The tournament
+
+```
+npm run tournament
+```
+
+One command plays a batch of AI-vs-AI Matches — one per distinct seed, two hundred
+of them by default — and prints one JSON report of what they add up to. This is
+where "is the game balanced?" stops being an opinion: the report states the win
+rate of each Faction, the median and the spread of how long a Match lasts, the
+share of Matches the clock decided, and the seed of every Match that was lopsided
+or stalled, so the Match behind an odd number can be played again and read.
+
+```json
+{
+  "rules": "ai",
+  "difficulty": "centurio",
+  "bound": 25200,
+  "seeds": { "first": 1, "count": 200 },
+  "wins": { "rome": 7, "carthage": 185, "draws": 0 },
+  "winRate": { "rome": 0.035, "carthage": 0.925 },
+  "decidedByClock": { "matches": 8, "share": 0.04 },
+  "duration": {
+    "ticks": { "min": 5401, "p10": 6300, "median": 8400, "p90": 10500, "max": 25200 },
+    "minutes": { "min": 9, "p10": 10.5, "median": 14, "p90": 17.5, "max": 42 }
+  },
+  "outliers": {
+    "lopsided": [],
+    "stalled": [
+      { "seed": 10, "outcome": "clock", "winner": null, "victoryReason": null, "ticks": 25200, "decisions": 50592, "commands": 42375, "hash": "90ad57ccfd000e8d" }
+    ]
+  },
+  "matches": [
+    { "seed": 1, "outcome": "victory", "winner": "rome", "victoryReason": "stronghold", "ticks": 6651, "decisions": 13356, "commands": 13130, "hash": "5f6ee34847ce5b65" }
+  ]
+}
+```
+
+That report is the batch of seeds 1 to 200, and it is the first thing that says
+something about the game rather than about a Match: Carthage wins nine Matches in
+ten, the middle Match is over in fourteen game minutes rather than the twenty-five
+to forty-five the plan asks for, and eight Matches — seeds 10, 18, 57, 75, 151,
+171, 184 and 196 — ran their whole three-year bound with nobody able to win.
+Nothing in this batch was lopsided: the shortest Match is 5,401 ticks against a
+median of 8,400, and no Faction was ever annihilated. The numbers are stated, not
+judged: rebalancing is F1's ticket, and a report that had already decided would
+make F1's first job auditing the report.
+
+Everything in it is a function of the seeds and the build. There is no timing, no
+path and no wall clock in the report, so two runs of the same batch print the
+same bytes — which is what lets a later ticket gate on it, and what lets a reader
+diff this week's against last week's and see only what changed in the game. The
+Matches themselves are independent, so they are played on the machine's other
+cores: one core would take half an hour over this batch, and twelve take a few
+minutes (`--workers` says how many, `--workers 1` says one). In a terminal the
+run says how far it has got, on standard error; a pipe or a CI log gets the report
+and nothing else.
+
+A Match's decisions are not in the report — one Match's log is some twenty
+megabytes of JSON, every candidate every behaviour proposed and the utility that
+decided — so `--keep <dir>` writes them beside it, one file per seed:
+
+```
+npm run tournament -- --seeds 200 --keep artifacts/tournament   # every Match's decisions
+npm run match -- --rules ai --seed 10 --difficulty centurio --ticks 25200
+```
+
+The file is the very report `npm run match --rules ai` prints for that Match,
+decisions and all, and it is named after its seed by a rule rather than by a path
+in the report — so the report does not even depend on whether logs were kept.
+Without `--keep` a Match is retrieved by playing it again, which determinism makes
+exact: name the seed the report names, at the `--difficulty` and `--ticks` it
+states, and the `hash` it gives that Match is what proves the Match retrieved is
+the Match measured. `--difficulty` is therefore a flag on `npm run match` too —
+and it is refused beside any `--rules` that has no AI in it, because a level that
+changed nothing would be a flag that lies.
+
+Two Matches are a balance reader's business rather than a distribution's:
+**stalled** is a Match the clock ended — nobody could win it — and **lopsided** is
+a victory that was not a contest, either won in at most half the batch's median
+duration or won outright by leaving the loser neither settlement nor Squad. Both
+are listed by seed, so the Match behind an odd number can be opened and read.
+
+The flags worth knowing before reading a report: `--first-seed` moves the batch,
+`--ticks` moves the bound every Match is given, and `--difficulty` picks the level
+both AIs play at, because a win rate means nothing without it.
+The command exits 0 however the game turned out — a report is a measurement — 1
+when a Match of the batch could not be played, naming its seed, and 2 when the
+command line was misused or a decision log could not be written where `--keep`
+asked for it.
+
+Building this batch found the game's own hot spot: a Match spent most of its time
+in the scouting behaviour, walking the whole theatre for frontier ground on every
+tick, and planning the same patrols twice per tick for two different callers.
+Computing the frontier once per theatre per call, and planning the patrols once per
+Observation, cut a Match's cost by about two and a half times without changing a
+single decision — the same state hashes, the same Command logs, the same decision
+logs — which is what turned this batch from eleven minutes into four
+(`src/ai/scouting.ts`, `src/cli/ai-match.ts`).
+
 ## Layout
 
 ```
@@ -1295,7 +1460,8 @@ src/                application code
     state.ts        the canonical form of authoritative state, and what it refuses
     hash.ts         the state hash, over that canonical form
     match.ts        the tick: a clock, a world, a random cursor, a hash
-    replay.ts       a seed plus a command log, run again and compared
+    replay.ts       a seed plus a command log, run again and compared; and where two runs part
+    outcome.ts      how a Match ended and why: the verdict the rules give, and two endings compared
     faction.ts      the two Factions, as words rather than as state
     command.ts      the closed Command vocabulary: constructors and a reader
     observation.ts  everything a Controller may know, and nothing else
@@ -1339,6 +1505,10 @@ src/                application code
     agent.ts        an outside process as a Player: the pipe, the deadline, a Player who stopped
     agent-arguments.ts  what the agent command line means, and what it refuses
     agent-main.ts   the agent command: standard output, standard error, exit codes
+    record.ts       a Match's record: the file a replay is made of, read strictly
+    replay.ts       replaying a record: two kinds of departure, and the verdict
+    replay-arguments.ts  what the replay command line means, and what it refuses
+    replay-main.ts  the replay command: standard output, standard error, exit codes
     png.ts          a PNG encoder in the repository's own code, for the bake step
     bake.ts         the catalogue written out as files, and the table it prints
     bake-main.ts    the bake command: standard output, standard error, exit codes

@@ -37,6 +37,7 @@ document; it imports nothing from the repository.
 | `--decision-ticks <n>`| How often the agent is asked, in ticks. Default `10`.                                          |
 | `--deadline <ms>`     | How long one reply may take, in milliseconds. Default `2000`.                                  |
 | `--log <file>`        | Write the Match's Command log here, one JSON line per Command.                                 |
+| `--record <file>`     | Write the Match's record here: the seed, the log and its checkpoints, for `npm run replay`.    |
 | `--expect-hash <hex>` | Fail unless the Match ends on this state hash.                                                 |
 
 The harness prints a JSON report on **its own** standard output, the way
@@ -393,6 +394,23 @@ per line, `tick` and `command` — through the Command vocabulary, re-runs the
 Match from the seed and ends on the same state hash, which is the hash the report
 prints. The log is the whole Match, both Factions' Commands included: the agent's
 Player and the harness's own.
+
+`--record` writes the same Match as the file `npm run replay` reads, which is the
+log and the seed *and* the seed's state hashes at every checkpoint, so a replay
+can say more than "it ran again": it can say where it stopped being the same
+Match. An agent's record is filed under the `siege` rules — the bare theatre —
+because a record names the rules and not the Players, and the process that
+decided is gone:
+
+```
+npm run agent -- --agent examples/agent.ts --seed 7 --opponent idle --record match.json
+npm run replay -- match.json
+```
+
+That second command talks to no agent and opens no browser: a Match an outside
+process played replays on any machine this build runs on, which is what makes a
+bug reported from the far end of a pipe a small text file rather than a video
+(`docs/adr/0023-a-record-is-a-seed-a-log-and-its-fingerprints.md`).
 
 The deadline is the one wall clock in the picture, and it cannot make a Match
 irreproducible: it decides whether the agent was still playing, never what the

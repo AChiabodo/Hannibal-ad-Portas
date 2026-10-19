@@ -94,7 +94,7 @@ export function formatCommandLog(log: CommandLog<Command>): string {
 }
 
 /** How a Match ended, as the three fields the report says it with. */
-interface Verdict {
+export interface Verdict {
   readonly outcome: MatchReport['outcome'];
   readonly winner: Faction | null;
   readonly reason: string;
@@ -103,8 +103,11 @@ interface Verdict {
 /**
  * The outcome the rules gave, the winner when there is one, and the reason said
  * in a sentence — read in one place, so the three cannot come to disagree.
+ *
+ * Exported because a replay reports the ending a record describes, and its
+ * report must say it in exactly the words a Match's own report would (E2).
  */
-function verdictOf(result: MatchResult): Verdict {
+export function verdictOf(result: MatchResult): Verdict {
   switch (result.kind) {
     case 'victory':
       return { outcome: 'victory', winner: result.winner, reason: victoryOf(result.winner, result.reason) };
@@ -117,6 +120,20 @@ function verdictOf(result: MatchResult): Verdict {
         reason: `the Match reached its tick bound of ${result.tick} ticks without a decision`,
       };
   }
+}
+
+/**
+ * An ending in the words a report uses, stamped with the tick it was given on —
+ * except the clock's, whose own sentence already names it.
+ *
+ * Exported for the replay's verdict, which has to say what a record's ending was
+ * and what this build reached instead, in the same words a Match's own report
+ * would (E2).
+ */
+export function endingWords(result: MatchResult): string {
+  const reason = verdictOf(result).reason;
+
+  return result.kind === 'clock' ? reason : `${reason}, at tick ${String(result.tick)}`;
 }
 
 /** How a Siege's two paths read in a sentence. */

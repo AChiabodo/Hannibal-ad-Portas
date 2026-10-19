@@ -27,6 +27,16 @@
 /** The three levels, from the rawest recruit to the general who wins wars. */
 export type DifficultyName = 'tiro' | 'centurio' | 'imperator';
 
+/**
+ * The three levels, in the order a menu offers them: the rawest first.
+ *
+ * The names a caller can type, spelled once: `--difficulty` on the tournament
+ * command reads this list, its refusal quotes it, and the table below is keyed by
+ * it, so a level cannot exist without being playable or be playable without
+ * existing.
+ */
+export const DIFFICULTY_NAMES: readonly DifficultyName[] = ['tiro', 'centurio', 'imperator'];
+
 /** One level's numbers: four axes, and the name they add up to. */
 export interface Difficulty {
   /** Which difficulty this is. */
@@ -69,6 +79,11 @@ export const DIFFICULTY: Readonly<Record<DifficultyName, Difficulty>> = Object.f
   imperator: Object.freeze({ name: 'imperator', reactionSeconds: 15, aggression: 75,
     horizonSeasons: 3, scoutsPer: 2, scoutsPerFound: 5, refreshSeconds: 15 }),
 });
+
+/** Whether a string names a level: what a command line asks before refusing one. */
+export function isDifficultyName(value: string): value is DifficultyName {
+  return (DIFFICULTY_NAMES as readonly string[]).includes(value);
+}
 
 /**
  * The friendly power, as a percent of the observed threat, that justifies a

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_DIFFICULTY,
   DEFAULT_FACTION,
   DEFAULT_OPPONENT,
   USAGE,
@@ -8,7 +7,7 @@ import {
   type AgentRunOptions,
 } from '../../src/cli/agent-arguments';
 import { DEFAULT_DEADLINE_MS, DEFAULT_DECISION_TICKS } from '../../src/cli/protocol';
-import { DEFAULT_SEED, UsageError } from '../../src/cli/arguments';
+import { DEFAULT_DIFFICULTY, DEFAULT_SEED, UsageError } from '../../src/cli/arguments';
 import { HEADLESS_TICKS } from '../../src/sim/season';
 
 /**
@@ -42,6 +41,7 @@ describe('the agent command line', () => {
       decisionTicks: DEFAULT_DECISION_TICKS,
       deadlineMs: DEFAULT_DEADLINE_MS,
       log: null,
+      record: null,
       expectedHash: null,
     });
   });
@@ -57,6 +57,7 @@ describe('the agent command line', () => {
       '--decision-ticks', '25',
       '--deadline', '500',
       '--log', 'match.jsonl',
+      '--record', 'match.json',
       '--expect-hash', '0123456789abcdef',
     );
 
@@ -69,6 +70,7 @@ describe('the agent command line', () => {
       decisionTicks: 25,
       deadlineMs: 500,
       log: 'match.jsonl',
+      record: 'match.json',
       expectedHash: '0123456789abcdef',
     });
   });

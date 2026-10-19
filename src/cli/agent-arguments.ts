@@ -19,14 +19,17 @@ import { DIFFICULTY } from '../ai/difficulty.ts';
 import type { DifficultyName } from '../ai/difficulty.ts';
 import { HEADLESS_TICKS } from '../sim/season.ts';
 import {
+  DEFAULT_DIFFICULTY,
   DEFAULT_SEED,
   UsageError,
   describe,
+  readPath,
   readSeed,
   readStateHash,
   readWholeNumber,
 } from './arguments.ts';
 import type { Opponent } from './agent.ts';
+import { continuationAt, optionAt } from './usage.ts';
 
 /** The opponents this command can put on the other side of a Match. */
 export const OPPONENTS: readonly Opponent[] = ['ai', 'idle'];
@@ -36,9 +39,6 @@ export const DEFAULT_FACTION: Faction = 'rome';
 
 /** The opponent an agent meets when the command line does not say: the built-in AI. */
 export const DEFAULT_OPPONENT: Opponent = 'ai';
-
-/** The difficulty the built-in AI plays at when the command line does not say. */
-export const DEFAULT_DIFFICULTY: DifficultyName = 'centurio';
 
 /** What one command line asked for: an agent, a Match, and how long it may take. */
 export interface AgentRunOptions {
@@ -69,6 +69,16 @@ export interface AgentRunOptions {
   /** Where to write the Command log, or `null` to write none. */
   readonly log: string | null;
 
+  /**
+   * Where to write the Match's record, or `null` to write none (E2).
+   *
+   * The log beside it is the Commands and nothing else; a record is the same
+   * Match in the form a replay reads back — the seed, the log, the ending and the
+   * state hashes it passed through — which is what makes a Match played by an
+   * outside process a file that replays anywhere.
+   */
+  readonly record: string | null;
+
   /** The state hash the Match is required to end on, or `null` to accept any. */
   readonly expectedHash: string | null;
 }
@@ -81,15 +91,12 @@ export type ParsedAgentArguments =
 /** Where a description starts: every option line pads its flag to this column. */
 const DESCRIPTION_COLUMN = 26;
 
-/** One option as `--help` prints it: the flag, then its description in the shared column. */
-function option(flag: string, description: string): string {
-  return `  ${flag.padEnd(DESCRIPTION_COLUMN - 2)}${description}`;
-}
+/** One option as this command's `--help` prints it, in the shared layout (`usage.ts`). */
+const option = (flag: string, description: string): string =>
+  optionAt(DESCRIPTION_COLUMN, flag, description);
 
-/** A line continuing the option above it, starting where that option's description starts. */
-function continuation(text: string): string {
-  return `${' '.repeat(DESCRIPTION_COLUMN)}${text}`;
-}
+/** A line continuing the option above it, starting where its description starts. */
+const continuation = (text: string): string => continuationAt(DESCRIPTION_COLUMN, text);
 
 /** The one description of what this command accepts, printed verbatim by `--help`. */
 export const USAGE = `Usage: npm run agent -- --agent <file> [options]
@@ -132,6 +139,7 @@ export function parseAgentArguments(argv: readonly string[]): ParsedAgentArgumen
     decisionTicks: DEFAULT_DECISION_TICKS,
     deadlineMs: DEFAULT_DEADLINE_MS,
     log: null,
+    record: null,
     expectedHash: null,
   };
   const given = new Set<string>();
@@ -170,6 +178,7 @@ export function parseAgentArguments(argv: readonly string[]): ParsedAgentArgumen
       decisionTicks: asked.decisionTicks,
       deadlineMs: asked.deadlineMs,
       log: asked.log,
+      record: asked.record,
       expectedHash: asked.expectedHash,
     },
   };
@@ -186,6 +195,7 @@ interface Asked {
   decisionTicks: number;
   deadlineMs: number;
   log: string | null;
+  record: string | null;
   expectedHash: string | null;
 }
 
@@ -224,6 +234,9 @@ const OPTIONS: Readonly<Record<string, (asked: Asked, value: string) => void>> =
   },
   '--log': (asked, value) => {
     asked.log = value;
+  },
+  '--record': (asked, value) => {
+    asked.record = readPath(value, '--record');
   },
   '--expect-hash': (asked, value) => {
     asked.expectedHash = readStateHash(value);
