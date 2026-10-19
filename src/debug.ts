@@ -7,6 +7,11 @@
  * what the renderer drew. The two pages publish the same shape — the game page
  * fills `view` and the Atelier fills `atelier` — so one inspection routine reads
  * either.
+ *
+ * `src/hooks.ts` names every hook and every snapshot field as data, which is the
+ * form a document and a running page can both be held to; this module types what
+ * those names are, and `docs/BROWSER.md` is the document an agent is written
+ * from (E4).
  */
 import type { AtelierHooks } from './render/atelier.ts';
 import type { ViewHooks } from './render/boot.ts';

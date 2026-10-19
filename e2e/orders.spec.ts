@@ -24,12 +24,13 @@
  * again — the pause is real, and a Match that applied orders while paused would
  * be a different game.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import type { Page } from '@playwright/test';
 import { MAP_WIDTH, generateMap, isWalkable, terrainAt } from '../src/sim/map';
 import { tilePixel } from '../src/render/terrain';
 import { DEFAULT_SEED } from '../src/render/view';
 import type { SquadReport } from '../src/render/game';
-import { advance, applied, describeView, groupOf, hud, hudRects, selection, squads } from './hooks';
+import { advance, applied, bootGame, describeView, groupOf, hud, hudRects, selection, squads } from './hooks';
 
 /** The theatre the page opens on: the map its Squads stand on. */
 const MAP = generateMap(DEFAULT_SEED);
@@ -61,9 +62,7 @@ function onPage(origin: Point, at: Point): Point {
 
 /** Boots the page with the real-time loop stopped, so a test decides when the Match steps. */
 async function boot(page: Page): Promise<void> {
-  await page.goto('/');
-  await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
-  await page.evaluate(() => window.__SPQR.game?.pause());
+  await bootGame(page, { paused: true });
 }
 
 /**

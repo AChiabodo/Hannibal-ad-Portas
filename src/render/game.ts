@@ -55,8 +55,9 @@
 import { type Container } from 'pixi.js';
 import { pixelAt, type Rgba } from '../art/pixel-buffer.ts';
 import { validateCommand, type Command, type Formation } from '../sim/command.ts';
-import { ForeignCommandError } from '../sim/driver.ts';
+import { ForeignCommandError, type MatchResult } from '../sim/driver.ts';
 import {
+  economyMatchOutcome,
   economyMatchRules,
   eyesOfEconomy,
   observeEconomy,
@@ -70,6 +71,7 @@ import { createMatch, type Match } from '../sim/match.ts';
 import type { Observation } from '../sim/observation.ts';
 import { createPacing, type Speed } from '../sim/pacing.ts';
 import { corpsesOf, type Corpse } from '../sim/residue.ts';
+import { MATCH_TICKS } from '../sim/season.ts';
 import { visibleCorpses } from './corpses.ts';
 import type { LoggedCommand } from '../sim/replay.ts';
 import { requireTickCount } from '../sim/ticks.ts';
@@ -118,6 +120,55 @@ export interface SquadReport extends VisibleSquad {
   readonly rect: PickRect;
 }
 
+/**
+ * Everything the running page believes, as one plain-data copy (ticket E4).
+ *
+ * This is what `state()` hands an inspector: the whole of what a Player can see
+ * and what the page has done with it, in one object rather than a handful of calls. It is
+ * *data* and not a handle — the page copies it before anyone sees it — so a
+ * caller may keep it, diff it, or carry it across a browser bridge, which is what
+ * makes "the game exposes its state" a fact rather than a promise (ADR-0003).
+ *
+ * What it deliberately does not hold is the other half of what an inspector might
+ * want: the world, the economy, the rules' own state, and the Commands that could
+ * be issued next. A snapshot is what the Faction knows and what the page drew
+ * from it — an Observation and its drawing, not a Match — so there is nothing
+ * here a Controller could not have been handed, and nothing here an agent could
+ * hand back as an order.
+ */
+export interface GameSnapshot {
+  /** The tick the Match is on. */
+  readonly tick: number;
+  /** The tick the Match ends on, which is what `fastForward` plays it to. */
+  readonly bound: number;
+  /** The seed the Match was created from. */
+  readonly seed: number;
+  /** The Faction the page plays, and the only one whose Observation it reads. */
+  readonly faction: Faction;
+  /** Whether the clock is stopped (B5). */
+  readonly paused: boolean;
+  /** The pace the Match runs at when it is not paused. */
+  readonly speed: Speed;
+  /** How the Match ended, or `null` while it is still being played. */
+  readonly result: MatchResult | null;
+  /** The hash of the authoritative state: the fingerprint two runs can be compared on. */
+  readonly hash: string;
+  /** The Faction's own window on the economy: the Observation the interface reads. */
+  readonly visible: EconomyVisible;
+  /** The Italian interface's model, as it stands. */
+  readonly hud: HudModel;
+  /** What a Player has picked, which is the Player's memory and not the Match's. */
+  readonly selection: PlayerSelection;
+  /** The Faction's Squads, each with the rectangle its men are drawn in. */
+  readonly squads: readonly SquadReport[];
+  /** The dead this Faction can see: residue, drawn, faded and never hashed (C3). */
+  readonly corpses: readonly Corpse[];
+  /** What each tile of the theatre is known as, row-major (B4). */
+  readonly knowledge: readonly Knowledge[];
+  /** The Commands the page has applied lately, oldest first: a record, not a door. */
+  readonly applied: readonly LoggedCommand<Command>[];
+}
+
 /** What the page tells a test or an agent about the game it is playing. */
 export interface GameHooks {
   /** The HUD's own model: the words and figures, in Italian. */
@@ -159,8 +210,35 @@ export interface GameHooks {
   groupOf(index: number): readonly number[];
   /** The Match's tick. */
   tick(): number;
-  /** Steps the Match a whole number of ticks without waiting for wall time. */
+  /**
+   * Steps the Match a whole number of ticks without waiting for wall time.
+   *
+   * The debugging step: one call, exactly that many ticks, no wall clock. It
+   * refuses a Match that has ended and a count that would run past the bound,
+   * because a step that silently did half of what it was asked is a step a test
+   * would have to check twice — `fastForward` is how a caller asks for the end.
+   *
+   * @throws RangeError when the count is not a whole number of ticks, when the
+   *   Match has already ended, or when the count would run past its bound.
+   */
   advance(ticks: number): void;
+  /** The tick the Match ends on: its bound, and how far an inspector can fast-forward. */
+  bound(): number;
+  /** How the Match ended, or `null` while it is still being played. */
+  result(): MatchResult | null;
+  /** Everything the page believes, as one plain-data copy (E4). */
+  state(): GameSnapshot;
+  /** The fingerprint of the authoritative state, which is what two runs can be compared on. */
+  hash(): string;
+  /**
+   * Plays the Match to its end without waiting for wall time, and says how it ended.
+   *
+   * This is the fast-forward the ticket asks for: the wall clock is skipped
+   * rather than accelerated, so a whole three-game-year Match is played in the
+   * time the rules take and two runs of it are the same Match on the same hash.
+   * A Match that has already ended answers with the ending it had.
+   */
+  fastForward(): MatchResult;
   /** Stops the real-time clock. */
   pause(): void;
   /** Restarts it, without charging the Match for the time spent paused. */
@@ -265,6 +343,16 @@ export function createGame(options: GameOptions): Game {
   let seenEyes = '';
   const applied: LoggedCommand<Command>[] = [];
 
+  /**
+   * The tick the page's Match ends on: a Match's own horizon, the same three game
+   * years a headless Match runs to (ADR-0022), so that a whole Match can be played
+   * through the page in the time the rules take.
+   */
+  const BOUND = MATCH_TICKS;
+
+  /** How the Match ended, or `null` while it is on. Every stepper stops here. */
+  let result: MatchResult | null = null;
+
   // The army first, then the eyes it gives the Faction, and only then a picture:
   // the fog is what the minimap is drawn through, so a minimap composed before
   // the fog existed would be a corner of the screen that quietly lied for one
@@ -306,9 +394,24 @@ export function createGame(options: GameOptions): Game {
     groupOf: (index) => human.groupOf(index),
     tick: () => match.state.tick,
     advance: (ticks) => {
-      step(requireTickCount(ticks, 'ticks', 0));
+      const count = requireTickCount(ticks, 'ticks', 0);
+      requireUnended();
+
+      if (match.state.tick + count > BOUND) {
+        throw new RangeError(
+          `advancing ${String(count)} ticks from tick ${String(match.state.tick)} would run past the ` +
+            `Match's end of ${String(BOUND)} ticks: fast-forward to it instead`,
+        );
+      }
+
+      step(count);
       repaint();
     },
+    bound: () => BOUND,
+    result: () => result,
+    state: () => snapshot(),
+    hash: () => match.hash(),
+    fastForward: () => playToEnd(),
     pause: () => {
       pacing.pause();
     },
@@ -327,16 +430,7 @@ export function createGame(options: GameOptions): Game {
       repainted();
     },
     applied: () => [...applied],
-    knowledge: () => {
-      const fog = options.fog();
-      const states: Knowledge[] = [];
-
-      for (let y = 0; y < MAP_HEIGHT; y += 1) {
-        for (let x = 0; x < MAP_WIDTH; x += 1) states.push(knows(fog, x, y));
-      }
-
-      return states;
-    },
+    knowledge: () => knowledgeStates(),
   };
 
   return {
@@ -346,19 +440,25 @@ export function createGame(options: GameOptions): Game {
       minimap = readMinimap();
       layer.minimap(model, minimap, options.size);
     },
-    start: () => {
-      if (running) return;
-
-      running = true;
-      lastFrame = performance.now();
-      scheduled = requestAnimationFrame(frame);
-    },
-    stop: () => {
-      running = false;
-      if (scheduled !== null) cancelAnimationFrame(scheduled);
-      scheduled = null;
-    },
+    start: startLoop,
+    stop: stopLoop,
   };
+
+  /** Starts the real-time loop, unless it is already running or the Match is over. */
+  function startLoop(): void {
+    if (running || result !== null) return;
+
+    running = true;
+    lastFrame = performance.now();
+    scheduled = requestAnimationFrame(frame);
+  }
+
+  /** Stops it. Idempotent. */
+  function stopLoop(): void {
+    running = false;
+    if (scheduled !== null) cancelAnimationFrame(scheduled);
+    scheduled = null;
+  }
 
   /** One frame: how much wall time has passed, how many ticks that buys, and a redraw. */
   function frame(now: number): void {
@@ -378,12 +478,28 @@ export function createGame(options: GameOptions): Game {
       repaint();
     }
 
-    scheduled = requestAnimationFrame(frame);
+    // A tick that ended the Match stopped the loop from inside `step`, and a frame
+    // scheduled after that would be one asking a finished Match for another one.
+    if (result === null) scheduled = requestAnimationFrame(frame);
   }
 
   /**
-   * Steps the Match, handing its Controller the same Observation — and the same
-   * validation — the headless driver would.
+   * Steps the Match a whole number of ticks, stopping at its end.
+   *
+   * A tick that ends the Match — the rules' verdict, or the bound — is the last
+   * one stepped: `settle` is asked after every tick, so a page left running, or a
+   * test fast-forwarding it, cannot step a Match past the tick it ended on.
+   */
+  function step(ticks: number): void {
+    for (let tick = 0; tick < ticks && result === null; tick += 1) {
+      stepOnce();
+      settle();
+    }
+  }
+
+  /**
+   * One tick: the seam's Observation, the Player's Commands, the rules, and the
+   * eyes they moved.
    *
    * The page is a host loop and not the driver (`sim/driver.ts` plays a Match to
    * its end, which a page cannot do), so the two checks the seam promises are
@@ -392,26 +508,118 @@ export function createGame(options: GameOptions): Game {
    * the driver's own error. A page that skipped them would be the one place in
    * the game where a Controller could command what it does not own.
    */
-  function step(ticks: number): void {
-    for (let tick = 0; tick < ticks; tick += 1) {
-      const observation: Observation<EconomyVisible> = {
-        faction: PLAYER_FACTION,
-        tick: match.state.tick,
-        visible: structuredClone(observeEconomy(match.state.world, PLAYER_FACTION)),
-      };
+  function stepOnce(): void {
+    const observation: Observation<EconomyVisible> = {
+      faction: PLAYER_FACTION,
+      tick: match.state.tick,
+      visible: structuredClone(observeEconomy(match.state.world, PLAYER_FACTION)),
+    };
 
-      const commands: Command[] = [];
-      for (const emitted of player.decide(observation)) {
-        const command = validate(emitted);
-        commands.push(command);
-      }
-
-      const deciding = match.state.tick;
-      match.step(commands);
-      for (const command of commands) applied.push({ tick: deciding, command });
-      if (applied.length > APPLIED_LIMIT) applied.splice(0, applied.length - APPLIED_LIMIT);
-      reportVision(match.state.world);
+    const commands: Command[] = [];
+    for (const emitted of player.decide(observation)) {
+      const command = validate(emitted);
+      commands.push(command);
     }
+
+    const deciding = match.state.tick;
+    match.step(commands);
+    for (const command of commands) applied.push({ tick: deciding, command });
+    if (applied.length > APPLIED_LIMIT) applied.splice(0, applied.length - APPLIED_LIMIT);
+    reportVision(match.state.world);
+  }
+
+  /**
+   * Ends the Match when the rules decide it or the clock runs out.
+   *
+   * The verdict is asked before the bound, in the order the headless driver asks
+   * it, so a Match decided on its very last tick reports the victory rather than
+   * the clock. Ending also stops the loop: a page must not keep presenting a
+   * Match that is over, and a Match that is over must not be stepped again.
+   */
+  function settle(): void {
+    if (result !== null) return;
+
+    const decided = economyMatchOutcome(match.state.world);
+    if (decided === null && match.state.tick < BOUND) return;
+
+    result = decided === null
+      ? { kind: 'clock', tick: match.state.tick }
+      : { ...decided, tick: match.state.tick };
+
+    stopLoop();
+  }
+
+  /**
+   * Plays the Match to its end without waiting for wall time, and redraws it once.
+   *
+   * The fast-forward E4 asks for, and the one an agent inspecting a page plays a
+   * whole Match with: skipping the wall clock rather than accelerating it means
+   * the answer is the rules' and not the frame rate's.
+   */
+  function playToEnd(): MatchResult {
+    step(BOUND - match.state.tick);
+    repaint();
+
+    if (result === null) {
+      // Unreachable by construction — `step` settles on its last tick — and a
+      // refusal rather than a type assertion, so a broken bound is never
+      // reported as an ending that did not happen.
+      throw new Error(`the Match did not end at its bound of ${String(BOUND)} ticks`);
+    }
+
+    return result;
+  }
+
+  /**
+   * @throws RangeError when the Match has already ended: nothing steps a Match
+   *   past the tick it ended on.
+   */
+  function requireUnended(): void {
+    if (result === null) return;
+
+    throw new RangeError(`the Match ended on tick ${String(result.tick)}, and cannot be advanced further`);
+  }
+
+  /**
+   * Everything the page believes, as one copy (E4).
+   *
+   * Copied through `structuredClone` rather than assembled as a shallow record,
+   * because the point of a snapshot is that an inspector may keep it: a caller
+   * that wrote through what it was handed would be reaching into the Match, the
+   * interface or the fog, which is exactly what the seam forbids. It is plain
+   * data for the same reason — it crosses into a test or into an agent, and
+   * nothing that crosses may be a function or a handle.
+   */
+  function snapshot(): GameSnapshot {
+    return structuredClone({
+      tick: match.state.tick,
+      bound: BOUND,
+      seed: options.seed,
+      faction: PLAYER_FACTION,
+      paused: pacing.paused,
+      speed: pacing.speed,
+      result,
+      hash: match.hash(),
+      visible: visible(),
+      hud: model,
+      selection: human.selection,
+      squads: squadReports(),
+      corpses: dead,
+      knowledge: knowledgeStates(),
+      applied: [...applied],
+    });
+  }
+
+  /** What each tile of the theatre is known as, row-major, as B4's fog holds it. */
+  function knowledgeStates(): readonly Knowledge[] {
+    const fog = options.fog();
+    const states: Knowledge[] = [];
+
+    for (let y = 0; y < MAP_HEIGHT; y += 1) {
+      for (let x = 0; x < MAP_WIDTH; x += 1) states.push(knows(fog, x, y));
+    }
+
+    return states;
   }
 
   /** A Controller's Command, read at the seam: the vocabulary, and whose it is. */
