@@ -23,6 +23,12 @@ test('an overflowing live list keeps selection through wheel, page keys, buttons
     const fogPath = '/src/sim/fog.ts';
     const { createStage, frameReport } = await import(stagePath);
     const { createGame } = await import(gamePath);
+    const siegePath = '/src/sim/siege.ts';
+    const openingPath = '/src/render/opening.ts';
+    const controllerPath = '/src/sim/controller.ts';
+    const { siegeMatchRules } = await import(siegePath);
+    const { musterOpeningArmy } = await import(openingPath);
+    const { idleController } = await import(controllerPath);
     const { bindControls } = await import(controlsPath);
     const { generateMap } = await import(mapPath);
     const { createFog, viewOf, refreshVision } = await import(fogPath);
@@ -31,6 +37,12 @@ test('an overflowing live list keeps selection through wheel, page keys, buttons
     const map = generateMap(7);
     const fog = createFog();
     const game = createGame({ stage, seed: 7, size, world: stage.root,
+      sessionControls: false, opponent: idleController(),
+      rules: { ...siegeMatchRules, createWorld(seed: number) {
+        const world = siegeMatchRules.createWorld(seed);
+        musterOpeningArmy(world, 'rome');
+        return world;
+      } },
       camera: () => ({ x: 0, y: 0, zoom: 2 }), viewport: () => ({ x: 0, y: 0, ...size }),
       fog: () => viewOf(fog), vision: (eyes: unknown) => refreshVision(fog, map, eyes),
     });
@@ -72,7 +84,7 @@ test('an overflowing live list keeps selection through wheel, page keys, buttons
 for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
   test(`pause and secondary scrolling share pointer, keyboard and hooks at ${viewport.width}`, async ({ page, spqr }) => {
     await page.setViewportSize(viewport);
-    await page.goto('/');
+    await page.goto('/e2e/game-fixture.html');
     await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
     await expect(page).toHaveTitle('SPQR — Annibale alle porte');
     await page.evaluate(() => window.__SPQR.game!.pause());
@@ -124,7 +136,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 108
   for (const faction of ['rome', 'carthage'] as const) {
     test(`rendered refused Order, active Work and overflowing list: ${faction} at ${viewport.width}`, async ({ page }) => {
       await page.setViewportSize(viewport);
-      await page.goto('/');
+      await page.goto('/e2e/game-fixture.html');
       await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
       await page.evaluate(() => window.__SPQR.game!.pause());
       for (const kind of ['squad', 'settlement'] as const) {

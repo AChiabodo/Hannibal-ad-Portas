@@ -57,13 +57,18 @@ export const VIEW_HOOKS = [
 /**
  * The running Match — `GameHooks` in `render/game.ts`.
  *
- * The interface, the Player's hands, the clock and the inspection surface. Five
- * of these (`orderAt`, `orderNow`, `setFormation`, `bindGroup`, `recallGroup`)
- * issue Commands, and every one of them issues what a pointer or a keyboard
- * could: there is no hook that takes a Command, which is the property
- * `e2e/surface.spec.ts` proves at the type level.
+ * The interface, the Player's hands, pacing and inspection. `submit` is the
+ * one full-Command entry: it queues through the same human Controller as the
+ * pointer and keyboard, validates the vocabulary and refuses foreign Factions.
+ * Complete visible economy and Siege panels are the responsibility of #55.
  */
 export const GAME_HOOKS = [
+  'submit',
+  'configuration',
+  'matchLayout',
+  'restart',
+  'newMatch',
+  'copySeed',
   'hud',
   'selection',
   'select',

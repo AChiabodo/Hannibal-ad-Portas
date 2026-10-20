@@ -80,6 +80,8 @@ export interface ControlTarget {
   readonly togglePause: () => void;
   /** The geometry used for HUD clicks, wheel and page keys. */
   readonly hudLayout: () => HudLayout;
+  /** Includes session chrome, so an armed map order cannot swallow a menu click. */
+  readonly hudRects?: () => readonly Rect[];
   readonly scrollHud: (region: 'list' | 'detail', lines: number) => void;
 }
 
@@ -181,7 +183,8 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
     }
 
     const layout = target.hudLayout();
-    const overHud = [layout.bar, layout.list, layout.detail, layout.minimap].some((rect) => contains(rect, to.x, to.y));
+    const overHud = (target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap])
+      .some((rect) => contains(rect, to.x, to.y));
     if (armed !== null && !overHud) {
       target.orderAt(armed, to.x, to.y);
       armed = null;

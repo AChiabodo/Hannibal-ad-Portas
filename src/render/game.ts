@@ -42,34 +42,23 @@
  * Player can see follows the Squads they are commanding — and it is the same
  * list, not a second opinion about it.
  *
- * ## Where the army comes from
- *
- * A Player needs an army to command, and C2 is not the ticket that lets them
- * raise one by hand (that is the interface's next job). So the page **musters**
- * one at its Stronghold: real Squads of real types, with the morale and the
- * Payroll their type gives them (`musterSquad`, C1's scenario door), placed on
- * the free tiles below the Stronghold. It costs the economy nothing, which is
- * what a scenario is — the HUD's treasury and stocks are the economy's own, and
- * nothing here pretends the army was recruited.
+ * The Match now starts from `siegeMatchRules`, with no demonstration army.
+ * `input/match-host.ts` asks both Controllers in Faction order and validates
+ * their Commands. The interface reads only its chosen Faction's Observation.
  */
 import { type Container } from 'pixi.js';
 import { pixelAt, type Rgba } from '../art/pixel-buffer.ts';
-import { validateCommand, type Command, type Formation } from '../sim/command.ts';
-import { ForeignCommandError, type MatchResult } from '../sim/driver.ts';
+import { type Command, type Formation } from '../sim/command.ts';
+import { type MatchResult } from '../sim/driver.ts';
 import {
-  economyMatchOutcome,
-  economyMatchRules,
   eyesOfEconomy,
-  observeEconomy,
   type EconomyVisible,
   type EconomyWorld,
   type VisibleSquad,
 } from '../sim/economy-match.ts';
 import type { Faction } from '../sim/faction.ts';
 import { MAP_HEIGHT, MAP_WIDTH } from '../sim/map.ts';
-import { createMatch, type Match } from '../sim/match.ts';
-import type { Observation } from '../sim/observation.ts';
-import { createPacing, type Speed } from '../sim/pacing.ts';
+import { type Speed } from '../sim/pacing.ts';
 import { corpsesOf, type Corpse } from '../sim/residue.ts';
 import { MATCH_TICKS } from '../sim/season.ts';
 import { visibleCorpses } from './corpses.ts';
@@ -87,32 +76,27 @@ import {
   type Pickable,
   type Selection as PlayerSelection,
 } from '../input/selection.ts';
-import { createHuman, type HumanController } from '../input/human.ts';
+import { createBrowserMatch, type BrowserMatchOptions } from '../input/match-host.ts';
+import type { MatchConfiguration } from '../input/match-setup.ts';
+import { type SiegeVisible } from '../sim/siege.ts';
 import { hudLayout, hudModel, hitTest, type HudLayout, type HudModel, type HudSize, type Rect, type RowRect, type Selection } from '../ui/hud.ts';
 import { minimapPlate, type ViewportRect } from '../ui/minimap.ts';
 import { createHudLayer, type HudLayer } from './hud.ts';
 import { screenToStage, type Camera } from './camera.ts';
+import { textureOf } from './stage.ts';
 import { createSquadLayer, type SquadLayer } from './squad-layer.ts';
 import { blockPlacement, blockSize } from './squads.ts';
 import { tileAt, tilePixel } from './terrain.ts';
 import { VIEWED_FACTION } from './view.ts';
 import type { PixelPoint, Stage } from './stage.ts';
-import { musterOpeningArmy } from './opening.ts';
+import { matchMenu, menuPlate, contains, type MatchMenu } from '../ui/match-menu.ts';
+import { message, translate } from '../ui/strings.ts';
 
-/**
- * The Faction the page plays, and the only Faction whose Observation it reads.
- *
- * `render/view.ts`'s `VIEWED_FACTION`, and not a second constant: the Faction
- * whose fog is drawn and the Faction a Player commands are one choice, and the
- * day a Match can be started as Carthage both move together.
- */
+/** Fixture/default Faction only; each running Match uses its setup configuration. */
 export const PLAYER_FACTION: Faction = VIEWED_FACTION;
 
 /** The longest a single frame may pay for: a background tab does not owe the Match an hour. */
 const FRAME_BUDGET_MS = 250;
-
-/** How many Commands the page keeps for its own inspection: a window, not a recorded Match. */
-const APPLIED_LIMIT = 128;
 
 /** A Squad, as the page reports it: what the Observation says, and where it is drawn. */
 export interface SquadReport extends VisibleSquad {
@@ -154,7 +138,7 @@ export interface GameSnapshot {
   /** The hash of the authoritative state: the fingerprint two runs can be compared on. */
   readonly hash: string;
   /** The Faction's own window on the economy: the Observation the interface reads. */
-  readonly visible: EconomyVisible;
+  readonly visible: SiegeVisible;
   /** The Italian interface's model, as it stands. */
   readonly hud: HudModel;
   /** What a Player has picked, which is the Player's memory and not the Match's. */
@@ -171,6 +155,13 @@ export interface GameSnapshot {
 
 /** What the page tells a test or an agent about the game it is playing. */
 export interface GameHooks {
+  /** The validated human submission surface shared by current and future panels. */
+  submit(command: Command): boolean;
+  configuration(): MatchConfiguration;
+  matchLayout(): MatchMenu;
+  restart(): void;
+  newMatch(): void;
+  copySeed(): Promise<boolean>;
   /** The HUD's own model: the words and figures, in Italian. */
   hud(): HudModel;
   /** What the panel is showing, or `null`. */
@@ -294,6 +285,15 @@ export interface Game {
 
 /** What a game needs to exist: a stage, a seed, the viewport, the camera and the fog. */
 export interface GameOptions {
+  readonly faction?: Faction;
+  readonly difficulty?: MatchConfiguration['difficulty'];
+  readonly rules?: BrowserMatchOptions['rules'];
+  readonly opponent?: BrowserMatchOptions['opponent'];
+  readonly restart?: () => void;
+  readonly newMatch?: () => void;
+  readonly ended?: () => void;
+  /** A composed visual fixture can omit navigation chrome. Normal Matches always show it. */
+  readonly sessionControls?: boolean;
   readonly stage: Stage;
   readonly seed: number;
   readonly size: HudSize;
@@ -330,16 +330,20 @@ export interface GameOptions {
  * `describe()` reports.
  */
 export function createGame(options: GameOptions): Game {
-  const match: Match<EconomyWorld, Command> = createMatch({
-    seed: options.seed,
-    rules: economyMatchRules,
-  });
-  const human: HumanController = createHuman(PLAYER_FACTION);
-  const pacing = createPacing();
-  const player = pacing.wrap(human);
+  const config: MatchConfiguration = { seed: options.seed, faction: options.faction ?? PLAYER_FACTION,
+    difficulty: options.difficulty ?? 'centurio' };
+  const faction = config.faction;
+  const host = createBrowserMatch({ ...config, rules: options.rules, opponent: options.opponent });
+  const match = host.match;
+  const human = host.human;
+  const pacing = host.pacing;
 
   const layer: HudLayer = createHudLayer(options.stage);
   const field: SquadLayer = createSquadLayer(options.world);
+  const menu = options.stage.spriteOf(menuPlate(options.size, matchMenu(options.size, 0, config, 1, null)));
+  options.stage.root.addChild(menu);
+  menu.visible = options.sessionControls !== false;
+  let notice = '';
 
   let running = false;
   let lastFrame = 0;
@@ -358,13 +362,12 @@ export function createGame(options: GameOptions): Game {
   const BOUND = MATCH_TICKS;
 
   /** How the Match ended, or `null` while it is on. Every stepper stops here. */
-  let result: MatchResult | null = null;
+  let result: MatchResult | null = host.result;
 
-  // The army first, then the eyes it gives the Faction, and only then a picture:
+  // The rules first, then the eyes the Faction has, and only then a picture:
   // the fog is what the minimap is drawn through, so a minimap composed before
   // the fog existed would be a corner of the screen that quietly lied for one
   // frame.
-  musterOpeningArmy(match.state.world, PLAYER_FACTION);
   reportVision(match.state.world);
 
   let model = readModel();
@@ -374,6 +377,23 @@ export function createGame(options: GameOptions): Game {
   repaint();
 
   const hooks: GameHooks = {
+    submit: (command) => human.submit(command),
+    configuration: () => ({ ...config }),
+    matchLayout: () => readMenu(),
+    restart: () => options.restart?.(),
+    newMatch: () => options.newMatch?.(),
+    copySeed: async () => {
+      try {
+        await navigator.clipboard.writeText(String(config.seed));
+        notice = translate('match.copied');
+        repaint();
+        return true;
+      } catch {
+        notice = message('match.copyFailed', { seed: config.seed });
+        repaint();
+        return false;
+      }
+    },
     hud: () => model,
     selection: () => human.selection,
     select: (next) => {
@@ -382,7 +402,7 @@ export function createGame(options: GameOptions): Game {
     },
     hudRects: () => {
       const layout = hudLayout(model, options.size);
-      return [layout.bar, layout.list, layout.detail, layout.minimap];
+      return [layout.bar, layout.list, layout.detail, layout.minimap, ...(menu.visible ? [readMenu().rect] : [])];
     },
     hudRows: () => hudLayout(model, options.size).rows,
     hudLayout: () => hudLayout(model, options.size),
@@ -432,6 +452,7 @@ export function createGame(options: GameOptions): Game {
       repaint();
     },
     resume: () => {
+      if (result !== null) return;
       pacing.resume();
       lastFrame = performance.now();
       repaint();
@@ -439,7 +460,9 @@ export function createGame(options: GameOptions): Game {
     paused: () => pacing.paused,
     speed: () => pacing.speed,
     setSpeed: (speed) => {
+      if (result !== null) return;
       pacing.setSpeed(speed);
+      repaint();
     },
     minimapSamples: (points) => points.map(([x, y]) => pixelAt(minimap, x, y)),
     showSquads: (visible) => {
@@ -489,9 +512,11 @@ export function createGame(options: GameOptions): Game {
     const elapsed = Math.min(Math.max(now - lastFrame, 0), FRAME_BUDGET_MS);
     lastFrame = now;
 
-    const ticks = pacing.ticksFor(elapsed);
-    if (ticks > 0) {
-      step(ticks);
+    const before = match.state.tick;
+    host.elapse(elapsed, () => reportVision(match.state.world));
+    if (before !== match.state.tick) {
+      applied.splice(0, applied.length, ...host.applied(faction));
+      settle();
       repaint();
     }
 
@@ -508,41 +533,10 @@ export function createGame(options: GameOptions): Game {
    * test fast-forwarding it, cannot step a Match past the tick it ended on.
    */
   function step(ticks: number): void {
-    for (let tick = 0; tick < ticks && result === null; tick += 1) {
-      stepOnce();
-      settle();
-    }
-  }
-
-  /**
-   * One tick: the seam's Observation, the Player's Commands, the rules, and the
-   * eyes they moved.
-   *
-   * The page is a host loop and not the driver (`sim/driver.ts` plays a Match to
-   * its end, which a page cannot do), so the two checks the seam promises are
-   * repeated here rather than assumed: what a Controller returns is read through
-   * `validateCommand`, and a Command addressed to another Faction is refused with
-   * the driver's own error. A page that skipped them would be the one place in
-   * the game where a Controller could command what it does not own.
-   */
-  function stepOnce(): void {
-    const observation: Observation<EconomyVisible> = {
-      faction: PLAYER_FACTION,
-      tick: match.state.tick,
-      visible: structuredClone(observeEconomy(match.state.world, PLAYER_FACTION)),
-    };
-
-    const commands: Command[] = [];
-    for (const emitted of player.decide(observation)) {
-      const command = validate(emitted);
-      commands.push(command);
-    }
-
-    const deciding = match.state.tick;
-    match.step(commands);
-    for (const command of commands) applied.push({ tick: deciding, command });
-    if (applied.length > APPLIED_LIMIT) applied.splice(0, applied.length - APPLIED_LIMIT);
-    reportVision(match.state.world);
+    if (result !== null) return;
+    host.advance(Math.min(ticks, BOUND - match.state.tick), () => reportVision(match.state.world));
+    applied.splice(0, applied.length, ...host.applied(faction));
+    settle();
   }
 
   /**
@@ -556,13 +550,9 @@ export function createGame(options: GameOptions): Game {
   function settle(): void {
     if (result !== null) return;
 
-    const decided = economyMatchOutcome(match.state.world);
-    if (decided === null && match.state.tick < BOUND) return;
-
-    result = decided === null
-      ? { kind: 'clock', tick: match.state.tick }
-      : { ...decided, tick: match.state.tick };
-
+    result = host.result;
+    if (result === null) return;
+    options.ended?.();
     stopLoop();
   }
 
@@ -612,7 +602,7 @@ export function createGame(options: GameOptions): Game {
       tick: match.state.tick,
       bound: BOUND,
       seed: options.seed,
-      faction: PLAYER_FACTION,
+      faction: faction,
       paused: pacing.paused,
       speed: pacing.speed,
       result,
@@ -639,19 +629,9 @@ export function createGame(options: GameOptions): Game {
     return states;
   }
 
-  /** A Controller's Command, read at the seam: the vocabulary, and whose it is. */
-  function validate(emitted: Command): Command {
-    const command = validateCommand(emitted);
-    if (command.faction !== PLAYER_FACTION) {
-      throw new ForeignCommandError(PLAYER_FACTION, command.faction);
-    }
-
-    return command;
-  }
-
   /** The Faction's window on the economy, which is the only thing the interface reads. */
-  function visible(): EconomyVisible {
-    return observeEconomy(match.state.world, PLAYER_FACTION);
+  function visible(): SiegeVisible {
+    return host.observe();
   }
 
   /** The Faction's Squads, each with the rectangle its men are drawn in. */
@@ -677,10 +657,10 @@ export function createGame(options: GameOptions): Game {
   function readModel(): HudModel {
     const window = visible();
     const next = hudModel(window, strongholdIds(window), panelSelection(), human.selection.squads,
-      { paused: pacing.paused, listOffset, detailOffset });
+      { ended: result !== null, paused: pacing.paused, listOffset, detailOffset });
     if (next.selected?.id !== detailSelection?.id || next.selected?.kind !== detailSelection?.kind) detailOffset = 0;
     detailSelection = next.selected;
-    return { ...next, view: { paused: pacing.paused, listOffset, detailOffset } };
+    return { ...next, view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset } };
   }
 
   /** What the panel is showing: the picked settlement, or the first Squad that was picked. */
@@ -719,7 +699,7 @@ export function createGame(options: GameOptions): Game {
       squads: visible().squads,
       selected: human.selection.squads,
       tick: match.state.tick,
-      faction: PLAYER_FACTION,
+      faction: faction,
       // The dead are not in the Observation — they are not state, and a
       // Faction's eyes do not report its corpses — so the page reads them from
       // the world's residue, through its own fog, which is a drawing decision
@@ -728,7 +708,15 @@ export function createGame(options: GameOptions): Game {
     });
     minimap = readMinimap();
     layer.minimap(model, minimap, options.size);
+    const oldMenu = menu.texture;
+    menu.texture = textureOf(menuPlate(options.size, readMenu()));
+    oldMenu.destroy(true);
+    if (menu.visible) options.stage.canvas.setAttribute('aria-label', [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)].join('. '));
     options.stage.render();
+  }
+
+  function readMenu(): MatchMenu {
+    return matchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice);
   }
 
   /** `repaint`, for a hook that only needs to say whether it did anything. */
@@ -745,7 +733,7 @@ export function createGame(options: GameOptions): Game {
    * on every one of the ten ticks a second the Match steps.
    */
   function reportVision(world: EconomyWorld): void {
-    const eyes = eyesOfEconomy(world, PLAYER_FACTION);
+    const eyes = eyesOfEconomy(world, faction);
     const key = eyes.map((eye) => `${String(eye.x)},${String(eye.y)}`).join(';');
     if (key === seenEyes) return;
 
@@ -763,6 +751,15 @@ export function createGame(options: GameOptions): Game {
 
   /** A click at a screen point: the interface's rows first, then the men on the map. */
   function pickAt(screenX: number, screenY: number, additive: boolean): void {
+    const menuButton = menu.visible ? readMenu().buttons.find(({ rect }) => contains(rect, screenX, screenY)) : undefined;
+    if (menuButton !== undefined) {
+      if (!menuButton.enabled) return;
+      if (menuButton.action === 'restart') hooks.restart();
+      else if (menuButton.action === 'new') hooks.newMatch();
+      else if (menuButton.action === 'copy') void hooks.copySeed();
+      else if (menuButton.speed !== undefined) hooks.setSpeed(menuButton.speed);
+      return;
+    }
     const layout = hudLayout(model, options.size);
     const button = layout.buttons.find(({ rect }) => containsPoint(rect, screenX, screenY));
     if (button !== undefined) {
@@ -795,7 +792,7 @@ export function createGame(options: GameOptions): Game {
   function underInterface(x: number, y: number): boolean {
     const layout = hudLayout(model, options.size);
 
-    return [layout.bar, layout.list, layout.detail, layout.minimap].some(
+    return [layout.bar, layout.list, layout.detail, layout.minimap, ...(menu.visible ? [readMenu().rect] : [])].some(
       (rect) => x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height,
     );
   }

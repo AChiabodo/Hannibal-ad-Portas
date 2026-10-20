@@ -10,7 +10,7 @@
  * Faction — the one the page shows — so what the page shows and what that
  * Faction may decide on come from the same object. B7 puts the interface over
  * both and the Match behind them, and C2 puts men on the map and a hand on them:
- * `render/game.ts` musters a Roman army, draws each Squad as its soldiers
+ * `render/game.ts` hosts both Controllers, draws recruited Squads as their soldiers
  * (`render/squads.ts`) and hands the Player's orders to the Match as Commands
  * (`input/human.ts`).
  *
@@ -89,6 +89,10 @@ import {
   type Stage,
 } from './stage.ts';
 import { DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from './view.ts';
+import { matchAddress, type MatchConfiguration } from '../input/match-setup.ts';
+import type { BrowserMatchOptions } from '../input/match-host.ts';
+import { translate } from '../ui/strings.ts';
+import { ENTRY_PATH } from './entry-path.ts';
 
 /**
  * The magnification the page opens at, and the viewport it opens in, are
@@ -167,8 +171,9 @@ export interface GameView extends ViewHooks, GameHooks {
  * both, the Match and its interface over everything, one frame drawn, and the
  * hooks Playwright and, later, an external agent drive it with.
  */
-export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
-  const map = generateMap(DEFAULT_SEED);
+export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserMatchOptions> & { readonly sessionControls?: boolean } = {}): Promise<GameView> {
+  const config: MatchConfiguration = { seed: options.seed ?? DEFAULT_SEED, faction: options.faction ?? 'rome', difficulty: options.difficulty ?? 'centurio' };
+  const map = generateMap(config.seed);
   const theatre = renderTerrain(map);
   const stage = await createStage(mount, {
     width: VIEWPORT_WIDTH,
@@ -199,7 +204,7 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
     height: stage.height,
   };
   let camera = clampTo(
-    lookingAt(createCamera({ zoom: DEFAULT_ZOOM }), stage, map.strongholds[0]),
+    lookingAt(createCamera({ zoom: DEFAULT_ZOOM }), stage, map.strongholds[config.faction === 'rome' ? 0 : 1]),
     bounds,
   );
   applyCamera(world, camera);
@@ -229,7 +234,18 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
   const size = { width: stage.width, height: stage.height };
   const game = createGame({
     stage,
-    seed: DEFAULT_SEED,
+    ...config,
+    rules: options.rules,
+    opponent: options.opponent,
+    sessionControls: options.sessionControls,
+    restart: () => leave(matchAddress(config, ENTRY_PATH)),
+    newMatch: () => leave(`${ENTRY_PATH}?previous=${String(config.seed)}`),
+    ended: () => {
+      watch = null;
+      inspection = false;
+      revealed = null;
+      refresher();
+    },
     size,
     world,
     camera: () => camera,
@@ -276,6 +292,7 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       moveTo(zoomAboutCamera(camera, zoom, screenX, screenY));
     },
     lookFrom: (x, y) => {
+      if (game.hooks.result() !== null) return;
       // The tile is checked before the watch is set, so a refused look leaves
       // the page looking where it was. The check is `sim/fog.ts`'s own, so the
       // page and the rules refuse the same coordinates with the same sentence.
@@ -284,6 +301,7 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       paintFog();
     },
     inspect: (shown) => {
+      if (game.hooks.result() !== null && shown) return;
       inspection = shown === true;
       // The omniscient view is built once, when it is asked for, rather than on
       // every frame: seeing everything is a debug mode, and a mode that copied
@@ -298,7 +316,7 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       camera,
       width: stage.width,
       height: stage.height,
-      seed: DEFAULT_SEED,
+      seed: config.seed,
       mapWidth: MAP_WIDTH,
       mapHeight: MAP_HEIGHT,
       mapPixels: THEATRE_PIXELS,
@@ -335,10 +353,38 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       else view.pause();
     },
     hudLayout: () => view.hudLayout(),
+    hudRects: () => view.hudRects(),
     scrollHud: (region, lines) => view.scrollHud(region, lines),
   });
 
   game.start();
+  stage.canvas.tabIndex = 0;
+  stage.canvas.focus();
+  window.addEventListener('keydown', (event) => {
+    if (options.sessionControls === false) return;
+    if (!['F2', 'F3', 'F4'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === 'F2') game.hooks.restart();
+    else if (event.key === 'F3') game.hooks.newMatch();
+    else void game.hooks.copySeed();
+  });
+
+  let leaving = false;
+  function leave(address: string): void {
+    const paused = game.hooks.paused();
+    game.hooks.pause();
+    if (game.hooks.result() === null && !window.confirm(translate('match.leave'))) {
+      if (!paused) game.hooks.resume();
+      return;
+    }
+    leaving = true;
+    location.assign(address);
+  }
+  window.addEventListener('beforeunload', (event) => {
+    if (leaving || game.hooks.result() !== null) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
 
   return view;
 }

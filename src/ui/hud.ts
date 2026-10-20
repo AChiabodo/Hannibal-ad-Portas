@@ -104,6 +104,7 @@ export interface HudDetail {
 
 /** Presentation memory only; never part of the Match. Offsets count bitmap text lines. */
 export interface HudView {
+  readonly ended?: boolean;
   readonly paused?: boolean;
   readonly listOffset?: number;
   readonly detailOffset?: number;
@@ -305,8 +306,8 @@ export function hudLayout(model: HudModel, size: HudSize): HudLayout {
   const rows: RowRect[] = [];
   const text: HudText[] = [];
   const buttons: HudButton[] = [{
-    action: 'pause', text: translate(model.view.paused ? 'ui.resume' : 'ui.pause'),
-    rect: { x: PADDING, y: pauseY, width: 142, height: 2 * LINE_STEP }, enabled: true,
+    action: 'pause', text: translate(model.view.ended ? 'match.ended' : model.view.paused ? 'ui.resume' : 'ui.pause'),
+    rect: { x: PADDING, y: pauseY, width: 142, height: 2 * LINE_STEP }, enabled: !model.view.ended,
   }];
   text.push({ text: translate(model.view.paused ? 'ui.paused' : 'ui.running'),
     rect: { x: LIST_WIDTH + PADDING, y: pauseY + 4, width: size.width - LIST_WIDTH - 2 * PADDING, height: LINE_STEP } });

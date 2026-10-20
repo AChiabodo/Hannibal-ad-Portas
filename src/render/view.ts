@@ -14,25 +14,10 @@
  * tell whether the page chose the right one.
  */
 
-/**
- * The seed the game page opens on, until something lets a player choose one.
- *
- * Seven, because it is the seed the README dumps: the map a reader can look at on
- * the command line is the map the page draws, which is worth more than a round
- * number.
- */
+/** Stable seed for composed drawing fixtures; normal setup proposes a fresh seed. */
 export const DEFAULT_SEED = 7;
 
-/**
- * Which Faction's view the page shows: whose fog is drawn over the theatre.
- *
- * Rome, and not a choice: the page has one side on screen and no Match to pick a
- * side in yet (C2). It is the *viewed* Faction and not "the player's", because a
- * Player is whichever Controller drives a Faction (GLOSSARY: Player) — the same
- * page could show Carthage to a spectator or a replay, and the fog would be
- * Carthage's. The day a side can be chosen this becomes a value, and `boot.ts`
- * reads it exactly as it reads this.
- */
+/** Default for composed drawing fixtures; the browser's setup supplies the Faction. */
 export const VIEWED_FACTION = 'rome';
 
 /** The magnification the page opens at: a tile is 32 screen pixels, and the frame holds 20×15 of them. */

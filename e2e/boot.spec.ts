@@ -136,7 +136,7 @@ function covers(rect: Rect, x: number, y: number): boolean {
 
 /** Boots the page and waits for the hooks, answering with what the renderer reported. */
 async function boot(page: Page): Promise<SpqrDebugHooks['boot'] & { readonly booted: true }> {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
   const report: SpqrDebugHooks['boot'] = await page.evaluate(() => window.__SPQR.boot);

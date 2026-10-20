@@ -36,7 +36,7 @@ export type HookName = 'view' | 'atelier';
  * so no spec invents its own idea of what "booted" means.
  */
 export async function bootGame(page: Page, options: { paused?: boolean } = {}): Promise<void> {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
   if (options.paused === true) {

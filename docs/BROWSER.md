@@ -57,6 +57,12 @@ the camera's hooks and the Match's hooks, and nothing else:
 | `inspect` | `(revealed)` | view | Turns the inspection mode on or off: the whole theatre revealed, and no fog |
 | `describe` | `() → ViewState` | view | Where the camera is, how big the viewport is, the seed, the map, the watch and the fog |
 | `samples` | `(points) → Rgba[]` | view | Reads the current frame's pixels at canvas points, in the art library's own RGBA |
+| `submit` | `(command) -> boolean` | game | Validates and queues any existing Command through the human Controller; refuses foreign Factions and ended Matches |
+| `configuration` | `() -> MatchConfiguration` | game | A copy of seed, human Faction and opponent difficulty |
+| `matchLayout` | `() -> MatchMenu` | game | The actual bitmap menu text, buttons, enabled state and rectangles |
+| `restart` | `()` | game | Confirms leaving an active Match, then restarts with the same configuration |
+| `newMatch` | `()` | game | Confirms leaving an active Match, then returns to setup with a fresh proposed seed |
+| `copySeed` | `() -> Promise<boolean>` | game | Copies the seed to the clipboard; reports success or a visible fallback |
 | `hud` | `() → HudModel` | game | The Italian interface's model: the words and figures it is showing |
 | `selection` | `() → Selection` | game | What the Player has picked: the Squads an order goes to, and the settlement the panel shows |
 | `select` | `(selection), null to clear` | game | Selects a settlement or a Squad as the panel does |
@@ -129,7 +135,7 @@ a sequence of ticks.
 | `speed` | The pace the Match runs at when it is not paused |
 | `result` | How the Match ended, or `null` while it is still being played |
 | `hash` | The hash of the authoritative state |
-| `visible` | The Faction's own window on the economy: the Observation the interface reads |
+| `visible` | The Faction's own Siege Observation, including only allowed fronts and remembered contacts |
 | `hud` | The Italian interface's model, as it stands |
 | `selection` | What the Player has picked, which is the Player's memory and not the Match's |
 | `squads` | The Faction's Squads, each with the rectangle its men are drawn in |
@@ -166,11 +172,10 @@ await page.evaluate(() => window.__SPQR.game.pause());
 // ...inspect, issue orders...
 await page.evaluate(() => window.__SPQR.game.resume());
 
-// Play the rest of it now: the rules take about a second, whatever the frame rate
-// is doing. What comes back is the MatchResult the report of a headless Match uses.
+// Play the rest now without waiting for wall time. AI planning still costs CPU
+// time; the returned MatchResult is the same shape the headless driver reports.
 const result = await page.evaluate(() => window.__SPQR.game.fastForward());
-// { kind: 'clock', tick: 25200 } — this Match has an economy and no Siege, so the
-// clock is how it ends; a Match the rules decide reports a victory and its reason.
+// A victory with its Siege reason, or { kind: 'clock', tick: 25200 }.
 ```
 
 A pause stops the page's frame loop and nothing else: `advance` and `fastForward`
@@ -178,8 +183,8 @@ are a caller's own steps and are not held by it, which is what lets a test step 
 Match a tick at a time while the clock is stopped.
 
 `advance(ticks)` is the debugging step beside `fastForward`: exactly that many ticks, no wall
-clock, and a refusal rather than a partial answer when the count would run past the
-bound or the Match has already ended. A Match that has ended stops the frame loop,
+clock, and a refusal when the requested count would run past the bound or the Match has
+already ended. A rules victory can stop an advance early, on the exact ending tick. A Match that has ended stops the frame loop,
 and `state()` keeps reporting the ending it had; a second `fastForward` answers with
 that same result rather than playing anything again.
 
@@ -189,11 +194,11 @@ The ticket this surface exists for puts it best: the game exposes its state *wit
 exposing Commands a Player could not issue*. That is not a convention here, it is the
 shape of the surface:
 
-- **No hook takes a Command.** The five that issue one — `orderAt`, `orderNow`,
-  `setFormation`, `bindGroup`, `recallGroup` — take what a pointer or a keyboard
-  produces: a screen point, a kind with a fixed vocabulary, a Formation, a control
-  group's digit. `e2e/surface.spec.ts` proves it at the type level, so a hook that
-  took a Command would stop the build rather than quietly widen what an agent can do.
+- **One shared submission surface.** `submit(Command)` accepts only the existing
+  validated vocabulary, queues through the human Controller and rejects a foreign
+  Faction or ended Match. The gesture hooks accept screen points, Formations and
+  group digits. `e2e/surface.spec.ts` holds the full-Command entry to exactly
+  `submit`; #55 adds its complete visible panels.
 - **What they issue is a Player's own.** They hand the Command to the human
   Controller, which the page reads through `validateCommand` and checks for
   ownership: a Command for another Faction is refused with the driver's own error.
@@ -224,3 +229,51 @@ disagree about a pixel and agree about the hash are a rendering question; two ru
 that disagree about the hash are a rules question, and either way the tick is already
 narrowed before anyone reads code. No screenshot is taken, because a picture of a
 canvas cannot say which tick it was.
+
+
+## Setup and the complete browser host (#53)
+
+`/` opens setup, drawn through the existing bitmap/PixelBuffer/PixiJS pipeline.
+Click Faction or difficulty to cycle; Tab chooses a field, Left/Right changes
+its choice, and Enter activates it. The seed field accepts a decimal unsigned
+32-bit integer (including zero); leave it empty to use the displayed proposal.
+A proposal draws from the existing deterministic generator, seeded with browser
+entropy outside the rules. Invalid seeds disable Start with an Italian explanation.
+Setup briefly states the Stronghold objective and the existing three-year horizon.
+Setup publishes the boot report and null game/view/atelier fields.
+
+A validated `/?play=1&seed=7&faction=rome&difficulty=centurio` address opens a Match.
+The entry is prefixed by Vite's configured base path in a repository Pages build;
+setup, Restart and New Match all retain that path without relying on redirects.
+`configuration()` reports those three choices. The browser uses the complete
+`siegeMatchRules`, `observeSiege`, `siegeMatchOutcome` and existing difficulty AI.
+Both Controllers decide in Faction order with independent copied Observations;
+no free opening army is added. `submit(Command)` validates and queues through
+`HumanController`, just as the existing military gestures do. Both Players stop
+while paused; explicit `advance`/`fastForward` remain debugging steps that skip
+wall time. `applied()` and snapshot logs expose only human Commands, never the
+opponent's hidden plans. Complete visible construction/recruitment/Siege panels
+and a full human playthrough remain #55/#59 work.
+
+The bitmap menu shows the actual seed, clipboard control, 1x/2x/3x pace,
+Restart (F2), New Match (F3) and Copy seed (F4). Restart preserves all three
+configuration fields. New Match returns to setup with a proposal distinct from
+the previous seed. Leaving an active Match asks for confirmation, including
+browser navigation; menu cancellation restores its previous pause state and
+resume resets the wall-time baseline. Native browser unload dialogs use the
+browser's own wording. No Match is saved.
+
+The announced ending is the held `MatchResult`: victory/defeat with the actual
+Stronghold/path or annihilation reason, draw if supplied by rules, or the three
+year clock bound. #53 follows ADR-0022 and the issue owner's follow-up: it
+presents the existing `MATCH_TICKS`, without adding a new human deadline. The
+announcement persists while selection, detail, camera and minimap remain usable.
+Pause and speed controls cannot restart the clock. No Commands can be queued
+after the ending, and diagnostic `inspect(true)`/`lookFrom` cannot reveal new
+information then. Restart and return to setup remain available.
+
+The old Roman army remains only in `e2e/game-fixture.*` as a composed scenario
+for existing drawing/input tests. It is not the normal browser opening. The
+functional `setup.spec.ts` tests use the real entry and complete rules; its
+short Siege fixture injects initial conditions through the rules composition
+seam and reaches the result with actual Commands, never a fabricated UI verdict.

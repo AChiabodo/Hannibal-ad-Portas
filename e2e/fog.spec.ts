@@ -163,7 +163,7 @@ async function pixelOfTile(page: Page, tile: Site): Promise<Rgba> {
 
 /** Boots the page and waits for the hooks, as `boot.spec.ts` does. */
 async function boot(page: Page): Promise<ViewState> {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
   const report = await page.evaluate(() => window.__SPQR.boot);

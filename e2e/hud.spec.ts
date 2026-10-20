@@ -65,7 +65,7 @@ function openingFog(): FogView {
  * forever for a Squad the page never got to raise.
  */
 async function boot(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
   await advance(page, 1);
   await page.evaluate(() => window.__SPQR.game?.pause());
