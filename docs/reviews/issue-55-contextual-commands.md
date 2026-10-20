@@ -77,6 +77,11 @@ Two-axis review against `8ee5f4c` (commit `c7ae2ab`), both axes run independentl
 - **P2, fixed.** No new scenario pressed Withdraw; the visible `Ritirata` button now submits it in the command spec.
 - **P2, fixed.** The control-group strip silently dropped chips that did not fit; it now wraps to as many rows as the digits need, computed from the same chip text the drawing uses, with a nine-group test.
 
+A second read-only pass over the follow-up found two more, both fixed and both covered by tests that fail without the fix:
+
+- **P1.** The group strip was drawn in the same band as the detail column's own scroll buttons, and `hudHit` reads buttons first, so a chip click could become `detailPrevious`. The scroll buttons now stop above the strip; the regression test builds a scrolling settlement detail with nine bound groups, asserts no chip overlaps any button, and asserts a click on a chip answers `{group}`.
+- **P2.** The three pace buttons had `'1x'`/`'2x'`/`'3x'` typed into the HUD module; they now read `ui.speed` / `ui.speedCurrent` from the table.
+
 ## Standards
 
 Implementation re-read against the repository's own standards: the panel model stays in `ui/` (Node-testable, no engine), the page keeps the only PixiJS and wall-clock code, every player-facing word comes from the string table (the no-literal-text test passes), and all offers are read from `content/` with the same `pay()`/tier rules the economy uses.

@@ -1094,6 +1094,11 @@ function landOf(settlement: VisibleSettlement, kind: ResourceKind): number {
   return amountOf(settlement.land, kind);
 }
 
+/** One of the three paces, marked when it is the one the Match is running at. */
+function speedLabel(speed: number, current: number | undefined): string {
+  return message(current === speed ? 'ui.speedCurrent' : 'ui.speed', { speed });
+}
+
 /** How many rows of numbered chips a strip that wide needs. */
 function groupStripRows(groups: readonly ControlGroupView[], stripWidth: number): number {
   let rows = 1;
@@ -1185,7 +1190,8 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   text.push({ text: translate(model.view.paused ? 'ui.paused' : 'ui.running'), rect: { x: 480, y: 4, width: 150, height: LINE_STEP } });
   const actions = [
     ['pause', translate(model.view.ended ? 'match.ended' : model.view.paused ? 'ui.resume' : 'ui.pause'), 142],
-    ['speed1', model.view.speed === 1 ? '1x*' : '1x', 30], ['speed2', model.view.speed === 2 ? '2x*' : '2x', 30], ['speed3', model.view.speed === 3 ? '3x*' : '3x', 30],
+    ['speed1', speedLabel(1, model.view.speed), 30], ['speed2', speedLabel(2, model.view.speed), 30],
+    ['speed3', speedLabel(3, model.view.speed), 30],
     ['navigator', translate(showNavigator ? 'ui.hideNavigator' : 'ui.showNavigator'), 100],
     ['center', translate('ui.center'), 80],
     ['session', message('ui.options', { scale }), 110],
@@ -1267,7 +1273,8 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   for (const [index, word] of secondary.slice(detailScroll.offset, detailScroll.offset + detailScroll.page).entries()) {
     text.push({ text: word, rect: { x: textX, y: secondaryTop + index * LINE_STEP, width: textWidth, height: LINE_STEP } });
   }
-  addScrollButtons(buttons, { ...detail, x: textX - 1, width: textWidth + 2 }, 'detail', detailScroll);
+  addScrollButtons(buttons, { ...detail, x: textX - 1, width: textWidth + 2, height: detail.height - groupStrip },
+    'detail', detailScroll);
 
   // The commands column: the settlement's pages first, then what the last order
   // did, then the offers themselves.

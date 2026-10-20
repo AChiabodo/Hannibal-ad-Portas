@@ -99,6 +99,8 @@ export const STRINGS = {
   'match.blockade': { it: 'blocco', en: 'blockade' },
   'match.finalKnown': { it: 'Puoi esplorare la situazione finale conosciuta', en: 'You can inspect the final known situation' },
   'match.speed': { it: 'Velocità {speed}x', en: 'Speed {speed}x' },
+  'ui.speed': { it: '{speed}x', en: '{speed}x' },
+  'ui.speedCurrent': { it: '{speed}x*', en: '{speed}x*' },
   'match.restartControl': { it: 'Ricomincia [F2]', en: 'Restart [F2]' },
   'match.newControl': { it: 'Nuova [F3]', en: 'New [F3]' },
   'match.copyControl': { it: 'Copia [F4]', en: 'Copy [F4]' },

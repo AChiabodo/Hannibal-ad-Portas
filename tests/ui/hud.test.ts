@@ -24,6 +24,7 @@ import {
   HUD_ARMED,
   HUD_BACKGROUND,
   hitTest,
+  hudHit,
   hudLayout,
   hudModel,
   renderHud,
@@ -688,12 +689,25 @@ it('keeps every numbered control group reachable, wrapping the chips rather than
     count: 1,
     composition: 'Astati 1',
   }));
-  const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1], DESKTOP_VIEW, { groups });
+  const selected = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 2 }, [], DESKTOP_VIEW, { groups });
+  // A detail long enough to scroll, so the column's own scroll buttons exist in
+  // the same band as the group strip: the two must not share a pixel.
+  const long = Array.from({ length: 30 }, (_unused, index) => ({ label: `Riga ${String(index)}`, value: 'valore' }));
+  const model = { ...selected, detail: { ...selected.detail!, lines: [...selected.detail!.lines, ...long] } };
   const layout = hudLayout(model, DESKTOP);
 
   expect(layout.groups.map((group) => group.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  expect(layout.detailScroll.max).toBeGreaterThan(0);
   for (const chip of layout.groups) {
     expect(chip.rect.y + chip.rect.height).toBeLessThanOrEqual(layout.detail.y + layout.detail.height);
     expect(chip.rect.x + chip.rect.width).toBeLessThanOrEqual(layout.detail.x + layout.detail.width);
+    for (const button of layout.buttons) {
+      const overlaps = chip.rect.x < button.rect.x + button.rect.width
+        && button.rect.x < chip.rect.x + chip.rect.width
+        && chip.rect.y < button.rect.y + button.rect.height
+        && button.rect.y < chip.rect.y + chip.rect.height;
+      expect(overlaps, `chip ${String(chip.index)} is under the ${button.action} button`).toBe(false);
+    }
+    expect(hudHit(model, DESKTOP, chip.rect.x + 3, chip.rect.y + 3)).toEqual({ kind: 'group', index: chip.index });
   }
 });
