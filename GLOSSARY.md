@@ -297,7 +297,7 @@ _Avoid_: Body, casualty marker, corpse pile (a corpse is one mark on one tile, n
 ### Economy
 
 **Payroll**:
-The denarii a Faction owes each Season for the Squads it keeps. Unpaid Squads lose morale and eventually desert.
+The denarii a Faction owes each Season for the Squads it keeps; for infantry, the amount follows troop type and surviving men. Unpaid Squads lose morale and eventually desert.
 _UI_: Soldo
 _Avoid_: Upkeep, maintenance, cost, salary
 
@@ -342,6 +342,16 @@ _Avoid_: Locale file, translations, i18n bundle
 The optional first-entry sequence that teaches the four acts a Match opens with — open a settlement, raise a Squad, select it, give it a destination — by naming the real controls and waiting for the Player to use them. It starts paused, can be skipped, dismissed and reopened, remembers only its dismissal as a presentation preference, issues no Command and reads no Observation; it is not a rule set, a scripted army or a second Match.
 _UI_: Guida
 _Avoid_: Tutorial, walkthrough, onboarding, help overlay
+
+**Tutorial**:
+A repeatable practical exercise that teaches economy, recruitment, movement, combat, territory and siege through objectives the human completes. Its chapters are distinct from the brief Guide available in a normal Match.
+_UI_: Tutorial
+_Avoid_: Guide, encyclopedia
+
+**Encyclopedia**:
+The reference a human can consult from the main menu or during a Match to understand resources, buildings, troops and rules. It complements practical teaching with explanations that can be revisited at any time.
+_UI_: Enciclopedia
+_Avoid_: Tutorial, Guide
 
 **Readout**:
 One labelled figure the interface always shows — the year, the Season, the treasury, a resource — as against a panel, which a selection opens.
