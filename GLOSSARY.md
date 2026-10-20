@@ -344,7 +344,7 @@ _UI_: —
 _Avoid_: Stat, indicator, counter
 
 **Selection**:
-What the Player has picked — a settlement, or one or more Squads — and the panel that follows it. It is the Player's own memory rather than Match state: nothing else can see it and it decides nothing on its own. A box selects every Squad it touches; one order goes to all of them, while the panel shows the first one picked. There is one selection at a time, and nothing selected is a state rather than an error.
+What the Player has picked — a settlement, or one or more Squads — and the panel that follows it. The settlement may be one the Faction knows rather than one it holds: an enemy Stronghold in sight, a village it remembers, a village nobody holds, each opened by clicking the structure drawn on the map (ADR-0025). It is the Player's own memory rather than Match state: nothing else can see it and it decides nothing on its own. A box selects every Squad it touches; one order goes to all of them, while the panel shows the first one picked. There is one selection at a time, and nothing selected is a state rather than an error.
 _UI_: Selezione
 _Avoid_: Focus, target, highlight
 
