@@ -100,7 +100,7 @@ Testing 156.0.8078.4 through software WebGL (`--enable-unsafe-swiftshader`).
 | Feature sample | `feature orders --grep` "right click", 1 test | warm | **3.9 s** |
 | Complete acceptance | `npm run test:accept`, 148 tests, captures off, 2 workers | warm | **503 s (8.4 min)**, 148 passed |
 | Visual, one 1920×1080 scene | one split review test, frames on, 1 worker | warm | **52.3 s**, 9 frames (392 KB) |
-| Full unit suite | `npm test`, 112 files / 1312 tests | warm | **67.9 s** after this change (56.4 s / 1297 tests at the start) |
+| Full unit suite | `npm test`, 112 files / 1321 tests | warm | **63.2 s** after the follow-up (56.4 s / 1297 tests at the start) |
 | Provisioning, warm | `npx playwright install chromium`, nothing to download | warm | **1.9 s** |
 
 Provisioning time is reported separately and is not part of the 60/90-second
@@ -174,6 +174,41 @@ The slowest tests were the U9 economy-row matrices (34.6 s and 40.6 s) and the
 split review-panel scenes (37.4 s and 39.2 s); the Atelier magnification test was
 24.5 s. The two 1920×1080 review scenes that used to hit the 120-second timeout
 passed inside their unchanged 120-second per-test budgets.
+
+## Follow-up: two-tier CI gates (same branch)
+
+The delivery first ran the browser jobs on every push and every pull request. That
+made a feature branch with an open pull request run the workflow twice, and it made
+a `develop` pull request pay for Chromium even when its change was one button.
+
+The gate rule now depends on the event and the target, in
+`scripts/selection-rules.mjs` and unit-tested in `tests/verify/selection.test.ts`:
+
+| Event | `verify` + `guards` | Smoke | Complete acceptance |
+| --- | --- | --- | --- |
+| Pull request into `main` | yes | yes | yes, unless documentation only |
+| Push to `main` | yes | yes | yes, unless documentation only |
+| Pull request into `develop` | yes | no | no |
+| Pull request into `develop`, labelled `browser` | yes | yes | yes |
+| Push to `develop` (post-merge) | yes | yes | no |
+| Manual `workflow_dispatch` | yes | yes | yes |
+| Any other target, or an unreadable diff | yes | yes | yes (fail-safe) |
+
+- `main` remains the integration gate: a pull request into `main` and a push to
+  `main` run the smoke and complete acceptance, so browser work is still verified
+  before it reaches the integration branch.
+- `develop` is the fast integration branch for pull requests; a merge into it runs
+  the smoke as a post-merge net, so a page that no longer boots is noticed before
+  the main pull request. The `browser` label opts a develop pull request into both
+  gates when the change touches the host, HUD or input.
+- `push` is limited to `main` and `develop`, so a branch with an open pull request
+  no longer starts a second identical run.
+- An unreadable diff, an unexpected target or a crashed `plan` runs both gates.
+
+Local profiles and their measured budgets are unchanged; this changes only how CI
+spends browser time. Branch protection follows the same split: `develop` requires
+`verify`, `guards` and `plan`; `main` also requires `browser-smoke` and
+`browser-acceptance`.
 
 ## Existing failures and flakes, explained
 

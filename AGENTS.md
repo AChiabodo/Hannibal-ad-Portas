@@ -20,3 +20,10 @@ Use the smallest profile that covers the change, not the whole matrix:
 `npm run test:visual` is explicit evidence production, not a gate. The profiles,
 their owners, the CI gates and the environment notes are in
 `docs/VERIFICATION.md`.
+
+CI concentrates browser work on the integration gate: pull requests into `main`
+and pushes to `main` take smoke and complete acceptance, a merge into `develop`
+runs the smoke, and a pull request into `develop` runs the fast checks without
+Chromium unless it carries the `browser` label. Do not rely on that to mean a
+browser change is verified: run `test:smoke` / `test:feature` / `test:accept`
+locally when the change touches the host, the interface or input.

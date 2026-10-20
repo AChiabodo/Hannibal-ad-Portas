@@ -47,8 +47,10 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 
 The profiles and their selection rules are in [docs/VERIFICATION.md](docs/VERIFICATION.md).
 The first browser run installs Chromium if it is missing; CI installs it with
-`--with-deps` in its own step. A push always takes complete acceptance; a pull
-request skips it only when every changed file is documentation.
+`--with-deps` in its own step. In CI, a pull request into `main` and a push to
+`main` take the smoke and complete acceptance; a pull request into `develop` runs
+the fast checks and no Chromium unless it carries the `browser` label; a merge into
+`develop` runs the smoke as a post-merge net.
 
 ## The fences
 
@@ -1652,5 +1654,7 @@ The browser suite is selected by [responsibility](docs/VERIFICATION.md), not run
 whole for every change: `npm run test:smoke` boots the real page in under ninety
 seconds, `npm run test:feature -- orders` runs one owner, `npm run test:accept`
 runs every spec with captures off, and `npm run test:visual` is the explicit
-request for frames. A push always takes the complete gate; a pull request skips it
-only when every changed file is documentation.
+request for frames. In CI, `main` is the integration gate: a pull request into
+`main` and a push to `main` take the smoke and complete acceptance, while a
+`develop` pull request runs the fast checks and opts into Chromium with the
+`browser` label. A merge into `develop` runs the smoke as a post-merge net.

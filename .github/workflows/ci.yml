@@ -1,7 +1,11 @@
 name: CI
 
 on:
+  # Feature branches are covered by their pull request. Pushing a branch that
+  # already has a pull request used to run the whole workflow twice; it no longer
+  # does. A merge or a direct push to the integration branches is still checked.
   push:
+    branches: [main, develop]
   pull_request:
   # Visual-frame production is explicit (#64): a manual run asks for it, and the
   # routine profiles never produce pictures.
@@ -169,9 +173,10 @@ jobs:
         run: npm run guard
 
   plan:
-    name: Which browser gate is required
+    name: Which browser gates are required
     runs-on: ubuntu-latest
     outputs:
+      smoke: ${{ steps.select.outputs.smoke }}
       acceptance: ${{ steps.select.outputs.acceptance }}
     steps:
       - name: Check out
@@ -185,28 +190,48 @@ jobs:
         with:
           node-version-file: .nvmrc
 
-      # The rules live in scripts/selection-rules.mjs and are unit-tested. A push
-      # and a manual run always take the complete gate; a pull request skips it
-      # only when every changed file is documentation. An empty or unreadable
-      # diff escalates, so the fail-safe direction is always more acceptance.
-      - name: Select the gate
+      # Two levels, in scripts/selection-rules.mjs and unit-tested there:
+      #
+      #   main pull request, main push, manual run -> smoke + acceptance
+      #   push to develop                          -> smoke (post-merge net)
+      #   develop pull request                     -> fast checks only
+      #   develop pull request + `browser` label    -> smoke + acceptance
+      #
+      # Documentation may skip complete acceptance but still takes the smoke.
+      # A crashed selection, an unreadable diff or an unexpected target branch
+      # runs both gates: the fail-safe direction is more evidence, never less.
+      - name: Select the gates
         id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref || 'main' }}
+          BRANCH: ${{ github.ref_name }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "acceptance=true" >> "$GITHUB_OUTPUT"
-            echo "${{ github.event_name }}: complete acceptance always" >&2
-          else
-            # A crashed selection escalates, exactly like an unreadable diff:
-            # an empty output would otherwise skip the gate.
-            if ! decided=$(node scripts/selection.mjs --base "${{ github.event.pull_request.base.sha }}" --github); then
-              decided="acceptance=true"
-              echo "selection failed: complete acceptance runs (fail-safe)" >&2
-            fi
-            echo "${decided:-acceptance=true}" >> "$GITHUB_OUTPUT"
+          args=(
+            --event "$EVENT"
+            --branch "$BRANCH"
+            --base-branch "$BASE_BRANCH"
+            --labels "$LABELS"
+            --github
+          )
+          if [ -n "$BASE_SHA" ]; then
+            args+=(--base "$BASE_SHA")
           fi
+
+          if ! decided=$(node scripts/selection.mjs "${args[@]}"); then
+            decided=$(printf 'smoke=true\nacceptance=true\n')
+            echo "selection failed: browser gates run (fail-safe)" >&2
+          fi
+          printf '%s\n' "$decided" >> "$GITHUB_OUTPUT"
 
   browser-smoke:
     name: Real browser smoke
+    needs: plan
+    # `false` is the only answer that skips the smoke. A failed or skipped plan
+    # leaves the output empty, and an empty answer runs it.
+    if: ${{ !cancelled() && needs.plan.outputs.smoke != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out

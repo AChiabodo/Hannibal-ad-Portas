@@ -33,7 +33,7 @@ complete acceptance runs.
 | `npm run test:focus` | Non-browser tests related to the working tree's changes; the core public seams when nothing is traceable | 1.5 s (changes), 2.2 s (core seams) |
 | `npm run test:focus -- src/ui/strings.ts` | Vitest's import graph from one or more changed paths | 11.6 s (14 files, 186 tests) |
 | `npm run test:focus -- src/sim/state.ts` | The same, on the most connected module there is | 51.8 s (42 files, 510 tests) |
-| `npm run test:unit` | Every non-browser test | 67.9 s warm; not a 60-second promise |
+| `npm run test:unit` | Every non-browser test | 63.2 s warm; not a 60-second promise |
 | `npm run test:smoke` | `e2e/smoke.spec.ts`: real boot, one Command, rendering, console health and the Atelier | 8.3 s warm (10.9 s with the provisioning pre-step) |
 | `npm run test:feature -- <name>` | One browser responsibility from the table below | 10 s (`orders`) up to a few minutes (`squads`, `terrain`) |
 | `npm run test:accept` | Every browser spec; no screenshots | 503 s, 148 tests, all passed |
@@ -101,32 +101,59 @@ frames outside the visual profile.
 | `tests/guards/` | The seven fences, including the asset guard |
 | `tests/verify/` | The profiles and the escalation rules in this document |
 
-## Complete acceptance and its fail-safe
+## Two levels of browser gate
 
 Acceptance is a **gate**, not evidence production. It runs every browser spec
 with screenshots off, which is both the honest functional check and the reason it
-fits in a CI job rather than a screenshot generator.
+fits in a CI job rather than a screenshot generator. Browser work is also the most
+expensive thing CI does, so it is concentrated where integration happens:
 
-A push and a manual run always take the complete gate. A pull request skips it
-only when every changed file is documentation (`docs/`, `*.md`, `.agents/`,
-`LICENSE*`). Everything else escalates: `src/`, `tests/`, `e2e/`, `scripts/`,
-`package.json`, configuration, `.github/`, and any file nobody classified.
-An empty or unreadable diff escalates too — "I could not tell" is never a reason
+| Event | Fast checks (`verify`, `guards`) | Smoke | Complete acceptance |
+| --- | --- | --- | --- |
+| Pull request into `main` | yes | yes | yes, unless documentation only |
+| Push to `main` | yes | yes | yes, unless documentation only |
+| Pull request into `develop` | yes | no | no |
+| Pull request into `develop`, labelled `browser` | yes | yes | yes |
+| Push to `develop` (post-merge) | yes | yes | no |
+| Manual `workflow_dispatch` | yes | yes | yes |
+| Any other target, or an unreadable diff | yes | yes | yes (fail-safe) |
+
+`main` is the integration gate. `develop` is the fast integration branch: its pull
+requests get lint, types, build, unit tests, the CLI hash gates and the fences, and
+no Chromium. A merge into `develop` runs the smoke as a post-merge safety net, so a
+page that no longer boots is noticed long before the main pull request. Add the
+`browser` label to a develop pull request when the change touches the host, the
+interface or input and deserves the matrix before it lands.
+
+Documentation (`docs/`, `*.md`, `.agents/`, `LICENSE*`) may skip complete acceptance
+but still takes the smoke on `main`. Everything else escalates, and an empty or
+unreadable diff escalates to **both** gates — "I could not tell" is never a reason
 to run less. `scripts/selection.mjs` prints the decision and the reason; the rules
-are in `scripts/selection-rules.mjs` and are unit-tested.
+are in `scripts/selection-rules.mjs` and are unit-tested in
+`tests/verify/selection.test.ts`.
+
+Feature branches are checked through their pull request, not twice. `push` is
+limited to `main` and `develop`, so a branch with an open pull request no longer
+starts a second identical run.
 
 | CI job | When | What it proves |
 | --- | --- | --- |
 | `verify` | always | Lint, types, build, unit tests, and the recorded CLI hashes (determinism) |
 | `guards` | always | The seven fences, including "no committed image, font or audio file" |
-| `plan` | always | Whether this change must take complete acceptance, with the fail-safe above |
-| `browser-smoke` | always | Boot, one ordinary Command, frame and console health |
-| `browser-acceptance` | push, manual run, or a PR touching anything but documentation | Every browser spec, captures off |
+| `plan` | always | Which browser gates this event takes, with the fail-safe above |
+| `browser-smoke` | unless the plan says `false` | Boot, one ordinary Command, frame and console health |
+| `browser-acceptance` | unless the plan says `false` | Every browser spec, captures off |
 | `visual-frames` | manual dispatch with `visual: true` | The frames themselves, uploaded as an artifact; never a gate |
 
-`browser-acceptance` runs unless the plan says `false`. A failed or skipped plan
-leaves the output empty, and an empty answer runs acceptance — the same fail-safe
-direction as an unreadable diff.
+A failed or skipped `plan` leaves its outputs empty, and an empty answer runs both
+browser jobs — the same fail-safe direction as an unreadable diff. If a develop
+pull request has no browser jobs, its checks section shows the fast jobs only;
+the plan's log states why.
+
+Branch protection should match the policy: require `verify`, `guards` and `plan`
+on `develop`, and add `browser-smoke` and `browser-acceptance` as required checks
+on `main`. A required browser check that a develop pull request skips would
+otherwise show as a missing check instead of a deliberate decision.
 
 Release and performance gates owned by #29, #31 and #32 are untouched; this
 reorganization adds a workflow around them and does not declare them passed.
