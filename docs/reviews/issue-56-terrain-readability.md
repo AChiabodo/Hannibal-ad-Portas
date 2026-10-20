@@ -113,7 +113,23 @@ Applicability, stated rather than assumed:
 - **Visible / remembered / unknown** — visible and remembered are both in every scene and both exact against the generator. Unknown is deliberately *not* sampled as terrain: an unexplored tile is the fog and nothing else, so it says nothing about the quietened art (`tests/render/fog.test.ts` owns that state, and still passes).
 - **1280x720 and 1920x1080** — both resolutions, both Factions, and the layout itself is [#54](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/54)'s to own.
 
-**Unrun gates, stated plainly.** This harness cannot display images, so the agent did not eyeball the sixteen scenes, the fourteen specimens or the two bakes; what is asserted above is live frame sampling, generator comparison and measured contrast. A human should open the files under `%TEMP%\spqr-issue56` beside `%TEMP%\spqr-issue56-before` before the visual acceptance in [#59](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/59). No hardware or full-density frame-rate evidence is claimed here: that is #31's, and a software-WebGL screenshot could not prove it. Nothing in this ticket touched audio (#30), release (#32), balance (#29) or the E2E hooks (#28).
+**The visual gate, and how it was closed.** This harness cannot display images, so
+the implementing agent could not eyeball the sixteen scenes, the fourteen specimens or
+the two bakes; what it could assert is live frame sampling, generator comparison and
+measured contrast. The maintainer then reviewed the rendered evidence itself — the
+scenes in `%TEMP%\spqr-issue56` beside `%TEMP%\spqr-issue56-before` (both Factions,
+both reference resolutions, zooms 1/2/4/8, visible and remembered terrain), the
+all-terrain atlas, the two Squad scenes, and `catalogue.png` from both bakes — and
+**accepted it as a clear improvement in figure/ground separation** (2026-10-20). The
+ticket was closed on that review plus the checks above.
+
+No hardware or full-density frame-rate evidence is claimed here: that is
+[#31](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/31)'s, and a
+software-WebGL screenshot could not prove it. Nothing in this ticket touched audio
+(#30), release (#32), balance (#29) or the E2E hooks (#28), and closing #56 does not
+close [#51](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/51)'s roadmap or
+[#59](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/59)'s integrated visual
+acceptance.
 
 ## Review
 
