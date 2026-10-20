@@ -24,8 +24,7 @@ import { UNEXPLORED, renderFog } from '../src/render/fog';
 import { renderTerrain, tilePixel } from '../src/render/terrain';
 import { openingEyes } from '../src/render/opening';
 import { DEFAULT_SEED, VIEWED_FACTION } from '../src/render/view';
-import type { Rect } from '../src/ui/hud';
-import { describeView, hudRects, samples } from './hooks';
+import { covers, describeView, hudRects, samples } from './hooks';
 
 /** The theatre the page is showing, and the Stronghold its player starts in. */
 const MAP: MapGrid = generateMap(DEFAULT_SEED);
@@ -123,11 +122,6 @@ async function expectDrawn(page: Page, image: PixelBuffer, context: string, tole
   }
 
   expect(wrong, `${context}: mismatched pixels of ${String(points.length)}`).toBe(0);
-}
-
-/** Whether a screen point falls on the interface rather than on the theatre. */
-function covers(rect: Rect, x: number, y: number): boolean {
-  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
 }
 
 /** Puts a stage pixel in the middle of the viewport, by panning whole pixels, where the map allows. */

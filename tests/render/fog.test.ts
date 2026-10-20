@@ -30,7 +30,7 @@ import {
   type Eye,
   type FogView,
 } from '../../src/sim/fog';
-import { generateMap, MAP_HEIGHT, MAP_WIDTH, tileIndex, type MapGrid } from '../../src/sim/map';
+import { generateMap, terrainAt, MAP_HEIGHT, MAP_WIDTH, tileIndex, type MapGrid, type Terrain } from '../../src/sim/map';
 import { REMEMBERED, UNEXPLORED, renderFog } from '../../src/render/fog';
 import { THEATRE_PIXELS, THEATRE_MARGIN, renderTerrain, tilePixel } from '../../src/render/terrain';
 
@@ -66,6 +66,51 @@ function remembering(): FogView {
   refreshVision(fog, FIRST, []);
 
   return fog;
+}
+
+/**
+ * The mean colour of each terrain in a composed frame, read from the middle of the
+ * tiles that hold it.
+ *
+ * The middle eight pixels of a tile are clear of every transition band and every
+ * rounded corner — the dual grid draws those within a pixel or two of a tile's edge
+ * — so what this averages is the material's own texture, in the state the fog left
+ * it. Up to a handful of tiles per terrain, so a seed with one lone ford still
+ * contributes a ford.
+ */
+function terrainMeans(map: MapGrid, frame: ReturnType<typeof composed>): Map<Terrain, readonly number[]> {
+  const samples = new Map<Terrain, number[][]>();
+
+  for (let y = 0; y < MAP_HEIGHT; y += 1) {
+    for (let x = 0; x < MAP_WIDTH; x += 1) {
+      const terrain = terrainAt(map, x, y);
+      const collected = samples.get(terrain) ?? [];
+      if (collected.length >= 24) continue;
+
+      const at = tilePixel(x, y);
+      const sum = [0, 0, 0];
+      for (let dy = 4; dy <= 11; dy += 1) {
+        for (let dx = 4; dx <= 11; dx += 1) {
+          const pixel = pixelAt(frame, at.x + dx, at.y + dy);
+          sum[0] = (sum[0] ?? 0) + pixel[0];
+          sum[1] = (sum[1] ?? 0) + pixel[1];
+          sum[2] = (sum[2] ?? 0) + pixel[2];
+        }
+      }
+      collected.push(sum.map((channel) => channel / 64));
+      samples.set(terrain, collected);
+    }
+  }
+
+  const means = new Map<Terrain, readonly number[]>();
+  for (const [terrain, colours] of samples) {
+    means.set(
+      terrain,
+      [0, 1, 2].map((channel) => (colours.reduce((total, colour) => total + (colour[channel] ?? 0), 0)) / colours.length),
+    );
+  }
+
+  return means;
 }
 
 /** Terrain rendered, with the fog drawn over it: what the screen shows. */
@@ -160,6 +205,34 @@ describe('the fog over the theatre', () => {
     expect(red).toBeLessThan(ground[0]);
     expect(green).toBeLessThan(ground[1]);
     expect(blue).toBeLessThan(ground[2]);
+  });
+
+  it('keeps every terrain readable under the veil of memory, which is what memory is for', () => {
+    // U5 quietened the terrain's dither, so this is the claim that keeps that change
+    // honest: under the remembered veil — the state most of a played map spends most
+    // of its time in — the seven terrains still differ from one another by a wide
+    // margin. The tightest pair in a remembered theatre is plain against road at 22
+    // summed channels (24 before U5, so the quietening cost two of them); the bar is
+    // eighteen, far above the rounding of one texture and far below anything a
+    // Player would have to squint at.
+    const frame = composed(FIRST, remembering());
+    const means = terrainMeans(FIRST, frame);
+    let closest = Number.POSITIVE_INFINITY;
+
+    expect(means.size).toBeGreaterThanOrEqual(6);
+    for (const [left, first] of means) {
+      for (const [right, second] of means) {
+        if (left >= right) continue;
+
+        const distance = [0, 1, 2].reduce(
+          (total, channel) => total + Math.abs((first[channel] ?? 0) - (second[channel] ?? 0)),
+          0,
+        );
+        closest = Math.min(closest, distance);
+      }
+    }
+
+    expect(closest).toBeGreaterThanOrEqual(18);
   });
 
   it('carries the edge tile of the map into the half-tile margin, as the terrain does', () => {

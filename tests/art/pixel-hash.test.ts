@@ -11,13 +11,19 @@
  * Atelier plate — every glyph and every ramp in their places — so a change
  * anywhere in the layout is visible in one line; the per-glyph and per-ramp
  * hashes say *which* artefact moved.
+ *
+ * U5 moved five of them on purpose: every terrain hash pinned here (four materials,
+ * one of them pinned as two of its variants) and the plate they sit in. Nothing else
+ * did — the glyphs, the ramps, the road path, the four markers and every figure and
+ * icon are byte-identical before and after, which is what "the terrain was quietened
+ * and nothing else was touched" looks like as a diff.
  */
 import { describe, expect, it } from 'vitest';
 import { catalogue, cataloguePlate } from '../../src/art/catalogue';
 import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 
 /** The fingerprints recorded from the generators as accepted. */
-const PLATE_HASH = '7bb2e03b154fc922';
+const PLATE_HASH = '710051d5f6f235ab';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'glyph:U+0020': '19ce279ecc93e509',
@@ -28,11 +34,11 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'glyph:U+00D9': '97f51eff418d6c5e',
   'ramp:stone': 'd0007ed617908b29',
   'ramp:parchment': '6371c17806297e2f',
-  'terrain:plain': 'a38e504004e2b885',
-  'terrain:river': '071c4ea85185bd39',
-  'terrain:forest:1': 'ca8c7a531f8ac267',
-  'terrain:forest:3': '05220f100872dc91',
-  'terrain:ford:15': '7d34527f96548791',
+  'terrain:plain': 'd14d3e402472f841',
+  'terrain:river': 'a2579b9a216a4285',
+  'terrain:forest:1': '13d735e83c0f4576',
+  'terrain:forest:3': '39b83fd25393c7fe',
+  'terrain:ford:15': '8eba09ba35bdbb45',
   'road:5': '1c9614c06266f59d',
   'road:15': '6cbfe1095e247ff4',
   'node:grain': '66279bf415efe8ad',
@@ -77,6 +83,24 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'badge:grain': 'c018f12758926e0a',
   'badge:clock': '0ee8bfa2e5051795',
   'badge:lock': '8d7b02a5b46f1b25',
+  // U5's separation specimens: three tiles of a material with one man of each
+  // Faction on the middle one, which is the picture the quietened terrain is judged
+  // in. All fourteen, because each is a different material under a different cloth
+  // and a hedge that moved in one of them is a hedge somebody has to look at.
+  'separation:rome:plain': '83fe728217f3eaff',
+  'separation:rome:hill': '9247c82ee8dc1095',
+  'separation:rome:forest': 'e5c24ca102580feb',
+  'separation:rome:farmland': '8bd52bafa2e89454',
+  'separation:rome:river': '745161bdd3b3ec35',
+  'separation:rome:ford': '5d8c929f199091f5',
+  'separation:rome:road': '0b256ceac290a94c',
+  'separation:carthage:plain': '76808fb7790ed23c',
+  'separation:carthage:hill': '7d777f56babd487e',
+  'separation:carthage:forest': '6a392e89171d6bb0',
+  'separation:carthage:farmland': '763c93861c592be6',
+  'separation:carthage:river': 'b712216999d83b80',
+  'separation:carthage:ford': '1b249e7404e701ab',
+  'separation:carthage:road': '4433626c7b132ec0',
 };
 
 describe('the generated output, as a fingerprint', () => {

@@ -735,6 +735,16 @@ HUD frame cannot drift into three different greys (PLAN §8). `water` joined the
 bases with B3: a river painted out of the stone ramp reads as wet rock, and a map
 is not allowed to have that confusion.
 
+The same derivation runs at a second resolution. **`DETAIL_RAMPS`** are the six
+bases again at thirteen shades instead of seven — one between every two, the same
+dark and light ends, ten points of the spread to a step rather than twenty — and
+their even indices *are* the standard shades. They exist because a surface and a
+figure want different steps: a helmet has an edge and wants a visible one, while a
+tile of terrain is nine thousand tiles of dither, and a dither of whole standard
+shades reads as flicker competing with the men standing on it (U5,
+[#56](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/56)). Terrain paints
+from the detail ramps and nothing else in the library does.
+
 **The font is data** (`art/font.ts`). Seven rows of five pixels per letterform,
 written as 5-bit numbers — `0b01110` is `.###.` — for every printable ASCII
 character, plus the twelve accented vowels Italian writes. An accent lives in a
@@ -1492,6 +1502,8 @@ src/                application code
     terrain.ts      the seven materials, the five dual-grid shapes, the six road pieces
     nodes.ts        the four resource markers: a sheaf, two logs, a heap and a diamond
     figures.ts      the paper-doll soldiers: a body, and the helmet, shield and weapon hung on it
+    icons.ts        the command card's verbs and the badges a panel reads a figure with
+    separation.ts   a soldier of each Faction on three tiles of every material: the figure/ground specimens
     catalogue.ts    every artefact, named, and the one plate the Atelier renders
   cli/              the headless Match as a command
     arguments.ts    what the command line means, and what it refuses

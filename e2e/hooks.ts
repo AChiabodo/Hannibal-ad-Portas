@@ -225,6 +225,35 @@ export async function state(page: Page): Promise<GameSnapshot> {
   });
 }
 
+/**
+ * Whether a screen point falls on a rectangle the interface covers.
+ *
+ * Three specs ask it of `hudRects` — is this theatre pixel hidden behind a panel —
+ * and the answer has to be the same in all of them, so the predicate lives here
+ * rather than once per file.
+ */
+export function covers(rect: Rect, x: number, y: number): boolean {
+  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
+}
+
+/**
+ * Presses the middle of an interface rectangle, as a pointer does.
+ *
+ * The canvas is not at the page's origin, so a rectangle the HUD publishes in canvas
+ * pixels is offset by the canvas's own box before the click: this is the one place
+ * that offset is applied, which is what makes "press the button the page drew" the
+ * same sentence in every spec that does it.
+ */
+export async function press(page: Page, rect: Rect): Promise<void> {
+  const box = await page.locator('#app canvas').boundingBox();
+  if (box === null) throw new Error('the page has no canvas');
+
+  await page.mouse.click(
+    box.x + rect.x + Math.floor(rect.width / 2),
+    box.y + rect.y + Math.floor(rect.height / 2),
+  );
+}
+
 /** Plays the Match to its end without waiting for wall time, and says how it ended. */
 export async function fastForward(page: Page): Promise<MatchResult> {
   return page.evaluate(() => {

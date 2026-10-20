@@ -10,8 +10,7 @@ import { VIEWED_FACTION, DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_W
 import { renderTerrain, THEATRE_PIXELS, tilePixel } from '../src/render/terrain';
 import { openingEyes } from '../src/render/opening';
 import { screenToStage, stageToScreen } from '../src/render/camera';
-import type { Rect } from '../src/ui/hud';
-import { describeView, hudRects, samples } from './hooks';
+import { covers, describeView, hudRects, samples } from './hooks';
 
 /**
  * The theatre on screen (ticket B3).
@@ -127,11 +126,6 @@ async function expectTheatrePixels(page: Page, view: ViewState, context: string)
   }
 
   expect(wrong, `${context}: mismatched pixels`).toBe(0);
-}
-
-/** Whether a screen point falls on the interface rather than on the theatre. */
-function covers(rect: Rect, x: number, y: number): boolean {
-  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
 }
 
 /** Boots the page and waits for the hooks, answering with what the renderer reported. */

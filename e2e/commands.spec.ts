@@ -24,7 +24,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
-import { advance, applied, select, selection, squads } from './hooks';
+import { advance, applied, press, select, selection, squads } from './hooks';
 import type { HudModel } from '../src/ui/hud';
 import type { Command } from '../src/sim/command';
 import { translate } from '../src/ui/strings';
@@ -71,12 +71,6 @@ async function origin(page: Page): Promise<Point> {
   if (box === null) throw new Error('the page has no canvas');
 
   return { x: box.x, y: box.y };
-}
-
-/** The middle of an interface rectangle, as a page point. */
-async function press(page: Page, rect: Rect): Promise<void> {
-  const at = await origin(page);
-  await page.mouse.click(at.x + rect.x + Math.floor(rect.width / 2), at.y + rect.y + Math.floor(rect.height / 2));
 }
 
 /** The rectangle of one contextual action, as the panel drew it. */

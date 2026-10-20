@@ -33,6 +33,13 @@ import {
   iconEntries,
 } from '../../src/art/icons';
 import {
+  SEPARATION_FACTIONS,
+  SEPARATION_MATERIALS,
+  SEPARATION_SIZE,
+  separationEntries,
+  separationSpecimen,
+} from '../../src/art/separation';
+import {
   FIGURE_FACINGS,
   FIGURE_FRAMES,
   FIGURE_HEIGHT,
@@ -66,6 +73,22 @@ const TERRAIN_LABEL_WIDTH = Math.max(
 );
 const TERRAIN_X = PLATE_PADDING + TERRAIN_LABEL_WIDTH + TERRAIN_LABEL_GAP;
 
+/** The separation section's own arithmetic: three tiles of ground a side, and a row per Faction. */
+const SEPARATION_CELL = SEPARATION_SIZE + 3;
+const SEPARATION_CAPTION_HEIGHT = LINE_HEIGHT + 3;
+const SEPARATION_LABEL_WIDTH = Math.max(...SEPARATION_FACTIONS.map((faction) => measureText(faction)));
+const SEPARATION_X = PLATE_PADDING + SEPARATION_LABEL_WIDTH + TERRAIN_LABEL_GAP;
+const NODES_TOP =
+  TERRAIN_TOP +
+  (1 + TERRAIN_MATERIALS.length) * TERRAIN_CELL +
+  SECTION_GAP +
+  HEADING_HEIGHT +
+  TERRAIN_CELL +
+  SECTION_GAP +
+  HEADING_HEIGHT;
+const SEPARATION_TOP = NODES_TOP + NODES_HEIGHT + SECTION_GAP + HEADING_HEIGHT;
+const SEPARATION_ROWS_TOP = SEPARATION_TOP + SEPARATION_CAPTION_HEIGHT;
+
 /** The figures section's own arithmetic, written out again so its cells are checked rather than trusted. */
 const FIGURE_CAPTIONS = FIGURE_FRAMES.map(frameName);
 const FIGURE_CELL_WIDTH = Math.max(
@@ -84,6 +107,7 @@ const FIGURES_TOP =
   (HEADING_HEIGHT + (1 + TERRAIN_MATERIALS.length) * TERRAIN_CELL + SECTION_GAP) +
   (HEADING_HEIGHT + TERRAIN_CELL + SECTION_GAP) +
   (HEADING_HEIGHT + NODES_HEIGHT + SECTION_GAP) +
+  (HEADING_HEIGHT + SEPARATION_CAPTION_HEIGHT + SEPARATION_FACTIONS.length * SEPARATION_CELL + SECTION_GAP) +
   HEADING_HEIGHT;
 const FIGURE_ROWS_TOP = FIGURES_TOP + LINE_HEIGHT + 3;
 
@@ -108,6 +132,7 @@ describe('the catalogue', () => {
         RAMP_NAMES.length +
         terrainEntries().length +
         nodeEntries().length +
+        separationEntries().length +
         figureEntries().length +
         iconEntries().length,
     );
@@ -122,6 +147,9 @@ describe('the catalogue', () => {
       expect(names).toContain(entry.name);
     }
     for (const entry of nodeEntries()) {
+      expect(names).toContain(entry.name);
+    }
+    for (const entry of separationEntries()) {
       expect(names).toContain(entry.name);
     }
     for (const entry of figureEntries()) {
@@ -309,10 +337,6 @@ describe('the catalogue plate', () => {
   it('stands the resource markers under the terrain, on the neutral plate and nothing else', () => {
     const plate = cataloguePlate();
 
-    // The nodes row comes after the road row, its own gap and heading.
-    const roadTop = TERRAIN_TOP + (1 + TERRAIN_MATERIALS.length) * TERRAIN_CELL + SECTION_GAP + HEADING_HEIGHT;
-    const nodesTop = roadTop + NODES_HEIGHT + SECTION_GAP + HEADING_HEIGHT;
-
     for (let index = 0; index < NODE_KINDS.length; index += 1) {
       const kind = NODE_KINDS[index];
       if (kind === undefined) continue;
@@ -323,8 +347,32 @@ describe('the catalogue plate', () => {
       for (let y = 0; y < marker.height; y += 1) {
         for (let x = 0; x < marker.width; x += 1) {
           const pixel = pixelAt(marker, x, y);
-          expect(pixelAt(plate, left + x, nodesTop + y), `${kind} at (${String(x)}, ${String(y)})`).toEqual(
+          expect(pixelAt(plate, left + x, NODES_TOP + y), `${kind} at (${String(x)}, ${String(y)})`).toEqual(
             pixel[3] === 0 ? PLATE_BACKGROUND : pixel,
+          );
+        }
+      }
+    }
+  });
+});
+
+describe('the separation section of the plate', () => {
+  it('stands each Faction on three tiles of every material, in its own cell', () => {
+    const plate = cataloguePlate();
+
+    for (const [row, faction] of SEPARATION_FACTIONS.entries()) {
+      for (const [column, material] of SEPARATION_MATERIALS.entries()) {
+        const specimen = separationSpecimen(material, faction);
+        const left = SEPARATION_X + column * SEPARATION_CELL;
+        const top = SEPARATION_ROWS_TOP + row * SEPARATION_CELL;
+
+        for (const [x, y] of [
+          [0, 0],
+          [SEPARATION_SIZE - 1, SEPARATION_SIZE - 1],
+          [Math.floor(SEPARATION_SIZE / 2), Math.floor(SEPARATION_SIZE / 2)],
+        ] as const) {
+          expect(pixelAt(plate, left + x, top + y), `${faction} on ${material} at (${String(x)}, ${String(y)})`).toEqual(
+            pixelAt(specimen, x, y),
           );
         }
       }

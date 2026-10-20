@@ -16,6 +16,9 @@
 import { describe, expect, it } from 'vitest';
 import { MARKER_ART, NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from '../../src/art/nodes';
 import { TRANSPARENT, hashPixelBuffer, pixelAt, type PixelBuffer } from '../../src/art/pixel-buffer';
+import { MATERIALS, materialTile } from '../../src/art/terrain';
+import { brightness } from './brightness';
+
 
 /** A marker's ink, as rows of `#` and `.`. */
 function picture(buffer: PixelBuffer): string[] {
@@ -154,6 +157,25 @@ describe('a resource marker', () => {
     expect(entries.map((entry) => entry.name)).toEqual(NODE_KINDS.map((kind) => `node:${kind}`));
     for (const [index, entry] of entries.entries()) {
       expect(hashPixelBuffer(entry.buffer)).toBe(hashPixelBuffer(nodeMarker(NODE_KINDS[index] ?? 'grain')));
+    }
+  });
+
+  it('reads on every terrain it can stand on, including the quietened one', () => {
+    // Ticket U5 quietened the terrain's own dither. A marker is a thing standing on
+    // that ground, so it has to be the loudest of the two: some shade of it must sit
+    // at least two detail steps away from the whole range of the ground under it, and
+    // its own range must be wide enough that its silhouette is drawn in contrast and
+    // not in one flat tone.
+    for (const kind of NODE_KINDS) {
+      const marker = brightness(nodeMarker(kind));
+      expect(marker.high - marker.low, `${kind} range`).toBeGreaterThanOrEqual(60);
+
+      for (const material of MATERIALS) {
+        const terrain = brightness(materialTile(material));
+        const reach = Math.max(terrain.low - marker.low, marker.high - terrain.high);
+
+        expect(reach, `${kind} on ${material}`).toBeGreaterThanOrEqual(24);
+      }
     }
   });
 });

@@ -24,6 +24,9 @@
  *   material of its sixteen dual-grid variants, and then the sixteen road
  *   connections. A row shows its material against the ground it crosses, which is
  * - **nodes**, the four resource markers B3 stands on that ground;
+ * - **separation**, a soldier standing on each terrain (U5): three tiles of every material
+ *   with one man of each Faction standing on the middle one, which is where a
+ *   judgement about figure and ground can be made;
  * - **figures**, the soldiers of C2: one row per soldier and direction, one
  *   column per animation frame — the whole Roman roster, in the four ways it can
  *   face and the four things it can do;
@@ -53,6 +56,13 @@ import {
   iconEntries,
 } from './icons.ts';
 import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from './nodes.ts';
+import {
+  SEPARATION_FACTIONS,
+  SEPARATION_MATERIALS,
+  SEPARATION_SIZE,
+  separationEntries,
+  separationSpecimen,
+} from './separation.ts';
 import { BASE, RAMPS, RAMP_NAMES, RAMP_SHADES } from './palette.ts';
 import { type PixelBuffer, blit, createPixelBuffer, fillRect } from './pixel-buffer.ts';
 import {
@@ -150,6 +160,22 @@ const TERRAIN_HEIGHT = (1 + TERRAIN_ROWS + 1) * TERRAIN_CELL;
 /** The resource markers, which stand in a row of their own under the terrain. */
 const NODES_HEIGHT = NODE_TILE + 3;
 
+/** One cell of the separation section: a terrain patch, plus the air that keeps two rows apart. */
+const SEPARATION_CELL = SEPARATION_SIZE + 3;
+
+/** The captions' own line, over the two rows of patches. */
+const SEPARATION_CAPTION_HEIGHT = LINE_HEIGHT + 3;
+
+/** The widest Faction label, which is what the patches clear. */
+const SEPARATION_LABEL_WIDTH = Math.max(...SEPARATION_FACTIONS.map((label) => measureText(label)));
+
+/** Width of the separation section: a label, and one patch per material. */
+const SEPARATION_WIDTH =
+  SEPARATION_LABEL_WIDTH + LABEL_GAP + SEPARATION_MATERIALS.length * SEPARATION_CELL;
+
+/** Height of the separation section: the captions, and a row per Faction. */
+const SEPARATION_HEIGHT = SEPARATION_CAPTION_HEIGHT + SEPARATION_FACTIONS.length * SEPARATION_CELL;
+
 /** The figure rows: one per soldier of the roster, and per direction. */
 const FIGURE_ROWS = FIGURE_NAMES.length * FIGURE_FACINGS.length;
 
@@ -195,19 +221,21 @@ const ICONS_HEIGHT = 2 * ICON_CELL;
 
 /** The plate's width: the padding, and whichever section is wider. */
 export const PLATE_WIDTH =
-  PLATE_PADDING * 2 + Math.max(GLYPH_GRID_WIDTH, RAMPS_WIDTH, TERRAIN_WIDTH, FIGURES_WIDTH, ICONS_WIDTH);
+  PLATE_PADDING * 2 +
+  Math.max(GLYPH_GRID_WIDTH, RAMPS_WIDTH, TERRAIN_WIDTH, SEPARATION_WIDTH, FIGURES_WIDTH, ICONS_WIDTH);
 
 /** The plate's height, which the sections above add up to. */
 export const PLATE_HEIGHT =
   PLATE_PADDING * 2 +
-  HEADING_HEIGHT * 7 +
+  HEADING_HEIGHT * 8 +
   GLYPH_GRID_HEIGHT +
   RAMPS_HEIGHT +
   TERRAIN_HEIGHT +
   NODES_HEIGHT +
+  SEPARATION_HEIGHT +
   FIGURES_HEIGHT +
   ICONS_HEIGHT +
-  SECTION_GAP * 6;
+  SECTION_GAP * 7;
 
 /**
  * Every artefact the art library generates, in a stable order: the glyphs in
@@ -228,7 +256,15 @@ export function catalogue(): readonly CatalogueEntry[] {
 
   const ramps = RAMP_NAMES.map((name) => ({ name: `ramp:${name}`, buffer: rampSwatches(name) }));
 
-  return [...glyphs, ...ramps, ...terrainEntries(), ...nodeEntries(), ...figureEntries(), ...iconEntries()];
+  return [
+    ...glyphs,
+    ...ramps,
+    ...terrainEntries(),
+    ...nodeEntries(),
+    ...separationEntries(),
+    ...figureEntries(),
+    ...iconEntries(),
+  ];
 }
 
 /** The glyph entries, which stand first in the catalogue and in the plate's grid. */
@@ -342,6 +378,43 @@ export function cataloguePlate(): PixelBuffer {
     blit(plate, nodeMarker(kind), PLATE_PADDING + TERRAIN_LABEL_WIDTH + LABEL_GAP + index * TERRAIN_CELL, y);
   }
   y += NODES_HEIGHT + SECTION_GAP;
+
+  blit(plate, textPlate('separation', PLATE_INK), PLATE_PADDING, y);
+  y += HEADING_HEIGHT;
+
+  // The material captions over the columns they name, then one row per Faction.
+  // Each patch is three tiles of that material with a man of that Faction standing
+  // on the middle one: the question the section answers is whether he is the thing
+  // the eye finds, and the repetition around him is half the question.
+  for (let index = 0; index < SEPARATION_MATERIALS.length; index += 1) {
+    blit(
+      plate,
+      textPlate(SEPARATION_MATERIALS[index] ?? '', PLATE_INK),
+      PLATE_PADDING + SEPARATION_LABEL_WIDTH + LABEL_GAP + index * SEPARATION_CELL,
+      y,
+    );
+  }
+  y += SEPARATION_CAPTION_HEIGHT;
+
+  for (let row = 0; row < SEPARATION_FACTIONS.length; row += 1) {
+    const faction = SEPARATION_FACTIONS[row];
+    if (faction === undefined) continue;
+
+    blit(plate, textPlate(faction, PLATE_INK), PLATE_PADDING, y + (SEPARATION_CELL - LINE_HEIGHT) / 2);
+    for (let column = 0; column < SEPARATION_MATERIALS.length; column += 1) {
+      const material = SEPARATION_MATERIALS[column];
+      if (material === undefined) continue;
+
+      blit(
+        plate,
+        separationSpecimen(material, faction),
+        PLATE_PADDING + SEPARATION_LABEL_WIDTH + LABEL_GAP + column * SEPARATION_CELL,
+        y,
+      );
+    }
+    y += SEPARATION_CELL;
+  }
+  y += SECTION_GAP;
 
   blit(plate, textPlate('figures', PLATE_INK), PLATE_PADDING, y);
   y += HEADING_HEIGHT;
