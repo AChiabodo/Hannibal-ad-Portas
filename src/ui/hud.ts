@@ -39,12 +39,14 @@ import {
   blit,
   createPixelBuffer,
   fillRect,
+  pixelAt,
   strokeRect,
   type PixelBuffer,
   type Rgba,
 } from '../art/pixel-buffer.ts';
 import { amountOf } from '../content/index.ts';
 import type { EconomyVisible, VisibleSettlement, VisibleSquad } from '../sim/economy-match.ts';
+import { SEASON_TICKS } from '../sim/season.ts';
 import { RESOURCE_KINDS, type ResourceKind } from '../sim/map.ts';
 import {
   MINIMAP_PLATE_HEIGHT,
@@ -104,7 +106,17 @@ export interface HudDetail {
 
 /** Presentation memory only; never part of the Match. Offsets count bitmap text lines. */
 export interface HudView {
+  readonly desktop?: boolean;
+  readonly sessionOpen?: boolean;
+  readonly scaleWarning?: boolean;
+  readonly smallWindow?: boolean;
+  readonly uiScale?: number;
+  readonly navigator?: boolean;
+  readonly navigatorExpanded?: boolean;
+  readonly guideDismissed?: boolean;
+  readonly tick?: number;
   readonly ended?: boolean;
+  readonly speed?: number;
   readonly paused?: boolean;
   readonly listOffset?: number;
   readonly detailOffset?: number;
@@ -121,7 +133,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext';
+export type HudAction = 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext';
 
 export interface HudButton {
   readonly action: HudAction;
@@ -284,6 +296,7 @@ function pickedSquads(visible: EconomyVisible, ids: readonly number[]): readonly
 
 /** Where everything stands, given what the HUD says. */
 export function hudLayout(model: HudModel, size: HudSize): HudLayout {
+  if (model.view.desktop) return desktopLayout(model, size);
   const readouts = placeReadouts(model.readouts, size);
   const rowsHeight = readouts.reduce((tallest, placed) => Math.max(tallest, placed.rect.y + placed.rect.height), 0);
   const pauseY = rowsHeight + PADDING;
@@ -458,10 +471,11 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
   panel(buffer, layout.bar);
   panel(buffer, layout.list);
   panel(buffer, layout.detail);
-  drawReadouts(buffer, layout.readouts);
+  const scale = model.view.desktop ? model.view.uiScale ?? 2 : 1;
+  drawReadouts(buffer, layout.readouts, scale);
 
   for (const header of layout.headers) {
-    drawText(buffer, header.text, header.rect.x, header.rect.y, HUD_LABEL);
+    drawText(buffer, header.text, header.rect.x, header.rect.y, HUD_LABEL, scale);
   }
 
   for (const row of layout.rows) {
@@ -470,11 +484,11 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
       fillRect(buffer, row.rect.x, row.rect.y, row.rect.width, row.rect.height, HUD_SELECTED);
     }
   }
-  for (const line of layout.text) drawText(buffer, line.text, line.rect.x, line.rect.y, HUD_LABEL);
-  for (const line of layout.priority) drawText(buffer, line.text, line.rect.x, line.rect.y, HUD_VALUE);
+  for (const line of layout.text) drawText(buffer, line.text, line.rect.x, line.rect.y, HUD_LABEL, scale);
+  for (const line of layout.priority) drawText(buffer, line.text, line.rect.x, line.rect.y, HUD_VALUE, scale);
   for (const button of layout.buttons) {
     panel(buffer, button.rect);
-    drawText(buffer, button.text, button.rect.x + PADDING, button.rect.y + 5, button.enabled ? HUD_VALUE : HUD_BORDER);
+    drawText(buffer, button.text, button.rect.x + PADDING * scale, button.rect.y + 5 * scale, button.enabled ? HUD_VALUE : HUD_BORDER, scale);
   }
 
   return buffer;
@@ -489,7 +503,8 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
  */
 export function renderHud(model: HudModel, minimap: PixelBuffer, size: HudSize): PixelBuffer {
   const layout = hudLayout(model, size);
-  if (minimap.width !== layout.minimap.width || minimap.height !== layout.minimap.height) {
+  const scale = model.view.desktop ? model.view.uiScale ?? 2 : 1;
+  if (minimap.width * scale !== layout.minimap.width || minimap.height * scale !== layout.minimap.height) {
     throw new RangeError(
       `the minimap is ${String(minimap.width)}×${String(minimap.height)} and the layout reserves ` +
         `${String(layout.minimap.width)}×${String(layout.minimap.height)}`,
@@ -497,7 +512,10 @@ export function renderHud(model: HudModel, minimap: PixelBuffer, size: HudSize):
   }
 
   const buffer = renderPanels(model, size);
-  blit(buffer, minimap, layout.minimap.x, layout.minimap.y);
+  if (scale === 1) blit(buffer, minimap, layout.minimap.x, layout.minimap.y);
+  else for (let y = 0; y < minimap.height; y++) for (let x = 0; x < minimap.width; x++) {
+    fillRect(buffer, layout.minimap.x + x * scale, layout.minimap.y + y * scale, scale, scale, pixelAt(minimap, x, y));
+  }
 
   return buffer;
 }
@@ -697,12 +715,12 @@ function panel(buffer: PixelBuffer, rect: Rect): void {
  * The bar: a label at HUD size and its figure, the figure large where it is a
  * numeral, their baselines aligned so a row of them reads as one line.
  */
-function drawReadouts(buffer: PixelBuffer, readouts: readonly ReadoutRect[]): void {
+function drawReadouts(buffer: PixelBuffer, readouts: readonly ReadoutRect[], uiScale = 1): void {
   for (const { line, rect } of readouts) {
-    const scale = line.large ? VALUE_SCALE : 1;
-    const valueX = rect.x + measureText(line.label) + READOUT_INK_GAP;
+    const scale = (line.large ? VALUE_SCALE : 1) * uiScale;
+    const valueX = rect.x + (measureText(line.label) + READOUT_INK_GAP) * uiScale;
 
-    drawText(buffer, line.label, rect.x, rect.y + (VALUE_SCALE - 1) * LINE_HEIGHT, HUD_LABEL);
+    drawText(buffer, line.label, rect.x, rect.y + (line.large ? VALUE_SCALE - 1 : 0) * LINE_HEIGHT * uiScale, HUD_LABEL, uiScale);
     drawText(buffer, line.value, valueX, rect.y, HUD_VALUE, scale);
   }
 }
@@ -715,4 +733,95 @@ function sameSelection(left: Selection, right: Selection): boolean {
 /** Whether a rectangle holds a screen point. */
 function contains(rect: Rect, x: number, y: number): boolean {
   return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
+}
+
+
+/** Desktop geometry is composed in bitmap pixels, then mapped to screen pixels once. */
+function desktopLayout(model: HudModel, size: HudSize): HudLayout {
+  const scale = model.view.uiScale ?? 2;
+  const width = Math.floor(size.width / scale);
+  const height = Math.floor(size.height / scale);
+  const warning = model.view.scaleWarning || model.view.smallWindow || width < 640 || height < 360;
+  const bar: Rect = { x: 0, y: 0, width, height: warning ? 54 : 40 };
+  const hasDetail = model.detail !== null;
+  const bottom = hasDetail ? 100 : 28;
+  const detail: Rect = { x: 0, y: height - bottom, width: width - MINIMAP_PLATE_WIDTH, height: bottom };
+  const minimap: Rect = { x: detail.width, y: height - MINIMAP_PLATE_HEIGHT, width: MINIMAP_PLATE_WIDTH, height: MINIMAP_PLATE_HEIGHT };
+  const showNavigator = model.view.navigator !== false && (model.view.navigatorExpanded || (!model.view.scaleWarning && !model.view.smallWindow));
+  const listLines = model.rows.flatMap((row) => wrapText(message('ui.listItem', { name: row.label, id: row.selection.id }), 146)
+    .map((line) => ({ text: line, selection: row.selection })));
+  const listHeight = Math.min(height - 100 - bar.height, 30 + listLines.length * LINE_STEP + 24);
+  const list: Rect = { x: 0, y: bar.height, width: showNavigator ? 156 : 0, height: Math.max(0, listHeight) };
+  const buttons: HudButton[] = [];
+  const text: HudText[] = [];
+  const priority: HudText[] = [];
+  const headers: HudHeader[] = [];
+  const rows: RowRect[] = [];
+  const readouts = placeReadouts(model.readouts.slice(1, 4).map((line) => ({ ...line, label: `${line.label}: `, large: false, newRow: false })), { width, height });
+  const progress = Math.floor(((model.view.tick ?? 0) % SEASON_TICKS) * 100 / SEASON_TICKS);
+  text.push({ text: message('ui.seasonProgress', { progress }), rect: { x: 330, y: 4, width: 130, height: LINE_STEP } });
+  text.push({ text: translate(model.view.paused ? 'ui.paused' : 'ui.running'), rect: { x: 480, y: 4, width: 150, height: LINE_STEP } });
+  const actions = [
+    ['pause', translate(model.view.ended ? 'match.ended' : model.view.paused ? 'ui.resume' : 'ui.pause'), 142],
+    ['speed1', model.view.speed === 1 ? '1x*' : '1x', 30], ['speed2', model.view.speed === 2 ? '2x*' : '2x', 30], ['speed3', model.view.speed === 3 ? '3x*' : '3x', 30],
+    ['navigator', translate(showNavigator ? 'ui.hideNavigator' : 'ui.showNavigator'), 100],
+    ['center', translate('ui.center'), 80],
+    ['session', message('ui.options', { scale }), 110],
+  ] as const;
+  let x = 4;
+  for (const [action, label, buttonWidth] of actions) {
+    buttons.push({ action, text: label, rect: { x, y: 18, width: buttonWidth, height: 20 },
+      enabled: action === 'pause' || action.startsWith('speed') ? !model.view.ended : action === 'center' ? model.selected !== null : true });
+    x += buttonWidth + 2;
+  }
+  if (warning) text.push({ text: translate(model.view.smallWindow ? 'ui.smallWindow' : 'ui.scaleWarning'),
+    rect: { x: 4, y: 42, width: width - 8, height: LINE_STEP } });
+  const listScroll = scrollWindow(model.view.listOffset ?? 0, listLines.length, list.height - 48);
+  if (showNavigator) {
+    for (const [index, kind] of (['settlement', 'squad'] as const).entries()) headers.push({
+      text: message('ui.listCount', { name: translate(kind === 'settlement' ? 'ui.settlements' : 'ui.squads'), count: model.rows.filter((row) => row.selection.kind === kind).length }),
+      rect: { x: 4, y: list.y + 4 + index * LINE_STEP, width: 148, height: LINE_STEP } });
+    for (const [index, line] of listLines.slice(listScroll.offset, listScroll.offset + listScroll.page).entries()) {
+      const rect = { x: 4, y: list.y + 26 + index * LINE_STEP, width: 148, height: LINE_STEP };
+      rows.push({ selection: line.selection, rect });
+      text.push({ text: line.text, rect });
+    }
+    addScrollButtons(buttons, list, 'list', listScroll);
+  }
+  const detailWidth = detail.width - 12;
+  const stocks = model.readouts[0];
+  if (stocks !== undefined && hasDetail && model.selected?.kind === 'settlement') text.push({
+    text: `${stocks.value} / ${model.readouts.slice(4).map((r) => `${r.label}: ${r.value}`).join(' / ')}`,
+    rect: { x: 5, y: detail.y + 5, width: detailWidth, height: LINE_STEP } });
+  const priorityWidth = Math.floor(detailWidth / 2);
+  let priorityY = detail.y + (model.selected?.kind === 'settlement' ? 19 : 5);
+  const secondary: string[] = [];
+  if (model.detail !== null) {
+    const main = [model.detail.title, ...model.detail.priority.flatMap((index) => {
+      const line = model.detail!.lines[index];
+      return line ? [`${line.label}: ${line.value}`] : [];
+    })];
+    for (const word of main.flatMap((line) => wrapText(line, priorityWidth))) {
+      priority.push({ text: word, rect: { x: 5, y: priorityY, width: priorityWidth, height: LINE_STEP } });
+      priorityY += LINE_STEP;
+    }
+    secondary.push(...model.detail.lines.filter((_line, i) => !model.detail?.priority.includes(i))
+      .flatMap((line) => wrapText(`${line.label}: ${line.value}`, priorityWidth)));
+  } else text.push({ text: translate('ui.selectEntity'), rect: { x: 5, y: detail.y + 5, width: detailWidth, height: LINE_STEP } });
+  const secondaryTop = detail.y + (model.selected?.kind === 'settlement' ? 19 : 5);
+  const detailScroll = scrollWindow(model.view.detailOffset ?? 0, secondary.length, height - 24 - secondaryTop);
+  for (const [index, word] of secondary.slice(detailScroll.offset, detailScroll.offset + detailScroll.page).entries()) text.push({
+    text: word, rect: { x: priorityWidth + 10, y: secondaryTop + index * LINE_STEP, width: priorityWidth, height: LINE_STEP } });
+  addScrollButtons(buttons, detail, 'detail', detailScroll);
+  if (!model.view.guideDismissed) {
+    const guideY = hasDetail ? Math.max(priorityY + 4, detail.y + 52) : detail.y + 16;
+    for (const [index, line] of wrapText(translate('ui.navigationGuide'), hasDetail ? priorityWidth : detailWidth).entries()) {
+      if (guideY + (index + 1) * LINE_STEP <= height - 4) text.push({ text: line,
+        rect: { x: 5, y: guideY + index * LINE_STEP, width: priorityWidth, height: LINE_STEP } });
+    }
+  }
+  const rect = (r: Rect): Rect => ({ x: r.x * scale, y: r.y * scale, width: r.width * scale, height: r.height * scale });
+  const placed = <T extends { readonly rect: Rect }>(items: readonly T[]): T[] => items.map((item) => ({ ...item, rect: rect(item.rect) }));
+  return { size, bar: rect(bar), list: rect(list), detail: rect(detail), minimap: rect(minimap),
+    readouts: placed(readouts), headers: placed(headers), rows: placed(rows), text: placed(text), priority: placed(priority), buttons: placed(buttons), listScroll, detailScroll };
 }

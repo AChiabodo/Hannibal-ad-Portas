@@ -57,6 +57,14 @@ the camera's hooks and the Match's hooks, and nothing else:
 | `inspect` | `(revealed)` | view | Turns the inspection mode on or off: the whole theatre revealed, and no fog |
 | `describe` | `() → ViewState` | view | Where the camera is, how big the viewport is, the seed, the map, the watch and the fog |
 | `samples` | `(points) → Rgba[]` | view | Reads the current frame's pixels at canvas points, in the art library's own RGBA |
+| `preferences` | `() -> UiPreferences` | Read presentation preferences |
+| `setUiScale` | `(scale) -> void` | Request independent integer UI scale |
+| `toggleNavigator` | `() -> void` | Toggle the navigator |
+| `toggleGuide` | `() -> void` | Dismiss or reopen navigation help |
+| `resetPreferences` | `() -> void` | Restore presentation defaults |
+| `centerSelection` | `() -> void` | Centre the selected entity |
+| `navigateMinimap` | `(x, y) -> boolean` | Navigate without selecting or ordering |
+| `doubleClickAt` | `(x, y) -> void` | Centre the selected list row |
 | `submit` | `(command) -> boolean` | game | Validates and queues any existing Command through the human Controller; refuses foreign Factions and ended Matches |
 | `configuration` | `() -> MatchConfiguration` | game | A copy of seed, human Faction and opponent difficulty |
 | `matchLayout` | `() -> MatchMenu` | game | The actual bitmap menu text, buttons, enabled state and rectangles |
@@ -277,3 +285,31 @@ for existing drawing/input tests. It is not the normal browser opening. The
 functional `setup.spec.ts` tests use the real entry and complete rules; its
 short Siege fixture injects initial conditions through the rules composition
 seam and reaches the result with actual Commands, never a fabricated UI verdict.
+
+
+### Desktop presentation hooks
+
+| Hook | Meaning |
+| --- | --- |
+| `preferences()` | Copy of UI scale, requested navigator visibility and guide dismissal. |
+| `setUiScale(scale)` | Request integer 1x, 2x or 3x UI scale independently of map zoom. |
+| `toggleNavigator()` | Toggle the navigator preference (Tab). Limited space collapses it temporarily. |
+| `toggleGuide()` | Dismiss or reopen navigation help. The complete first-entry guide belongs to #59. |
+| `resetPreferences()` | Restore presentation defaults; never restores or changes a Match. |
+| `centerSelection()` | Centre the camera on the current selection (F or visible button). |
+| `navigateMinimap(x, y)` | Navigate at a screen point on the Minimap; return false outside it. |
+| `doubleClickAt(x, y)` | Centre a selected list row, as a pointer double-click does. |
+
+Desktop Matches use the available viewport. Below 1280x720, or when a requested UI scale cannot fit,
+the canvas remains scrollable at that scale and an Italian recommendation is shown. Requested scale
+is never silently changed. Only `spqr.ui.v1` presentation preferences are saved; audio (#30), Match
+state and tactical selection are excluded. Storage failure falls back to defaults without blocking play.
+
+
+The desktop HUD keeps calendar, Treasury, pause and speed above the theatre. The compact navigator
+ends after its contents when they fit. Selecting an entity opens two columns of contextual detail;
+with no selection only a short hint remains. The Minimap stays available beside this area. Use
+**Opzioni / UI** for seed/session actions, scale, reset and navigation-guide dismissal. This drawer
+can be closed without changing the Match. The camera centres inside the unobstructed theatre,
+including at map edges and zoom 1; the Minimap camera outline covers that theatre rather than the HUD.
+A collapsed navigator can be reopened even below the recommended window size.

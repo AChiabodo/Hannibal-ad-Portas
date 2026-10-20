@@ -195,7 +195,7 @@ test('draws the minimap from the map, through the fog the Faction actually has',
     width: Math.floor(view.width / view.camera.zoom),
     height: Math.floor(view.height / view.camera.zoom),
   };
-  const expected = minimapPlate(MAP, fog, viewport);
+  const expected = minimapPlate(MAP, fog, viewport, [{ ...MAP.strongholds[0], owner: 0 }]);
 
   const points: [number, number][] = [];
   for (let y = 0; y < MINIMAP_PLATE_HEIGHT; y += 1) {

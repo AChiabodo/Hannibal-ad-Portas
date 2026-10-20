@@ -92,6 +92,7 @@ import { DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from './v
 import { matchAddress, type MatchConfiguration } from '../input/match-setup.ts';
 import type { BrowserMatchOptions } from '../input/match-host.ts';
 import { translate } from '../ui/strings.ts';
+import { loadUiPreferences, type UiPreferences } from '../ui/preferences.ts';
 import { ENTRY_PATH } from './entry-path.ts';
 
 /**
@@ -175,9 +176,12 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
   const config: MatchConfiguration = { seed: options.seed ?? DEFAULT_SEED, faction: options.faction ?? 'rome', difficulty: options.difficulty ?? 'centurio' };
   const map = generateMap(config.seed);
   const theatre = renderTerrain(map);
+  const desktop = options.sessionControls !== false;
+  const dimensions = (preferences: UiPreferences) => desktop
+    ? { width: Math.max(window.innerWidth, 640 * preferences.uiScale), height: Math.max(window.innerHeight, 360 * preferences.uiScale) }
+    : { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT };
   const stage = await createStage(mount, {
-    width: VIEWPORT_WIDTH,
-    height: VIEWPORT_HEIGHT,
+    ...dimensions(loadUiPreferences()),
     background: BASE.night,
   });
 
@@ -202,6 +206,8 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     stageHeight: THEATRE_PIXELS,
     width: stage.width,
     height: stage.height,
+    insetLeft: 0,
+    insetTop: 0,
   };
   let camera = clampTo(
     lookingAt(createCamera({ zoom: DEFAULT_ZOOM }), stage, map.strongholds[config.faction === 'rome' ? 0 : 1]),
@@ -234,6 +240,8 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
   const size = { width: stage.width, height: stage.height };
   const game = createGame({
     stage,
+    relayout,
+    centerOn,
     ...config,
     rules: options.rules,
     opponent: options.opponent,
@@ -254,15 +262,22 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
       eyes = next;
       refresher();
     },
-    viewport: (): ViewportRect => ({
-      x: camera.x,
-      y: camera.y,
-      width: Math.floor(stage.width / camera.zoom),
-      height: Math.floor(stage.height / camera.zoom),
-    }),
+    viewport: (layout): ViewportRect => {
+      const left = desktop ? layout?.list.width ?? 0 : 0;
+      const top = desktop ? layout?.bar.height ?? 0 : 0;
+      const bottom = desktop ? layout?.detail.y ?? stage.height : stage.height;
+      return { x: camera.x + Math.floor(left / camera.zoom), y: camera.y + Math.floor(top / camera.zoom),
+        width: Math.floor((stage.width - left) / camera.zoom), height: Math.floor((bottom - top) / camera.zoom) };
+    },
   });
 
   const moveTo = (next: Camera): void => {
+    if (desktop) {
+      const layout = game.hooks.hudLayout();
+      bounds.height = layout.detail.y;
+      bounds.insetLeft = layout.list.width;
+      bounds.insetTop = layout.bar.height;
+    }
     camera = clampTo(next, bounds);
     applyCamera(world, camera);
     // Only the minimap cares where the camera is: the panels are screen-space,
@@ -329,6 +344,10 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
   // The pointer and the keyboard end at the very hooks a test calls, so what a
   // Player does and what a browser test does are the same code path (C2).
   bindControls(stage, {
+    navigateMinimap: (x, y) => view.navigateMinimap(x, y),
+    doubleClickAt: (x, y) => view.doubleClickAt(x, y),
+    centerSelection: () => view.centerSelection(),
+    toggleNavigator: () => view.toggleNavigator(),
     zoom: () => camera.zoom,
     panBy: (dx, dy) => {
       view.panBy(dx, dy);
@@ -357,6 +376,35 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     scrollHud: (region, lines) => view.scrollHud(region, lines),
   });
 
+  function relayout(preferences: UiPreferences): void {
+    const next = dimensions(preferences);
+    stage.resize(next.width, next.height);
+    Object.assign(size, next);
+    bounds.width = next.width;
+    const layout = game.hooks.hudLayout();
+    bounds.height = desktop ? layout.detail.y : next.height;
+    bounds.insetLeft = desktop ? layout.list.width : 0;
+    bounds.insetTop = desktop ? layout.bar.height : 0;
+    camera = clampTo(camera, bounds);
+    applyCamera(world, camera);
+  }
+
+  function centerOn(x: number, y: number): void {
+    const layout = game.hooks.hudLayout();
+    const left = layout.list.width;
+    const top = layout.list.y;
+    const bottom = layout.detail.y;
+    moveTo({ zoom: camera.zoom,
+      x: Math.floor(x - (left + (stage.width - left) / 2) / camera.zoom),
+      y: Math.floor(y - (top + (bottom - top) / 2) / camera.zoom) });
+  }
+
+  if (desktop) {
+    const home = map.strongholds[config.faction === 'rome' ? 0 : 1];
+    const at = tilePixel(home.x, home.y);
+    centerOn(at.x, at.y);
+    window.addEventListener('resize', () => { relayout(game.hooks.preferences()); game.sync(); });
+  }
   game.start();
   stage.canvas.tabIndex = 0;
   stage.canvas.focus();

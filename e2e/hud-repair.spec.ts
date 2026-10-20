@@ -134,34 +134,36 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 108
   });
 
   for (const faction of ['rome', 'carthage'] as const) {
-    test(`rendered refused Order, active Work and overflowing list: ${faction} at ${viewport.width}`, async ({ page }) => {
+    for (const desktop of [false, true]) test(`${desktop ? 'desktop ' : ''}rendered refused Order, active Work and overflowing list: ${faction} at ${viewport.width}`, async ({ page }) => {
       await page.setViewportSize(viewport);
       await page.goto('/e2e/game-fixture.html');
       await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
       await page.evaluate(() => window.__SPQR.game!.pause());
       for (const kind of ['squad', 'settlement'] as const) {
-        const model = scene(faction, kind);
-        const layout = hudLayout(model, { width: 640, height: 480 });
+        const source = scene(faction, kind);
+        const model = { ...source, view: { ...source.view, desktop, uiScale: 2 } };
+        const size = desktop ? viewport : { width: 640, height: 480 };
+        const layout = hudLayout(model, size);
         expect(layout.listScroll.offset).toBeGreaterThan(0);
         expect(layout.rows.at(-1)!.selection).toEqual({ kind: 'squad', id: 80 });
         expect(layout.priority.map((line) => line.text).join(' ')).toContain(kind === 'squad'
           ? 'Ordine: Acque profonde' : 'Cantieri: Villa - In costruzione 123456789 tick');
         // Fixture rendering uses exactly the production PixelBuffer/Pixi adapter.
         // It supplies a filtered model, never a hidden-world rendering hook.
-        await page.evaluate(async (model: HudModel) => {
+        await page.evaluate(async ({ model, size }: { model: HudModel; size: { width: number; height: number } }) => {
           const stagePath = '/src/render/stage.ts';
           const hudPath = '/src/render/hud.ts';
           const { createStage } = await import(stagePath);
           const { createHudLayer } = await import(hudPath);
           const mount = document.getElementById('app')!;
           mount.replaceChildren();
-          const stage = await createStage(mount, { width: 640, height: 480, background: [20, 17, 13, 255] });
+          const stage = await createStage(mount, { ...size, background: [20, 17, 13, 255] });
           const layer = createHudLayer(stage);
-          layer.panels(model, { width: 640, height: 480 });
+          layer.panels(model, size);
           stage.render();
-        }, model);
+        }, { model, size });
         await mkdir(EVIDENCE, { recursive: true });
-        await page.screenshot({ path: join(EVIDENCE, `${faction}-${kind}-${viewport.width}.png`) });
+        await page.screenshot({ path: join(EVIDENCE, `${desktop ? 'desktop-' : ''}${faction}-${kind}-${viewport.width}.png`) });
       }
     });
   }

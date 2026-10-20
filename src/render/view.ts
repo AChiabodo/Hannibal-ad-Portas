@@ -23,8 +23,8 @@ export const VIEWED_FACTION = 'rome';
 /** The magnification the page opens at: a tile is 32 screen pixels, and the frame holds 20×15 of them. */
 export const DEFAULT_ZOOM = 2;
 
-/** The viewport width in stage pixels, which is also the canvas width in screen pixels. */
+/** Stable canvas width for composed drawing fixtures; desktop Matches resize to the window. */
 export const VIEWPORT_WIDTH = 640;
 
-/** The viewport height in stage pixels. */
+/** Stable canvas height for composed drawing fixtures. */
 export const VIEWPORT_HEIGHT = 480;

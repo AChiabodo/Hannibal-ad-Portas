@@ -54,6 +54,10 @@ import { textureOf, type Stage } from './stage.ts';
  * the page can be read in either order.
  */
 export interface ControlTarget {
+  readonly navigateMinimap: (x: number, y: number) => boolean;
+  readonly doubleClickAt: (x: number, y: number) => void;
+  readonly centerSelection: () => void;
+  readonly toggleNavigator: () => void;
   /** The camera's magnification, for turning screen pixels into stage pixels. */
   readonly zoom: () => number;
   /** Moves the camera by whole stage pixels. */
@@ -114,10 +118,12 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
 
   let marqueeSprite: Sprite | null = null;
   let press: Press | null = null;
+  let minimapPress = false;
+  let interfacePress = false;
   let armed: 'attackMove' | null = null;
 
   const canvas = stage.canvas;
-  const local = (event: PointerEvent | WheelEvent): { readonly x: number; readonly y: number } => {
+  const local = (event: MouseEvent): { readonly x: number; readonly y: number } => {
     const rect = canvas.getBoundingClientRect();
 
     return { x: Math.floor(event.clientX - rect.left), y: Math.floor(event.clientY - rect.top) };
@@ -128,6 +134,11 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
   canvas.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 && event.button !== 2) return;
 
+    const at = local(event);
+    const layout = target.hudLayout();
+    minimapPress = contains(layout.minimap, at.x, at.y);
+    interfacePress = (target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap]).some((rect) => contains(rect, at.x, at.y));
+    if (minimapPress) target.navigateMinimap(at.x, at.y);
     press = { pointerId: event.pointerId, button: event.button, fromX: event.clientX, fromY: event.clientY, appliedX: 0, appliedY: 0 };
     canvas.setPointerCapture(event.pointerId);
   });
@@ -135,6 +146,13 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
   canvas.addEventListener('pointermove', (event) => {
     if (press === null || event.pointerId !== press.pointerId) return;
 
+    if (minimapPress) {
+      const at = local(event);
+      const rect = target.hudLayout().minimap;
+      target.navigateMinimap(Math.max(rect.x, Math.min(rect.x + rect.width - 1, at.x)), Math.max(rect.y, Math.min(rect.y + rect.height - 1, at.y)));
+      return;
+    }
+    if (interfacePress) return;
     if (press.button === 2) {
       pan(event, press, target);
       return;
@@ -153,6 +171,11 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
     const finished = press;
     press = null;
 
+    if (minimapPress) { minimapPress = false; return; }
+    if (interfacePress) {
+      if (finished.button === 0) { const at = local(event); target.selectAt(at.x, at.y, event.shiftKey); }
+      return;
+    }
     if (finished.button === 2) {
       // A right press that panned is a pan; one that did not is an order. The
       // shift makes it an attack-move, which is the same choice `a` arms — and
@@ -194,6 +217,8 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
     target.selectAt(to.x, to.y, additive);
   });
 
+  canvas.addEventListener('dblclick', (event) => { const at = local(event); target.doubleClickAt(at.x, at.y); });
+
   canvas.addEventListener('pointercancel', () => {
     clearMarquee(overlay, marqueeSprite);
     marqueeSprite = null;
@@ -208,12 +233,17 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
       const at = local(event);
       if (event.deltaY === 0) return;
       const layout = target.hudLayout();
+      const topmost = [...(target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap])].reverse()
+        .find((rect) => contains(rect, at.x, at.y));
       for (const region of ['list', 'detail'] as const) {
+        if (topmost && (topmost.x !== layout[region].x || topmost.y !== layout[region].y ||
+          topmost.width !== layout[region].width || topmost.height !== layout[region].height)) continue;
         if (contains(layout[region], at.x, at.y)) {
           target.scrollHud(region, event.deltaY < 0 ? -3 : 3);
           return;
         }
       }
+      if ((target.hudRects?.() ?? []).some((rect) => contains(rect, at.x, at.y))) return;
       const zoom = target.zoom() + (event.deltaY < 0 ? WHEEL_ZOOM : -WHEEL_ZOOM);
       target.zoomAbout(zoom, at.x, at.y);
     },
@@ -239,6 +269,14 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
       case 'PageDown':
         target.scrollHud(event.shiftKey ? 'detail' : 'list',
           (event.key === 'PageUp' ? -1 : 1) * (event.shiftKey ? target.hudLayout().detailScroll.page : target.hudLayout().listScroll.page));
+        event.preventDefault();
+        break;
+      case 'f':
+      case 'F':
+        target.centerSelection();
+        break;
+      case 'Tab':
+        target.toggleNavigator();
         event.preventDefault();
         break;
       case 'a':
@@ -333,3 +371,4 @@ function clearMarquee(overlay: Container, sprite: Sprite | null): void {
   sprite.destroy();
   overlay.removeChildren();
 }
+

@@ -45,6 +45,11 @@ test('a rules-driven annihilation defeat names the defeated Faction without reve
 });
 
 async function pressMenu(page: Page, action: string): Promise<void> {
+  if (!await page.evaluate(() => window.__SPQR.game!.hud().view.sessionOpen)) {
+    const open = await page.evaluate(() => window.__SPQR.game!.hudLayout().buttons.find((button) => button.action === 'session')!.rect);
+    const canvas = (await page.locator('canvas').boundingBox())!;
+    await page.mouse.click(canvas.x + open.x + 8, canvas.y + open.y + 8);
+  }
   const rect = await page.evaluate((wanted) => window.__SPQR.game!.matchLayout().buttons.find((button) => button.action === wanted)!.rect, action);
   const box = (await page.locator('canvas').boundingBox())!;
   await page.mouse.click(box.x + rect.x + 8, box.y + rect.y + 8);

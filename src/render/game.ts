@@ -56,7 +56,7 @@ import {
   type EconomyWorld,
   type VisibleSquad,
 } from '../sim/economy-match.ts';
-import type { Faction } from '../sim/faction.ts';
+import { factionCode, type Faction } from '../sim/faction.ts';
 import { MAP_HEIGHT, MAP_WIDTH } from '../sim/map.ts';
 import { type Speed } from '../sim/pacing.ts';
 import { corpsesOf, type Corpse } from '../sim/residue.ts';
@@ -80,7 +80,7 @@ import { createBrowserMatch, type BrowserMatchOptions } from '../input/match-hos
 import type { MatchConfiguration } from '../input/match-setup.ts';
 import { type SiegeVisible } from '../sim/siege.ts';
 import { hudLayout, hudModel, hitTest, type HudLayout, type HudModel, type HudSize, type Rect, type RowRect, type Selection } from '../ui/hud.ts';
-import { minimapPlate, type ViewportRect } from '../ui/minimap.ts';
+import { minimapPlate, type ViewportRect, type KnownMinimapSite } from '../ui/minimap.ts';
 import { createHudLayer, type HudLayer } from './hud.ts';
 import { screenToStage, type Camera } from './camera.ts';
 import { textureOf } from './stage.ts';
@@ -89,7 +89,8 @@ import { blockPlacement, blockSize } from './squads.ts';
 import { tileAt, tilePixel } from './terrain.ts';
 import { VIEWED_FACTION } from './view.ts';
 import type { PixelPoint, Stage } from './stage.ts';
-import { matchMenu, menuPlate, contains, type MatchMenu } from '../ui/match-menu.ts';
+import { DEFAULT_UI_PREFERENCES, loadUiPreferences, saveUiPreferences, type UiPreferences } from '../ui/preferences.ts';
+import { matchMenu, desktopMatchMenu, menuPlate, contains, type MatchMenu } from '../ui/match-menu.ts';
 import { message, translate } from '../ui/strings.ts';
 
 /** Fixture/default Faction only; each running Match uses its setup configuration. */
@@ -155,6 +156,14 @@ export interface GameSnapshot {
 
 /** What the page tells a test or an agent about the game it is playing. */
 export interface GameHooks {
+  preferences(): UiPreferences;
+  setUiScale(scale: number): void;
+  toggleNavigator(): void;
+  toggleGuide(): void;
+  resetPreferences(): void;
+  centerSelection(): void;
+  navigateMinimap(x: number, y: number): boolean;
+  doubleClickAt(x: number, y: number): void;
   /** The validated human submission surface shared by current and future panels. */
   submit(command: Command): boolean;
   configuration(): MatchConfiguration;
@@ -285,6 +294,8 @@ export interface Game {
 
 /** What a game needs to exist: a stage, a seed, the viewport, the camera and the fog. */
 export interface GameOptions {
+  readonly relayout?: (preferences: UiPreferences) => void;
+  readonly centerOn?: (x: number, y: number) => void;
   readonly faction?: Faction;
   readonly difficulty?: MatchConfiguration['difficulty'];
   readonly rules?: BrowserMatchOptions['rules'];
@@ -300,7 +311,7 @@ export interface GameOptions {
   /** The container the camera is applied to: where the theatre is drawn, and where the men go. */
   readonly world: Container;
   /** What the camera is showing, in stage pixels, read fresh on every redraw. */
-  readonly viewport: () => ViewportRect;
+  readonly viewport: (layout?: HudLayout) => ViewportRect;
   /** Where the camera is, for turning a screen point into a tile and back. */
   readonly camera: () => Camera;
   /**
@@ -343,7 +354,12 @@ export function createGame(options: GameOptions): Game {
   const menu = options.stage.spriteOf(menuPlate(options.size, matchMenu(options.size, 0, config, 1, null)));
   options.stage.root.addChild(menu);
   menu.visible = options.sessionControls !== false;
+  let sessionOpen = false;
+  let resultDismissed = false;
+  let navigatorExpanded = false;
   let notice = '';
+  const desktop = options.sessionControls !== false;
+  let preferences = desktop ? loadUiPreferences() : { ...DEFAULT_UI_PREFERENCES };
 
   let running = false;
   let lastFrame = 0;
@@ -377,6 +393,39 @@ export function createGame(options: GameOptions): Game {
   repaint();
 
   const hooks: GameHooks = {
+    preferences: () => ({ ...preferences }),
+    setUiScale: (scale) => {
+      if (![1, 2, 3].includes(scale)) throw new RangeError('UI scale must be 1, 2 or 3');
+      updatePreferences({ ...preferences, uiScale: scale });
+    },
+    toggleNavigator: () => {
+      const show = hudLayout(model, options.size).list.width === 0;
+      navigatorExpanded = show && (model.view.scaleWarning === true || model.view.smallWindow === true);
+      updatePreferences({ ...preferences, navigator: show });
+    },
+    toggleGuide: () => updatePreferences({ ...preferences, guideDismissed: !preferences.guideDismissed }),
+    resetPreferences: () => {
+      navigatorExpanded = false;
+      updatePreferences({ ...DEFAULT_UI_PREFERENCES });
+    },
+    centerSelection: () => {
+      const selected = panelSelection();
+      const window = visible();
+      const site = selected?.kind === 'settlement' ? window.settlements.find((s) => s.id === selected.id)
+        : window.squads.find((s) => s.id === selected?.id);
+      if (site) { const at = tilePixel(site.x, site.y); options.centerOn?.(at.x, at.y); }
+    },
+    navigateMinimap: (x, y) => {
+      const rect = hudLayout(model, options.size).minimap;
+      if (!contains(rect, x, y)) return false;
+      const scale = desktop ? preferences.uiScale : 1;
+      const tileX = Math.max(0, Math.min(MAP_WIDTH - 1, Math.floor((x - rect.x) / scale) - 2));
+      const tileY = Math.max(0, Math.min(MAP_HEIGHT - 1, Math.floor((y - rect.y) / scale) - 2));
+      const at = tilePixel(tileX, tileY);
+      options.centerOn?.(at.x, at.y);
+      return true;
+    },
+    doubleClickAt: (x, y) => { if (hitTest(model, options.size, x, y) !== null) hooks.centerSelection(); },
     submit: (command) => human.submit(command),
     configuration: () => ({ ...config }),
     matchLayout: () => readMenu(),
@@ -483,6 +532,13 @@ export function createGame(options: GameOptions): Game {
     start: startLoop,
     stop: stopLoop,
   };
+
+  function updatePreferences(next: UiPreferences): void {
+    preferences = next;
+    saveUiPreferences(next);
+    options.relayout?.(next);
+    repaint();
+  }
 
   /** Starts the real-time loop, unless it is already running or the Match is over. */
   function startLoop(): void {
@@ -660,8 +716,13 @@ export function createGame(options: GameOptions): Game {
       { ended: result !== null, paused: pacing.paused, listOffset, detailOffset });
     if (next.selected?.id !== detailSelection?.id || next.selected?.kind !== detailSelection?.kind) detailOffset = 0;
     detailSelection = next.selected;
-    return { ...next, view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset } };
+    return { ...next, view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset,
+      desktop, navigatorExpanded, sessionOpen, speed: pacing.speed, ...preferences, tick: match.state.tick,
+      scaleWarning: desktop && (windowSize().width < 640 * preferences.uiScale || windowSize().height < 360 * preferences.uiScale),
+      smallWindow: desktop && (windowSize().width < 1280 || windowSize().height < 720) } };
   }
+
+  function windowSize(): HudSize { return { width: window.innerWidth, height: window.innerHeight }; }
 
   /** What the panel is showing: the picked settlement, or the first Squad that was picked. */
   function panelSelection(): Selection | null {
@@ -684,7 +745,15 @@ export function createGame(options: GameOptions): Game {
 
   /** The minimap, through the fog the page owns, with the camera marked. */
   function readMinimap(): ReturnType<typeof minimapPlate> {
-    return minimapPlate(match.state.world.map, options.fog(), options.viewport());
+    const window = visible();
+    const ownership: KnownMinimapSite[] = window.settlements.map((site) => ({ ...site, owner: factionCode(faction) }));
+    for (const contact of window.contacts) {
+      if (contact.kind !== 'squad') ownership.push({ ...contact, owner: factionCode(faction === 'rome' ? 'carthage' : 'rome') });
+    }
+    for (const site of [...match.state.world.map.strongholds, ...match.state.world.map.settlements]) {
+      if (knows(window.fog, site.x, site.y) === 2 && !ownership.some((known) => known.x === site.x && known.y === site.y)) ownership.push({ ...site, owner: -1 });
+    }
+    return minimapPlate(match.state.world.map, options.fog(), options.viewport(hudLayout(model, options.size)), ownership);
   }
 
   /** Both plates, every block, and a frame drawn. */
@@ -708,15 +777,18 @@ export function createGame(options: GameOptions): Game {
     });
     minimap = readMinimap();
     layer.minimap(model, minimap, options.size);
+    menu.visible = desktop && (sessionOpen || (result !== null && !resultDismissed));
     const oldMenu = menu.texture;
-    menu.texture = textureOf(menuPlate(options.size, readMenu()));
+    menu.texture = textureOf(menuPlate(options.size, readMenu(), null, desktop ? preferences.uiScale : 1));
     oldMenu.destroy(true);
-    if (menu.visible) options.stage.canvas.setAttribute('aria-label', [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)].join('. '));
+    options.stage.canvas.setAttribute('aria-label', [...layout.readouts.map(({ line }) => `${line.label} ${line.value}`), ...layout.buttons.map(({ text }) => text), ...(menu.visible ? [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)] : [])].join('. '));
     options.stage.render();
   }
 
   function readMenu(): MatchMenu {
-    return matchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice);
+    return desktop
+      ? desktopMatchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice, preferences)
+      : matchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice);
   }
 
   /** `repaint`, for a hook that only needs to say whether it did anything. */
@@ -751,15 +823,21 @@ export function createGame(options: GameOptions): Game {
 
   /** A click at a screen point: the interface's rows first, then the men on the map. */
   function pickAt(screenX: number, screenY: number, additive: boolean): void {
+    if (hooks.navigateMinimap(screenX, screenY)) return;
     const menuButton = menu.visible ? readMenu().buttons.find(({ rect }) => contains(rect, screenX, screenY)) : undefined;
     if (menuButton !== undefined) {
       if (!menuButton.enabled) return;
       if (menuButton.action === 'restart') hooks.restart();
       else if (menuButton.action === 'new') hooks.newMatch();
       else if (menuButton.action === 'copy') void hooks.copySeed();
+      else if (menuButton.action === 'scale') hooks.setUiScale(preferences.uiScale % 3 + 1);
+      else if (menuButton.action === 'reset') hooks.resetPreferences();
+      else if (menuButton.action === 'guide') hooks.toggleGuide();
+      else if (menuButton.action === 'close') { sessionOpen = false; resultDismissed = true; repaint(); }
       else if (menuButton.speed !== undefined) hooks.setSpeed(menuButton.speed);
       return;
     }
+    if (menu.visible && contains(readMenu().rect, screenX, screenY)) return;
     const layout = hudLayout(model, options.size);
     const button = layout.buttons.find(({ rect }) => containsPoint(rect, screenX, screenY));
     if (button !== undefined) {
@@ -767,7 +845,13 @@ export function createGame(options: GameOptions): Game {
       if (button.action === 'pause') {
         if (pacing.paused) hooks.resume();
         else hooks.pause();
-      } else {
+      } else if (button.action === 'session') { sessionOpen = !sessionOpen; repaint(); }
+      else if (button.action === 'speed1') hooks.setSpeed(1);
+      else if (button.action === 'speed2') hooks.setSpeed(2);
+      else if (button.action === 'speed3') hooks.setSpeed(3);
+      else if (button.action === 'center') hooks.centerSelection();
+      else if (button.action === 'navigator') hooks.toggleNavigator();
+      else {
         const region = button.action.startsWith('list') ? 'list' : 'detail';
         const scroll = region === 'list' ? layout.listScroll : layout.detailScroll;
         hooks.scrollHud(region, button.action.endsWith('Next') ? scroll.page : -scroll.page);

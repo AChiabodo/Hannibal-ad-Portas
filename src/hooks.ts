@@ -63,6 +63,7 @@ export const VIEW_HOOKS = [
  * Complete visible economy and Siege panels are the responsibility of #55.
  */
 export const GAME_HOOKS = [
+  'preferences', 'setUiScale', 'toggleNavigator', 'toggleGuide', 'resetPreferences', 'centerSelection', 'navigateMinimap', 'doubleClickAt',
   'submit',
   'configuration',
   'matchLayout',

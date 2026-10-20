@@ -496,3 +496,38 @@ function rightmostInk(buffer: PixelBuffer, rect: { readonly x: number; readonly 
 
   return rightmost;
 }
+
+it('keeps desktop navigation and contextual detail apart at readable 2x scale', () => {
+  const model = hudModel(VISIBLE, [0], { kind: 'settlement', id: 2 }, [],
+    { desktop: true, uiScale: 2, navigator: true });
+  const layout = hudLayout(model, { width: 1280, height: 720 });
+  expect(layout.detail.x).toBe(0);
+  expect(layout.detail.width).toBeGreaterThan(800);
+  expect(layout.minimap.x).toBeGreaterThanOrEqual(layout.detail.width);
+  expect(layout.list.y + layout.list.height).toBeLessThanOrEqual(layout.detail.y);
+  expect(layout.buttons.some((button) => button.action === 'center')).toBe(true);
+  expect(hitTest(model, layout.size, layout.rows[0]!.rect.x + 4, layout.rows[0]!.rect.y + 4))
+    .toEqual(layout.rows[0]!.selection);
+});
+
+it('composes the desktop Minimap at the requested integer UI scale', () => {
+  const model = hudModel(VISIBLE, [0], null, [], { desktop: true, uiScale: 2 });
+  const size = { width: 1280, height: 720 };
+  const minimap = minimapPlate(generateMap(7), inspectionView(generateMap(7)), null);
+  const buffer = renderHud(model, minimap, size);
+  expect(buffer.width).toBe(1280);
+  const rect = hudLayout(model, size).minimap;
+  expect(pixelAt(buffer, rect.x, rect.y)).toEqual(pixelAt(minimap, 0, 0));
+  expect(pixelAt(buffer, rect.x + 1, rect.y + 1)).toEqual(pixelAt(minimap, 0, 0));
+});
+
+it('keeps a long navigator row under the pointer when selection opens contextual detail', () => {
+  const squads = Array.from({ length: 80 }, (_, index) => ({ ...VISIBLE.squads[0]!, id: index + 10 }));
+  const visible = { ...VISIBLE, squads };
+  const size = { width: 1280, height: 720 };
+  const view = { desktop: true, uiScale: 2, navigator: true };
+  const initial = hudLayout(hudModel(visible, [0], null, [], view), size);
+  const last = initial.rows.at(-1)!;
+  const selected = hudModel(visible, [0], last.selection, [], view);
+  expect(hitTest(selected, size, last.rect.x + 5, last.rect.y + 5)).toEqual(last.selection);
+});
