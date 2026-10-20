@@ -11,7 +11,7 @@
  *    does not, which is only true if picking follows the drawing and not the tile;
  * 3. **an armed action aimed at the drawn wall names the town** — the same
  *    submission path a Player's button and the shared hook use;
- * 4. **a place that is only remembered is drawn as a memory** — dimmed by the fog
+ * 4. **a settlement that is only remembered is drawn as a memory** — dimmed by the fog
  *    the ground under it is dimmed by, with no owner's banner and no damage, and its
  *    panel says so in words.
  *
@@ -142,7 +142,7 @@ function knowledgeAt(states: readonly Knowledge[], x: number, y: number): Knowle
 }
 
 /**
- * The points inside a place's rectangle that are worth comparing: painted pixels of
+ * The points inside a settlement's rectangle that are worth comparing: painted pixels of
  * the drawing, on screen, and not behind a panel.
  */
 function samplePoints(
@@ -170,7 +170,7 @@ function samplePoints(
 }
 
 /**
- * Asserts the page draws one place exactly as the generator does, through the fog.
+ * Asserts the page draws one settlement exactly as the generator does, through the fog.
  *
  * Visible ground is exact; remembered ground is allowed a step either way, because
  * the veil is composited by the GPU in floating point; unexplored ground is skipped,
@@ -185,7 +185,7 @@ async function expectDrawn(
   const rects = await hudRects(page);
   const states = await knowledge(page);
   const points = samplePoints(site, view, rects);
-  expect(points.length, `${context}: the place is on screen`).toBeGreaterThan(15);
+  expect(points.length, `${context}: the settlement is on screen`).toBeGreaterThan(15);
 
   const sprite = siteSprite(siteLook(site));
   const read = await samples(page, 'view', points.map((entry) => entry.point));
@@ -264,7 +264,7 @@ test.describe('a settlement drawn on the map', () => {
 
     const model = await hud(page);
     expect(model.detail?.title).toBe(`${translate('ui.stronghold')} ${String(own.id)}`);
-    // The panel and the drawing agree: the place clicked is the place described.
+    // The panel and the drawing agree: the settlement clicked is the settlement described.
     expect(model.detail?.lines.length).toBeGreaterThan(3);
 
     await page.screenshot({ path: join(EVIDENCE, 'selected-stronghold-rome.png') });
@@ -276,7 +276,7 @@ test.describe('a settlement drawn on the map', () => {
     expect(await selection(page)).toEqual({ squads: [], settlement: null });
   });
 
-  test('remembers a place it has stopped watching, and says so in words', async ({ page }) => {
+  test('remembers a settlement it has stopped watching, and says so in words', async ({ page }) => {
     await mkdir(EVIDENCE, { recursive: true });
     await openMatch(page, 'rome', RESOLUTIONS[0]);
     await showSquads(page, false);
@@ -293,9 +293,9 @@ test.describe('a settlement drawn on the map', () => {
     expect(enemyOf(await sites(page)), 'nothing unseen is on the map').toBeUndefined();
 
     // A watch out at the enemy Stronghold, and then away again. What it saw is
-    // remembered, and memory is a place rather than its walls (ADR-0020). The watch
+    // remembered, and memory is a settlement rather than its walls (ADR-0020). The watch
     // is the page's debug lens and not one of the Faction's own eyes, so the drawing
-    // is asked about and the Observation's fronts are not: what a place looks like
+    // is asked about and the Observation's fronts are not: what a settlement looks like
     // in view is the next test's business, and `tests/ui/sites.test.ts`'s is what a
     // real eye puts on the map.
     await lookFrom(page, enemy);
@@ -309,7 +309,7 @@ test.describe('a settlement drawn on the map', () => {
     expect(remembered?.memory).toBe('remembered');
     expect(remembered?.front, 'memory carries no front').toBeNull();
 
-    // The drawing is the remembered one: the same place, drawn as stone, under the
+    // The drawing is the remembered one: the same settlement, drawn as stone, under the
     // same veil the ground around it is under.
     await page.evaluate(() => window.__SPQR.view?.zoomTo(2));
     const view = await centreOn(page, {
@@ -325,7 +325,7 @@ test.describe('a settlement drawn on the map', () => {
 
     await page.screenshot({ path: join(EVIDENCE, 'remembered-stronghold-rome.png') });
 
-    // Clicking it opens the place's panel, which says what kind of knowledge it is.
+    // Clicking it opens the settlement's panel, which says what kind of knowledge it is.
     const wall = stageToScreen(view.camera, remembered!.rect.x + 6, remembered!.rect.y + 6);
     await clickAt(page, wall.x, wall.y);
     expect((await selection(page)).settlement).toBe(remembered!.id);
@@ -443,13 +443,13 @@ test.describe('a fortification under siege', () => {
       }
     }
 
-    if (broken !== undefined) {
-      expect(siteLook(broken).gate).toBe('breached');
-      const state = await describeView(page);
-      const read = await expectDrawn(page, broken, state, 'a Stronghold with its gate broken');
-      expect(read).toBeGreaterThan(15);
-      await page.screenshot({ path: join(EVIDENCE, 'siege-breached-rome.png') });
-    }
+    expect(broken, 'the gate breaks before the Match ends').toBeDefined();
+    expect(siteLook(broken!).gate).toBe('breached');
+
+    const brokenView = await describeView(page);
+    const read = await expectDrawn(page, broken!, brokenView, 'a Stronghold with its gate broken');
+    expect(read).toBeGreaterThan(15);
+    await page.screenshot({ path: join(EVIDENCE, 'siege-breached-rome.png') });
 
     // And the panel says the same thing in words, from the same front.
     await select(page, { kind: 'settlement', id: target!.id });

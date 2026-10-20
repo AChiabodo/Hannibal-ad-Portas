@@ -3,12 +3,12 @@
  *
  * Two questions, and both are about one declaration rather than about pixels:
  *
- * - **geometry**: the rectangle a place occupies is its art centred on the tile it
+ * - **geometry**: the rectangle a settlement occupies is its art centred on the tile it
  *   stands on, and its depth is the tile row — so the layer that draws it, the click
  *   that picks it and the theatre's own coordinates cannot disagree.
  * - **condition**: every wall, the gate and the ram come from the front the
  *   Observation carries, and the thresholds are the rules' own (`WALL_HP`,
- *   `GATE_HP`). A place that is only remembered carries none of it.
+ *   `GATE_HP`). A settlement that is only remembered carries none of it.
  */
 import { describe, expect, it } from 'vitest';
 import { SITE_SIZE } from '../../src/art/settlements';
@@ -44,17 +44,17 @@ function front(over: Partial<VisibleFront> = {}): VisibleFront {
   };
 }
 
-/** A place the Faction knows, as `ui/sites.ts` would read it. */
+/** A settlement the Faction knows, as `ui/sites.ts` would read it. */
 function known(over: Partial<KnownSite> = {}): KnownSite {
   return { id: 1, kind: 'stronghold', x: 20, y: 30, owner: 'rome', memory: 'seen', front: front(), ...over };
 }
 
-describe('where a place is drawn', () => {
-  it('draws the art centred on the tile the place stands on', () => {
+describe('where a settlement is drawn', () => {
+  it('draws the art centred on the tile the settlement stands on', () => {
     for (const kind of ['settlement', 'stronghold'] as const) {
-      const place = known({ kind });
-      const rect = siteRect(place);
-      const corner = tilePixel(place.x, place.y);
+      const settlement = known({ kind });
+      const rect = siteRect(settlement);
+      const corner = tilePixel(settlement.x, settlement.y);
       const size = SITE_SIZE[kind];
 
       expect(rect.width).toBe(size);
@@ -74,13 +74,13 @@ describe('where a place is drawn', () => {
     expect(siteRect(known({ y: 31 })).y).toBe(town.y + TILE_SIZE);
   });
 
-  it('sorts by the tile row, so the place further down the screen is in front', () => {
+  it('sorts by the tile row, so the settlement further down the screen is in front', () => {
     expect(siteDepth(known({ y: 30 }))).toBe(30);
     expect(siteDepth(known({ y: 31 }))).toBeGreaterThan(siteDepth(known({ y: 30 })));
   });
 });
 
-describe('what a place is drawn as', () => {
+describe('what a settlement is drawn as', () => {
   it('reads its owner and its four walls out of the front, at the rules’ own thresholds', () => {
     const look = siteLook(known({
       owner: 'carthage',
@@ -121,9 +121,9 @@ describe('what a place is drawn as', () => {
     expect(look.ram).toBe('none');
   });
 
-  it('claims nothing for a place that is only remembered', () => {
-    // Even handed a front — which `ui/sites.ts` never does for a remembered place —
-    // memory must not become a condition: a place remembered is drawn as a place.
+  it('claims nothing for a settlement that is only remembered', () => {
+    // Even handed a front — which `ui/sites.ts` never does for a remembered settlement —
+    // memory must not become a condition: a settlement remembered is drawn as a settlement.
     const remembered = siteLook(known({
       memory: 'remembered',
       front: front({ structures: [structure('gate', 'north', 0), structure('wall', 'north', 0)], ram: { hp: 0, remaining: 0, built: true } }),
@@ -136,7 +136,7 @@ describe('what a place is drawn as', () => {
     expect(remembered.walls).toEqual({ north: 'intact', east: 'intact', south: 'intact', west: 'intact' });
   });
 
-  it('draws a Stronghold with no front as a walled place with nothing known against it', () => {
+  it('draws a Stronghold with no front as a walled settlement with nothing known against it', () => {
     const look = siteLook(known({ front: null }));
 
     expect(look.owner).toBe('rome');

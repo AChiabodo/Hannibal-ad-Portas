@@ -5,8 +5,8 @@
  * The rules hold settlements by id, and the minimap (`ui/minimap.ts`) has always
  * drawn them as one coloured pixel through the fog. The main map now draws them as
  * structures, and the panel has to open one when a Player clicks it, so both need
- * the same answer to one question: *which places may this Faction see, and what
- * does it know of each?*
+ * the same answer to one question: *which settlements may this Faction see, and
+ * what does it know of each?*
  *
  * That answer is one list, `knownSites`, computed from three things and nothing
  * else:
@@ -19,25 +19,25 @@
  * - **the Faction's Observation** (`SiegeVisible`): the settlements it owns, the
  *   contacts it remembers, and the fronts it holds, besieges or has an eye on.
  * - **the fog the theatre is drawn through** (`FogView`): what the *picture* knows.
- *   A place whose tile is unexplored is not in the list at all, exactly as the
+ *   A settlement whose tile is unexplored is not in the list at all, exactly as the
  *   minimap paints nothing there — and it is the fog the veil is drawn from, not a
- *   second opinion about it, so a town cannot be drawn on ground the screen is
+ *   second opinion about it, so a Stronghold cannot be drawn on ground the screen is
  *   showing as night. The page passes its own fog here, which in a played Match is
  *   the same memory the Observation's fronts were filtered by.
  *
  * Everything else is *derived*, and each derivation is the one the rules already
  * make:
  *
- * - **Ownership** comes from the Observation or from memory: an own settlement is
- *   the Faction's, a contact is the enemy's (contacts are written for enemy-held
- *   settlements only), and a place in view with neither is held by nobody. A
- *   *remembered* place has **no** owner: memory records a place, not who holds it
- *   today, which is the rule the minimap states in its own colour for a
- *   remembered site. An enemy-held place captured after the Faction looked away
- *   still reads as it did when it was last seen, because that is what was seen.
- * - **Condition** comes from a front, and a front only when the Faction can see
- *   the place now. A remembered contact carries no wall, gate, breach or ram, so
- *   a remembered site has `front: null` and the drawing shows a place remembered,
+ * - **Ownership** comes from the Observation and only while the settlement is in
+ *   view: an own settlement is the Faction's, a contact in view is the enemy's
+ *   (contacts are written for enemy-held settlements only), and a settlement in view
+ *   with neither is held by nobody. A **remembered** settlement has no owner: memory
+ *   records a settlement, not who holds it today, which is the rule the minimap
+ *   states in its own colour for a remembered site. Its *kind* — Stronghold or minor
+ *   settlement — is remembered, because that is what was seen standing there.
+ * - **Condition** comes from a front, and a front only when the Faction can see the
+ *   settlement now. A remembered contact carries no wall, gate, breach or ram, so a
+ *   remembered site has `front: null` and the drawing shows a settlement remembered,
  *   not damage inferred.
  *
  * The module is pure — a function of the map, the Observation and the fog — so a
@@ -64,9 +64,9 @@ export interface SiteIdentity {
   readonly y: number;
 }
 
-/** One place the Faction may see, and everything it knows of it. */
+/** One settlement the Faction may see, and everything it knows of it. */
 export interface KnownSite extends SiteIdentity {
-  /** The Faction known to hold it, or `null` for a place nobody — or nobody known — holds. */
+  /** The Faction known to hold it, or `null` for a settlement nobody — or nobody known — holds. */
   readonly owner: Faction | null;
 
   /** Whether the Faction is looking at it now, or remembers it. */
@@ -74,8 +74,8 @@ export interface KnownSite extends SiteIdentity {
 
   /**
    * The front of its Siege, when the Faction can see it now: its walls, its gate,
-   * its ram and the garrison on them (ADR-0020). `null` for a place remembered,
-   * and for a place seen that has no front in the Observation.
+   * its ram and the garrison on them (ADR-0020). `null` for a settlement
+   * remembered, and for one seen that has no front in the Observation.
    */
   readonly front: VisibleFront | null;
 }
@@ -102,13 +102,13 @@ export function siteIdentities(map: MapGrid): readonly SiteIdentity[] {
 }
 
 /**
- * The places this Faction may see, and what it knows of each, in the theatre's own
- * order.
+ * The settlements this Faction may see, and what it knows of each, in the theatre's
+ * own order.
  *
- * A place is in the list when the Faction holds it, when it remembers it as a
+ * A settlement is in the list when the Faction holds it, when it remembers it as a
  * contact, or when its tile has been seen — the three facts the fog and the
- * Observation between them record. A place nobody holds and nobody has looked at
- * is not in the list, which is what keeps an unseen village off the map.
+ * Observation between them record. A settlement nobody holds and nobody has looked
+ * at is not in the list, which is what keeps an unseen minor settlement off the map.
  *
  * @throws RangeError when the fog is not over this theatre, which is the only one
  *   this project has; a view of another size is a caller that has lost track of
@@ -144,11 +144,13 @@ export function knownSites(
     const memory: SiteMemory = knowledge === KNOWLEDGE.visible ? 'seen' : 'remembered';
     sites.push({
       ...identity,
-      // A contact is an enemy-held place; a place in view with no contact at all,
-      // and no owner of its own, is held by nobody.
-      owner: contact === undefined ? null : enemy,
+      // A contact is an enemy-held settlement, and *only* while it is in view: memory
+      // records a settlement, not who holds it today (the minimap draws a remembered
+      // site in stone for the same reason). A settlement in view with no contact and
+      // none of its own is held by nobody.
+      owner: memory === 'seen' && contact !== undefined ? enemy : null,
       memory,
-      // Only what is in view has a front: memory holds a place, not its walls.
+      // Only what is in view has a front: memory holds a settlement, not its walls.
       front: memory === 'seen' ? fronts.get(identity.id) ?? null : null,
     });
   }

@@ -1,14 +1,14 @@
 /**
- * What a Faction knows of the places on the map (ticket U6, ADR-0020).
+ * What a Faction knows of the settlements on the map (ticket U6, ADR-0020).
  *
  * This is the module the map is drawn from and the panel opens from, so its two
  * claims are the ticket's rules rather than a drawing question:
  *
- * - **only allowed knowledge**: a place is in the list because the Faction holds it,
+ * - **only allowed knowledge**: a settlement is in the list because the Faction holds it,
  *   remembers it, or has seen its tile — never because the theatre happens to carry
  *   it. A village nobody has looked at is absent.
- * - **memory is memory**: a remembered place has no front, and therefore no walls,
- *   no gate, no breach, no ram and no garrison. A place in view has the front the
+ * - **memory is memory**: a remembered settlement has no front, and therefore no walls,
+ *   no gate, no breach, no ram and no garrison. A settlement in view has the front the
  *   Observation carries for it, and that front is where every condition the map
  *   draws comes from.
  *
@@ -75,12 +75,12 @@ function seenBy(world: SiegeWorld, fog?: FogView): readonly KnownSite[] {
   return knownSites(siteIdentities(world.map), seen, fog ?? seen.fog, 'rome');
 }
 
-/** The place at a tile, as the Faction knows it, or `undefined`. */
+/** The settlement at a tile, as the Faction knows it, or `undefined`. */
 function at(known: readonly KnownSite[], site: Site): KnownSite | undefined {
   return known.find((candidate) => candidate.x === site.x && candidate.y === site.y);
 }
 
-describe('the theatre’s own list of places', () => {
+describe('the theatre’s own list of settlements', () => {
   it('numbers them the way the economy does: the Strongholds first, then the villages', () => {
     for (const seed of [1, 7, 42, 9001]) {
       const map = generateMap(seed);
@@ -91,7 +91,7 @@ describe('the theatre’s own list of places', () => {
     }
   });
 
-  it('says which places are Strongholds, which the Observation does not', () => {
+  it('says which settlements are Strongholds, which the Observation does not', () => {
     const identities = siteIdentities(stage().map);
 
     expect(identities.filter((site) => site.kind === 'stronghold')).toHaveLength(2);
@@ -114,7 +114,7 @@ describe('what the Faction may see', () => {
     expect(own?.front?.structures.some((structure) => structure.kind === 'gate')).toBe(true);
   });
 
-  it('never shows a place it has not looked at', () => {
+  it('never shows a settlement it has not looked at', () => {
     const world = stage();
     const known = seenBy(world);
 
@@ -136,7 +136,7 @@ describe('what the Faction may see', () => {
     expect(enemy?.front?.structures).toHaveLength(WALL_SECTIONS + 1);
   });
 
-  it('remembers it — a place, and no walls — when the army marches away', () => {
+  it('remembers it — a settlement, and no walls — when the army marches away', () => {
     const world = stage();
     const army = musterSquad(world.economy, world.map, {
       faction: 'rome', squadType: 'hastati', x: CARTHAGE.x - 2, y: CARTHAGE.y,
@@ -154,6 +154,9 @@ describe('what the Faction may see', () => {
     expect(remembered?.kind).toBe('stronghold');
     expect(remembered?.memory).toBe('remembered');
     expect(remembered?.front).toBeNull();
+    // Memory records the settlement, not who holds it today: the drawing carries no
+    // banner and the panel says the holder is unknown.
+    expect(remembered?.owner).toBeNull();
   });
 
   it('shows a village nobody holds, and says nobody holds it', () => {
@@ -170,10 +173,10 @@ describe('what the Faction may see', () => {
     expect(village?.front?.structures).toHaveLength(0);
   });
 
-  it('remembers a village as a place, with no front to read', () => {
+  it('remembers a village as a settlement, with no front to read', () => {
     const world = stage();
     // A watch that has been out to the far village and come back: the ground it saw
-    // is remembered, and the place with it — with no front, because no eye covers it
+    // is remembered, and the settlement with it — with no front, because no eye covers it
     // now and a front is only what an eye reports.
     refreshVision(world.fog.rome, world.map, [eyeOf(IN_THE_FOG, SETTLEMENT_VISION)]);
     const known = seenBy(world);

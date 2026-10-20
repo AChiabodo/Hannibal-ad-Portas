@@ -127,9 +127,9 @@ import { knownSites, siteIdentities, type KnownSite } from '../ui/sites.ts';
 import { createHudLayer, type HudLayer } from './hud.ts';
 import { screenToStage, type Camera } from './camera.ts';
 import { textureOf } from './stage.ts';
-import { createSettlementLayer, type SettlementLayer } from './settlement-layer.ts';
-import { siteRect } from './settlements.ts';
-import { createSquadLayer, type SquadLayer } from './squad-layer.ts';
+import { SETTLEMENT_LAYER, createSettlementLayer, type SettlementLayer } from './settlement-layer.ts';
+import { siteDepth, siteRect } from './settlements.ts';
+import { SQUAD_LAYER, createSquadLayer, type SquadLayer } from './squad-layer.ts';
 import { blockPlacement, blockSize } from './squads.ts';
 import { tileAt, tilePixel } from './terrain.ts';
 import { VIEWED_FACTION } from './view.ts';
@@ -143,16 +143,6 @@ export const PLAYER_FACTION: Faction = VIEWED_FACTION;
 
 /** The longest a single frame may pay for: a background tab does not owe the Match an hour. */
 const FRAME_BUDGET_MS = 250;
-
-/**
- * How high the two pickable kinds sort, where they overlap.
- *
- * The men are drawn in the layer above the places (`render/squad-layer.ts` at ten
- * and eleven, `render/settlement-layer.ts` at one, under the fog), so a Squad
- * standing in a town is what a Player can see and what a click has to take.
- */
-const LAYER_OF_PLACES = 0;
-const LAYER_OF_MEN = 1;
 
 /**
  * Where an armed action's click landed, as the thing the Command will name.
@@ -226,7 +216,7 @@ export interface GameSnapshot {
   /** The Faction's Squads, each with the rectangle its men are drawn in. */
   readonly squads: readonly SquadReport[];
 
-  /** Every place the Faction may see, each with the rectangle its structure is drawn in (U6). */
+  /** Every settlement the Faction may see, each with the rectangle its structure is drawn in (U6). */
   readonly sites: readonly SiteReport[];
   /** The dead this Faction can see: residue, drawn, faded and never hashed (C3). */
   readonly corpses: readonly Corpse[];
@@ -293,9 +283,9 @@ export interface GameHooks {
   squads(): readonly SquadReport[];
 
   /**
-   * Every place this Faction may see now, with the rectangle each is drawn in (U6).
+   * Every settlement this Faction may see now, with the rectangle each is drawn in (U6).
    *
-   * Own settlements, enemy places it remembers, and places nobody holds that it has
+   * Own settlements, enemy settlements it remembers, and settlements nobody holds that it has
    * looked at: the same list the settlement layer is handed, so what a test reads is
    * what the map is showing and not a second opinion about it.
    */
@@ -385,7 +375,7 @@ export interface GameHooks {
    * The same kind of lens as `showSquads`, for the same reason: the pixel
    * comparisons that ask what the *theatre* shows have to be able to take a town
    * standing on it out of the picture. Nothing about the Match changes — the
-   * places are still there and still pickable at their own rectangles — so it is a
+   * settlements are still there and still pickable at their own rectangles — so it is a
    * view hook and never a Command.
    */
   showSettlements(visible: boolean): void;
@@ -877,7 +867,7 @@ export function createGame(options: GameOptions): Game {
     return { x: at.x, y: at.y, width: size.width, height: size.height };
   }
 
-  /** The HUD's model, with the panel's selection, every picked Squad and every known place. */
+  /** The HUD's model, with the panel's selection, every picked Squad and every known settlement. */
   function readModel(known: readonly KnownSite[]): HudModel {
     const observation = visible();
     const next = hudModel(observation, strongholdIds(observation), panelSelection(), human.selection.squads,
@@ -894,7 +884,7 @@ export function createGame(options: GameOptions): Game {
       smallWindow: desktop && (windowSize().width < 1280 || windowSize().height < 720) } };
   }
 
-  /** What the page knows beside the Observation: its Faction, the places it sees and the Player's own memory. */
+  /** What the page knows beside the Observation: its Faction, the settlements it sees and the Player's own memory. */
   function session(observation: SiegeVisible, known: readonly KnownSite[]): {
     readonly faction: Faction;
     readonly tab: SettlementTab;
@@ -922,7 +912,7 @@ export function createGame(options: GameOptions): Game {
   }
 
   /**
-   * Every place this Faction may see, as `ui/sites.ts` reads its Observation and its
+   * Every settlement this Faction may see, as `ui/sites.ts` reads its Observation and its
    * fog (ticket U6).
    *
    * One read, three users: the layer draws it, the panel opens what a click on it
@@ -935,7 +925,7 @@ export function createGame(options: GameOptions): Game {
     return knownSites(identities, visible(), options.fog(), faction);
   }
 
-  /** Every place the Faction may see, with the rectangle each is drawn in. */
+  /** Every settlement the Faction may see, with the rectangle each is drawn in. */
   function siteReports(): readonly SiteReport[] {
     return readSites().map((site) => ({ ...site, rect: siteRect(site) }));
   }
@@ -1325,20 +1315,22 @@ export function createGame(options: GameOptions): Game {
   }
 
   /**
-   * What a pick can land on: the Faction's own Squads and the places it can see,
+   * What a pick can land on: the Faction's own Squads and the settlements it can see,
    * with the rectangles they are drawn in, the rows they stand on and the layers
    * they are drawn in.
    *
-   * The men sort above the places (`LAYER_OF_MEN` against `LAYER_OF_PLACES`),
-   * which is the order the stage draws them in: a Squad standing in a town is the
-   * thing a Player can see under the pointer, so it is the thing the click takes.
+   * The layer a thing is drawn in is the world `zIndex` of the layer that draws it
+   * — `SETTLEMENT_LAYER` under the fog, `SQUAD_LAYER` above it — so the men sort
+   * above the settlements for the same reason the stage draws them above: a Squad
+   * standing in a Stronghold is what a Player can see under the pointer, and so it
+   * is the thing the click takes.
    */
   function pickables(): readonly Pickable[] {
     return [
       ...siteReports().map((site) => ({ kind: 'settlement' as const, id: site.id, rect: site.rect,
-        depth: site.y, layer: LAYER_OF_PLACES })),
+        depth: siteDepth(site), layer: SETTLEMENT_LAYER })),
       ...squadReports().map((squad) => ({ kind: 'squad' as const, id: squad.id, rect: squad.rect,
-        depth: squad.y, layer: LAYER_OF_MEN })),
+        depth: squad.y, layer: SQUAD_LAYER })),
     ];
   }
 

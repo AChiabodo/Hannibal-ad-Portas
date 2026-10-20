@@ -451,9 +451,9 @@ describe('the HUD on screen', () => {
     const last = layout.readouts[layout.readouts.length - 1];
     if (first === undefined || last === undefined) throw new Error('the layout has no readouts');
     expect(last.rect.y).toBeGreaterThan(first.rect.y);
-    for (const placed of layout.readouts) {
-      expect(placed.rect.x + placed.rect.width).toBeLessThanOrEqual(SIZE.width);
-      expect(placed.rect.y + placed.rect.height).toBeLessThanOrEqual(layout.bar.height);
+    for (const readout of layout.readouts) {
+      expect(readout.rect.x + readout.rect.width).toBeLessThanOrEqual(SIZE.width);
+      expect(readout.rect.y + readout.rect.height).toBeLessThanOrEqual(layout.bar.height);
     }
 
     // The list starts under the bar, whatever height the bar needed.
@@ -670,17 +670,20 @@ const ENEMY_FRONT: VisibleFront = {
   garrison: 2,
 };
 
-/** That Stronghold as a place the Faction can see (U6). */
+/** That Stronghold as a settlement the Faction can see (U6). */
 const ENEMY_SITE: KnownSite = {
   id: 7, kind: 'stronghold', x: 80, y: 80, owner: 'carthage', memory: 'seen', front: ENEMY_FRONT,
 };
 
-/** A place the Faction has only remembered, with no front to read. */
+/**
+ * A settlement the Faction has only remembered: no front to read, and no holder
+ * either, because memory records a settlement and not who holds it today.
+ */
 const REMEMBERED_SITE: KnownSite = {
-  id: 9, kind: 'stronghold', x: 20, y: 60, owner: 'carthage', memory: 'remembered', front: null,
+  id: 9, kind: 'stronghold', x: 20, y: 60, owner: null, memory: 'remembered', front: null,
 };
 
-it('opens a place the Faction sees, with its walls, from a click on the map (U6)', () => {
+it('opens a settlement the Faction sees, with its walls, from a click on the map (U6)', () => {
   const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 7 }, [], {}, { sites: [ENEMY_SITE] });
   const words = model.detail?.lines.map(lineText) ?? [];
 
@@ -691,19 +694,22 @@ it('opens a place the Faction sees, with its walls, from a click on the map (U6)
   expect(words).toContain(`${translate('ui.breach')} ${translate('ui.breached')}`);
   expect(words).toContain(`${translate('ui.ram')} ${message('ui.ramBuilt', { hp: 60 })}`);
 
-  // Its stock is not this Faction's to read, so the bar names the place and says
+  // Its stock is not this Faction's to read, so the bar names the settlement and says
   // the figures are unknown instead of showing four zeroes.
   const readouts = model.readouts.map(lineText);
   expect(readouts).toContain(`${translate('ui.settlement')} Roccaforte 7`);
   expect(readouts).toContain(`${translate('resource.grain')} ${translate('ui.unknown')}`);
 });
 
-it('opens a place it only remembers, and reads no wall into the memory (U6)', () => {
+it('opens a settlement it only remembers, and reads no wall into the memory (U6)', () => {
   const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 9 }, [], {}, { sites: [REMEMBERED_SITE] });
   const words = model.detail?.lines.map(lineText) ?? [];
 
   expect(model.detail?.title).toBe('Roccaforte 9');
   expect(words).toContain(`${translate('ui.siteState')} ${translate('ui.lastKnown')}`);
+  // Who held it is not remembered either: the drawing carries no banner, and the
+  // panel says the holder is unknown rather than naming the enemy.
+  expect(words).toContain(`${translate('ui.holder')} ${translate('ui.unknown')}`);
   expect(words).toContain(`${translate('ui.walls')} ${translate('ui.frontUnknown')}`);
   // No wall standing, no breach, no ram and no garrison: the memory holds none.
   expect(words.some((line) => line.startsWith(translate('ui.wallsStanding').slice(0, 4)))).toBe(false);
@@ -711,7 +717,7 @@ it('opens a place it only remembers, and reads no wall into the memory (U6)', ()
   expect(words.some((line) => line.startsWith(translate('ui.garrisonCount')))).toBe(false);
 });
 
-it('drops a settlement whose place is neither held nor known', () => {
+it('drops a settlement that is neither held nor known', () => {
   const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 42 }, [], {}, { sites: [ENEMY_SITE] });
 
   expect(model.selected).toBeNull();

@@ -1,34 +1,34 @@
 /**
- * Settlements and fortifications, drawn: a place on the map, and what is left of
+ * Settlements and fortifications, drawn: a settlement on the map, and what is left of
  * its walls (ticket U6).
  *
  * B1 puts four to six minor settlements and a Stronghold for each Faction on the
  * theatre, and until this ticket the main map showed *none* of them: a settlement
  * was a tile the rules knew about, drawn on the minimap as one coloured pixel. A
- * Player could not see a town, could not tell a Stronghold from a village, and
+ * Player could not see a settlement, could not tell a Stronghold from a minor one, and
  * could not read a breach. This module is the drawing.
  *
- * ## What a place is, in this module's vocabulary
+ * ## What a settlement is, in this module's vocabulary
  *
- * A **place** is open or walled: a *settlement* is a cluster of huts with nobody's
- * wall round it, and a *stronghold* is the same town inside a stone enceinte of
- * four wall sections and a gate (ADR-0018: the gate and four stretches of wall,
- * one to a side, each with its own hit points). Its **condition** is one of three
+ * A **settlement** is open or walled: a *minor settlement* is a cluster of huts with
+ * nobody's wall round it, and a *Stronghold* is the same settlement inside a stone
+ * enceinte of four wall sections and a gate (ADR-0018: the gate and four stretches of
+ * wall, one to a side, each with its own hit points). Its **condition** is one of three
  * per structure — `intact`, `damaged`, `breached` — and its **memory** is whether
  * the Faction is looking at it now or remembers it. Its **owner** is a Faction, or
- * nobody; a remembered place has no owner, because memory records where a place is
+ * nobody; a remembered settlement has no owner, because memory records where it is
  * and not who holds it today (ADR-0020, and the same rule the minimap draws by).
  *
  * ## One wall section, four ways
  *
- * A stronghold is a square enceinte, and the four sides are not four drawings:
+ * A Stronghold is a square enceinte, and the four sides are not four drawings:
  * the wall section is **one 40×7 buffer** — crenellations along its outer edge,
  * a wall walk, a face and a shadow — and `rotateQuarterTurns` is what puts it on
  * the four sides, exactly as B3's terrain turns one transition tile four ways.
  * Corner towers are one 8×8 buffer placed four times. The gate is one gatehouse
- * drawn on the south side, and the whole stronghold is then **rotated** so that
- * the gate faces the side the rules say it faces: the town is drawn once, and a
- * gate on the west is the same town turned a quarter.
+ * drawn on the south side, and the whole Stronghold is then **rotated** so that
+ * the gate faces the side the rules say it faces: the settlement is drawn once, and a
+ * gate on the west is the same drawing turned a quarter.
  *
  * ## Condition is painted into declared regions, not drawn three times
  *
@@ -41,8 +41,8 @@
  *
  * ## Memory is a stone silhouette, and never a claim
  *
- * A remembered place is drawn **without an owner's cloth, without a gate and with
- * uniform walls**: the fog's memory holds that a walled place stood there, and
+ * A remembered settlement is drawn **without an owner's cloth, without a gate and with
+ * uniform walls**: the fog's memory holds that a walled settlement stood there, and
  * `sim/fog.ts`'s contacts do not hold which side its gate was on or how much of
  * the wall was left. So the remembered drawing is re-tinted into the stone ramp
  * (`ghost`) — no colours, no banner, no damage — and the theatre's own fog veil
@@ -69,23 +69,23 @@ import {
   type Rgba,
 } from './pixel-buffer.ts';
 
-/** The two things a place on the map can be: an open settlement, or a walled Stronghold. */
+/** The two things a settlement on the map can be: an open one, or a walled Stronghold. */
 export const SETTLEMENT_KINDS = ['settlement', 'stronghold'] as const;
 
 /** One of them. */
 export type SettlementKind = (typeof SETTLEMENT_KINDS)[number];
 
 /**
- * The side of a place's art, in pixels.
+ * The side of a settlement's art, in pixels.
  *
  * A settlement is two tiles square and a Stronghold three and a half, which is the
- * same order of size as a Squad's block of men (three tiles tall): a walled town
- * has to be the largest thing on the map that is not the map, and a village has to
- * be smaller than the town and larger than a resource marker's one tile.
+ * same order of size as a Squad's block of men (three tiles tall): a Stronghold has
+ * to be the largest thing on the map that is not the map, and a minor settlement
+ * has to be smaller than it and larger than a resource marker's one tile.
  */
 export const SITE_SIZE: Readonly<Record<SettlementKind, number>> = { settlement: 32, stronghold: 56 };
 
-/** Whether the Faction looks at a place now, or remembers it. */
+/** Whether the Faction looks at a settlement now, or remembers it. */
 export const SITE_MEMORIES = ['seen', 'remembered'] as const;
 
 /** One of them. */
@@ -103,7 +103,7 @@ export const SITE_CONDITIONS = ['intact', 'damaged', 'breached'] as const;
 /** One of them. */
 export type SiteCondition = (typeof SITE_CONDITIONS)[number];
 
-/** Who holds a place, as the cloth on its banner. `none` is nobody — or nobody known. */
+/** Who holds a settlement, as the cloth on its banner. `none` is nobody — or nobody known. */
 export const SITE_OWNERS = ['rome', 'carthage', 'none'] as const;
 
 /** One of them. */
@@ -116,7 +116,7 @@ export const SITE_RAMS = ['none', 'building', 'built'] as const;
 export type SiteRam = (typeof SITE_RAMS)[number];
 
 /**
- * Everything this module draws from: a place, its owner, what the Faction knows of
+ * Everything this module draws from: a settlement, its owner, what the Faction knows of
  * it, and what is left of its walls.
  *
  * Art words only. Whether an owner is "the Faction looking" or "the enemy" is the
@@ -126,19 +126,19 @@ export interface SettlementLook {
   /** Open settlement, or walled Stronghold. */
   readonly kind: SettlementKind;
 
-  /** Whose cloth flies over it, or `none` for a place nobody is known to hold. */
+  /** Whose cloth flies over it, or `none` for a settlement nobody is known to hold. */
   readonly owner: SiteOwner;
 
   /** Whether the drawing is of what is seen now, or of what was seen once. */
   readonly memory: SiteMemory;
 
-  /** Which side the gate is on, for a walled Stronghold: the town is turned to face it. */
+  /** Which side the gate is on, for a walled Stronghold: the drawing is turned to face it. */
   readonly gateSide: SiteSide;
 
   /** What is left of the gate, or `null` where there is none, or where memory holds none. */
   readonly gate: SiteCondition | null;
 
-  /** What is left of each wall section, by side. The four are all that a walled place has. */
+  /** What is left of each wall section, by side: what a walled settlement has. */
   readonly walls: Readonly<Record<SiteSide, SiteCondition>>;
 
   /** The ram at the gate: only a siege this Faction can see has one. */
@@ -161,7 +161,7 @@ const INK = {
   rub: shadeAt(RAMPS.stone, 1),
   /** The courtyard's packed earth: dark, so a wall and a roof read against it. */
   earth: shadeAt(RAMPS.bronze, 1),
-  /** Paving, and the ground a village's well stands on. */
+  /** Paving, and the ground a minor settlement's well stands on. */
   paving: shadeAt(RAMPS.stone, 3),
   /** A roof's lit ridge. */
   roofLit: shadeAt(RAMPS.bronze, 5),
@@ -303,12 +303,12 @@ export function siteLookKey(look: SettlementLook): string {
 }
 
 /**
- * One place, drawn.
+ * One settlement, drawn.
  *
- * A settlement is the village; a Stronghold is the town inside its enceinte, turned
- * so that its gate faces `gateSide`. A `remembered` place is re-tinted into the
- * stone ramp after it is drawn, which is why memory can carry no condition: the
- * look a remembered place is drawn from has none.
+ * A minor settlement is the huts; a Stronghold is the same settlement inside its
+ * enceinte, turned so that its gate faces `gateSide`. A `remembered` settlement is
+ * re-tinted into the stone ramp after it is drawn, which is why memory can carry no
+ * condition: the look a remembered settlement is drawn from has none.
  */
 export function siteSprite(look: SettlementLook): PixelBuffer {
   const drawn = look.memory === 'remembered' ? rememberedLook(look) : look;
@@ -318,7 +318,7 @@ export function siteSprite(look: SettlementLook): PixelBuffer {
   if (cached !== undefined) return cached;
 
   const composed = drawn.kind === 'settlement'
-    ? villageSprite(drawn)
+    ? minorSettlementSprite(drawn)
     : strongholdSprite(drawn);
   const sprite = drawn.memory === 'remembered' ? ghost(composed) : composed;
 
@@ -327,9 +327,9 @@ export function siteSprite(look: SettlementLook): PixelBuffer {
 }
 
 /**
- * The look a remembered place is drawn from: the place, and no claim about it.
+ * The look a remembered settlement is drawn from: the settlement, and no claim about it.
  *
- * A memory of a place holds that it is there and whether it was walled; it does not
+ * A memory of a settlement holds that it is there and whether it was walled; it does not
  * hold a holder, which side the gate was on, or how much of the wall stood. So the
  * remembered look drops all four, and `ghost` takes the colour out of what is left.
  */
@@ -345,25 +345,25 @@ function rememberedLook(look: SettlementLook): SettlementLook {
   };
 }
 
-/** Four walls, whole: what a walled place is drawn with when nothing is known against it. */
+/** Four walls, whole: what a walled settlement is drawn with when nothing is known against it. */
 function intactWalls(): Readonly<Record<SiteSide, SiteCondition>> {
   return { north: 'intact', east: 'intact', south: 'intact', west: 'intact' };
 }
 
-/** A minor settlement: the same town, with nobody's wall round it. */
-function villageSprite(look: SettlementLook): PixelBuffer {
+/** A minor settlement: the same cluster of roofs, with nobody's wall round it. */
+function minorSettlementSprite(look: SettlementLook): PixelBuffer {
   const size = SITE_SIZE.settlement;
   const sprite = createPixelBuffer(size, size);
 
-  // The ground the village stands on: a little paving at its middle, so a cluster
-  // of roofs reads as a place rather than as four roofs that happen to be near one
+  // The ground the settlement stands on: a little paving at its middle, so a cluster
+  // of roofs reads as a settlement rather than as four roofs that happen to be near one
   // another. It is drawn first and everything else stands on it.
   fillRect(sprite, 12, 12, 9, 9, INK.paving);
   paintWell(sprite, 15, 15);
 
   for (const hut of VILLAGE_HUTS) paintHut(sprite, hut);
 
-  // The banner stands at the north of the village, between the two front huts,
+  // The banner stands at the north of the settlement, between the two front huts,
   // where nothing hides it.
   paintBanner(sprite, 15, 1, look.owner);
   outline(sprite);
@@ -371,7 +371,7 @@ function villageSprite(look: SettlementLook): PixelBuffer {
   return sprite;
 }
 
-/** A walled Stronghold: the town, its enceinte and its gate, turned to face the gate. */
+/** A walled Stronghold: the settlement, its enceinte and its gate, turned to face the gate. */
 function strongholdSprite(look: SettlementLook): PixelBuffer {
   const size = SITE_SIZE.stronghold;
   const sprite = createPixelBuffer(size, size);
@@ -391,7 +391,7 @@ function strongholdSprite(look: SettlementLook): PixelBuffer {
   outline(sprite);
 
   // The gate the rules give a Stronghold faces the other Faction, which is a side
-  // of the compass: the town is drawn with its gate south and turned to meet it,
+  // of the compass: the Stronghold is drawn with its gate south and turned to meet it,
   // so one drawing serves all four and the four cannot disagree about the wall.
   return rotateQuarterTurns(sprite, turnsFor(look.gateSide));
 }
@@ -499,7 +499,7 @@ function paintGatehouse(sprite: PixelBuffer, condition: SiteCondition): void {
   const left = GATEHOUSE.left;
 
   // Two gate towers, taller than the wall by a row so the gate can be found at a
-  // glance from any direction the town is turned.
+  // glance from any direction the Stronghold is turned.
   for (const x of [left, left + GATEHOUSE.width - 4]) {
     fillRect(sprite, x, top - 1, 4, WALL_THICKNESS + 2, INK.wallBody);
     fillRect(sprite, x, top - 1, 4, 1, INK.wallLit);
@@ -594,7 +594,7 @@ function paintWell(sprite: PixelBuffer, x: number, y: number): void {
   setPixel(sprite, x, y, INK.wallLit);
 }
 
-/** A banner on a pole: the one thing on a place that says who holds it. */
+/** A banner on a pole: the one thing on a settlement that says who holds it. */
 function paintBanner(sprite: PixelBuffer, x: number, y: number, owner: SiteOwner): void {
   if (owner === 'none') return;
 
@@ -607,10 +607,11 @@ function paintBanner(sprite: PixelBuffer, x: number, y: number, owner: SiteOwner
 }
 
 /**
- * A place as it is remembered: the same silhouette, in stone.
+ * A settlement as it is remembered: the same silhouette, in stone.
  *
- * Memory is not a dimmed photograph. What a Faction remembers of a place is *that
- * it is there*: a Stronghold is a walled place, a settlement is a village, and
+ * Memory is not a dimmed photograph. What a Faction remembers of a settlement is *that
+ * it is there*: a Stronghold is a walled settlement, a minor settlement is a cluster
+ * of roofs, and
  * neither is remembered in the enemy's colours, with a gate on a side, or with a
  * breach in its wall (ADR-0020, `sim/fog.ts`'s contacts). So the drawing is taken
  * apart into brightness and put back together out of the stone ramp — a grey
@@ -627,7 +628,7 @@ function ghost(sprite: PixelBuffer): PixelBuffer {
       if (alpha === 0) continue;
 
       // Integer luminance, then the nearest shade of the stone ramp: the silhouette
-      // survives and every colour the place used to have does not.
+      // survives and every colour the settlement used to have does not.
       const luminance = Math.floor((red * 3 + green * 6 + blue) / 10);
       const shade = Math.min(shades, Math.floor((luminance * shades) / 255));
 
@@ -638,7 +639,7 @@ function ghost(sprite: PixelBuffer): PixelBuffer {
   return ghosted;
 }
 
-/** Draws a one-pixel line round everything a buffer painted, so a place reads on any ground. */
+/** Draws a one-pixel line round everything a buffer painted, so a settlement reads on any ground. */
 function outline(sprite: PixelBuffer): void {
   const painted: boolean[] = [];
   for (let index = 3; index < sprite.pixels.length; index += 4) painted.push((sprite.pixels[index] ?? 0) > 0);
@@ -677,7 +678,7 @@ function blitBuffer(target: PixelBuffer, source: PixelBuffer, x: number, y: numb
   }
 }
 
-/** One row of the catalogue's settlements section: a named place, and the look it is drawn from. */
+/** One row of the catalogue's settlements section: a named settlement, and the look it is drawn from. */
 export interface SiteSpecimen {
   /** A stable name, e.g. `site:stronghold:rome:breached`. */
   readonly name: string;
@@ -710,12 +711,12 @@ function walledSettlement(
 }
 
 /**
- * The plate's specimens: both Factions, an open place and a walled one, walls whole,
- * hurt and broken, the ram at the gate, and a place remembered.
+ * The plate's specimens: both Factions, an open settlement and a walled one, walls whole,
+ * hurt and broken, the ram at the gate, and a settlement remembered.
  *
  * A handful and not the cross-product: what the Atelier has to answer is whether a
- * Player can tell a village from a Stronghold, a whole wall from a broken one, and
- * a place in view from a place remembered, and one specimen per question is what
+ * Player can tell a minor settlement from a Stronghold, a whole wall from a broken one, and
+ * a settlement in view from one remembered, and one specimen per question is what
  * makes that judgeable. The four sides are exercised by the generator's own tests
  * rather than by four more rows.
  */
@@ -759,10 +760,10 @@ export function settlementEntries(): readonly { readonly name: string; readonly 
 }
 
 /**
- * A mark drawn over a place the Player has selected.
+ * A mark drawn over a settlement the Player has selected.
  *
  * Generated art like everything else — a bracket in the four corners of the
- * sprite, in parchment, at the same size as the place so the layer only has to
+ * sprite, in parchment, at the same size as the settlement so the layer only has to
  * blit it over one — because a selection a Player cannot see is a selection they
  * have to guess at, and `render/` may not draw a second way.
  */

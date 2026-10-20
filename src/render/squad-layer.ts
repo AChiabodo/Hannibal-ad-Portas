@@ -92,6 +92,15 @@ interface Drawn {
  */
 const ABOVE_THE_MAP = 10;
 
+/**
+ * The layer the living are drawn in, exported so picking agrees with drawing.
+ *
+ * A click compares the layer a Squad is drawn in with the layer a settlement is
+ * (`render/settlement-layer.ts`): the men stand over the settlements they are in, so
+ * a Squad is picked before one, whatever rows the two are on (ticket U6).
+ */
+export const SQUAD_LAYER = ABOVE_THE_MAP + 1;
+
 /** How far above every block a destination marker sorts, so a marker is never hidden by the men. */
 const ABOVE_EVERY_BLOCK = 1000;
 
@@ -110,7 +119,7 @@ export function createSquadLayer(parent: Container): SquadLayer {
 
   const root = new Container();
   root.sortableChildren = true;
-  root.zIndex = ABOVE_THE_MAP + 1;
+  root.zIndex = SQUAD_LAYER;
   parent.addChild(root);
 
   const squads = new Map<number, Drawn>();

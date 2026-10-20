@@ -5,12 +5,12 @@
  * are the two claims worth holding. **Silhouette** is measured, not copied: a
  * village has to be a scatter of roofs and a Stronghold a closed stone ring, and
  * the two have to be tellable apart from nothing but which pixels are painted.
- * **Condition** is measured at the place it is drawn: a breach on the north wall
+ * **Condition** is measured at the settlement it is drawn: a breach on the north wall
  * has to leave a hole in the north wall, a damaged wall has to still be a wall,
  * and a ram has to stand at the gate it is battering.
  *
  * The last group is the ticket's hardest rule: **memory carries no condition**. A
- * remembered place is drawn without an owner's cloth, without a gate, without
+ * remembered settlement is drawn without an owner's cloth, without a gate, without
  * damage — so the test asserts the strongest form of that: a remembered Stronghold
  * is *the same picture* whatever the front says its walls are, and every colour in
  * a remembered drawing comes from the stone ramp.
@@ -122,7 +122,7 @@ function centre(size: number): number {
   return Math.floor(size / 2);
 }
 
-describe('the size and the identity of a place', () => {
+describe('the size and the identity of a settlement', () => {
   it('draws every kind at its declared size, and draws it the same way twice', () => {
     for (const kind of SETTLEMENT_KINDS) {
       const sprite = siteSprite(walled({ kind }));
@@ -149,7 +149,7 @@ describe('the size and the identity of a place', () => {
 });
 
 describe('a recognizable silhouette', () => {
-  it('is a stone ring, closed on all four sides, when the place is walled', () => {
+  it('is a stone ring, closed on all four sides, when the settlement is walled', () => {
     const town = siteSprite(walled());
     const size = SITE_SIZE.stronghold;
     const middle = centre(size);
@@ -162,7 +162,7 @@ describe('a recognizable silhouette', () => {
     expect(inkIn(town, middle - 2, size - 10, 4, 8), 'south wall').toBeGreaterThan(20);
   });
 
-  it('is a scatter of roofs, with air at its edges, when the place is open', () => {
+  it('is a scatter of roofs, with air at its edges, when the settlement is open', () => {
     const roofs = siteSprite(village());
     const size = SITE_SIZE.settlement;
     const middle = centre(size);
@@ -276,7 +276,7 @@ describe('a condition, drawn where it is', () => {
   });
 });
 
-describe('a place remembered', () => {
+describe('a settlement remembered', () => {
   it('is drawn without an owner’s cloth, whatever it was held by', () => {
     const cloth = [shadeAt(RAMPS.bronze, 6), shadeAt(RAMPS.blood, 6)];
 
@@ -391,7 +391,7 @@ describe('the catalogue and the selection mark', () => {
     expect(new Set(looks.map((look) => look.owner))).toEqual(new Set(SITE_OWNERS));
   });
 
-  it('brackets a selected place in its corners, and nowhere in the middle', () => {
+  it('brackets a selected settlement in its corners, and nowhere in the middle', () => {
     for (const kind of SETTLEMENT_KINDS) {
       const mark = siteMark(kind);
       const size = SITE_SIZE[kind];
