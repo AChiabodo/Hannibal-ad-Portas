@@ -47,6 +47,7 @@ import {
   select,
   squads,
   state,
+  dismissFirstEntry,
 } from './hooks';
 
 /** The seed the scenes are made on, fixed so a screenshot can be reproduced. */
@@ -79,6 +80,7 @@ async function openMatch(
   options: { readonly paused?: boolean } = {},
 ): Promise<void> {
   await page.setViewportSize({ width: size.width, height: size.height });
+  await dismissFirstEntry(page);
   await page.goto(`/?play=1&seed=${String(SEED)}&faction=${faction}&difficulty=centurio`);
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'match');
 

@@ -172,7 +172,7 @@ export interface GameView extends ViewHooks, GameHooks {
  * both, the Match and its interface over everything, one frame drawn, and the
  * hooks Playwright and, later, an external agent drive it with.
  */
-export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserMatchOptions> & { readonly sessionControls?: boolean } = {}): Promise<GameView> {
+export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserMatchOptions> & { readonly sessionControls?: boolean; readonly firstEntry?: boolean } = {}): Promise<GameView> {
   const config: MatchConfiguration = { seed: options.seed ?? DEFAULT_SEED, faction: options.faction ?? 'rome', difficulty: options.difficulty ?? 'centurio' };
   const map = generateMap(config.seed);
   const theatre = renderTerrain(map);
@@ -256,6 +256,7 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     rules: options.rules,
     opponent: options.opponent,
     sessionControls: options.sessionControls,
+    firstEntry: options.firstEntry,
     restart: () => leave(matchAddress(config, ENTRY_PATH)),
     newMatch: () => leave(`${ENTRY_PATH}?previous=${String(config.seed)}`),
     ended: () => {

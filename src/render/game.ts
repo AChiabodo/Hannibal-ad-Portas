@@ -139,6 +139,7 @@ import { VIEWED_FACTION } from './view.ts';
 import type { PixelPoint, Stage } from './stage.ts';
 import { DEFAULT_UI_PREFERENCES, loadUiPreferences, saveUiPreferences, type UiPreferences } from '../ui/preferences.ts';
 import { matchMenu, desktopMatchMenu, menuPlate, contains, type MatchMenu } from '../ui/match-menu.ts';
+import { GUIDE_CLOSED, GUIDE_FIRST_ENTRY, guideNext, guidePanel, type GuideActionName, type GuideEvent, type GuideState } from '../ui/guide.ts';
 import { message, translate } from '../ui/strings.ts';
 
 /** Fixture/default Faction only; each running Match uses its setup configuration. */
@@ -479,6 +480,14 @@ export interface GameOptions {
   readonly ended?: () => void;
   /** A composed visual fixture can omit navigation chrome. Normal Matches always show it. */
   readonly sessionControls?: boolean;
+  /**
+   * Whether this page is the Match's first entry (U8, Q11): the guide opens on it.
+   *
+   * A composed scenario is not a first entry — it arranges a state and expects a
+   * test, not a Player, to read it — so only `main.ts`, the page a Player reaches
+   * through setup, asks for the guide. The default is `false` for that reason.
+   */
+  readonly firstEntry?: boolean;
   readonly stage: Stage;
   readonly seed: number;
   readonly size: HudSize;
@@ -576,6 +585,18 @@ export function createGame(options: GameOptions): Game {
   /** How the Match ended, or `null` while it is on. Every stepper stops here. */
   let result: MatchResult | null = host.result;
 
+  /**
+   * The first-entry guide (U8, Q11): the Player's progress through the four acts,
+   * and whether it is on screen. It opens paused on the welcome line, which is
+   * the only thing it does to the clock; `guidePaused` says the guide is the one
+   * holding the pause, so closing it can release a clock it stopped and never one
+   * a Player did.
+   */
+  let guide: GuideState = desktop && options.firstEntry === true && !preferences.guideDismissed && result === null
+    ? GUIDE_FIRST_ENTRY : GUIDE_CLOSED;
+  let guidePaused = guide.open;
+  if (guidePaused) pacing.pause();
+
   // The rules first, then the eyes the Faction has, and only then a picture:
   // the fog is what the minimap is drawn through, so a minimap composed before
   // the fog existed would be a corner of the screen that quietly lied for one
@@ -600,9 +621,13 @@ export function createGame(options: GameOptions): Game {
       navigatorExpanded = show && (model.view.scaleWarning === true || model.view.smallWindow === true);
       updatePreferences({ ...preferences, navigator: show });
     },
-    toggleGuide: () => updatePreferences({ ...preferences, guideDismissed: !preferences.guideDismissed }),
+    toggleGuide: () => toggleGuide(),
     resetPreferences: () => {
       navigatorExpanded = false;
+      // Resetting the *preference* is not opening the panel: the Guide returns on
+      // the next first entry, and a Player who wants it now has the drawer's own
+      // reopen control. Pausing a live Match from a reset would be a Match change
+      // the reset control does not promise (docs/BROWSER.md).
       updatePreferences({ ...DEFAULT_UI_PREFERENCES });
     },
     centerSelection: () => {
@@ -647,6 +672,7 @@ export function createGame(options: GameOptions): Game {
     selection: () => human.selection,
     select: (next) => {
       human.select(asPicked(next));
+      noteGuide({ kind: 'selection', what: whatIsSelected() });
       repaint();
     },
     hudRects: () => {
@@ -704,7 +730,7 @@ export function createGame(options: GameOptions): Game {
     },
     recallGroup: (index) => {
       const recalled = human.recallGroup(index);
-      if (recalled) { groupMemory = null; repaint(); }
+      if (recalled) { groupMemory = null; noteGuide({ kind: 'selection', what: 'squad' }); repaint(); }
       return recalled;
     },
     groupOf: (index) => human.groupOf(index),
@@ -729,12 +755,20 @@ export function createGame(options: GameOptions): Game {
     hash: () => match.hash(),
     fastForward: () => playToEnd(),
     pause: () => {
+      // An explicit pause is the Player's: closing the guide afterwards must not
+      // release a clock the guide was not holding.
+      guidePaused = false;
       pacing.pause();
       repaint();
     },
     resume: () => {
       if (result !== null) return;
+      // A Player who resumes the clock has begun the Match, which is what the
+      // welcome line was waiting for; the guide moves on rather than sitting on a
+      // button whose effect has already happened.
+      if (guide.open) guide = guideNext(guide, { kind: 'begin' });
       pacing.resume();
+      guidePaused = false;
       lastFrame = performance.now();
       repaint();
     },
@@ -775,6 +809,79 @@ export function createGame(options: GameOptions): Game {
     saveUiPreferences(next);
     options.relayout?.(next);
     repaint();
+  }
+
+  /**
+   * Tells the guide about a real act, and lets it decide whether that moves on.
+   *
+   * The guide is told and never asked: it reads the selection and the verbs the
+   * page already submitted, and `guideNext` returns the same state when the act
+   * teaches it nothing new. Nothing here can issue a Command.
+   */
+  function noteGuide(event: GuideEvent): void {
+    if (!guide.open) return;
+    guide = guideNext(guide, event);
+  }
+
+  /** What the Player has picked, in the guide's own words. */
+  function whatIsSelected(): 'settlement' | 'squad' | 'none' {
+    if (human.selection.settlement !== null) return 'settlement';
+
+    return human.selection.squads.length > 0 ? 'squad' : 'none';
+  }
+
+  /** Opens the guide at its welcome line, pausing a clock the guide is now holding. */
+  function reopenGuide(): void {
+    if (result !== null) return;
+    guide = guideNext(guide, { kind: 'reopen' });
+    sessionOpen = false;
+    if (!pacing.paused) {
+      pacing.pause();
+      guidePaused = true;
+    }
+  }
+
+  /** Releases the pause the Guide took, and never one a Player took. */
+  function releaseGuidePause(): void {
+    if (!guidePaused || result !== null) return;
+    pacing.resume();
+    lastFrame = performance.now();
+    guidePaused = false;
+  }
+
+  /** Puts the Guide away, releasing its pause and recording the dismissal. */
+  function closeGuide(event: 'skip' | 'close' = 'close'): void {
+    guide = guideNext(guide, { kind: event });
+    releaseGuidePause();
+    updatePreferences({ ...preferences, guideDismissed: true });
+  }
+
+  /** The Guide's own three controls, pressed as its panel draws them. */
+  function guideButton(action: GuideActionName): void {
+    if (action === 'guideBegin') {
+      guide = guideNext(guide, { kind: 'begin' });
+      sessionOpen = false;
+      // *Inizia* promises to resume the clock, so it does — even when the Guide
+      // was reopened on a clock the Player had already paused.
+      if (result === null) {
+        pacing.resume();
+        lastFrame = performance.now();
+      }
+      guidePaused = false;
+      repaint();
+      return;
+    }
+
+    closeGuide(action === 'guideSkip' ? 'skip' : 'close');
+  }
+
+  /** The Options menu's guide control: opens what is closed, closes what is open. */
+  function toggleGuide(): void {
+    if (guide.open) closeGuide();
+    else {
+      reopenGuide();
+      updatePreferences({ ...preferences, guideDismissed: false });
+    }
   }
 
   /** Starts the real-time loop, unless it is already running or the Match is over. */
@@ -845,6 +952,11 @@ export function createGame(options: GameOptions): Game {
 
     result = host.result;
     if (result === null) return;
+    // A finished Match belongs to its result, not to the guide: the panel is put
+    // away rather than drawn over the announcement. The dismissal preference is
+    // not touched, so a Player who never read it meets it again next Match.
+    if (guide.open) guide = { ...guide, open: false };
+    guidePaused = false;
     options.ended?.();
     stopLoop();
   }
@@ -1045,6 +1157,7 @@ export function createGame(options: GameOptions): Game {
     readonly sites: readonly KnownSite[];
     readonly notices: readonly Notice[];
     readonly forecast: ReturnType<typeof forecastLine>;
+    readonly guide: ReturnType<typeof guidePanel>;
   } {
     return {
       faction,
@@ -1059,6 +1172,7 @@ export function createGame(options: GameOptions): Game {
       sites: known,
       notices,
       forecast: forecastLine(observation, match.state.tick),
+      guide: guidePanel(guide),
     };
   }
 
@@ -1155,9 +1269,9 @@ export function createGame(options: GameOptions): Game {
     layer.minimap(model, minimap, options.size);
     menu.visible = desktop && (sessionOpen || (result !== null && !resultDismissed));
     const oldMenu = menu.texture;
-    menu.texture = textureOf(menuPlate(options.size, readMenu(), null, desktop ? preferences.uiScale : 1));
+    menu.texture = textureOf(menuPlate(options.size, readMenu(), desktop ? preferences.uiScale : 1));
     oldMenu.destroy(true);
-    options.stage.canvas.setAttribute('aria-label', [...layout.readouts.map(({ line }) => `${line.label} ${line.value}`), ...layout.buttons.map(({ text }) => text), ...(menu.visible ? [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)] : [])].join('. '));
+    options.stage.canvas.setAttribute('aria-label', [...layout.readouts.map(({ line }) => `${line.label} ${line.value}`), ...layout.buttons.map(({ text }) => text), ...(guide.open ? [...layout.guideText.map(({ text }) => text), ...layout.guideButtons.map(({ text }) => text)] : []), ...(menu.visible ? [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)] : [])].join('. '));
     options.stage.render();
   }
 
@@ -1240,6 +1354,7 @@ export function createGame(options: GameOptions): Game {
     const at = screenToStage(options.camera(), screenX, screenY);
     human.select(selectAt(human.selection, pickables(), at, additive));
     groupMemory = null;
+    noteGuide({ kind: 'selection', what: whatIsSelected() });
     repaint();
   }
 
@@ -1257,6 +1372,7 @@ export function createGame(options: GameOptions): Game {
     else if (action === 'navigator') hooks.toggleNavigator();
     else if (action === 'groupBack') hooks.groupBack();
     else if (action === 'notices') hooks.toggleNotices();
+    else if (action === 'guideBegin' || action === 'guideSkip' || action === 'guideClose') guideButton(action);
     else {
       const region = action.startsWith('list') ? 'list' : action.startsWith('commands') ? 'commands'
         : action.startsWith('notices') ? 'notices' : 'detail';
@@ -1277,6 +1393,7 @@ export function createGame(options: GameOptions): Game {
     groupMemory = fromException && previous.length > 1 ? [...previous] : null;
     armed = null;
     commandNotice = null;
+    noteGuide({ kind: 'selection', what: whatIsSelected() });
     repaint();
   }
 
@@ -1372,6 +1489,7 @@ export function createGame(options: GameOptions): Game {
     if (groupMemory === null || groupMemory.length < 2) return false;
     human.select({ squads: [...groupMemory], settlement: null });
     groupMemory = null;
+    noteGuide({ kind: 'selection', what: 'squad' });
     repaint();
     return true;
   }
@@ -1393,6 +1511,8 @@ export function createGame(options: GameOptions): Game {
     if (offer.kind === 'move' || offer.kind === 'attackMove') {
       for (const id of squads) orderMarks[id] = offer.kind;
     }
+    noteGuide({ kind: 'command', verb: offer.kind === 'move' || offer.kind === 'attackMove' || offer.kind === 'recruit'
+      ? offer.kind : 'other' });
 
     submission = {
       name: offer.label,
@@ -1481,7 +1601,8 @@ export function createGame(options: GameOptions): Game {
    */
   function interfaceRects(layout: HudLayout): readonly Rect[] {
     return [layout.bar, layout.list, layout.detail, layout.minimap,
-      ...(layout.notices.height > 0 ? [layout.notices] : [])];
+      ...(layout.notices.height > 0 ? [layout.notices] : []),
+      ...(layout.guide.height > 0 ? [layout.guide] : [])];
   }
 
   /** A drag between two screen points: every block it touched. */
@@ -1491,6 +1612,7 @@ export function createGame(options: GameOptions): Game {
     const box = boxBetween(screenToStage(camera, fromX, fromY), screenToStage(camera, toX, toY));
 
     human.select(selectIn(human.selection, pickables(), box, additive));
+    noteGuide({ kind: 'selection', what: whatIsSelected() });
     repaint();
   }
 

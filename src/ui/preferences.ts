@@ -5,7 +5,10 @@ export interface UiPreferences {
   readonly guideDismissed: boolean;
 }
 export const DEFAULT_UI_PREFERENCES: UiPreferences = { uiScale: 2, navigator: true, guideDismissed: false };
-const KEY = 'spqr.ui.v1';
+
+/** The one storage key presentation preferences use; exported for a test that seeds them. */
+export const UI_PREFERENCES_KEY = 'spqr.ui.v1';
+const KEY = UI_PREFERENCES_KEY;
 export function loadUiPreferences(): UiPreferences {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(KEY) ?? 'null');

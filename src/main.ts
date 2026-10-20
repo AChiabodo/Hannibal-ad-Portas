@@ -12,7 +12,7 @@ async function boot(): Promise<void> {
     await showSetup(requireMount('app'));
     return;
   }
-  const view = await bootRenderer(requireMount('app'), config);
+  const view = await bootRenderer(requireMount('app'), { ...config, firstEntry: true });
   document.body.dataset.spqrScreen = 'match';
 
   publishHooks({ boot: { booted: true, render: view.probe }, view, game: view, atelier: null });

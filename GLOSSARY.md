@@ -338,6 +338,11 @@ The one place a player-facing word lives: a stable English key, and the word in 
 _UI_: —
 _Avoid_: Locale file, translations, i18n bundle
 
+**Guide**:
+The optional first-entry sequence that teaches the four acts a Match opens with — open a settlement, raise a Squad, select it, give it a destination — by naming the real controls and waiting for the Player to use them. It starts paused, can be skipped, dismissed and reopened, remembers only its dismissal as a presentation preference, issues no Command and reads no Observation; it is not a rule set, a scripted army or a second Match.
+_UI_: Guida
+_Avoid_: Tutorial, walkthrough, onboarding, help overlay
+
 **Readout**:
 One labelled figure the interface always shows — the year, the Season, the treasury, a resource — as against a panel, which a selection opens.
 _UI_: —

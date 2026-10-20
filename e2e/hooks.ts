@@ -10,6 +10,7 @@ import type { Command } from '../src/sim/command';
 import type { LoggedCommand } from '../src/sim/replay';
 import type { Knowledge } from '../src/sim/fog';
 import type { Notice } from '../src/ui/conditions';
+import { DEFAULT_UI_PREFERENCES, UI_PREFERENCES_KEY } from '../src/ui/preferences';
 
 /**
  * Reading the page's debug hooks from a test.
@@ -27,6 +28,24 @@ import type { Notice } from '../src/ui/conditions';
 
 /** Which page's pixels a caller is asking about. */
 export type HookName = 'view' | 'atelier';
+
+/**
+ * Marks the first-entry guide as already read, as a returning Player's browser has it.
+ *
+ * The guide opens paused on a fresh profile (U8, Q11), which is the right first
+ * entry and the wrong premise for a spec about terrain, a settlement or a mark.
+ * A spec that is not about the guide says so once, here, instead of dismissing it
+ * in every scene.
+ */
+export async function dismissFirstEntry(page: Page): Promise<void> {
+  await page.addInitScript(({ key, preferences }) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(preferences));
+    } catch {
+      // Storage is optional; a spec without it still plays.
+    }
+  }, { key: UI_PREFERENCES_KEY, preferences: { ...DEFAULT_UI_PREFERENCES, guideDismissed: true } });
+}
 
 /**
  * Opens the game page and waits for it, optionally with the clock stopped.

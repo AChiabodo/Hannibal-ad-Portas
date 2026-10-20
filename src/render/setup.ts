@@ -1,7 +1,7 @@
 import { BASE } from '../art/palette.ts';
 import { explicitSeed, matchAddress, type MatchConfiguration } from '../input/match-setup.ts';
 import { makeRng } from '../sim/rng.ts';
-import { contains, menuPlate, setupLayout, type SetupModel } from '../ui/match-menu.ts';
+import { contains, setupLayout, setupPlate, type SetupModel } from '../ui/match-menu.ts';
 import { translate } from '../ui/strings.ts';
 import { createStage, textureOf, frameReport } from './stage.ts';
 import { publishHooks } from '../page.ts';
@@ -21,7 +21,7 @@ export async function showSetup(mount: HTMLElement): Promise<void> {
   let seedText = '';
   let replaceSeed = true;
   const size = { width: stage.width, height: stage.height };
-  const sprite = stage.spriteOf(menuPlate(size, layout(), focus));
+  const sprite = stage.spriteOf(setupPlate(size, layout(), focus));
   stage.root.addChild(sprite);
   stage.canvas.tabIndex = 0;
   stage.canvas.setAttribute('role', 'application');
@@ -36,9 +36,10 @@ export async function showSetup(mount: HTMLElement): Promise<void> {
   function layout() { return setupLayout(size, model()); }
   function repaint(): void {
     const old = sprite.texture;
-    sprite.texture = textureOf(menuPlate(size, layout(), focus));
+    sprite.texture = textureOf(setupPlate(size, layout(), focus));
     old.destroy(true);
-    stage.canvas.setAttribute('aria-label', [translate('match.setup'), ...layout().buttons.map(({ text }) => text), ...layout().lines.slice(1)].join('. '));
+    stage.canvas.setAttribute('aria-label', [translate('match.setup'),
+      ...layout().buttons.map(({ text }) => `${text}.`), ...layout().texts.map(({ text }) => text)].join(' '));
     stage.render();
   }
   function change(direction: number): void {

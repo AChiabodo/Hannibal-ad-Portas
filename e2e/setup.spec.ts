@@ -4,14 +4,23 @@ import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { KNOWLEDGE } from '../src/sim/fog';
+import { setupLayout } from '../src/ui/match-menu';
+import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
 
 const EVIDENCE = join(tmpdir(), 'spqr-issue53');
+
+/** Where setup puts its controls, read from the same layout the page draws. */
+const SETUP = setupLayout({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT }, {
+  config: { seed: 0, faction: 'rome', difficulty: 'centurio' }, proposed: 0, seedText: '', focus: 0, invalid: false,
+});
+const SEED = SETUP.buttons[2]!.rect;
+const START = SETUP.buttons[3]!.rect;
 
 test('the explicit seed field accepts a pasted zero seed', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
-  await expect(page.locator('canvas')).toHaveAttribute('aria-label', /Conquista la Roccaforte nemica/);
+  await expect(page.locator('canvas')).toHaveAttribute('aria-label', /conquistare la Roccaforte nemica/);
   await page.evaluate(() => navigator.clipboard.writeText('0'));
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
@@ -91,7 +100,7 @@ test('pointer setup, invalid and empty seeds, copy, pacing, pause and fresh New 
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
   const box = (await page.locator('canvas').boundingBox())!;
   // The visible seed field; typing replaces its proposed value.
-  await page.mouse.click(box.x + 80, box.y + 245);
+  await page.mouse.click(box.x + 80, box.y + SEED.y + Math.floor(SEED.height / 2));
   await page.keyboard.type('4294967296');
   await expect(page.locator('canvas')).toHaveAttribute('aria-label', /Inserisci un intero/);
   await page.keyboard.press('Tab');
@@ -100,7 +109,7 @@ test('pointer setup, invalid and empty seeds, copy, pacing, pause and fresh New 
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.press('Backspace');
-  await page.mouse.click(box.x + 80, box.y + 295);
+  await page.mouse.click(box.x + 80, box.y + START.y + Math.floor(START.height / 2));
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'match');
   await page.evaluate(() => window.__SPQR.game!.pause());
   const config = await page.evaluate(() => window.__SPQR.game!.configuration());

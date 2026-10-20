@@ -60,7 +60,7 @@ the camera's hooks and the Match's hooks, and nothing else:
 | `preferences` | `() -> UiPreferences` | Read presentation preferences |
 | `setUiScale` | `(scale) -> void` | Request independent integer UI scale |
 | `toggleNavigator` | `() -> void` | Toggle the navigator |
-| `toggleGuide` | `() -> void` | Dismiss or reopen navigation help |
+| `toggleGuide` | `() -> void` | Open the first-entry guide, or put it away |
 | `resetPreferences` | `() -> void` | Restore presentation defaults |
 | `centerSelection` | `() -> void` | Centre the selected entity |
 | `navigateMinimap` | `(x, y) -> boolean` | Navigate without selecting or ordering |
@@ -311,7 +311,7 @@ seam and reaches the result with actual Commands, never a fabricated UI verdict.
 | `preferences()` | Copy of UI scale, requested navigator visibility and guide dismissal. |
 | `setUiScale(scale)` | Request integer 1x, 2x or 3x UI scale independently of map zoom. |
 | `toggleNavigator()` | Toggle the navigator preference (Tab). Limited space collapses it temporarily. |
-| `toggleGuide()` | Dismiss or reopen navigation help. The complete first-entry guide belongs to #59. |
+| `toggleGuide()` | Opens the first-entry guide at its welcome line (pausing the clock it now holds), or closes it and records the dismissal (U8, Q11). Its stage and lines are read from `hud().guide`; its controls are `hudLayout().guideButtons`. |
 | `resetPreferences()` | Restore presentation defaults; never restores or changes a Match. |
 | `centerSelection()` | Centre the camera on the current selection (F or visible button). |
 | `navigateMinimap(x, y)` | Navigate at a screen point on the Minimap; return false outside it. |
@@ -326,7 +326,7 @@ state and tactical selection are excluded. Storage failure falls back to default
 The desktop HUD keeps calendar, Treasury, pause and speed above the theatre. The compact navigator
 ends after its contents when they fit. Selecting an entity opens two columns of contextual detail;
 with no selection only a short hint remains. The Minimap stays available beside this area. Use
-**Opzioni / UI** for seed/session actions, scale, reset and navigation-guide dismissal. This drawer
-can be closed without changing the Match. The camera centres inside the unobstructed theatre,
+**Opzioni / UI** for seed/session actions, scale, reset and the first-entry guide's dismissal or
+reopen. This drawer can be closed without changing the Match. The camera centres inside the unobstructed theatre,
 including at map edges and zoom 1; the Minimap camera outline covers that theatre rather than the HUD.
 A collapsed navigator can be reopened even below the recommended window size.

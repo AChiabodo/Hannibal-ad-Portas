@@ -37,6 +37,7 @@ import { generateMap, TILE_COUNT } from '../../src/sim/map.ts';
 import type { KnownSite } from '../../src/ui/sites.ts';
 import type { Notice } from '../../src/ui/conditions.ts';
 import { message, translate } from '../../src/ui/strings.ts';
+import { GUIDE_FIRST_ENTRY, guidePanel } from '../../src/ui/guide.ts';
 
 const SIZE: HudSize = { width: 640, height: 480 };
 
@@ -978,5 +979,84 @@ describe('the notice strip', () => {
     const buffer = renderPanels(model, DESKTOP);
 
     expect(pixelAt(buffer, layout.notices.x + 1, layout.notices.y + 1)).toEqual(HUD_BACKGROUND);
+  });
+});
+
+/**
+ * The first-entry guide's panel (U8, Q11).
+ *
+ * The guide is a floating panel of its own: not modal, not part of the detail
+ * strip, and drawn where a click can reach its controls. These assertions hold
+ * the geometry to the two resolutions the shared constraints name, and to the
+ * one rule the interface must never break — a panel that covers the theatre is a
+ * panel its clicks belong to (`hudRects` reads the same rectangle).
+ */
+describe('the first-entry guide panel', () => {
+  const welcome = guidePanel(GUIDE_FIRST_ENTRY);
+
+  it('places the welcome panel inside the theatre, with its controls reachable', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, { faction: 'rome', guide: welcome });
+    const layout = hudLayout(model, DESKTOP);
+
+    expect(model.guide).toBe(welcome);
+    expect(layout.guide.width).toBeGreaterThan(0);
+    expect(layout.guide.x).toBeGreaterThanOrEqual(layout.list.width);
+    expect(layout.guide.y).toBeGreaterThanOrEqual(layout.bar.height);
+    expect(layout.guide.y + layout.guide.height).toBeLessThanOrEqual(layout.detail.y);
+    expect(layout.guideText.map((line) => line.text).join(' ')).toContain(translate('guide.welcomeObjective'));
+    expect(layout.guideButtons.map((button) => button.action)).toEqual(['guideBegin', 'guideSkip']);
+    for (const button of layout.guideButtons) {
+      expect(button.rect.x).toBeGreaterThanOrEqual(layout.guide.x);
+      expect(button.rect.x + button.rect.width).toBeLessThanOrEqual(layout.guide.x + layout.guide.width);
+      expect(button.rect.y + button.rect.height).toBeLessThanOrEqual(layout.guide.y + layout.guide.height);
+      expect(hudHit(model, DESKTOP, button.rect.x + 2, button.rect.y + 2)).toEqual({ kind: 'button', action: button.action });
+    }
+  });
+
+  it('fits the panel and its lines at both reference resolutions', () => {
+    for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
+      const model = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, { faction: 'rome', guide: welcome });
+      const layout = hudLayout(model, size);
+
+      expect(layout.guide.width, `${String(size.width)}: the panel is drawn`).toBeGreaterThan(0);
+      expect(layout.guide.y + layout.guide.height).toBeLessThanOrEqual(layout.detail.y);
+      for (const line of layout.guideText) {
+        expect(line.rect.y + line.rect.height).toBeLessThanOrEqual(layout.guide.y + layout.guide.height);
+      }
+      // The notice strip keeps the top-right corner; the guide keeps the left.
+      expect(layout.guide.x + layout.guide.width).toBeLessThanOrEqual(layout.notices.x);
+    }
+  });
+
+  it('draws nothing and blocks nothing when the guide is closed', () => {
+    const open = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, { faction: 'rome', guide: welcome });
+    const closed = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, { faction: 'rome', guide: null });
+    const was = hudLayout(open, DESKTOP).guide;
+    const layout = hudLayout(closed, DESKTOP);
+
+    expect(closed.guide).toBeNull();
+    expect(layout.guide).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+    expect(layout.guideButtons).toEqual([]);
+    expect(hudHit(closed, DESKTOP, was.x + 4, was.y + 4)).toBeNull();
+  });
+
+  it('draws the panel’s own ground and its words on it', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, { faction: 'rome', guide: welcome });
+    const layout = hudLayout(model, DESKTOP);
+    const buffer = renderPanels(model, DESKTOP);
+    const ink = (rect: { x: number; y: number; width: number; height: number }): number => {
+      let painted = 0;
+      for (let y = rect.y; y < rect.y + rect.height; y += 1) {
+        for (let x = rect.x; x < rect.x + rect.width; x += 1) {
+          if (pixelAt(buffer, x, y) !== HUD_BACKGROUND) painted += 1;
+        }
+      }
+
+      return painted;
+    };
+
+    expect(pixelAt(buffer, layout.guide.x + 1, layout.guide.y + 1)).toEqual(HUD_BACKGROUND);
+    expect(ink({ x: layout.guide.x + 3, y: layout.guide.y + 3, width: layout.guide.width - 6, height: layout.guide.height - 6 }))
+      .toBeGreaterThan(0);
   });
 });

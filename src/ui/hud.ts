@@ -73,6 +73,7 @@ import {
 import type { KnownSite } from './sites.ts';
 import type { Notice } from './conditions.ts';
 import type { ForecastLine } from './forecast.ts';
+import type { GuidePanel } from './guide.ts';
 import { message, refusalLabel, resourceLabel, seasonLabel, squadLabel, translate, workLabel } from './strings.ts';
 
 /** What a Player has selected, or `null` for nothing. */
@@ -193,6 +194,8 @@ export interface HudSession {
   readonly notices?: readonly Notice[];
   /** The next Season boundary's effect on the Treasury, when derivable (#58). */
   readonly forecast?: ForecastLine | null;
+  /** The first-entry guide's panel, or `null` when it is closed (#59). */
+  readonly guide?: GuidePanel | null;
   /**
    * Every place the Faction may see, as `ui/sites.ts` reads its Observation (U6).
    *
@@ -237,7 +240,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext';
+export type HudAction = 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose';
 
 export interface HudButton {
   readonly action: HudAction;
@@ -280,6 +283,8 @@ export interface HudModel {
   readonly notices: readonly Notice[];
   /** The economy's labelled estimate, or the reason there is none (#58). */
   readonly forecast: ForecastLine | null;
+  /** The first-entry guide's panel, or `null` when it is closed (U8). */
+  readonly guide: GuidePanel | null;
 }
 
 /** The viewport the HUD is composed for, in screen pixels. */
@@ -349,6 +354,15 @@ export interface HudLayout {
   readonly noticeRows: readonly NoticeRect[];
   /** How far the notice lines are scrolled, and how far they can be. */
   readonly noticeScroll: HudScroll;
+  /** The first-entry guide's panel, and where its words and controls stand (#59). */
+  readonly guide: Rect;
+  readonly guideText: readonly GuideText[];
+  readonly guideButtons: readonly HudButton[];
+}
+
+/** One line of the Guide's panel: its title in the bright ink, its body in the quiet one. */
+export interface GuideText extends HudText {
+  readonly title: boolean;
 }
 
 /** A contextual action and the rectangle a click presses it in. */
@@ -520,6 +534,7 @@ export function hudModel(
     },
     notices: session.notices ?? [],
     forecast: session.forecast ?? null,
+    guide: session.guide ?? null,
   };
 }
 
@@ -612,11 +627,12 @@ export function hudLayout(model: HudModel, size: HudSize): HudLayout {
   return { size, bar, list, detail, minimap, readouts, headers, rows, text, priority, buttons, listScroll, detailScroll,
     commands: [], tabs: [], groups: [], exceptions: [], status: [], commandRules: [],
     commandScroll: scrollWindow(0, 0, 1),
-    notices: { x: 0, y: 0, width: 0, height: 0 }, noticeRows: [], noticeScroll: scrollWindow(0, 0, 1) };
+    notices: { x: 0, y: 0, width: 0, height: 0 }, noticeRows: [], noticeScroll: scrollWindow(0, 0, 1),
+    guide: { x: 0, y: 0, width: 0, height: 0 }, guideText: [], guideButtons: [] };
 }
 
 /** Wraps every glyph, including a value with no spaces; nothing is ellipsised away. */
-function wrapText(text: string, width: number): string[] {
+export function wrapText(text: string, width: number): string[] {
   const lines: string[] = [];
   let remaining = text;
   while (measureText(remaining) > width) {
@@ -713,6 +729,9 @@ export function hitTest(model: HudModel, size: HudSize, x: number, y: number): S
 export function hudHit(model: HudModel, size: HudSize, x: number, y: number): HudHit | null {
   const layout = hudLayout(model, size);
 
+  for (const button of layout.guideButtons) {
+    if (contains(button.rect, x, y)) return { kind: 'button', action: button.action };
+  }
   for (const button of layout.buttons) {
     if (contains(button.rect, x, y)) return { kind: 'button', action: button.action };
   }
@@ -757,6 +776,9 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
   // The notice strip is a panel like any other: opaque, so a warning reads over a
   // forest exactly as it reads over a field.
   if (layout.notices.height > 0) panel(buffer, layout.notices);
+  // The guide is a panel like the others: an opaque ground, so its words read over
+  // any tile it happens to cover, and drawn before the interface it explains.
+  if (layout.guide.height > 0) panel(buffer, layout.guide);
   const scale = model.view.desktop ? model.view.uiScale ?? 2 : 1;
   drawReadouts(buffer, layout.readouts, scale);
 
@@ -813,6 +835,14 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
   }
 
   for (const line of layout.status) drawText(buffer, line.text, line.rect.x, line.rect.y, HUD_VALUE, scale);
+
+  for (const line of layout.guideText) {
+    drawText(buffer, line.text, line.rect.x, line.rect.y, line.title ? HUD_VALUE : HUD_LABEL, scale);
+  }
+  for (const button of layout.guideButtons) {
+    panel(buffer, button.rect);
+    drawText(buffer, button.text, button.rect.x + PADDING * scale, button.rect.y + 5 * scale, HUD_VALUE, scale);
+  }
 
   for (const button of layout.buttons) {
     panel(buffer, button.rect);
@@ -1647,12 +1677,42 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     }
   }
 
-  if (!model.view.guideDismissed) {
-    const guideY = Math.min(columnTop + columnHeight + 2, detail.y + detail.height - 2 * LINE_STEP);
-    for (const [index, line] of wrapText(translate('ui.navigationGuide'), textWidth).entries()) {
-      if (guideY + (index + 1) * LINE_STEP <= detail.y + detail.height - 2) {
-        text.push({ text: line, rect: { x: textX, y: guideY + index * LINE_STEP, width: textWidth, height: LINE_STEP } });
-      }
+  // The first-entry guide (#59): a floating panel over the theatre's upper-left,
+  // between the navigator and the place a Squad musters. It is not in the detail
+  // strip because it is read *before* the Player knows what the detail strip is,
+  // and it is not modal: the Player can click the settlement and the Squad it
+  // names while it is open, which is the whole of how it teaches.
+  const guide = model.guide ?? null;
+  const guideWidth = 236;
+  const guideBodyWidth = guideWidth - 2 * PADDING - 2;
+  const guideX = list.width + 8;
+  const guideY = bar.height + 6;
+  const guideButtonsHeight = LINE_STEP + 4;
+  const guideRoom = Math.max(2 * LINE_STEP, detail.y - guideY - 2 * PADDING - LINE_STEP - 4 - guideButtonsHeight);
+  const guideLines = guide === null ? [] : guide.lines.flatMap((line) => wrapText(line, guideBodyWidth));
+  const guideMaxLines = Math.max(1, Math.floor(guideRoom / LINE_STEP));
+  const guideShown = guideLines.slice(0, guideMaxLines);
+  const guidePanel: Rect = guide === null
+    ? { x: 0, y: 0, width: 0, height: 0 }
+    : { x: guideX, y: guideY, width: guideWidth,
+      height: 2 * PADDING + LINE_STEP + guideShown.length * LINE_STEP + 4 + guideButtonsHeight };
+  const guideText: GuideText[] = [];
+  const guideButtons: HudButton[] = [];
+  if (guide !== null) {
+    guideText.push({ text: guide.title, title: true,
+      rect: { x: guidePanel.x + PADDING, y: guidePanel.y + PADDING, width: guideBodyWidth, height: LINE_STEP } });
+    const bodyY = guidePanel.y + PADDING + LINE_STEP;
+    for (const [index, line] of guideShown.entries()) {
+      guideText.push({ text: line, title: false,
+        rect: { x: guidePanel.x + PADDING, y: bodyY + index * LINE_STEP, width: guideBodyWidth, height: LINE_STEP } });
+    }
+    let buttonX = guidePanel.x + PADDING;
+    const buttonY = guidePanel.y + guidePanel.height - PADDING - guideButtonsHeight;
+    for (const action of guide.actions) {
+      const width = Math.min(guideBodyWidth, measureText(action.text) + 2 * PADDING + 2);
+      guideButtons.push({ action: action.action, text: action.text, enabled: true,
+        rect: { x: buttonX, y: buttonY, width, height: guideButtonsHeight } });
+      buttonX += width + 3;
     }
   }
 
@@ -1718,7 +1778,8 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     readouts: placed(readouts), headers: placed(headers), rows: placed(rows), text: placed(text), priority: placed(priority),
     buttons: placed(buttons), listScroll, detailScroll, commands: placed(commands), tabs: placed(tabs), groups: placed(groups),
     exceptions: placed(exceptions), status: placed(status), commandRules: commandRules.map(rect), commandScroll,
-    notices: rect(noticePanel), noticeRows: placed(noticeRows), noticeScroll };
+    notices: rect(noticePanel), noticeRows: placed(noticeRows), noticeScroll,
+    guide: rect(guidePanel), guideText: placed(guideText), guideButtons: placed(guideButtons) };
 }
 
 /**

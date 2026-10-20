@@ -41,6 +41,7 @@ import {
   bootGame,
   covers,
   describeView,
+  dismissFirstEntry,
   hud,
   hudRects,
   knowledge,
@@ -80,6 +81,7 @@ async function openMatch(
   size: { readonly width: number; readonly height: number },
 ): Promise<void> {
   await page.setViewportSize({ width: size.width, height: size.height });
+  await dismissFirstEntry(page);
   await page.goto(`/?play=1&seed=${String(SEED)}&faction=${faction}&difficulty=centurio`);
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'match');
   await page.evaluate(() => {

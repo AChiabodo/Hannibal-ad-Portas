@@ -38,7 +38,7 @@ import { KNOWLEDGE, type Knowledge } from '../src/sim/fog';
 import { MAP_HEIGHT, MAP_WIDTH, generateMap, type MapGrid, type Site } from '../src/sim/map';
 import type { ViewState } from '../src/render/boot';
 import type { Rect } from '../src/ui/hud';
-import { advance, covers, describeView, hudRects, knowledge, press, samples, select, squads } from './hooks';
+import { advance, covers, describeView, dismissFirstEntry, hudRects, knowledge, press, samples, select, squads } from './hooks';
 
 /** Where the screenshots go: outside the repository, like the rest of the evidence. */
 const EVIDENCE = join(tmpdir(), 'spqr-issue56');
@@ -136,6 +136,7 @@ async function openMatch(
   size: { readonly width: number; readonly height: number },
 ): Promise<void> {
   await page.setViewportSize({ width: size.width, height: size.height });
+  await dismissFirstEntry(page);
   await page.goto(`/?play=1&seed=${String(SEED)}&faction=${faction}&difficulty=centurio`);
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'match');
   await page.evaluate(() => {
