@@ -1600,7 +1600,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   }
   const last = model.orders.last;
   const inspected = model.commands.find((order) => order.id === model.view.hoveredOrder);
-  const inspectHint = inspected !== undefined && inspected.label !== last?.name && armed === null && model.orders.notice === null;
+  const inspectHint = model.selected?.kind === 'squad' && inspected !== undefined && inspected.label !== last?.name && armed === null && model.orders.notice === null;
   if (last !== null && !inspectHint && armed === null && model.orders.notice === null) {
     const words = wrapText(message('ui.submitted', { name: last.name }), commandWidth);
     for (const word of words) {

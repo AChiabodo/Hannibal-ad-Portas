@@ -639,7 +639,7 @@ export function createGame(options: GameOptions): Game {
     centerSelection: () => {
       const selected = panelSelection();
       const window = visible();
-      const site = selected?.kind === 'settlement' ? window.settlements.find((s) => s.id === selected.id)
+      const site = selected?.kind === 'settlement' ? readSites().find((s) => s.id === selected.id)
         : window.squads.find((s) => s.id === selected?.id);
       if (site) { const at = tilePixel(site.x, site.y); options.centerOn?.(at.x, at.y); }
     },

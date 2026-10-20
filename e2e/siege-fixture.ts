@@ -18,21 +18,37 @@ import { idleController } from '../src/sim/controller.ts';
 import { factionCode, type Faction } from '../src/sim/faction.ts';
 import { isWalkable, terrainAt, type MapGrid, type Site } from '../src/sim/map.ts';
 import { musterSquad } from '../src/sim/movement.ts';
-import { siegeMatchRules, type SiegeWorld } from '../src/sim/siege.ts';
+import { applySiegeCommand, GATE_HP, RAM_HP, STRUCTURE, siegeMatchRules, type SiegeWorld } from '../src/sim/siege.ts';
+import { assault, blockade } from '../src/sim/command.ts';
+import { routeCacheFor } from '../src/sim/movement.ts';
 import { failBoot, publishHooks, requireMount } from '../src/page.ts';
 
 const FACTION: Faction = 'rome';
 const SEED = 7;
+const params = new URLSearchParams(location.search);
+const viewedFaction: Faction = params.get('view') === 'carthage' ? 'carthage' : 'rome';
 
 bootRenderer(requireMount('app'), {
   seed: SEED,
-  faction: FACTION,
+  faction: viewedFaction,
   opponent: idleController(),
   rules: {
     ...siegeMatchRules,
     createWorld(seed: number): SiegeWorld {
       const world = siegeMatchRules.createWorld(seed);
       deploy(world);
+      const stage = params.get('stage');
+      if (stage !== null) {
+        const target = world.siege.strongholds[1]!;
+        const ids = world.economy.squads.filter((squad) => squad.owner === 0).map(({ id }) => id);
+        applySiegeCommand(world, stage === 'blockade' ? blockade('rome', ids, target) : assault('rome', ids, target), routeCacheFor(world.map));
+        const front = world.siege.fronts[target]!;
+        const gate = front.structures.find(({ kind }) => kind === STRUCTURE.gate)!;
+        // Authored visual conditions on the real rules' structures, not a second
+        // model. Default fixture behavior is unchanged for the functional suite.
+        if (stage === 'ram') { front.ram = RAM_HP; front.ramTicks = 0; gate.hp = GATE_HP / 2; }
+        if (stage === 'breach') { gate.hp = 0; front.ram = RAM_HP; front.ramTicks = 0; }
+      }
       return world;
     },
   },

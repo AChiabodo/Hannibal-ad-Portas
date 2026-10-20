@@ -51,6 +51,10 @@ They do not authorize a simulation or balance change.
 - Fit an oversized requested UI scale to the window using integer scaling; keep
   the requested preference. The warning and `UI 3x > 2x` explain the adaptation.
   The canvas no longer grows wider than a supported desktop to satisfy 3x.
+- Centre a selected enemy/remembered settlement using only the Faction's known
+  sites. Previously the button searched owned settlements only, leaving the
+  selected Siege offscreen. Critical-state captures assert the target is in the
+  theatre before taking a frame.
 
 ## Visual verdict ledger
 
@@ -71,6 +75,8 @@ uses pointer activation for the second act where UI focus did not yet exist.
 | `mixed-{side}-{size}.png` | **change**: the highlighted exception is a blank stripe | **keep**: I can read who needs attention inside the selected stripe |
 | `group-chip-{side}-{size}.png` | **keep** the numbered membership; **change** the enclosing panel height | **keep**: I can see what 1 recalls and retain more map above it |
 | `siege-{side}-{size}.png` | **change**: unused military icons overlap under the settlement pages | **keep**: walls, gate, ram/path and Garrison are readable facts without that stray card |
+| `siege-{building,ram,breach,blockade}-{side}-{size}.png` and matching `-structure-` frames | Added critical-state matrix after independent review | **keep**: I can distinguish a building/built ram, an open gate and a Blockade. Structure-only captures use the existing `showSquads(false)` inspection lens to inspect walls behind overlapping field armies, with identical Faction knowledge |
+| `economy-{build,recruit}-{id}-{side}-{size}.png` | Added row-by-row keyboard coverage after independent review | **keep**: every content offer has its own name/cost or refusal, a drawn focus target and the same queue effect from pointer and keyboard |
 | `options-{side}-{size}.png` | **keep** the concise session actions; add discoverable UI keyboard controls | **keep**: restart/new/copy and presentation controls remain separate and named |
 | `scale3-options-`, `scale3-guide-{side}-{size}.png` | **change** at 720p: the canvas is wider than the window and cuts off controls | **keep**: every control fits; the requested scale survives and the warning explains why it was fitted |
 | `guide-{side}-{size}.png` | **keep**: the welcome explains the objective without concealing the Stronghold's centre | **keep**: readable, nonmodal and now fully keyboard operable |
@@ -106,8 +112,8 @@ For before frames, use a detached checkout of the base revision, copy the commit
 skipped on that revision. Delete that environment override for candidate frames.
 No PNG is committed (ADR-0002).
 
-The primary spec tests each military command at both desktop sizes for both
-Factions with pointer and keyboard, settlement tabs by both paths, numbered
+The primary spec tests every military and economy command at both desktop sizes for both
+Factions with pointer and keyboard (including scrolled/unavailable offers), settlement tabs by both paths, numbered
 control groups, queued/applied/armed/disabled feedback, and console health.
 Functional and additional evidence producers are `acceptance`, `first-entry`,
 `commands`, `desktop`, `hud-repair`, `orders`, `surface`, `settlements`,
@@ -115,6 +121,30 @@ Functional and additional evidence producers are `acceptance`, `first-entry`,
 
 Final command results, inspected supplementary paths and the independent review
 record are appended after the final verification run.
+
+The overflow fixture now holds 48 Squads and nine Works: the compact dock makes
+the old 28-row navigator fit entirely at 1080p. Increasing only the authored test
+scene preserves a real overflow check instead of requiring unnecessary scrolling
+or weakening the assertion.
+
+## Independent review
+
+Standards: **0 documented violations, 0 substantial baseline smells**. The review
+identified one stale browser-document paragraph describing an oversized scrollable
+canvas; it now documents temporary integer fitting and the retained preference.
+
+Spec: **2 partial evidence requirements**, both addressed: add advanced Siege
+conditions for each Faction/viewport, and activate every construction/recruitment
+offer by keyboard as well as pointer. Those tests additionally found a focus bug:
+military hover logic could suppress a settlement's last-order line and move its
+rows while traversing them. Restricting that logic to Squad cards keeps economy
+rows stable. Reviewing the new Siege frames exposed the Centre bug described above.
+
+Two unit tests exceeded their unchanged five-second limits when the full Node
+suite competed with the Chromium matrix (`rules.test.ts`, `repo-fences.test.ts`).
+Both were timeout failures, not hash/guard mismatches. The subsequent serial
+`npm run verify` passed all **110 files / 1296 tests**, lint, types, guards and build;
+no timeout or production rule was changed.
 
 ## Gates outside this delivery
 

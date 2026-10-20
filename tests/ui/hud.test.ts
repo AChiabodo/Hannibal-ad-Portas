@@ -588,6 +588,12 @@ it('keeps settlement text inside its column and paints the selected page', () =>
   expect(pixelAt(renderPanels(model, { width: 1280, height: 720 }), selected.x + 2, selected.y + 2)).toEqual(HUD_SELECTED);
 });
 
+it('keeps an owned settlement stock readable when the map also supplies its identity', () => {
+  const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 0 }, [], DESKTOP_VIEW,
+    { sites: [{ id: 0, kind: 'stronghold', x: 10, y: 10, owner: 'rome', memory: 'seen', front: null }] });
+  expect(model.readouts.find(({ label }) => label === translate('resource.grain'))?.value).toBe('20');
+});
+
 describe('the contextual command panel', () => {
   it('offers the military actions a picked Squad has, inside the detail panel', () => {
     const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1], DESKTOP_VIEW, { faction: 'rome' });

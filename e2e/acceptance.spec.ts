@@ -256,8 +256,10 @@ test.describe('long lists, long text and critical conditions', () => {
           const owner = side === 'rome' ? 0 : 1;
           const home = world.map.strongholds[owner]!;
           let made = 0;
-          for (let radius = 1; radius <= 20 && made < 28; radius += 1) {
-            for (let across = -radius; across <= radius && made < 28; across += 1) {
+          // The compact U9 dock leaves room for all 28 old rows at 1080p.
+          // Keep this an actual overflow scene at both desktop sizes.
+          for (let radius = 1; radius <= 20 && made < 48; radius += 1) {
+            for (let across = -radius; across <= radius && made < 48; across += 1) {
               const x = home.x + across;
               const y = home.y + radius;
               if (x < 2 || y < 2 || x >= 94 || y >= 94) continue;
@@ -274,7 +276,7 @@ test.describe('long lists, long text and critical conditions', () => {
           own[0]!.morale = 1;
           own[0]!.fatigue = 18;
           own[0]!.unpaid = 2;
-          // A settlement with a long panel: five works, standing and building.
+          // A settlement with a long panel: nine works, standing and building.
           // Works hold content codes, not ids: state is integers (ADR-0006).
           const settlement = world.economy.settlements[owner]!;
           settlement.works.push(
@@ -283,6 +285,10 @@ test.describe('long lists, long text and critical conditions', () => {
             { building: buildingCode('house')!, remaining: 0 },
             { building: buildingCode('villa')!, remaining: 240 },
             { building: buildingCode('forum')!, remaining: 600 },
+            { building: buildingCode('lumber-camp')!, remaining: 300 },
+            { building: buildingCode('quarry')!, remaining: 350 },
+            { building: buildingCode('mine')!, remaining: 400 },
+            { building: buildingCode('market')!, remaining: 450 },
           );
           return world;
         } };

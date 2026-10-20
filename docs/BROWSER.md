@@ -319,9 +319,10 @@ seam and reaches the result with actual Commands, never a fabricated UI verdict.
 | `navigateMinimap(x, y)` | Navigate at a screen point on the Minimap; return false outside it. |
 | `doubleClickAt(x, y)` | Centre a selected list row, as a pointer double-click does. |
 
-Desktop Matches use the available viewport. Below 1280x720, or when a requested UI scale cannot fit,
-the canvas remains scrollable at that scale and an Italian recommendation is shown. Requested scale
-is never silently changed. Only `spqr.ui.v1` presentation preferences are saved; audio (#30), Match
+Desktop Matches use the available viewport (minimum canvas 640x360). An oversized requested UI scale
+is temporarily fitted using integer scaling; the requested preference remains saved. An Italian
+warning and the scale control disclose the requested/effective values. Below 1280x720 a small-window
+recommendation is shown. Only `spqr.ui.v1` presentation preferences are saved; audio (#30), Match
 state and tactical selection are excluded. Storage failure falls back to defaults without blocking play.
 
 

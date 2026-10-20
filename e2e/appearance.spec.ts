@@ -43,7 +43,79 @@ async function leaveFocus(page: Page): Promise<void> {
   else await page.keyboard.press('Escape');
 }
 
+async function revealOrder(page: Page, id: string) {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const layout = await hudLayout(page);
+    const card = layout.commands.find(({ order }) => order.id === id);
+    if (card !== undefined) return card;
+    const model = await hud(page);
+    const index = model.commands.findIndex((order) => order.id === id);
+    const action = index < layout.commandScroll.offset ? 'commandsPrevious' : 'commandsNext';
+    const button = layout.buttons.find((button) => button.action === action);
+    if (button === undefined || !button.enabled) break;
+    await press(page, button.rect);
+  }
+  throw new Error(`no visible economy order ${id}`);
+}
+
 for (const faction of ['rome', 'carthage'] as const) for (const [width, height] of [[1280, 720], [1920, 1080]] as const) {
+  test(`all economy rows by pointer and keyboard ${faction} ${String(width)}`, async ({ page }) => {
+    test.skip(BEFORE, 'additional functional gate for the changed economy layout');
+    test.setTimeout(180_000);
+    await page.setViewportSize({ width, height });
+    await scene(page, faction);
+    const home = (await sites(page)).find((site) => site.owner === faction && site.kind === 'stronghold')!;
+    await select(page, { kind: 'settlement', id: home.id });
+    for (const tab of ['construction', 'recruitment'] as const) {
+      await press(page, (await hudLayout(page)).tabs.find((entry) => entry.tab === tab)!.rect);
+      const ids = (await hud(page)).commands.map(({ id }) => id);
+      for (const id of ids) {
+        const card = await revealOrder(page, id);
+        const pending = (await hud(page)).orders.pending;
+        await press(page, card.rect);
+        if (card.order.enabled) expect((await hud(page)).orders.pending, `${id} pointer`).toBe(pending + 1);
+        else expect((await hud(page)).orders.notice, `${id} pointer refusal`).toBeTruthy();
+        const drawn = await revealOrder(page, id);
+        await activateByKeyboard(page, drawn.rect);
+        if (card.order.enabled) expect((await hud(page)).orders.pending, `${id} keyboard`).toBe(pending + 2);
+        else expect((await hud(page)).orders.pending, `${id} stays unavailable`).toBe(pending);
+        await capture(page, `economy-${id.replace(':', '-')}-${faction}-${String(width)}x${String(height)}`);
+        await leaveFocus(page);
+      }
+    }
+  });
+
+  test(`critical Siege frames ${faction} ${String(width)}`, async ({ page }) => {
+    test.skip(BEFORE, 'the critical-state fixture matrix is added by U9');
+    await page.setViewportSize({ width, height });
+    for (const stage of ['building', 'ram', 'breach', 'blockade']) {
+      await page.goto(`/e2e/siege-fixture.html?view=${faction}&stage=${stage}`);
+      await expect(page.locator('body')).toHaveAttribute('data-spqr-booted', 'true');
+      await advance(page, 1);
+      const target = (await sites(page)).find((site) => site.kind === 'stronghold' && site.owner === 'carthage')!;
+      expect(target, `${stage}: the viewed Faction may know this front`).toBeDefined();
+      await select(page, { kind: 'settlement', id: target.id });
+      await page.evaluate(() => window.__SPQR.game!.centerSelection());
+      const camera = (await describeView(page)).camera;
+      const at = { x: (target.rect.x + target.rect.width / 2 - camera.x) * camera.zoom,
+        y: (target.rect.y + target.rect.height / 2 - camera.y) * camera.zoom };
+      const layout = await hudLayout(page);
+      expect(at.x, 'the reviewed Siege is in the theatre, not offscreen').toBeGreaterThanOrEqual(layout.list.width);
+      expect(at.x).toBeLessThanOrEqual(width);
+      expect(at.y).toBeGreaterThanOrEqual(layout.bar.height);
+      expect(at.y).toBeLessThan(layout.detail.y);
+      if (stage === 'building') expect(target.front?.ram?.built).toBe(false);
+      if (stage === 'ram') expect(target.front?.ram?.built).toBe(true);
+      if (stage === 'breach') expect(target.front?.breached).toBe(true);
+      if (stage === 'blockade') expect(target.front?.siege).toBe('blockade');
+      await capture(page, `siege-${stage}-${faction}-${String(width)}x${String(height)}`);
+      // The established public inspection lens lets the reviewer see the gate
+      // and ram even when three field Squads overlap the walls. Same knowledge.
+      await page.evaluate(() => window.__SPQR.game!.showSquads(false));
+      await capture(page, `siege-${stage}-structure-${faction}-${String(width)}x${String(height)}`);
+    }
+  });
+
   test(`review frames ${faction} ${String(width)}x${String(height)}`, async ({ page }) => {
     test.setTimeout(120_000);
     const suffix = `${faction}-${String(width)}x${String(height)}`;
