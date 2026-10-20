@@ -35,6 +35,7 @@ import { inspectionView } from '../../src/sim/fog.ts';
 import { MINIMAP_PLATE_HEIGHT, MINIMAP_PLATE_WIDTH, minimapPlate } from '../../src/ui/minimap.ts';
 import { generateMap, TILE_COUNT } from '../../src/sim/map.ts';
 import type { KnownSite } from '../../src/ui/sites.ts';
+import type { Notice } from '../../src/ui/conditions.ts';
 import { message, translate } from '../../src/ui/strings.ts';
 
 const SIZE: HudSize = { width: 640, height: 480 };
@@ -847,5 +848,135 @@ describe('the command card', () => {
     const disabled = layout.commands.find((command) => !command.order.enabled);
     if (disabled !== undefined) expect(colours(disabled.rect).size).toBeGreaterThan(0);
     expect(layout.status.map((line) => line.text).join(' ')).toContain('ariete');
+  });
+});
+
+/**
+ * The notice strip (#58).
+ *
+ * The journal's own rules are `tests/ui/conditions.test.ts`'s; what is asked here
+ * is that the interface *shows* it: a strip that is present when there is
+ * something to say and gone when there is not, a line for each notice with the
+ * heading that opens its history, a click that lands on the line a Player sees,
+ * and the labelled estimate under the conditions it is about.
+ */
+describe('the notice strip', () => {
+  const notice = (overrides: Partial<Notice>): Notice => ({
+    id: 'condition:fatigue:1',
+    kind: 'fatigue',
+    persistent: true,
+    label: 'Fatica alta: Astati 1',
+    detail: '16/20',
+    target: { kind: 'squad', id: 1, x: 12, y: 8 },
+    raised: 10,
+    lost: false,
+    ...overrides,
+  });
+
+  it('says nothing when there is nothing to say', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, { faction: 'rome' });
+    const layout = hudLayout(model, DESKTOP);
+
+    expect(model.notices).toEqual([]);
+    expect(model.forecast).toBeNull();
+    expect(layout.notices.height).toBe(0);
+    expect(layout.noticeRows).toEqual([]);
+  });
+
+  it('shows a standing condition and a brief event as different kinds of statement', () => {
+    const notices = [
+      notice({}),
+      notice({ id: 'event:refusal:1', kind: 'refusal', persistent: false, label: 'Ordine rifiutato: Astati 1', detail: null }),
+    ];
+    const model = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, { faction: 'rome', notices });
+    const layout = hudLayout(model, DESKTOP);
+    const words = [...layout.text, ...layout.priority].map((line) => line.text).join('\n');
+
+    expect(layout.notices.height).toBeGreaterThan(0);
+    // The standing condition carries `!`, the event `>`: the difference is in the
+    // line a Player reads and not only in the ink it is drawn in.
+    expect(words).toContain('! Fatica alta');
+    expect(words).toContain('> Ordine rifiutato');
+    // The condition is the brighter ink; the event is the quieter one.
+    expect(layout.priority.map((line) => line.text).join(' ')).toContain('Fatica alta');
+    expect(layout.text.map((line) => line.text).join(' ')).toContain('Ordine rifiutato');
+  });
+
+  it('puts the heading, the count and a clickable line on the strip', () => {
+    const notices = [notice({}), notice({ id: 'condition:unpaid:1', kind: 'unpaid', label: 'Soldo non pagato: Astati 1', detail: '2 stagioni' })];
+    const model = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, { faction: 'rome', notices });
+    const layout = hudLayout(model, DESKTOP);
+    const heading = layout.buttons.find((button) => button.action === 'notices');
+
+    expect(heading?.text).toBe(message('ui.noticesCount', { count: 2 }));
+    expect(layout.noticeRows.length).toBeGreaterThan(0);
+    const row = layout.noticeRows[0]!;
+    expect(hudHit(model, DESKTOP, row.rect.x + 2, row.rect.y + 2)).toEqual({ kind: 'notice', id: row.id });
+  });
+
+  it('opens the current Match’s history in place, without leaving the panel', () => {
+    const notices = Array.from({ length: 6 }, (_, index) => notice({
+      id: `event:engaged:${String(index)}`,
+      kind: 'engaged',
+      persistent: false,
+      label: `A contatto: Reparto ${String(index)}`,
+      raised: index,
+    }));
+    const collapsed = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, { faction: 'rome', notices });
+    const expanded = hudModel(VISIBLE, STRONGHOLDS, null, [], { ...DESKTOP_VIEW, noticesOpen: true }, { faction: 'rome', notices });
+    const before = hudLayout(collapsed, DESKTOP);
+    const after = hudLayout(expanded, DESKTOP);
+
+    expect(after.noticeRows.length).toBeGreaterThan(before.noticeRows.length);
+    expect(after.buttons.some((button) => button.action === 'noticesNext' || button.action === 'noticesPrevious')).toBe(true);
+    expect(after.notices.height).toBeGreaterThan(before.notices.height);
+  });
+
+  it('makes only a location-bearing line a control', () => {
+    const notices = [
+      notice({ id: 'condition:winter', kind: 'winter', label: 'Inverno in arrivo', detail: 'tra 20 s', target: null }),
+      notice({}),
+    ];
+    const model = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, { faction: 'rome', notices });
+    const layout = hudLayout(model, DESKTOP);
+
+    expect(layout.noticeRows.map((row) => row.id)).toEqual(['condition:fatigue:1']);
+    for (const row of layout.noticeRows) {
+      expect(hudHit(model, DESKTOP, row.rect.x + 2, row.rect.y + 2)).toEqual({ kind: 'notice', id: row.id });
+    }
+  });
+
+  it('says so when a notice’s place is no longer known', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, {
+      faction: 'rome',
+      notices: [notice({ lost: true })],
+    });
+    const layout = hudLayout(model, DESKTOP);
+
+    expect([...layout.text, ...layout.priority].map((line) => line.text).join(' ')).toContain(translate('ui.noticeLost'));
+  });
+
+  it('writes the economy’s forecast under the notices, labelled as an estimate', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, {
+      faction: 'rome',
+      notices: [notice({})],
+      forecast: { label: translate('forecast.title'), value: '12 denari', estimate: true },
+    });
+    const layout = hudLayout(model, DESKTOP);
+    const words = layout.text.map((line) => line.text).join(' ');
+
+    expect(words).toContain(translate('forecast.title'));
+    expect(words).toContain('12 denari');
+    // The strip is over the theatre, clear of the bar above it and the minimap below.
+    expect(layout.notices.y).toBeGreaterThanOrEqual(layout.bar.height);
+    expect(layout.notices.y + layout.notices.height).toBeLessThanOrEqual(layout.minimap.y);
+  });
+
+  it('draws its own ground, so a warning reads over any terrain', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, null, [], DESKTOP_VIEW, { faction: 'rome', notices: [notice({})] });
+    const layout = hudLayout(model, DESKTOP);
+    const buffer = renderPanels(model, DESKTOP);
+
+    expect(pixelAt(buffer, layout.notices.x + 1, layout.notices.y + 1)).toEqual(HUD_BACKGROUND);
   });
 });

@@ -124,6 +124,9 @@ import {
 } from '../ui/hud.ts';
 import { minimapPlate, type ViewportRect, type KnownMinimapSite } from '../ui/minimap.ts';
 import { knownSites, siteIdentities, type KnownSite } from '../ui/sites.ts';
+import { createNoticeBook, markedConditions, moraleOf, squadConditions, type Notice, type SquadCondition } from '../ui/conditions.ts';
+import { forecastLine } from '../ui/forecast.ts';
+import type { OrderMarkKind } from '../art/markers.ts';
 import { createHudLayer, type HudLayer } from './hud.ts';
 import { screenToStage, type Camera } from './camera.ts';
 import { textureOf } from './stage.ts';
@@ -175,6 +178,42 @@ export interface SiteReport extends KnownSite {
 }
 
 /**
+ * What the theatre shows *about* one Squad, as data (#58).
+ *
+ * The block itself is the Observation's; this is the annotation layer's own
+ * answer — which destination mark it wears, how full its Morale bar is, what
+ * shapes it carries, the way it faces and which Faction's standard stands over
+ * it. A test reads it instead of guessing at pixels, and the page builds it from
+ * the same `render/indicators.ts` decisions the layer draws from, so what a test
+ * reads and what a Player sees cannot drift apart.
+ */
+export interface SquadIndicator {
+  /** The Squad it is about. */
+  readonly id: number;
+  /** Whether the Player has picked it, which is what makes it carry a full plate. */
+  readonly selected: boolean;
+  /** Its Morale now, and the most its type ever has. */
+  readonly morale: number;
+  readonly maxMorale: number;
+  /** The conditions it is in, in the journal's ranking. */
+  readonly conditions: readonly SquadCondition[];
+  /** The way it faces, which the chevron on the ground repeats. */
+  readonly facing: VisibleSquad['facing'];
+  /** The destination mark it wears, or `null` when it has nowhere to go. */
+  readonly orderMark: OrderMarkKind | null;
+  /** Where it is walking, when it is. */
+  readonly destination: { readonly x: number; readonly y: number } | null;
+  /** The Faction whose standard stands above its block. */
+  readonly standard: Faction;
+  /**
+   * What the theatre wears above the block: the full plate for a selected
+   * Squad, one small condition pin for an unselected one in trouble, and nothing
+   * at all for a healthy Squad nobody has picked (#58).
+   */
+  readonly annotation: 'plate' | 'pin' | 'none';
+}
+
+/**
  * Everything the running page believes, as one plain-data copy (ticket E4).
  *
  * This is what `state()` hands an inspector: the whole of what a Player can see
@@ -220,6 +259,10 @@ export interface GameSnapshot {
   readonly sites: readonly SiteReport[];
   /** The dead this Faction can see: residue, drawn, faded and never hashed (C3). */
   readonly corpses: readonly Corpse[];
+  /** The current-Match notice journal (#58): conditions first, then events. */
+  readonly notices: readonly Notice[];
+  /** What the theatre annotates about each of the Faction's Squads (#58). */
+  readonly indicators: readonly SquadIndicator[];
   /** What each tile of the theatre is known as, row-major (B4). */
   readonly knowledge: readonly Knowledge[];
   /** The Commands the page has applied lately, oldest first: a record, not a door. */
@@ -256,7 +299,7 @@ export interface GameHooks {
   /** The exact text, controls and scrolling windows drawn by the HUD. */
   hudLayout(): HudLayout;
   /** Scrolls a HUD region by bitmap text lines; presentation only. */
-  scrollHud(region: 'list' | 'detail' | 'commands', lines: number): void;
+  scrollHud(region: 'list' | 'detail' | 'commands' | 'notices', lines: number): void;
   /**
    * Performs a contextual action by its stable id, as pressing its button does.
    *
@@ -299,6 +342,24 @@ export interface GameHooks {
    * shown without a screenshot.
    */
   corpses(): readonly Corpse[];
+  /** The current-Match notice journal, newest concern first (#58). */
+  notices(): readonly Notice[];
+  /**
+   * Centres a location-bearing notice, when the place it names is still known.
+   *
+   * A notice whose Squad has left the field or whose settlement the Faction no
+   * longer knows is marked `lost` and answers `false`, so a stale target is
+   * handled explicitly rather than centring whatever happens to share its id.
+   *
+   * @returns whether the page centred a place.
+   */
+  centerNotice(id: string): boolean;
+  /** What the theatre annotates about each Squad, as the layer was handed it (#58). */
+  indicators(): readonly SquadIndicator[];
+  /** Whether the notice history is open. */
+  noticesOpen(): boolean;
+  /** Opens or closes the notice history, as its own control does. */
+  toggleNotices(): void;
   /** Picks whatever is under a screen point — one click, with or without a shift. */
   selectAt(screenX: number, screenY: number, additive?: boolean): void;
   /** Picks every Squad a box dragged between two screen points touches. */
@@ -496,6 +557,14 @@ export function createGame(options: GameOptions): Game {
   let groupMemory: readonly number[] | null = null;
   /** Why the last action pressed is unavailable: the panel's answer to a press it could not obey. */
   let commandNotice: string | null = null;
+  /** The current-Match notice journal (#58): the Player's memory, never the Match's. */
+  const noticeBook = createNoticeBook();
+  let notices: readonly Notice[] = [];
+  /** Whether the notice history is open, and how far it is scrolled. */
+  let noticesOpen = false;
+  let noticeOffset = 0;
+  /** The ground mark each Squad's last movement order wears (#58): the page's memory. */
+  let orderMarks: Record<number, OrderMarkKind> = {};
 
   /**
    * The tick the page's Match ends on: a Match's own horizon, the same three game
@@ -513,7 +582,8 @@ export function createGame(options: GameOptions): Game {
   // frame.
   reportVision(match.state.world);
 
-  let model = readModel(readSites());
+  notices = noticeBook.read(visible(), match.state.tick);
+  let model = readModel(readSites(), visible());
   let minimap = readMinimap();
   let dead: readonly Corpse[] = readCorpses();
 
@@ -581,7 +651,7 @@ export function createGame(options: GameOptions): Game {
     },
     hudRects: () => {
       const layout = hudLayout(model, options.size);
-      return [layout.bar, layout.list, layout.detail, layout.minimap, ...(menu.visible ? [readMenu().rect] : [])];
+      return [...interfaceRects(layout), ...(menu.visible ? [readMenu().rect] : [])];
     },
     hudRows: () => hudLayout(model, options.size).rows,
     hudLayout: () => hudLayout(model, options.size),
@@ -590,6 +660,7 @@ export function createGame(options: GameOptions): Game {
       const layout = hudLayout(model, options.size);
       if (region === 'list') listOffset = layout.listScroll.offset + lines;
       else if (region === 'commands') commandOffset = layout.commandScroll.offset + lines;
+      else if (region === 'notices') noticeOffset = layout.noticeScroll.offset + lines;
       else detailOffset = layout.detailScroll.offset + lines;
       repaint();
     },
@@ -608,6 +679,15 @@ export function createGame(options: GameOptions): Game {
     groupBack: () => groupBack(),
     squads: () => squadReports(),
     corpses: () => dead,
+    notices: () => [...notices],
+    centerNotice: (id) => centerNotice(id),
+    indicators: () => indicatorReports(),
+    noticesOpen: () => noticesOpen,
+    toggleNotices: () => {
+      noticesOpen = !noticesOpen;
+      noticeOffset = 0;
+      repaint();
+    },
     selectAt: (x, y, additive = false) => {
       pickAt(x, y, additive);
     },
@@ -826,6 +906,8 @@ export function createGame(options: GameOptions): Game {
       squads: squadReports(),
       sites: siteReports(),
       corpses: dead,
+      notices: [...notices],
+      indicators: indicatorReports(),
       knowledge: knowledgeStates(),
       applied: [...applied],
     });
@@ -856,6 +938,70 @@ export function createGame(options: GameOptions): Game {
     }));
   }
 
+  /**
+   * What the theatre annotates about each Squad, in the same terms the layer draws.
+   *
+   * `orderMark` is `null` when the Squad has nowhere to go: a mark with no
+   * destination would be a lie about an order. The selected flag and the
+   * conditions come from the same readers the plates and pins are composed from.
+   */
+  function indicatorReports(): readonly SquadIndicator[] {
+    return visible().squads.map((squad) => {
+      const selected = human.selection.squads.includes(squad.id);
+      const conditions = squadConditions(squad);
+
+      return {
+        id: squad.id,
+        selected,
+        morale: squad.morale,
+        maxMorale: moraleOf(squad).max,
+        conditions,
+        facing: squad.facing,
+        orderMark: squad.goal === null ? null : orderMarks[squad.id] ?? 'move',
+        destination: squad.goal === null ? null : { x: squad.goal.x, y: squad.goal.y },
+        standard: faction,
+        annotation: selected ? 'plate' as const : markedConditions(conditions).length > 0 ? 'pin' as const : 'none' as const,
+      };
+    });
+  }
+
+  /**
+   * Centres the place a notice names, when the Faction still knows it.
+   *
+   * A target that is gone — a Squad that has left the field, a settlement it no
+   * longer knows — is recorded as lost and the answer is `false`: the notice says
+   * so from then on instead of centring whatever else might share its id.
+   */
+  function centerNotice(id: string): boolean {
+    const notice = notices.find((candidate) => candidate.id === id);
+    if (notice === undefined || notice.target === null) return false;
+
+    const target = notice.target;
+    const observation = visible();
+    const at = target.kind === 'squad'
+      ? (() => {
+        const squad = observation.squads.find((candidate) => candidate.id === target.id);
+
+        return squad === undefined ? null : tilePixel(squad.x, squad.y);
+      })()
+      : (() => {
+        const site = readSites().find((candidate) => candidate.id === target.id);
+
+        return site === undefined ? null : tilePixel(site.x, site.y);
+      })();
+
+    if (at === null) {
+      noticeBook.lose(id);
+      repaint();
+
+      return false;
+    }
+
+    options.centerOn?.(at.x, at.y);
+
+    return true;
+  }
+
   /** The rectangle one Squad's block occupies, in theatre pixels. */
   function rectOf(squad: VisibleSquad): PickRect {
     // The block is drawn from the figures the Squad is drawn as, which is its
@@ -868,10 +1014,10 @@ export function createGame(options: GameOptions): Game {
   }
 
   /** The HUD's model, with the panel's selection, every picked Squad and every known settlement. */
-  function readModel(known: readonly KnownSite[]): HudModel {
-    const observation = visible();
+  function readModel(known: readonly KnownSite[], observation: SiegeVisible): HudModel {
     const next = hudModel(observation, strongholdIds(observation), panelSelection(), human.selection.squads,
-      { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset },
+      { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
+        noticesOpen, noticeOffset },
       session(observation, known));
     if (next.selected?.id !== detailSelection?.id || next.selected?.kind !== detailSelection?.kind) {
       detailOffset = 0;
@@ -879,6 +1025,7 @@ export function createGame(options: GameOptions): Game {
     }
     detailSelection = next.selected;
     return { ...next, view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
+      noticesOpen, noticeOffset,
       desktop, navigatorExpanded, sessionOpen, speed: pacing.speed, ...preferences, tick: match.state.tick,
       scaleWarning: desktop && (windowSize().width < 640 * preferences.uiScale || windowSize().height < 360 * preferences.uiScale),
       smallWindow: desktop && (windowSize().width < 1280 || windowSize().height < 720) } };
@@ -896,6 +1043,8 @@ export function createGame(options: GameOptions): Game {
     readonly notice: string | null;
     readonly ended: boolean;
     readonly sites: readonly KnownSite[];
+    readonly notices: readonly Notice[];
+    readonly forecast: ReturnType<typeof forecastLine>;
   } {
     return {
       faction,
@@ -908,6 +1057,8 @@ export function createGame(options: GameOptions): Game {
       notice: commandNotice,
       ended: result !== null,
       sites: known,
+      notices,
+      forecast: forecastLine(observation, match.state.tick),
     };
   }
 
@@ -974,11 +1125,17 @@ export function createGame(options: GameOptions): Game {
   /** Both plates, every block, every structure, and a frame drawn. */
   function repaint(): void {
     const known = readSites();
-    model = readModel(known);
+    const observation = visible();
+    // The journal first: a notice raised on this tick is part of the frame the
+    // Player is about to see, and reading it twice in one tick is harmless.
+    notices = noticeBook.read(observation, match.state.tick);
+    orderMarks = pruneOrderMarks(orderMarks, observation.squads);
+    model = readModel(known, observation);
     const layout = hudLayout(model, options.size);
     listOffset = layout.listScroll.offset;
     detailOffset = layout.detailScroll.offset;
     commandOffset = layout.commandScroll.offset;
+    noticeOffset = layout.noticeScroll.offset;
     dead = readCorpses();
     layer.panels(model, options.size);
     ground.update({ sites: known, selected: human.selection.settlement });
@@ -992,6 +1149,7 @@ export function createGame(options: GameOptions): Game {
       // the world's residue, through its own fog, which is a drawing decision
       // and nothing else. One read, which the `corpses` hook hands back too.
       corpses: dead,
+      orderMarks,
     });
     minimap = readMinimap();
     layer.minimap(model, minimap, options.size);
@@ -1060,6 +1218,7 @@ export function createGame(options: GameOptions): Game {
     const hit = hudHit(model, options.size, screenX, screenY);
     if (hit !== null) {
       if (hit.kind === 'button') hudButton(hit.action);
+      else if (hit.kind === 'notice') centerNotice(hit.id);
       else if (hit.kind === 'order') perform(hit.order.id);
       else if (hit.kind === 'tab') hooks.setTab(hit.tab);
       else if (hit.kind === 'group') hooks.recallGroup(hit.index);
@@ -1097,9 +1256,12 @@ export function createGame(options: GameOptions): Game {
     else if (action === 'center') hooks.centerSelection();
     else if (action === 'navigator') hooks.toggleNavigator();
     else if (action === 'groupBack') hooks.groupBack();
+    else if (action === 'notices') hooks.toggleNotices();
     else {
-      const region = action.startsWith('list') ? 'list' : action.startsWith('commands') ? 'commands' : 'detail';
-      const scroll = region === 'list' ? layout.listScroll : region === 'commands' ? layout.commandScroll : layout.detailScroll;
+      const region = action.startsWith('list') ? 'list' : action.startsWith('commands') ? 'commands'
+        : action.startsWith('notices') ? 'notices' : 'detail';
+      const scroll = region === 'list' ? layout.listScroll : region === 'commands' ? layout.commandScroll
+        : region === 'notices' ? layout.noticeScroll : layout.detailScroll;
       hooks.scrollHud(region, action.endsWith('Next') ? scroll.page : -scroll.page);
     }
   }
@@ -1226,6 +1388,12 @@ export function createGame(options: GameOptions): Game {
     const command = commandFor(offer, squads, point);
     if (command === null || !human.submit(command)) return false;
 
+    // The page's own memory of the verb, which is what makes a move and an
+    // attack-move different marks on the ground (#58): the rules keep one route.
+    if (offer.kind === 'move' || offer.kind === 'attackMove') {
+      for (const id of squads) orderMarks[id] = offer.kind;
+    }
+
     submission = {
       name: offer.label,
       status: 'pending',
@@ -1299,9 +1467,21 @@ export function createGame(options: GameOptions): Game {
   function underInterface(x: number, y: number): boolean {
     const layout = hudLayout(model, options.size);
 
-    return [layout.bar, layout.list, layout.detail, layout.minimap, ...(menu.visible ? [readMenu().rect] : [])].some(
+    return [...interfaceRects(layout), ...(menu.visible ? [readMenu().rect] : [])].some(
       (rect) => x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height,
     );
+  }
+
+  /**
+   * Every rectangle the interface draws over the theatre, the notice strip
+   * included when it has anything to say (#58).
+   *
+   * One reader for the click test and the `hudRects` hook, so a panel that
+   * appears cannot cover a tile that the pointer still coordinates as bare ground.
+   */
+  function interfaceRects(layout: HudLayout): readonly Rect[] {
+    return [layout.bar, layout.list, layout.detail, layout.minimap,
+      ...(layout.notices.height > 0 ? [layout.notices] : [])];
   }
 
   /** A drag between two screen points: every block it touched. */
@@ -1332,6 +1512,27 @@ export function createGame(options: GameOptions): Game {
       ...squadReports().map((squad) => ({ kind: 'squad' as const, id: squad.id, rect: squad.rect,
         depth: squad.y, layer: SQUAD_LAYER })),
     ];
+  }
+
+  /**
+   * Drops the ground marks of Squads that are gone or have arrived.
+   *
+   * The marks are the page's memory of the verb a Player gave; a Squad with
+   * nowhere to walk has no mark to wear, and a Squad that has left the field has
+   * no block to wear it on.
+   */
+  function pruneOrderMarks(
+    marks: Readonly<Record<number, OrderMarkKind>>,
+    squads: readonly VisibleSquad[],
+  ): Record<number, OrderMarkKind> {
+    const kept: Record<number, OrderMarkKind> = {};
+
+    for (const squad of squads) {
+      const mark = marks[squad.id];
+      if (mark !== undefined && squad.goal !== null) kept[squad.id] = mark;
+    }
+
+    return kept;
   }
 
   /** The settlement ids that are Strongholds, which the Observation does not say and the map does. */

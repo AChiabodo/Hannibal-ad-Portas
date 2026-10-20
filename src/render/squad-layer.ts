@@ -1,12 +1,13 @@
 /**
- * The Squads on the stage: one sprite per Squad, and the markers of where they
- * were told to go (ticket C2).
+ * The Squads on the stage: one sprite per Squad, its Faction's standard, and the
+ * annotations a selected (or a troubled) Squad wears (#58).
  *
- * `render/squads.ts` composes a Squad's men into one `PixelBuffer`; this module
- * is the one step that needs the engine — a buffer becomes a texture and a
- * texture becomes a sprite — and it is deliberately thin, because every decision
- * worth checking (which men, in what order, in which frame) is made in Node and
- * is checked there.
+ * `render/squads.ts` composes a Squad's men into one `PixelBuffer`;
+ * `render/indicators.ts` composes what the theatre says *about* it. This module is
+ * the one step that needs the engine — a buffer becomes a texture and a texture
+ * becomes a sprite — and it is deliberately thin, because every decision worth
+ * checking (which men, in what order, in which frame, which mark, which
+ * condition) is made in Node and is checked there.
  *
  * **One sprite per Squad, not one per man.** A hundred and twenty men per block
  * and a dozen blocks would be fourteen hundred sprites before anything else is
@@ -15,6 +16,12 @@
  * block is re-composed only when the shape it draws has changed — which is what
  * `squadFrameKey` is for: a Squad standing still does no work at all, and a
  * marching one uploads a new texture when it steps, not sixty times a second.
+ *
+ * **The annotations are separate sprites**, for the same reason: a Morale that
+ * moves a point must not re-upload a hundred and twenty soldiers. They live in
+ * their own container above the men, so an annotation is never hidden by a block;
+ * the Faction's standard lives in one below, so a standard never hides the men it
+ * marks.
  *
  * **Depth is the tile a Squad stands on.** Blocks are tall and they overlap, so
  * the one drawn in front has to be the one further down the screen: the Sprite's
@@ -25,16 +32,29 @@
 import { Container, Sprite, Texture } from 'pixi.js';
 import type { VisibleSquad } from '../sim/economy-match.ts';
 import type { Corpse } from '../sim/residue.ts';
-import { CORPSE_FADE_STEPS, corpseFade, corpsePlacement, corpseSprite, figureOf } from './corpses.ts';
-import { textureOf } from './stage.ts';
+import type { Facing } from '../sim/squad.ts';
+import type { OrderMarkKind } from '../art/markers.ts';
 import {
-  ORDER_MARKER_SIZE,
-  blockPlacement,
-  orderMarker,
-  squadBlock,
-  squadFrameKey,
-} from './squads.ts';
+  markedConditions,
+  squadConditions,
+} from '../ui/conditions.ts';
+import { CORPSE_FADE_STEPS, corpseFade, corpsePlacement, corpseSprite, figureOf } from './corpses.ts';
+import {
+  CONDITION_PIN_SIZE,
+  CONDITION_PLATE_WIDTH,
+  DESTINATION_SIZE,
+  conditionKey,
+  conditionOf,
+  conditionPin,
+  conditionPlate,
+  destinationMark,
+  facingMark,
+  markerPlacement,
+} from './indicators.ts';
+import { textureOf } from './stage.ts';
+import { blockPlacement, squadBlock, squadFrameKey } from './squads.ts';
 import { tilePixel } from './terrain.ts';
+import { standardInsignia } from '../art/figures.ts';
 
 /** What the layer is handed on every redraw: the world as the Player may see it. */
 export interface SquadField {
@@ -57,6 +77,17 @@ export interface SquadField {
 
   /** Which Faction's cloth the soldiers wear. */
   readonly faction: 'rome' | 'carthage';
+
+  /**
+   * The kind of destination mark each Squad's order wears, when the page knows it.
+   *
+   * A `VisibleSquad` carries *where* it is walking and not *how* it was told to:
+   * `attackMove` and `move` are the same route once the rules have them. So the
+   * page remembers the verb it submitted and hands it here, which is what makes a
+   * march and an attack-march different marks on the ground without inventing
+   * state the Match does not hold.
+   */
+  readonly orderMarks?: Readonly<Record<number, OrderMarkKind>>;
 }
 
 /** The layer: one call, and the stage agrees with the field. */
@@ -65,7 +96,7 @@ export interface SquadLayer {
   update(field: SquadField): void;
 
   /**
-   * Shows or hides every block at once.
+   * Shows or hides every block and every annotation at once.
    *
    * The debugging surface B3 opened for the fog — "is the ground under this
    * drawn the way the generator says" — needs the map alone, and an army
@@ -92,6 +123,15 @@ interface Drawn {
  */
 const ABOVE_THE_MAP = 10;
 
+/** Where the standards sort: above the dead, below every soldier. */
+const STANDARD_LAYER = ABOVE_THE_MAP + 0.5;
+
+/** Where the annotations sort: over every soldier, because they are about the map. */
+const INDICATOR_LAYER = ABOVE_THE_MAP + 2;
+
+/** How far above every annotation a destination mark sorts, so it is never hidden. */
+const ABOVE_EVERY_BLOCK = 1000;
+
 /**
  * The layer the living are drawn in, exported so picking agrees with drawing.
  *
@@ -101,8 +141,6 @@ const ABOVE_THE_MAP = 10;
  */
 export const SQUAD_LAYER = ABOVE_THE_MAP + 1;
 
-/** How far above every block a destination marker sorts, so a marker is never hidden by the men. */
-const ABOVE_EVERY_BLOCK = 1000;
 
 /**
  * Builds the layer under a container the camera is applied to, with nothing
@@ -117,24 +155,41 @@ export function createSquadLayer(parent: Container): SquadLayer {
   fallen.zIndex = ABOVE_THE_MAP;
   parent.addChild(fallen);
 
+  const standards = new Container();
+  standards.sortableChildren = true;
+  standards.zIndex = STANDARD_LAYER;
+  parent.addChild(standards);
+
   const root = new Container();
   root.sortableChildren = true;
   root.zIndex = SQUAD_LAYER;
   parent.addChild(root);
 
+  const annotations = new Container();
+  annotations.sortableChildren = true;
+  annotations.zIndex = INDICATOR_LAYER;
+  parent.addChild(annotations);
+
   const squads = new Map<number, Drawn>();
-  const markers = new Map<number, Sprite>();
+  const marks = new Map<number, Sprite>();
   const corpses = new Map<string, Sprite>();
   const corpseTextures = new Map<string, Texture>();
-
-  // One texture for every destination marker: a marker never changes, so it is
-  // composed once and shared by every sprite that shows it.
-  const markTexture = textureOf(orderMarker());
+  const standardSprites = new Map<number, Sprite>();
+  const standardTextures = new Map<string, Texture>();
+  const plates = new Map<number, PlateSprite>();
+  const plateTextures = new Map<string, Texture>();
+  const pins = new Map<number, PlateSprite>();
+  const pinTextures = new Map<string, Texture>();
+  const facings = new Map<number, FacingSprite>();
+  const facingTextures = new Map<Facing, Texture>();
+  const destinationTextures = new Map<OrderMarkKind, Texture>();
 
   return {
     setVisible(visible) {
       root.visible = visible;
       fallen.visible = visible;
+      standards.visible = visible;
+      annotations.visible = visible;
     },
 
     update(field) {
@@ -145,6 +200,11 @@ export function createSquadLayer(parent: Container): SquadLayer {
         const key = squadFrameKey(squad, { tick: field.tick, faction: field.faction, selected });
         const drawn = squads.get(squad.id);
         const at = blockPlacement(tilePixel(squad.x, squad.y), {
+          men: squad.figures,
+          formation: squad.formation,
+          facing: squad.facing,
+        });
+        const placement = markerPlacement(tilePixel(squad.x, squad.y), {
           men: squad.figures,
           formation: squad.formation,
           facing: squad.facing,
@@ -170,7 +230,10 @@ export function createSquadLayer(parent: Container): SquadLayer {
           drawn.sprite.zIndex = squad.y;
         }
 
-        marker(root, markers, squad, selected, markTexture);
+        standard(standards, standardSprites, standardTextures, squad, field.faction, placement.standard);
+        annotate(annotations, {
+          plates, plateTextures, pins, pinTextures, facings, facingTextures, destinationTextures, marks,
+        }, squad, selected, placement, field.orderMarks?.[squad.id] ?? 'move');
       }
 
       for (const [id, drawn] of squads) {
@@ -181,16 +244,336 @@ export function createSquadLayer(parent: Container): SquadLayer {
         squads.delete(id);
       }
 
-      for (const [id, sprite] of markers) {
+      for (const [id, sprite] of marks) {
         if (afield.has(id)) continue;
 
         sprite.destroy();
-        markers.delete(id);
+        marks.delete(id);
+      }
+
+      for (const [id, sprite] of standardSprites) {
+        if (afield.has(id)) continue;
+
+        sprite.destroy();
+        standardSprites.delete(id);
+      }
+      for (const [id, entry] of plates) {
+        if (afield.has(id)) continue;
+
+        entry.sprite.destroy();
+        plates.delete(id);
+      }
+      for (const [id, entry] of pins) {
+        if (afield.has(id)) continue;
+
+        entry.sprite.destroy();
+        pins.delete(id);
+      }
+      for (const [id, entry] of facings) {
+        if (afield.has(id)) continue;
+
+        entry.sprite.destroy();
+        facings.delete(id);
       }
 
       layOutTheDead(fallen, corpses, corpseTextures, field.corpses ?? [], field.tick);
     },
   };
+}
+
+/** A sprite and the plate key it was drawn from, replaced in place when the key moves. */
+interface PlateSprite {
+  readonly sprite: Sprite;
+  key: string;
+}
+
+/** A chevron and the facing it was drawn for. */
+interface FacingSprite {
+  readonly sprite: Sprite;
+  facing: Facing;
+}
+
+/** The sets an annotation pass shares across squads. */
+interface AnnotationSinks {
+  readonly plates: Map<number, PlateSprite>;
+  readonly plateTextures: Map<string, Texture>;
+  readonly pins: Map<number, PlateSprite>;
+  readonly pinTextures: Map<string, Texture>;
+  readonly facings: Map<number, FacingSprite>;
+  readonly facingTextures: Map<Facing, Texture>;
+  readonly destinationTextures: Map<OrderMarkKind, Texture>;
+  readonly marks: Map<number, Sprite>;
+}
+
+/**
+ * The Faction's standard above a Squad's block.
+ *
+ * One sprite per Squad, one texture per Faction: a standard never changes shape,
+ * so the whole army shares two drawings. It sorts below every block, so the pole
+ * may run behind the men while the cloth flies above them.
+ */
+function standard(
+  parent: Container,
+  sprites: Map<number, Sprite>,
+  textures: Map<string, Texture>,
+  squad: VisibleSquad,
+  faction: 'rome' | 'carthage',
+  at: { readonly x: number; readonly y: number },
+): void {
+  let texture = textures.get(faction);
+  if (texture === undefined) {
+    texture = textureOf(standardInsignia(faction));
+    textures.set(faction, texture);
+  }
+
+  const known = sprites.get(squad.id);
+  if (known === undefined) {
+    const sprite = new Sprite(texture);
+    sprite.position.set(at.x, at.y);
+    sprite.zIndex = squad.y;
+    parent.addChild(sprite);
+    sprites.set(squad.id, sprite);
+
+    return;
+  }
+
+  known.position.set(at.x, at.y);
+  known.zIndex = squad.y;
+}
+
+/**
+ * What one Squad wears: a status plate and a facing chevron when it is picked, a
+ * destination mark when it has one, and a small condition pin when it is neither
+ * picked nor healthy.
+ *
+ * The rule the ticket states is the rule here: **no permanent bars or labels on a
+ * healthy, unselected Squad**. A Squad in trouble keeps one small shape, so that
+ * a Player scanning the theatre sees that something is wrong without every block
+ * carrying a plaque.
+ */
+function annotate(
+  parent: Container,
+  sinks: AnnotationSinks,
+  squad: VisibleSquad,
+  selected: boolean,
+  placement: ReturnType<typeof markerPlacement>,
+  orderMark: OrderMarkKind,
+): void {
+  const conditions = squadConditions(squad);
+
+  if (selected) {
+    syncPlate(parent, sinks, squad, placement.condition);
+    syncFacing(parent, sinks, squad, placement.facing);
+    syncMark(parent, sinks, squad, orderMark);
+    dropPin(sinks, squad.id);
+  } else {
+    dropPlate(sinks, squad.id);
+    dropFacing(sinks, squad.id);
+    dropMark(sinks, squad.id);
+    syncPin(parent, sinks, squad, conditions, placement.condition);
+  }
+}
+
+/** A selected Squad's condition plate, re-textured only when the plate changes. */
+function syncPlate(
+  parent: Container,
+  sinks: AnnotationSinks,
+  squad: VisibleSquad,
+  at: { readonly x: number; readonly y: number },
+): void {
+  const look = conditionOf(squad);
+  const key = conditionKey(look);
+  const known = sinks.plates.get(squad.id);
+
+  if (known === undefined) {
+    let texture = sinks.plateTextures.get(key);
+    if (texture === undefined) {
+      texture = textureOf(conditionPlate(look));
+      sinks.plateTextures.set(key, texture);
+    }
+
+    const sprite = new Sprite(texture);
+    sprite.position.set(at.x, at.y);
+    sprite.zIndex = squad.y;
+    parent.addChild(sprite);
+    sinks.plates.set(squad.id, { sprite, key });
+
+    return;
+  }
+
+  if (known.key !== key) {
+    let texture = sinks.plateTextures.get(key);
+    if (texture === undefined) {
+      texture = textureOf(conditionPlate(look));
+      sinks.plateTextures.set(key, texture);
+    }
+    known.sprite.texture = texture;
+    known.key = key;
+  }
+
+  known.sprite.position.set(at.x, at.y);
+  known.sprite.zIndex = squad.y;
+}
+
+/** The chevron on the ground at the edge a selected Squad faces. */
+function syncFacing(
+  parent: Container,
+  sinks: AnnotationSinks,
+  squad: VisibleSquad,
+  at: { readonly x: number; readonly y: number },
+): void {
+  const known = sinks.facings.get(squad.id);
+
+  let texture = sinks.facingTextures.get(squad.facing);
+  if (texture === undefined) {
+    texture = textureOf(facingMark(squad.facing));
+    sinks.facingTextures.set(squad.facing, texture);
+  }
+
+  if (known === undefined) {
+    const sprite = new Sprite(texture);
+    sprite.position.set(at.x, at.y);
+    sprite.zIndex = squad.y;
+    parent.addChild(sprite);
+    sinks.facings.set(squad.id, { sprite, facing: squad.facing });
+
+    return;
+  }
+
+  if (known.facing !== squad.facing) {
+    known.sprite.texture = texture;
+    known.facing = squad.facing;
+  }
+  known.sprite.position.set(at.x, at.y);
+  known.sprite.zIndex = squad.y;
+}
+
+/** The destination mark of a selected Squad, in the shape its order was given. */
+function syncMark(
+  parent: Container,
+  sinks: AnnotationSinks,
+  squad: VisibleSquad,
+  kind: OrderMarkKind,
+): void {
+  const goal = squad.goal;
+  const known = sinks.marks.get(squad.id);
+
+  if (goal === null) {
+    if (known !== undefined) {
+      known.destroy();
+      sinks.marks.delete(squad.id);
+    }
+
+    return;
+  }
+
+  let texture = sinks.destinationTextures.get(kind);
+  if (texture === undefined) {
+    texture = textureOf(destinationMark(kind));
+    sinks.destinationTextures.set(kind, texture);
+  }
+
+  const at = tilePixel(goal.x, goal.y);
+  const x = at.x + Math.floor((16 - DESTINATION_SIZE) / 2);
+  const y = at.y + Math.floor((16 - DESTINATION_SIZE) / 2);
+
+  if (known === undefined) {
+    const sprite = new Sprite(texture);
+    sprite.position.set(x, y);
+    sprite.zIndex = ABOVE_EVERY_BLOCK + goal.y;
+    parent.addChild(sprite);
+    sinks.marks.set(squad.id, sprite);
+
+    return;
+  }
+
+  known.texture = texture;
+  known.position.set(x, y);
+  known.zIndex = ABOVE_EVERY_BLOCK + goal.y;
+}
+
+/** A small plate with the most urgent condition's shape: what an unselected Squad in trouble wears. */
+function syncPin(
+  parent: Container,
+  sinks: AnnotationSinks,
+  squad: VisibleSquad,
+  conditions: ReturnType<typeof squadConditions>,
+  at: { readonly x: number; readonly y: number },
+): void {
+  const marked = markedConditions(conditions);
+  const first = marked[0];
+
+  if (first === undefined) {
+    dropPin(sinks, squad.id);
+
+    return;
+  }
+
+  const known = sinks.pins.get(squad.id);
+  const key = first;
+  const pinX = at.x + Math.floor((CONDITION_PLATE_WIDTH - CONDITION_PIN_SIZE) / 2);
+  const pinY = at.y + 2;
+
+  if (known === undefined) {
+    let texture = sinks.pinTextures.get(key);
+    if (texture === undefined) {
+      texture = textureOf(conditionPin(first));
+      sinks.pinTextures.set(key, texture);
+    }
+
+    const sprite = new Sprite(texture);
+    sprite.position.set(pinX, pinY);
+    sprite.zIndex = squad.y;
+    parent.addChild(sprite);
+    sinks.pins.set(squad.id, { sprite, key });
+
+    return;
+  }
+
+  if (known.key !== key) {
+    const texture = sinks.pinTextures.get(key) ?? textureOf(conditionPin(first));
+    sinks.pinTextures.set(key, texture);
+    known.sprite.texture = texture;
+    known.key = key;
+  }
+  known.sprite.position.set(pinX, pinY);
+  known.sprite.zIndex = squad.y;
+}
+
+/** Removes a Squad's condition plate, if it has one. */
+function dropPlate(sinks: AnnotationSinks, id: number): void {
+  const known = sinks.plates.get(id);
+  if (known === undefined) return;
+
+  known.sprite.destroy();
+  sinks.plates.delete(id);
+}
+
+/** Removes a Squad's condition pin, if it has one. */
+function dropPin(sinks: AnnotationSinks, id: number): void {
+  const known = sinks.pins.get(id);
+  if (known === undefined) return;
+
+  known.sprite.destroy();
+  sinks.pins.delete(id);
+}
+
+/** Removes a Squad's facing chevron, if it has one. */
+function dropFacing(sinks: AnnotationSinks, id: number): void {
+  const known = sinks.facings.get(id);
+  if (known === undefined) return;
+
+  known.sprite.destroy();
+  sinks.facings.delete(id);
+}
+
+/** Removes a Squad's destination mark, if it has one. */
+function dropMark(sinks: AnnotationSinks, id: number): void {
+  const known = sinks.marks.get(id);
+  if (known === undefined) return;
+
+  known.destroy();
+  sinks.marks.delete(id);
 }
 
 /**
@@ -264,49 +647,4 @@ function corpseTexture(textures: Map<string, Texture>, corpse: Corpse): Texture 
   textures.set(key, composed);
 
   return composed;
-}
-
-/**
- * The destination marker of one Squad: where it is walking to, and only while it
- * is selected.
- *
- * A marker for every Squad with an order would turn a marching army into a field
- * of diamonds; a marker for the men the Player is looking at is the answer to
- * "did my click land, and where". It sorts above every block — it is an
- * annotation about the map, not a thing in the world with a depth of its own.
- */
-function marker(
-  root: Container,
-  markers: Map<number, Sprite>,
-  squad: VisibleSquad,
-  selected: boolean,
-  texture: Texture,
-): void {
-  const known = markers.get(squad.id);
-  const goal = squad.goal;
-
-  if (!selected || goal === null) {
-    if (known !== undefined) {
-      known.destroy();
-      markers.delete(squad.id);
-    }
-    return;
-  }
-
-  const at = tilePixel(goal.x, goal.y);
-  const x = at.x + Math.floor((16 - ORDER_MARKER_SIZE) / 2);
-  const y = at.y + Math.floor((16 - ORDER_MARKER_SIZE) / 2);
-
-  if (known === undefined) {
-    const sprite = new Sprite(texture);
-    sprite.position.set(x, y);
-    sprite.zIndex = ABOVE_EVERY_BLOCK + goal.y;
-    root.addChild(sprite);
-    markers.set(squad.id, sprite);
-
-    return;
-  }
-
-  known.position.set(x, y);
-  known.zIndex = ABOVE_EVERY_BLOCK + goal.y;
 }

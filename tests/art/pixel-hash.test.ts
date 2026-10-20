@@ -22,13 +22,19 @@
  * villages, a Stronghold whole, hurt, breached and under the ram, and the two
  * remembered places. Every hash already pinned above is untouched, which is the
  * other half of that review.
+ *
+ * #58 added thirteen more and moved the plate again: the two Factions' standards,
+ * the two destination marks, the four facing chevrons and the five condition
+ * shapes. Every figure, icon, badge, terrain tile, settlement and marker pinned
+ * before them is byte-identical, so the ticket's claim — the readability work
+ * extends the art rather than repainting it — is a diff and not a promise.
  */
 import { describe, expect, it } from 'vitest';
 import { catalogue, cataloguePlate } from '../../src/art/catalogue';
 import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 
 /** The fingerprints recorded from the generators as accepted. */
-const PLATE_HASH = 'e566bc8e1bd75edc';
+const PLATE_HASH = '280d0f795302fecb';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'glyph:U+0020': '19ce279ecc93e509',
@@ -119,6 +125,23 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'site:stronghold:rome:ram': '007bcdd1e7429921',
   'site:stronghold:carthage:remembered': '36df808b07115242',
   'site:settlement:rome:remembered': 'e81000f94b859fe8',
+  // #58's insignia and ground marks: the two Factions' standards, the two
+  // destination marks, the four facing chevrons and the five condition shapes.
+  // The marks are drawn over both Factions' ground, so a pixel that moves in one
+  // is a pixel somebody has to look at on grass, on forest and on a memory.
+  'insignia:rome': '427559bbe6cfc0ce',
+  'insignia:carthage': '51c811280a90e122',
+  'mark:order:move': '0c5953cd1b170478',
+  'mark:order:attackMove': 'b0fdd0d2423547df',
+  'mark:facing:north': '9229abeef65d5db0',
+  'mark:facing:east': '95a103c8dcf87170',
+  'mark:facing:south': '349a8aaec57aabc8',
+  'mark:facing:west': '64f66cceb4f00008',
+  'mark:condition:routing': 'ec5b91d595ee7e20',
+  'mark:condition:unpaid': 'cca7758a3e055265',
+  'mark:condition:noSupply': 'fc46a87d61647745',
+  'mark:condition:fatigue': '530365334b02ec14',
+  'mark:condition:noAmmunition': '527b196711c5c0c5',
 };
 
 describe('the generated output, as a fingerprint', () => {

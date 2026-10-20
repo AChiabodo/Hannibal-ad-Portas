@@ -54,8 +54,6 @@ import { RAMPS, shadeAt } from '../art/palette.ts';
 import {
   blit,
   createPixelBuffer,
-  fillRect,
-  setPixel,
   strokeRect,
   type PixelBuffer,
   type Rgba,
@@ -377,33 +375,6 @@ function frameFor(squad: VisibleSquad, man: PlacedMan, tick: number): FigureFram
 /** A one-pixel ring, which is how the map says "these are the men you have picked". */
 function ring(block: PixelBuffer, x: number, y: number, width: number, height: number): void {
   strokeRect(block, x, y, width, height, SELECTION_INK);
-}
-
-/** How big a marker of a Squad's destination is, in pixels. */
-export const ORDER_MARKER_SIZE = 9;
-
-/**
- * The mark a Squad's destination wears: a small diamond with a dot in it.
- *
- * An order a Player gives has to be visible somewhere, or a click that travelled
- * a fraction of a tile looks like nothing happened (and a refused order looks
- * like a click that was ignored). A diamond rather than an arrow because it has
- * no direction to be wrong about: where it is, is the answer.
- */
-export function orderMarker(): PixelBuffer {
-  const mark = createPixelBuffer(ORDER_MARKER_SIZE, ORDER_MARKER_SIZE);
-  const centre = (ORDER_MARKER_SIZE - 1) / 2;
-
-  for (let step = 0; step <= centre; step += 1) {
-    const reach = Math.round(centre - step);
-    setPixel(mark, centre - reach, centre - step, SELECTION_INK);
-    setPixel(mark, centre + reach, centre - step, SELECTION_INK);
-    setPixel(mark, centre - reach, centre + step, SELECTION_INK);
-    setPixel(mark, centre + reach, centre + step, SELECTION_INK);
-  }
-  fillRect(mark, Math.floor(centre), Math.floor(centre), 1, 1, SELECTION_INK);
-
-  return mark;
 }
 
 /**

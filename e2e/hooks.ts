@@ -2,13 +2,14 @@ import { expect, type Page } from '@playwright/test';
 import type { Rgba } from '../src/art/pixel-buffer';
 import type { AtelierLayout } from '../src/render/atelier-layout';
 import type { ViewState } from '../src/render/boot';
-import type { HudModel, Rect, RowRect, Selection } from '../src/ui/hud';
-import type { GameSnapshot, SiteReport, SquadReport } from '../src/render/game';
+import type { HudLayout, HudModel, Rect, RowRect, Selection } from '../src/ui/hud';
+import type { GameSnapshot, SiteReport, SquadIndicator, SquadReport } from '../src/render/game';
 import type { MatchResult } from '../src/sim/driver';
 import type { Selection as PlayerSelection } from '../src/input/selection';
 import type { Command } from '../src/sim/command';
 import type { LoggedCommand } from '../src/sim/replay';
 import type { Knowledge } from '../src/sim/fog';
+import type { Notice } from '../src/ui/conditions';
 
 /**
  * Reading the page's debug hooks from a test.
@@ -101,6 +102,16 @@ export async function hud(page: Page): Promise<HudModel> {
     if (game === null) throw new Error('the page published no game hooks');
 
     return game.hud();
+  });
+}
+
+/** The whole HUD, placed: every rectangle the renderer drew and the hit test reads (#58). */
+export async function hudLayout(page: Page): Promise<HudLayout> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.hudLayout();
   });
 }
 
@@ -213,6 +224,31 @@ export async function sites(page: Page): Promise<readonly SiteReport[]> {
 
     return game.sites();
   });
+}
+
+/** The current-Match notice journal, as the page holds it (#58). */
+export async function notices(page: Page): Promise<readonly Notice[]> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.notices();
+  });
+}
+
+/** What the theatre annotates about each Squad (#58). */
+export async function indicators(page: Page): Promise<readonly SquadIndicator[]> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.indicators();
+  });
+}
+
+/** Centres the place a notice names, as clicking its line does (#58). */
+export async function centerNotice(page: Page, id: string): Promise<boolean> {
+  return page.evaluate((notice) => window.__SPQR.game?.centerNotice(notice) ?? false, id);
 }
 
 /** Turns the settlements' lens on or off, as the theatre pixel comparisons need. */

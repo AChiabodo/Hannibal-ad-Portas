@@ -42,13 +42,16 @@
 
 import {
   FIGURE_FACINGS,
+  FIGURE_FACTIONS,
   FIGURE_FRAMES,
   FIGURE_HEIGHT,
   FIGURE_NAMES,
   FIGURE_WIDTH,
+  INSIGNIA_HEIGHT,
   figureEntries,
   frameName,
   soldier,
+  standardInsignia,
 } from './figures.ts';
 import { GLYPHS, GLYPH_WIDTH, LINE_HEIGHT, drawText, measureText, textPlate } from './font.ts';
 import {
@@ -61,6 +64,7 @@ import {
   iconEntries,
 } from './icons.ts';
 import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from './nodes.ts';
+import { CONDITION_MARKS, FACING_MARKS, ORDER_MARK_KINDS, markerEntries } from './markers.ts';
 import { SITE_SIZE, SITE_SPECIMENS, settlementEntries, siteSprite } from './settlements.ts';
 import {
   SEPARATION_FACTIONS,
@@ -182,8 +186,8 @@ const SEPARATION_WIDTH =
 /** Height of the separation section: the captions, and a row per Faction. */
 const SEPARATION_HEIGHT = SEPARATION_CAPTION_HEIGHT + SEPARATION_FACTIONS.length * SEPARATION_CELL;
 
-/** The figure rows: one per soldier of the roster, and per direction. */
-const FIGURE_ROWS = FIGURE_NAMES.length * FIGURE_FACINGS.length;
+/** The figure rows: one per soldier of the roster and per direction, then the standards. */
+const FIGURE_ROWS = FIGURE_NAMES.length * FIGURE_FACINGS.length + FIGURE_FACTIONS.length;
 
 /** What every figure column's caption says, so a column is as wide as its own name. */
 const FIGURE_CAPTIONS: readonly string[] = FIGURE_FRAMES.map(frameName);
@@ -203,8 +207,35 @@ const FIGURE_LABEL_WIDTH = Math.max(
 /** Width of the figures section: a label, and one column per frame. */
 const FIGURES_WIDTH = FIGURE_LABEL_WIDTH + LABEL_GAP + FIGURE_FRAMES.length * FIGURE_CELL_WIDTH;
 
+/**
+ * The widest figure-row label, including the two standards' names.
+ *
+ * Kept in the figure section because the standards are the insignia a block of
+ * those figures carries: a reviewer judges "can I tell the two armies apart at
+ * the lowest zoom" on the same plate as the soldiers themselves (#58).
+ */
+const FIGURE_ROW_LABEL_WIDTH = Math.max(
+  FIGURE_LABEL_WIDTH,
+  ...FIGURE_FACTIONS.map((faction) => measureText(`insignia ${faction}`)),
+);
+
 /** Height of the figures section: the frame captions, and a row per soldier and direction. */
 const FIGURES_HEIGHT = LINE_HEIGHT + 3 + FIGURE_ROWS * FIGURE_CELL_HEIGHT;
+
+/** One cell of the marks section: the largest mark, and the air around it. */
+const MARK_CELL = 12;
+
+/** The three kinds of mark, one row each. */
+const MARK_ROW_LABELS: readonly string[] = ['order', 'facing', 'condition'];
+
+/** The widest mark-row label, which is what the marks clear. */
+const MARK_LABEL_WIDTH = Math.max(...MARK_ROW_LABELS.map((label) => measureText(label)));
+
+/** Width of the marks section: a label, and the longest row of marks. */
+const MARKS_WIDTH = MARK_LABEL_WIDTH + LABEL_GAP + CONDITION_MARKS.length * MARK_CELL;
+
+/** Height of the marks section: a row for each kind. */
+const MARKS_HEIGHT = MARK_ROW_LABELS.length * MARK_CELL;
 
 /** The icons section: a label, and one cell per icon or badge. */
 const ICON_CELL = ICON_TILE + 3;
@@ -247,6 +278,7 @@ export const PLATE_WIDTH =
     TERRAIN_WIDTH,
     SEPARATION_WIDTH,
     FIGURES_WIDTH,
+    MARKS_WIDTH,
     ICONS_WIDTH,
     SETTLEMENTS_WIDTH,
   );
@@ -254,16 +286,17 @@ export const PLATE_WIDTH =
 /** The plate's height, which the sections above add up to. */
 export const PLATE_HEIGHT =
   PLATE_PADDING * 2 +
-  HEADING_HEIGHT * 9 +
+  HEADING_HEIGHT * 10 +
   GLYPH_GRID_HEIGHT +
   RAMPS_HEIGHT +
   TERRAIN_HEIGHT +
   NODES_HEIGHT +
   SEPARATION_HEIGHT +
   FIGURES_HEIGHT +
+  MARKS_HEIGHT +
   ICONS_HEIGHT +
   SETTLEMENTS_HEIGHT +
-  SECTION_GAP * 8;
+  SECTION_GAP * 9;
 
 /**
  * Every artefact the art library generates, in a stable order: the glyphs in
@@ -291,6 +324,7 @@ export function catalogue(): readonly CatalogueEntry[] {
     ...nodeEntries(),
     ...separationEntries(),
     ...figureEntries(),
+    ...markerEntries(),
     ...iconEntries(),
     ...settlementEntries(),
   ];
@@ -456,7 +490,7 @@ export function cataloguePlate(): PixelBuffer {
     blit(
       plate,
       textPlate(FIGURE_CAPTIONS[index] ?? '', PLATE_INK),
-      PLATE_PADDING + FIGURE_LABEL_WIDTH + LABEL_GAP + index * FIGURE_CELL_WIDTH,
+      PLATE_PADDING + FIGURE_ROW_LABEL_WIDTH + LABEL_GAP + index * FIGURE_CELL_WIDTH,
       y,
     );
   }
@@ -479,7 +513,7 @@ export function cataloguePlate(): PixelBuffer {
         blit(
           plate,
           soldier(name, facing, frame),
-          PLATE_PADDING + FIGURE_LABEL_WIDTH + LABEL_GAP + index * FIGURE_CELL_WIDTH,
+          PLATE_PADDING + FIGURE_ROW_LABEL_WIDTH + LABEL_GAP + index * FIGURE_CELL_WIDTH,
           top,
         );
       }
@@ -488,9 +522,62 @@ export function cataloguePlate(): PixelBuffer {
     }
   }
 
-  // The figure captions stand above the rows, so the icons section starts after
+  // The two standards close the figure section: the insignia a block of those
+  // soldiers carries above it, in its own Faction's cloth (#58).
+  for (const faction of FIGURE_FACTIONS) {
+    const top = figuresTop + row * FIGURE_CELL_HEIGHT;
+    blit(
+      plate,
+      textPlate(`insignia ${faction}`, PLATE_INK),
+      PLATE_PADDING,
+      top + Math.floor((FIGURE_CELL_HEIGHT - LINE_HEIGHT) / 2),
+    );
+    blit(
+      plate,
+      standardInsignia(faction),
+      PLATE_PADDING + FIGURE_ROW_LABEL_WIDTH + LABEL_GAP,
+      top + Math.floor((FIGURE_CELL_HEIGHT - INSIGNIA_HEIGHT) / 2),
+    );
+    row += 1;
+  }
+
+  // The figure captions stand above the rows, so the marks section starts after
   // the rows themselves and not after the captions' own line.
   y = figuresTop + FIGURE_ROWS * FIGURE_CELL_HEIGHT + SECTION_GAP;
+
+  blit(plate, textPlate('marks', PLATE_INK), PLATE_PADDING, y);
+  y += HEADING_HEIGHT;
+
+  // The marks a Squad wears on the ground (#58): its destination, the way it
+  // faces, and the shapes its critical conditions take. They are drawn on the
+  // neutral plate with no ground under them, which is the question each has to
+  // answer first — a mark that only reads on grass is not a mark.
+  const markRows: readonly (readonly string[])[] = [
+    ORDER_MARK_KINDS.map((kind) => `order:${kind}`),
+    FACING_MARKS.map((facing) => `facing:${facing}`),
+    CONDITION_MARKS.map((kind) => `condition:${kind}`),
+  ];
+  for (const [rowIndex, labels] of markRows.entries()) {
+    blit(
+      plate,
+      textPlate(MARK_ROW_LABELS[rowIndex] ?? '', PLATE_INK),
+      PLATE_PADDING,
+      y + Math.floor((MARK_CELL - LINE_HEIGHT) / 2),
+    );
+    for (const [index, label] of labels.entries()) {
+      const entry = entries.find((candidate) => candidate.name === `mark:${label}`);
+      if (entry === undefined) continue;
+
+      blit(
+        plate,
+        entry.buffer,
+        PLATE_PADDING + MARK_LABEL_WIDTH + LABEL_GAP + index * MARK_CELL + Math.floor((MARK_CELL - entry.buffer.width) / 2),
+        y + Math.floor((MARK_CELL - entry.buffer.height) / 2),
+      );
+    }
+    y += MARK_CELL;
+  }
+  y += SECTION_GAP;
 
   blit(plate, textPlate('icons', PLATE_INK), PLATE_PADDING, y);
   y += HEADING_HEIGHT;

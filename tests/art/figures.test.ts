@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   FIGURE_ACTIONS,
   FIGURE_FACTION,
+  FIGURE_FACTIONS,
   FIGURE_FACINGS,
   FIGURE_FRAMES,
   FIGURE_HEIGHT,
@@ -24,6 +25,9 @@ import {
   figureFrame,
   frameName,
   soldier,
+  standardInsignia,
+  INSIGNIA_HEIGHT,
+  INSIGNIA_WIDTH,
   type FigureFacing,
   type FigureFrame,
   type FigureName,
@@ -214,7 +218,7 @@ describe('the figure catalogue', () => {
     const entries = figureEntries();
     const names = entries.map((entry) => entry.name);
 
-    expect(entries.length).toBe(FIGURE_NAMES.length * FIGURE_FACINGS.length * FIGURE_FRAMES.length);
+    expect(entries.length).toBe(FIGURE_NAMES.length * FIGURE_FACINGS.length * FIGURE_FRAMES.length + FIGURE_FACTIONS.length);
     expect(new Set(names).size).toBe(names.length);
 
     for (const name of FIGURE_NAMES) {
@@ -331,6 +335,43 @@ function silhouette(figure: FigureName): readonly boolean[] {
 
   return ink;
 }
+
+describe('the Faction standards', () => {
+  it('draws one per Faction, at one size, with ink in it', () => {
+    for (const faction of FIGURE_FACTIONS) {
+      const standard = standardInsignia(faction);
+
+      expect({ width: standard.width, height: standard.height }).toEqual({ width: INSIGNIA_WIDTH, height: INSIGNIA_HEIGHT });
+      expect(ink(standard), faction).toBeGreaterThan(20);
+    }
+  });
+
+  it('tells the two Factions apart by silhouette, with the cloth taken out', () => {
+    // The criterion is the ticket's own: the standard is the insignia a block is
+    // recognised by at the lowest zoom, so it has to differ in *shape* and not
+    // only in the colour of its cloth.
+    const shapes = FIGURE_FACTIONS.map((faction) => {
+      const standard = standardInsignia(faction);
+      const painted: number[] = [];
+      for (let y = 0; y < standard.height; y += 1) {
+        for (let x = 0; x < standard.width; x += 1) painted.push(pixelAt(standard, x, y)[3] === 0 ? 0 : 1);
+      }
+
+      return painted;
+    });
+
+    const [rome, carthage] = shapes;
+    expect(rome).toBeDefined();
+    expect(carthage).toBeDefined();
+    const differing = (rome ?? []).filter((pixel, index) => pixel !== (carthage ?? [])[index]).length;
+    expect(differing).toBeGreaterThanOrEqual(4);
+  });
+
+  it('draws the same standard twice, pixel for pixel', () => {
+    expect(hashPixelBuffer(standardInsignia('rome'))).toBe(hashPixelBuffer(standardInsignia('rome')));
+    expect(hashPixelBuffer(standardInsignia('carthage'))).not.toBe(hashPixelBuffer(standardInsignia('rome')));
+  });
+});
 
 describe('the two rosters', () => {
   it('draws every Squad type the content table knows, in its own Faction’s cloth', () => {

@@ -45,8 +45,6 @@ import {
   BUILDINGS,
   amountOf,
   pay,
-  squadTypeOf,
-  squadTypeCode,
   squadTypesOf,
   times,
   stockOf,
@@ -604,22 +602,14 @@ export function controlGroupViews(
     });
 }
 
-/** The content type a Squad names, or `undefined` when no table knows it. */
-function typeOf(squad: VisibleSquad): SquadType | undefined {
-  const code = squadTypeCode(squad.type);
-
-  return code === undefined ? undefined : squadTypeOf(code);
-}
-
-/** The men a Squad has left, against what its type is counted as at full strength. */
-export function menOf(squad: VisibleSquad): { readonly men: number; readonly max: number } {
-  return { men: squad.men, max: typeOf(squad)?.strength ?? squad.men };
-}
-
-/** The Morale a Squad has, against the most its type ever had. */
-export function moraleOf(squad: VisibleSquad): { readonly morale: number; readonly max: number } {
-  return { morale: squad.morale, max: typeOf(squad)?.morale ?? squad.morale };
-}
+/**
+ * What a Squad's figures are read against.
+ *
+ * The readers live in `ui/conditions.ts` (#58) because the warning thresholds are
+ * written against the same maxima; this module re-exports them so a panel that
+ * asks "how many men" does not have to know where the answer lives.
+ */
+export { menOf, moraleOf } from './conditions.ts';
 
 /** Whether an Observation is the Siege's own, which is what carries fronts and contacts. */
 export function isSiege(visible: EconomyVisible | SiegeVisible): visible is SiegeVisible {

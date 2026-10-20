@@ -71,6 +71,8 @@ import {
   MINIMAP_PLATE_WIDTH,
 } from './minimap.ts';
 import type { KnownSite } from './sites.ts';
+import type { Notice } from './conditions.ts';
+import type { ForecastLine } from './forecast.ts';
 import { message, refusalLabel, resourceLabel, seasonLabel, squadLabel, translate, workLabel } from './strings.ts';
 
 /** What a Player has selected, or `null` for nothing. */
@@ -187,6 +189,10 @@ export interface HudSession {
   readonly notice?: string | null;
   /** Whether the Match is over, which closes every offer. */
   readonly ended?: boolean;
+  /** What the Faction has been told this Match, newest concern first (#58). */
+  readonly notices?: readonly Notice[];
+  /** The next Season boundary's effect on the Treasury, when derivable (#58). */
+  readonly forecast?: ForecastLine | null;
   /**
    * Every place the Faction may see, as `ui/sites.ts` reads its Observation (U6).
    *
@@ -215,6 +221,9 @@ export interface HudView {
   readonly listOffset?: number;
   readonly detailOffset?: number;
   readonly commandOffset?: number;
+  /** Whether the notice history is open, and how far it is scrolled (#58). */
+  readonly noticesOpen?: boolean;
+  readonly noticeOffset?: number;
 }
 
 export interface HudText {
@@ -228,7 +237,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack';
+export type HudAction = 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext';
 
 export interface HudButton {
   readonly action: HudAction;
@@ -267,6 +276,10 @@ export interface HudModel {
   readonly groups: readonly ControlGroupView[];
   /** What is armed, queued or just given. */
   readonly orders: HudOrdersView;
+  /** The current-Match notice history, conditions first and events newest first (#58). */
+  readonly notices: readonly Notice[];
+  /** The economy's labelled estimate, or the reason there is none (#58). */
+  readonly forecast: ForecastLine | null;
 }
 
 /** The viewport the HUD is composed for, in screen pixels. */
@@ -330,6 +343,12 @@ export interface HudLayout {
   readonly commandRules: readonly Rect[];
   /** How far the command list is scrolled, and how far it can be. */
   readonly commandScroll: HudScroll;
+  /** The notice panel: the current conditions, the recent events and the forecast. */
+  readonly notices: Rect;
+  /** Where each notice's lines stand, so a click can centre what it names. */
+  readonly noticeRows: readonly NoticeRect[];
+  /** How far the notice lines are scrolled, and how far they can be. */
+  readonly noticeScroll: HudScroll;
 }
 
 /** A contextual action and the rectangle a click presses it in. */
@@ -350,12 +369,19 @@ export interface GroupRect {
   readonly rect: Rect;
 }
 
+/** One line of a notice, and the notice it belongs to. */
+export interface NoticeRect {
+  readonly id: string;
+  readonly rect: Rect;
+}
+
 /** What a click on the interface lands on, in the order the panels stack. */
 export type HudHit =
   | { readonly kind: 'selection'; readonly selection: Selection }
   | { readonly kind: 'order'; readonly order: OrderOption }
   | { readonly kind: 'tab'; readonly tab: SettlementTab }
   | { readonly kind: 'group'; readonly index: number }
+  | { readonly kind: 'notice'; readonly id: string }
   | { readonly kind: 'button'; readonly action: HudAction };
 
 /** Air between a panel's edge and its text. */
@@ -492,6 +518,8 @@ export function hudModel(
       backToGroup: session.backToGroup ?? false,
       notice: session.notice ?? null,
     },
+    notices: session.notices ?? [],
+    forecast: session.forecast ?? null,
   };
 }
 
@@ -583,7 +611,8 @@ export function hudLayout(model: HudModel, size: HudSize): HudLayout {
 
   return { size, bar, list, detail, minimap, readouts, headers, rows, text, priority, buttons, listScroll, detailScroll,
     commands: [], tabs: [], groups: [], exceptions: [], status: [], commandRules: [],
-    commandScroll: scrollWindow(0, 0, 1) };
+    commandScroll: scrollWindow(0, 0, 1),
+    notices: { x: 0, y: 0, width: 0, height: 0 }, noticeRows: [], noticeScroll: scrollWindow(0, 0, 1) };
 }
 
 /** Wraps every glyph, including a value with no spaces; nothing is ellipsised away. */
@@ -617,7 +646,7 @@ function scrollWindow(requested: number, total: number, height: number): HudScro
   return { offset, max, page };
 }
 
-function addScrollButtons(buttons: HudButton[], rect: Rect, region: 'list' | 'detail' | 'commands', scroll: HudScroll): void {
+function addScrollButtons(buttons: HudButton[], rect: Rect, region: 'list' | 'detail' | 'commands' | 'notices', scroll: HudScroll): void {
   if (scroll.max === 0) return;
   const y = rect.y + rect.height - 2 * LINE_STEP - 1;
   buttons.push({ action: `${region}Previous`, text: translate('ui.previous'),
@@ -696,6 +725,9 @@ export function hudHit(model: HudModel, size: HudSize, x: number, y: number): Hu
   for (const group of layout.groups) {
     if (contains(group.rect, x, y)) return { kind: 'group', index: group.index };
   }
+  for (const notice of layout.noticeRows) {
+    if (contains(notice.rect, x, y)) return { kind: 'notice', id: notice.id };
+  }
   for (const exception of layout.exceptions) {
     if (contains(exception.rect, x, y)) return { kind: 'selection', selection: exception.selection };
   }
@@ -722,6 +754,9 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
   panel(buffer, layout.bar);
   panel(buffer, layout.list);
   panel(buffer, layout.detail);
+  // The notice strip is a panel like any other: opaque, so a warning reads over a
+  // forest exactly as it reads over a field.
+  if (layout.notices.height > 0) panel(buffer, layout.notices);
   const scale = model.view.desktop ? model.view.uiScale ?? 2 : 1;
   drawReadouts(buffer, layout.readouts, scale);
 
@@ -1621,10 +1656,85 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     }
   }
 
+  // The notice strip (#58): the current conditions, the recent events and the
+  // economy's labelled estimate, floating over the theatre's top-right corner and
+  // clear of the bar above and the minimap below. It is the one panel that is not
+  // in the detail area, because a warning a Player has to go looking for is not a
+  // warning. A location-bearing line is a control: clicking it centres the place.
+  const noticeWidth = 178;
+  const noticeInner = noticeWidth - 2 * PADDING - 2;
+  const forecastLines = model.forecast === null
+    ? []
+    : wrapText(`${model.forecast.label}: ${model.forecast.value}`, noticeInner);
+  const noticeLines = model.notices.flatMap((notice) => wrapText(noticeLine(notice), noticeInner)
+    .map((line) => ({ id: notice.id, text: line })));
+  const expanded = model.view.noticesOpen === true;
+  const hasNotices = model.notices.length > 0;
+  const headerHeight = hasNotices ? LINE_STEP + 4 : 0;
+  const room = Math.max(1, Math.min(expanded ? 8 : 3, Math.floor((height - bar.height - MINIMAP_PLATE_HEIGHT) / LINE_STEP) - 2));
+  const noticePage = Math.max(1, room - forecastLines.length);
+  const noticeScroll = scrollWindow(model.view.noticeOffset ?? 0, noticeLines.length, noticePage * LINE_STEP);
+  const shownNotices = noticeLines.slice(noticeScroll.offset, noticeScroll.offset + noticeScroll.page);
+  const scrollHeight = noticeScroll.max > 0 && expanded ? 2 * LINE_STEP + 2 : 0;
+  const panelHeight = (hasNotices || forecastLines.length > 0)
+    ? headerHeight + shownNotices.length * LINE_STEP + forecastLines.length * LINE_STEP + scrollHeight + 2 * PADDING
+    : 0;
+  const noticePanel: Rect = { x: Math.max(0, width - noticeWidth - 2), y: bar.height + 2, width: noticeWidth, height: panelHeight };
+  const noticeRows: NoticeRect[] = [];
+  let noticeY = noticePanel.y + PADDING;
+  if (hasNotices) {
+    buttons.push({
+      action: 'notices',
+      text: message(expanded ? 'ui.noticeClose' : 'ui.noticesCount', { count: model.notices.length }),
+      rect: { x: noticePanel.x + PADDING, y: noticeY, width: noticeWidth - 2 * PADDING, height: LINE_STEP + 3 },
+      enabled: true,
+    });
+    noticeY += headerHeight;
+  }
+  for (const [index, line] of shownNotices.entries()) {
+    const rect = { x: noticePanel.x + PADDING, y: noticeY + index * LINE_STEP, width: noticeInner, height: LINE_STEP };
+    // A standing condition is written in the brighter ink and an event in the
+    // quieter one: the two are different kinds of statement, and the strip says so
+    // before a Player reads the words.
+    const found = model.notices.find((notice) => notice.id === line.id);
+    if (found?.persistent === true) priority.push({ text: line.text, rect });
+    else text.push({ text: line.text, rect });
+    // Only a line that names a place is a control: a notice with no target has
+    // nowhere to centre and is text (the winter countdown, a Squad that is gone).
+    if (found?.target != null) noticeRows.push({ id: line.id, rect });
+  }
+  noticeY += shownNotices.length * LINE_STEP;
+  for (const [index, line] of forecastLines.entries()) {
+    text.push({ text: line, rect: { x: noticePanel.x + PADDING, y: noticeY + index * LINE_STEP, width: noticeInner, height: LINE_STEP } });
+  }
+  if (noticeScroll.max > 0 && expanded) {
+    addScrollButtons(buttons, { x: noticePanel.x + 1, y: noticeY + forecastLines.length * LINE_STEP,
+      width: noticeWidth - 2, height: 2 * LINE_STEP + 1 }, 'notices', noticeScroll);
+  }
+
   const rect = (r: Rect): Rect => ({ x: r.x * scale, y: r.y * scale, width: r.width * scale, height: r.height * scale });
   const placed = <T extends { readonly rect: Rect }>(items: readonly T[]): T[] => items.map((item) => ({ ...item, rect: rect(item.rect) }));
   return { size, bar: rect(bar), list: rect(list), detail: rect(detail), minimap: rect(minimap),
     readouts: placed(readouts), headers: placed(headers), rows: placed(rows), text: placed(text), priority: placed(priority),
     buttons: placed(buttons), listScroll, detailScroll, commands: placed(commands), tabs: placed(tabs), groups: placed(groups),
-    exceptions: placed(exceptions), status: placed(status), commandRules: commandRules.map(rect), commandScroll };
+    exceptions: placed(exceptions), status: placed(status), commandRules: commandRules.map(rect), commandScroll,
+    notices: rect(noticePanel), noticeRows: placed(noticeRows), noticeScroll };
+}
+
+/**
+ * One notice as a Player reads it: a mark that says whether it is a standing
+ * condition or a moment's event, the line, and the figure or reason beside it.
+ *
+ * The mark is a glyph and not a coloured dot, because the ticket asks critical
+ * signals to carry a shape or a word as well as a colour: `!` is something that is
+ * true now, `>` is something that just happened and can be acted on. A notice
+ * whose target has gone says so instead of pretending to still point somewhere.
+ */
+function noticeLine(notice: Notice): string {
+  const text = notice.detail === null
+    ? notice.label
+    : message('notice.withDetail', { label: notice.label, detail: notice.detail });
+  const line = message(notice.persistent ? 'notice.standing' : 'notice.event', { text });
+
+  return notice.lost ? message('notice.lostText', { text: line, lost: translate('ui.noticeLost') }) : line;
 }

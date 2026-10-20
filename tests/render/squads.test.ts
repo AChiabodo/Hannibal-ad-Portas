@@ -23,7 +23,6 @@ import {
   blockPlacement,
   blockSize,
   frameStepOf,
-  orderMarker,
   squadBlock,
   squadFrameKey,
   type BlockShape,
@@ -250,14 +249,5 @@ describe('where a block stands', () => {
     // The block got a rank shorter and its top edge moved down by exactly that,
     // so the men in the ranks that are left are drawn where they were.
     expect(thinTop - fullTop).toBe(4);
-  });
-
-  it('draws the mark of an order as a diamond of its own size', () => {
-    const mark = orderMarker();
-
-    expect(mark.width).toBe(mark.height);
-    expect(ink(mark)).toBeGreaterThan(0);
-    // Hollow: the middle of the four edges is ink and the corners are not.
-    expect(pixelAt(mark, 0, 0)[3]).toBe(0);
   });
 });

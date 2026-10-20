@@ -343,6 +343,26 @@ One labelled figure the interface always shows — the year, the Season, the tre
 _UI_: —
 _Avoid_: Stat, indicator, counter
 
+**Standard**:
+The Faction's insignia carried above a Squad's block on the map: a rectangular banner for Rome and a swallow-tailed pennant for Carthage, in the same cloth as its soldiers. It marks the Faction where a mass of overlapping shields hides the cloth, and it is drawing and nothing else.
+_UI_: Insegna
+_Avoid_: Flag, banner (a banner is the shape a standard takes), icon
+
+**Condition**:
+What the theatre says about a Squad beyond its block: its Morale as the primary figure, and the shapes of the critical conditions it is in. A selected Squad wears a full plate; an unselected one in trouble wears a single shape; a healthy Squad nobody has chosen wears nothing.
+_UI_: Condizione
+_Avoid_: Status, state (state is the Match's), health
+
+**Notice**:
+A line the interface tells a Player about the Match: a condition that is true now (a low Morale, a rout, an unpaid Season, a ground the Squad is cut off from, the winter boundary close) or a brief event (an order refused, contact made, a Siege opened). Notices are deduplicated, kept in a compact history for the current Match, and carry only what the Faction's Observation holds; one that names a place can be clicked to centre it while that place is known.
+_UI_: Avviso
+_Avoid_: Alert, warning (a warning is the presentation threshold that raises a notice), message, toast
+
+**Forecast**:
+The interface's estimate of what the next Season boundary will do to the Treasury — production and tax first, then Payroll in the Squads' own order — shown only when the Faction's own knowledge makes it exact, and labelled as an estimate. It is presentation and decides nothing.
+_UI_: Stima
+_Avoid_: Prediction, projection, budget
+
 **Selection**:
 What the Player has picked — a settlement, or one or more Squads — and the panel that follows it. The settlement may be one the Faction knows rather than one it holds: an enemy Stronghold in sight, a village it remembers, a village nobody holds, each opened by clicking the structure drawn on the map (ADR-0025). It is the Player's own memory rather than Match state: nothing else can see it and it decides nothing on its own. A box selects every Squad it touches; one order goes to all of them, while the panel shows the first one picked. There is one selection at a time, and nothing selected is a state rather than an error.
 _UI_: Selezione

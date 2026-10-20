@@ -281,6 +281,44 @@ export const STRINGS = {
   'ui.holder': { it: 'Titolare', en: 'Holder' },
   'ui.unclaimed': { it: 'Nessuno', en: 'Nobody' },
 
+  // What the theatre and the journal say about a Squad's condition (#58). The
+  // thresholds behind these words are presentation conventions (Q16), not rules.
+  'notice.morale': { it: 'Morale basso: {name}', en: 'Low morale: {name}' },
+  'notice.fatigue': { it: 'Fatica alta: {name}', en: 'High fatigue: {name}' },
+  'notice.ammunition': { it: 'Munizioni esaurite: {name}', en: 'Out of missiles: {name}' },
+  'notice.routing': { it: 'In rotta: {name}', en: 'Routing: {name}' },
+  'notice.unpaid': { it: 'Soldo non pagato: {name}', en: 'Payroll unpaid: {name}' },
+  'notice.seasons': { it: '{count} stagioni', en: '{count} seasons' },
+  'notice.supply': { it: 'Fuori rifornimento: {name}', en: 'Out of supply: {name}' },
+  'notice.winter': { it: 'Inverno in arrivo', en: 'Winter approaching' },
+  'notice.seconds': { it: 'tra {seconds} s', en: 'in {seconds} s' },
+  'notice.blockade': { it: 'Blocco su {name}', en: 'Blockade at {name}' },
+  'notice.refusal': { it: 'Ordine rifiutato: {name} - {reason}', en: 'Order refused: {name} - {reason}' },
+  'notice.engaged': { it: 'A contatto: {name}', en: 'In contact: {name}' },
+  'notice.loss': { it: 'Reparto perduto: {name}', en: 'Squad lost: {name}' },
+  'notice.siege': { it: 'Assedio su {name}', en: 'Siege at {name}' },
+  // How a notice is written: the mark that says whether it is standing or an
+  // event, the detail beside it, and the suffix a lost target wears.
+  'notice.standing': { it: '! {text}', en: '! {text}' },
+  'notice.event': { it: '> {text}', en: '> {text}' },
+  'notice.withDetail': { it: '{label}: {detail}', en: '{label}: {detail}' },
+  'notice.lostText': { it: '{text} ({lost})', en: '{text} ({lost})' },
+  'ui.noticesCount': { it: 'Avvisi ({count})', en: 'Notices ({count})' },
+  'ui.noticeClose': { it: 'Chiudi avvisi', en: 'Close notices' },
+  'ui.noticeLost': { it: 'Posizione non più nota', en: 'Position no longer known' },
+
+  // The economy's forecast (#58): an estimate, in words that say so, and only
+  // when the Season boundary's own order (production, tax, then Payroll) makes it
+  // derivable from what the Faction knows.
+  'forecast.title': { it: 'Stima prossimo soldo', en: 'Next payroll estimate' },
+  'forecast.net': { it: '{amount} denari', en: '{amount} denarii' },
+  'forecast.value': { it: '{net} - {unpaid} ({season})', en: '{net} - {unpaid} ({season})' },
+  'forecast.unpaid': { it: '{count} reparti non pagati', en: '{count} Squads unpaid' },
+  'forecast.none': { it: 'tutti pagati', en: 'all paid' },
+  'forecast.unavailable': { it: 'Non disponibile: {reason}', en: 'Not available: {reason}' },
+  'forecast.blockaded': { it: 'insediamento bloccato', en: 'a settlement is blockaded' },
+  'forecast.season': { it: 'al confine di {season}', en: 'at the {season} boundary' },
+
   // The Factions, as a Player reads them.
   'faction.rome': { it: 'Roma', en: 'Rome' },
   'faction.carthage': { it: 'Cartagine', en: 'Carthage' },
