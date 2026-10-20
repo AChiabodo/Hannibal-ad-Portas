@@ -514,6 +514,10 @@ test.describe('the theatre’s annotations', () => {
       await advance(page, 1);
     }
     for (const squad of marching) {
+      if (squad.fatigue < 15) await test.info().attach('fatigue-scene', {
+        body: JSON.stringify({ raised, bound, home, view, current: await describeView(page), marching: await squads(page) }, null, 2),
+        contentType: 'application/json',
+      });
       expect(squad.fatigue, `Squad ${String(squad.id)}: the march tired it`).toBeGreaterThanOrEqual(15);
     }
 

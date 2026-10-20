@@ -108,8 +108,10 @@ npx playwright test e2e/appearance.spec.ts --project=chromium --workers=2 --outp
 
 For before frames, use a detached checkout of the base revision, copy the committed
 `e2e/appearance.spec.ts` into it, and run the same command with
-`$env:SPQR_VISUAL_PHASE='before'`. The UI-focus-only regression is intentionally
-skipped on that revision. Delete that environment override for candidate frames.
+`$env:SPQR_VISUAL_PHASE='before'`. The new keyboard/economy and critical fixture
+matrix regressions are candidate-only and explicitly skip on the base revision;
+the comparison-frame routines use equivalent pointer actions there. Delete that
+environment override for candidate frames.
 No PNG is committed (ADR-0002).
 
 The primary spec tests every military and economy command at both desktop sizes for both
@@ -119,13 +121,117 @@ Functional and additional evidence producers are `acceptance`, `first-entry`,
 `commands`, `desktop`, `hud-repair`, `orders`, `surface`, `settlements`,
 `readability`, `terrain-readability` and `atelier` browser specs.
 
-Final command results, inspected supplementary paths and the independent review
-record are appended after the final verification run.
+The final source passed `npm run verify`: **110 files / 1297 tests**, lint,
+TypeScript, repository/AI guards and production build. `npm run bake` regenerated
+**509 artefacts**, including the catalogue. Final Chromium results are recorded below.
 
 The overflow fixture now holds 48 Squads and nine Works: the compact dock makes
 the old 28-row navigator fit entirely at 1080p. Increasing only the authored test
 scene preserves a real overflow check instead of requiring unnecessary scrolling
 or weakening the assertion.
+
+An intermediate full-browser pass exposed an Atelier regression: the vertically
+stacked UI specimens made its 4x framebuffer 15445 pixels tall. Chromium returned
+transparent pixels and logged an out-of-range texture. Placing the UI beside the
+original art preserves every entry and original art coordinate, with a 1107x1964
+catalogue and a 7781x7885 Atelier canvas. The existing GPU pixel/magnification tests
+pass; a public layout regression keeps both dimensions inside 8192 pixels.
+
+Two old browser scenes needed corresponding geometry updates, with their strict
+assertions retained: the Squad pixel comparison now places the public
+representative shape, and the notice test pans into the theatre before pressing
+Centre (negative panning already hit the home corner's clamp with the taller
+viewport). Zoom evidence selects a known Squad and recentres it at each zoom,
+so the reviewed army remains on screen rather than magnifying empty terrain.
+
+## Inspected evidence and supplementary verdicts
+
+Actual image input included the primary frames above and the following labelled
+before/after contact sheets under `%TEMP%/spqr-issue62/review-sheets/`:
+`{panels,orders,groups,entry,menus}-{side}-{size}.png`. Crops retain the original
+bottom-panel area to make the recovered theatre visible. Native setup, armed,
+pending, mixed, result and Siege frames were also opened to check text without
+the contact sheets' overview scaling.
+
+Additional actual image input:
+
+- `economy-{build,recruit}-{side}-{size}.png` contact sheets: all offers, including
+  locked and scrolled rows, with their keyboard focus and cost/refusal text.
+- `zoom-comparison-{side}-{size}.png` contact sheets: before/after at 1x, 2x,
+  4x and 8x, centred on the selected Squad; native
+  `after/zoom2-rome-1280x720.png` additionally checks the compact card and army.
+- `critical-{side}-{size}.png` contact sheets: four Siege stages, army-visible
+  and structure-only; native `after/siege-ram-structure-rome-1280x720.png` and
+  `after/siege-breach-carthage-1920x1080.png`, plus a nearest-neighbour crop of
+  the latter's structure-only frame, resolve gate/ram detail.
+- `supplement-{dock,map}-{side}-{size}.png` contact sheets compare the following
+  committed `e2e/acceptance.spec.ts` producers, from
+  `%TEMP%/spqr-issue62/before/spqr-issue59/` and `%TEMP%/spqr-issue59/`.
+- `%TEMP%/spqr-issue57/remembered-stronghold-rome.png`, produced by
+  `e2e/settlements.spec.ts`, and `artifacts/catalogue.png` from `npm run bake`.
+  The catalogue was opened after the framebuffer repair; its UI/formation
+  column and original art column are both visible. Individual baked setup,
+  construction, armed/pending, options, result and control specimens were also
+  opened during implementation.
+- `%TEMP%/spqr-issue62/icons-before-after.png` compares all ten authored command
+  masks at native size and enlarged nearest-neighbour size, from the two bakes.
+
+| Supplementary producer / frame prefix | Before verdict | Final verdict and Player reason |
+| --- | --- | --- |
+| `long-list-{side}-{size}.png` | **keep** numbered rows and explicit scrolling | **keep**: I see more rows above the smaller dock; a longer authored army still exposes real scroll controls |
+| `long-text-{side}-{size}.png` | **change**: stocks cross tabs and detail ends under scroll controls | **keep**: short facts pair up, long Works sentences wrap, and scrolling reaches the remaining facts |
+| `critical-{side}-{size}.png` | **keep** the factual Morale/Fatigue/Payroll values; change their density | **keep**: critical values and disabled commands remain legible in the compact card |
+| `refused-order-{side}-{size}.png` | **keep**: the order says deep water rather than silently failing | **keep**: the refusal remains beside the selected Squad and the notice can centre it |
+| `fog-states-{side}-{size}.png` | **keep** the three knowledge states | **keep**: bright current ground, dim remembered ground and unknown black remain distinct; the larger theatre reveals only permitted knowledge |
+| `remembered-stronghold-rome.png` and the catalogue's remembered-site specimens | **keep** the neutral memory silhouette | **keep**: I can find the known place without being told its current owner, stocks or unseen Siege state |
+| `artifacts/catalogue.png` | **change**: UI surfaces were missing; the first vertical extension exceeded the framebuffer | **keep**: controls, panels and original art can be inspected together at all three Atelier zooms |
+
+The overflow scene deliberately differs in authored count (28 -> 48 Squads,
+five -> nine Works); it compares the same overflow condition, not an identical
+army population. Unknown places have no place panel or command target to review.
+Remembered terrain is exercised for both Factions and desktop sizes; the shared
+neutral remembered Stronghold generator is additionally inspected in the Roman
+fixture and Atelier. Offensive ram construction is Roman-only: the Carthaginian
+critical matrix reviews the same front as defender, while its own Assault refusal
+is reviewed separately. Actual victory/defeat layouts share the result generator;
+the Match matrices show real defeats and the Atelier shows victory.
+
+## Deliberate art pins
+
+`tests/art/pixel-hash.test.ts` deliberately records the ten redrawn command icons,
+five new interface specimens and ten new UI/formation specimens listed below.
+The aggregate catalogue pin moves from `280d0f795302fecb` to
+`e484917786b1c83b` after actual image inspection, including the final side-by-side
+layout. The intermediate vertical layout's pin was superseded. Individual figure,
+terrain, glyph, palette, badge and settlement generators retain their previous pins.
+
+| Artefact | Accepted hash |
+| --- | --- |
+| `icon:move` | `952e726e0eb37f6a` |
+| `icon:attackMove` | `53964edea73a915a` |
+| `icon:attack` | `11b74db46105d1bd` |
+| `icon:hold` | `a5f3b42e4270dc84` |
+| `icon:withdraw` | `cb788016de9614fa` |
+| `icon:line` | `283aa81ffa65652a` |
+| `icon:column` | `b3e799eba94c99d2` |
+| `icon:garrison` | `c7dd4c2e78f23077` |
+| `icon:assault` | `d874def643ce88c4` |
+| `icon:blockade` | `81721f3e3139d215` |
+| `interface:idle` | `949bdad4ac7c1977` |
+| `interface:selected` | `441968d0f235a997` |
+| `interface:armed` | `7ccadea48dd904b7` |
+| `interface:disabled` | `4612506f4557e9b7` |
+| `interface:focus` | `74aad50e7b9be297` |
+| `ui:setup` | `82906ab423edd8b4` |
+| `ui:squad` | `69db12c004c98aa7` |
+| `ui:armed-pending` | `be5b1e5381012a2d` |
+| `ui:construction` | `02bca410e02e4c6e` |
+| `ui:options` | `1e03d0df52d0241e` |
+| `ui:result` | `e641e2c442783d44` |
+| `ui:rome-line` | `fde3a2c084513c3a` |
+| `ui:rome-column` | `a08469a1781f8143` |
+| `ui:carthage-line` | `73b1d1b02cffe05a` |
+| `ui:carthage-column` | `4b56aa9f36f49c4a` |
 
 ## Independent review
 
@@ -139,12 +245,48 @@ offer by keyboard as well as pointer. Those tests additionally found a focus bug
 military hover logic could suppress a settlement's last-order line and move its
 rows while traversing them. Restricting that logic to Squad cards keeps economy
 rows stable. Reviewing the new Siege frames exposed the Centre bug described above.
+Both axes then reviewed the incremental fixes: **0 remaining Standards findings,
+0 remaining Spec findings**. Their source review does not substitute for the
+rendered inspection or final browser run.
 
 Two unit tests exceeded their unchanged five-second limits when the full Node
 suite competed with the Chromium matrix (`rules.test.ts`, `repo-fences.test.ts`).
 Both were timeout failures, not hash/guard mismatches. The subsequent serial
 `npm run verify` passed all **110 files / 1296 tests**, lint, types, guards and build;
 no timeout or production rule was changed.
+
+One complete Chromium attempt finished **140 passed / 1 failed**: the existing
+fatigue-march scenario left one Squad at 12 rather than 15 Fatigue. Its unchanged
+march/assertion logic then passed three serial and eight two-worker replays. The
+cause was not reproduced, so it is not claimed fixed by a guessed rule change.
+The spec now attaches the public scene/view/Squad reports if that threshold fails,
+to retain evidence rather than discard the failure. No threshold, retry count or
+timeout was relaxed. The final complete rerun is recorded below.
+
+## Final command record
+
+The final complete Chromium rerun passed **141 / 141 tests** in 8.1 minutes,
+with two workers and no retries. This includes the fatigue scenario, every
+required command/desktop/HUD/orders/surface suite, the complete appearance matrix,
+Atelier GPU pixels, fog, settlement and terrain zoom checks. Production code is
+the reviewed `3b89914`; the only subsequent executable edit adds failure evidence
+to that existing fatigue test. No image is committed.
+
+| Command | Verified result |
+| --- | --- |
+| `npm run verify` | 110 files / 1297 tests passed; lint, types, guards and production build passed |
+| `npm run bake` | 509 artefacts regenerated; final catalogue hash `e484917786b1c83b` |
+| Baseline `e2e/appearance.spec.ts --grep 'review frames'` with `SPQR_VISUAL_PHASE=before` | 4 passed; both Factions and desktop sizes, including recentered zoom evidence |
+| Fatigue regression, unchanged logic | 3 serial + 8 two-worker repetitions passed after the 140/1 run |
+| Final diagnostic-only edit | `npm run lint` and `npm run check` passed |
+| `npx playwright test --project=chromium --workers=2 --output=test-results/issue62-acceptance-final` | 141 passed, zero failures/skips/retries |
+
+Final logs are `%TEMP%/spqr-issue62-verify-complete.log`,
+`%TEMP%/spqr-issue62-bake-final.log`, `%TEMP%/spqr-issue62-before-final.log`
+and `%TEMP%/spqr-issue62-acceptance-final.log`. The diagnostic repeat logs are
+`%TEMP%/spqr-issue62-fatigue-diagnosis.log` and
+`%TEMP%/spqr-issue62-fatigue-parallel.log`; the earlier 140/1 result is retained in
+`%TEMP%/spqr-issue62-final-browser.log`, not presented as a passing run.
 
 ## Gates outside this delivery
 
