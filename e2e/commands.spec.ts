@@ -405,6 +405,11 @@ test('Carthage is told it has no ram, and may still blockade', async ({ page }) 
   });
   expect(model.commands.find((order) => order.id === 'blockade')?.enabled).toBe(true);
 
+  // Pressing a control that cannot be used answers in words in the panel, rather
+  // than swallowing the press: that is how an icon's limit is learned.
+  await pressCommand(page, 'assault');
+  expect((await hud(page)).orders.notice).toContain(translate('reason.noRam'));
+
   await pressButton(page, 'center');
   await pressCommand(page, 'blockade');
   await clickTile(page, site!.x, site!.y);
@@ -547,6 +552,27 @@ test('renders the contextual panels at 1280x720 and 1920x1080, for both Factions
 
       const status = await page.evaluate(() => window.__SPQR.game!.hudLayout().status.map((line) => line.text));
       expect(status.join(' ')).toContain('Mira');
+
+      // The card is rows of decisions, three of them, and every picture is ink on
+      // the frame the page presented — sampled live, not inferred from the model.
+      const card = await page.evaluate(() => {
+        const game = window.__SPQR.game!;
+        const layout = game.hudLayout();
+        const rows = new Set(layout.commands.map((command) => command.rect.y)).size;
+        const icons = layout.commands.slice(0, 3).map((command) => {
+          const points: [number, number][] = [];
+          for (let y = command.rect.y + 4; y < command.rect.y + 34; y += 3) {
+            for (let x = command.rect.x + 4; x < command.rect.x + command.rect.width - 4; x += 3) points.push([x, y]);
+          }
+          return new Set(window.__SPQR.view!.samples(points).map((rgba) => rgba.join(','))).size;
+        });
+
+        return { rows, icons };
+      });
+      expect(card.rows).toBe(3);
+      // Two at least: the panel's ground and the picture on it. A muted control is
+      // one ink, so asking for more would fail on exactly the state it tests.
+      for (const colours of card.icons) expect(colours).toBeGreaterThan(1);
       await page.keyboard.press('Escape');
 
       expect(await page.evaluate(() => window.__SPQR.game!.hud().commands.length)).toBeGreaterThan(0);

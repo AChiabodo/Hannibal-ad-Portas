@@ -40,6 +40,10 @@ bootRenderer(requireMount('app'), {
   },
 })
   .then((view) => {
+    // Paused before the page publishes anything, so the scene a test reads is the
+    // scene the fixture arranged: a frame of wall clock before the first `pause()`
+    // would be a contact round nobody asked for.
+    view.pause();
     publishHooks({ boot: { booted: true, render: view.probe }, game: view, view, atelier: null });
   })
   .catch((error: unknown) => failBoot(error, 'app'));

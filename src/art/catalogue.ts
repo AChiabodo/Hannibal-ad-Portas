@@ -26,7 +26,10 @@
  * - **nodes**, the four resource markers B3 stands on that ground;
  * - **figures**, the soldiers of C2: one row per soldier and direction, one
  *   column per animation frame — the whole Roman roster, in the four ways it can
- *   face and the four things it can do.
+ *   face and the four things it can do;
+ * - **icons**, the command card and the badges the panels read figures with
+ *   (#55): one row of verbs and one row of costs, so the pictures a Player
+ *   presses can be judged beside everything else the library draws.
  */
 
 import {
@@ -40,6 +43,15 @@ import {
   soldier,
 } from './figures.ts';
 import { GLYPHS, GLYPH_WIDTH, LINE_HEIGHT, drawText, measureText, textPlate } from './font.ts';
+import {
+  BADGE_NAMES,
+  BADGE_TILE,
+  COMMAND_ICON_NAMES,
+  ICON_TILE,
+  badgeIcon,
+  commandIcon,
+  iconEntries,
+} from './icons.ts';
 import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from './nodes.ts';
 import { BASE, RAMPS, RAMP_NAMES, RAMP_SHADES } from './palette.ts';
 import { type PixelBuffer, blit, createPixelBuffer, fillRect } from './pixel-buffer.ts';
@@ -162,20 +174,40 @@ const FIGURES_WIDTH = FIGURE_LABEL_WIDTH + LABEL_GAP + FIGURE_FRAMES.length * FI
 /** Height of the figures section: the frame captions, and a row per soldier and direction. */
 const FIGURES_HEIGHT = LINE_HEIGHT + 3 + FIGURE_ROWS * FIGURE_CELL_HEIGHT;
 
+/** The icons section: a label, and one cell per icon or badge. */
+const ICON_CELL = ICON_TILE + 3;
+const BADGE_CELL = BADGE_TILE + 4;
+
+/** The labels down the side of the icons section. */
+const ICON_ROW_LABELS: readonly string[] = ['commands', 'badges'];
+
+/** The widest of them, which is what the icons clear. */
+const ICON_LABEL_WIDTH = Math.max(...ICON_ROW_LABELS.map((label) => measureText(label)));
+
+/** Width of the icons section: the longer of its two rows. */
+const ICONS_WIDTH = ICON_LABEL_WIDTH + LABEL_GAP + Math.max(
+  COMMAND_ICON_NAMES.length * ICON_CELL,
+  BADGE_NAMES.length * BADGE_CELL,
+);
+
+/** Height of the icons section: a commands row and a badges row. */
+const ICONS_HEIGHT = 2 * ICON_CELL;
+
 /** The plate's width: the padding, and whichever section is wider. */
 export const PLATE_WIDTH =
-  PLATE_PADDING * 2 + Math.max(GLYPH_GRID_WIDTH, RAMPS_WIDTH, TERRAIN_WIDTH, FIGURES_WIDTH);
+  PLATE_PADDING * 2 + Math.max(GLYPH_GRID_WIDTH, RAMPS_WIDTH, TERRAIN_WIDTH, FIGURES_WIDTH, ICONS_WIDTH);
 
 /** The plate's height, which the sections above add up to. */
 export const PLATE_HEIGHT =
   PLATE_PADDING * 2 +
-  HEADING_HEIGHT * 6 +
+  HEADING_HEIGHT * 7 +
   GLYPH_GRID_HEIGHT +
   RAMPS_HEIGHT +
   TERRAIN_HEIGHT +
   NODES_HEIGHT +
   FIGURES_HEIGHT +
-  SECTION_GAP * 5;
+  ICONS_HEIGHT +
+  SECTION_GAP * 6;
 
 /**
  * Every artefact the art library generates, in a stable order: the glyphs in
@@ -196,7 +228,7 @@ export function catalogue(): readonly CatalogueEntry[] {
 
   const ramps = RAMP_NAMES.map((name) => ({ name: `ramp:${name}`, buffer: rampSwatches(name) }));
 
-  return [...glyphs, ...ramps, ...terrainEntries(), ...nodeEntries(), ...figureEntries()];
+  return [...glyphs, ...ramps, ...terrainEntries(), ...nodeEntries(), ...figureEntries(), ...iconEntries()];
 }
 
 /** The glyph entries, which stand first in the catalogue and in the plate's grid. */
@@ -352,6 +384,33 @@ export function cataloguePlate(): PixelBuffer {
 
       row += 1;
     }
+  }
+
+  // The figure captions stand above the rows, so the icons section starts after
+  // the rows themselves and not after the captions' own line.
+  y = figuresTop + FIGURE_ROWS * FIGURE_CELL_HEIGHT + SECTION_GAP;
+
+  blit(plate, textPlate('icons', PLATE_INK), PLATE_PADDING, y);
+  y += HEADING_HEIGHT;
+
+  // A row of verbs and a row of costs, each under its own name: the command card
+  // is judged the way a marker is, on the neutral plate with no ground under it.
+  blit(plate, textPlate(ICON_ROW_LABELS[0] ?? '', PLATE_INK), PLATE_PADDING, y + (ICON_CELL - LINE_HEIGHT) / 2);
+  for (let index = 0; index < COMMAND_ICON_NAMES.length; index += 1) {
+    const name = COMMAND_ICON_NAMES[index];
+    if (name === undefined) continue;
+
+    blit(plate, commandIcon(name), PLATE_PADDING + ICON_LABEL_WIDTH + LABEL_GAP + index * ICON_CELL, y);
+  }
+  y += ICON_CELL;
+
+  blit(plate, textPlate(ICON_ROW_LABELS[1] ?? '', PLATE_INK), PLATE_PADDING, y + (ICON_CELL - LINE_HEIGHT) / 2);
+  for (let index = 0; index < BADGE_NAMES.length; index += 1) {
+    const name = BADGE_NAMES[index];
+    if (name === undefined) continue;
+
+    blit(plate, badgeIcon(name), PLATE_PADDING + ICON_LABEL_WIDTH + LABEL_GAP + index * BADGE_CELL + 2,
+      y + Math.floor((ICON_CELL - BADGE_TILE) / 2));
   }
 
   return plate;

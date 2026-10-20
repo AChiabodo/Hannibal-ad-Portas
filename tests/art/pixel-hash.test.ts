@@ -17,7 +17,7 @@ import { catalogue, cataloguePlate } from '../../src/art/catalogue';
 import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 
 /** The fingerprints recorded from the generators as accepted. */
-const PLATE_HASH = '7ac48ab2397a7363';
+const PLATE_HASH = '7bb2e03b154fc922';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'glyph:U+0020': '19ce279ecc93e509',
@@ -62,6 +62,21 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'figure:numidian-horse:east:walk:0': '9923090e82ac63e7',
   'figure:elephant:south:idle': 'e7ecfa834be92b5d',
   'figure:elephant:south:attack:1': '480d980f6dc7b225',
+  // #55's command card: one hash per verb, so an icon that is redrawn names
+  // itself — and a few badges, which are read beside a numeral.
+  'icon:move': '5142f40c96217728',
+  'icon:attackMove': '3b0b502fd6b469ae',
+  'icon:attack': 'dfeb67d910a4d845',
+  'icon:hold': 'abe4fec9919d673d',
+  'icon:withdraw': 'b85e658d3f72c5c8',
+  'icon:line': '31ffc0b2375ad82b',
+  'icon:column': '8cb3b931c70e7785',
+  'icon:garrison': 'a88f53fe932cee07',
+  'icon:assault': '45243b1dfa42d88f',
+  'icon:blockade': '5eadf658dd51a5d9',
+  'badge:grain': 'c018f12758926e0a',
+  'badge:clock': '0ee8bfa2e5051795',
+  'badge:lock': '8d7b02a5b46f1b25',
 };
 
 describe('the generated output, as a fingerprint', () => {

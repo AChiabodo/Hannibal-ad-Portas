@@ -452,6 +452,8 @@ export function createGame(options: GameOptions): Game {
   let submission: HudOrderStatus | null = null;
   /** The group an individual exception was opened from, so there is a way back. */
   let groupMemory: readonly number[] | null = null;
+  /** Why the last action pressed is unavailable: the panel's answer to a press it could not obey. */
+  let commandNotice: string | null = null;
 
   /**
    * The tick the page's Match ends on: a Match's own horizon, the same three game
@@ -558,6 +560,7 @@ export function createGame(options: GameOptions): Game {
       if (!SETTLEMENT_TABS.includes(next)) throw new RangeError(`"${String(next)}" is not a settlement page`);
       tab = next;
       commandOffset = 0;
+      commandNotice = null;
       repaint();
     },
     groupBack: () => groupBack(),
@@ -841,6 +844,7 @@ export function createGame(options: GameOptions): Game {
     readonly last: HudOrderStatus | null;
     readonly groups: readonly ControlGroupView[];
     readonly backToGroup: boolean;
+    readonly notice: string | null;
     readonly ended: boolean;
   } {
     return {
@@ -851,6 +855,7 @@ export function createGame(options: GameOptions): Game {
       last: submission === null ? null : { ...submission, status: human.pending > 0 ? 'pending' : 'applied' },
       groups: controlGroupViews(observation, boundGroups()),
       backToGroup: groupMemory !== null && human.selection.squads.length === 1,
+      notice: commandNotice,
       ended: result !== null,
     };
   }
@@ -1037,6 +1042,7 @@ export function createGame(options: GameOptions): Game {
     human.select(asPicked(selection));
     groupMemory = fromException && previous.length > 1 ? [...previous] : null;
     armed = null;
+    commandNotice = null;
     repaint();
   }
 
@@ -1050,7 +1056,16 @@ export function createGame(options: GameOptions): Game {
    */
   function perform(orderId: string): boolean {
     const offer = model.commands.find((order) => order.id === orderId);
-    if (offer === undefined || !offer.enabled) return false;
+    if (offer === undefined) return false;
+    if (!offer.enabled) {
+      // A control that cannot be used still answers: the panel says why, in the
+      // words the offer already carries, instead of swallowing the press.
+      commandNotice = message('ui.unavailable', { name: offer.label, reason: offer.reason ?? '' });
+      repaint();
+      return false;
+    }
+
+    commandNotice = null;
     if (offer.target !== 'none') {
       armed = offer.id;
       repaint();
@@ -1143,6 +1158,7 @@ export function createGame(options: GameOptions): Game {
         : null,
     };
     armed = null;
+    commandNotice = null;
     repaint();
     return true;
   }

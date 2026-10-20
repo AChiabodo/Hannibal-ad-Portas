@@ -2,19 +2,26 @@
 
 Verified on 2026-10-20 against [#55](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/55), its blocker [#54](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/54) and the shared approved requirements in [#51](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/51).
 
-The bottom panel is now a contextual command panel beside the detail it belongs to. A Squad selection offers Move, Attack-move, Attack, Hold, Withdraw, Line, Column, Garrison, Assault and Blockade; a settlement offers three pages — Overview, Construction and Recruitment — whose rows carry the content table's own cost, time, tier and refusal reason. A mixed selection gets a group summary instead of one man's figures: composition, total men, the Morale band, and the individuals that need attention as rows that open one Squad, with a visible way back to the group. Numbered control groups are visible chips beside the existing keyboard binding and recall.
+The bottom panel is now a contextual command **card** beside the detail it belongs to. A Squad selection offers Move, Attack-move, Attack, Hold, Withdraw, Line, Column, Garrison, Assault and Blockade as pictures with a one-word label and the key in the corner, arranged in the three rows of decision — motion, orders and formation, Siege — with a rule between them; a settlement offers three pages — Overview, Construction and Recruitment — whose rows carry the content table's own cost, time, tier and refusal reason as **badges** (a sheaf and a numeral, a clock and a numeral) rather than a sentence. A mixed selection gets a group summary instead of one man's figures: composition, total men, the Morale band, and the individuals that need attention as rows that open one Squad, with a visible way back to the group. Numbered control groups are visible chips beside the existing keyboard binding and recall. A control that cannot be used keeps its shape, muted, and answers a press with its reason in the panel's own line: the panel never becomes a paragraph again.
 
 Everything goes through one submission and targeting path. `perform(id)` arms an action that needs a target and submits one that does not; a button, the existing `A`/`S`/`W`/`L`/`C` keys, Escape, a left click on the theatre and the shared `submit` hook all end at the same human Controller. The armed action, what it still wants clicked, how many orders are queued (including "in pausa") and the last order given are drawn in the panel. Escape cancels the target and never a Command already submitted; the ordinary military actions still need no confirmation, while leaving an active Match still does. Right-click ground movement and the classic `A` + click remain.
 
 Siege availability is stated rather than hidden: Carthage sees Assault disabled with "Solo Roma ha l'ariete" and Blockade enabled; a target has to be a walled settlement of its own (Garrison) or a known enemy settlement (Assault, Blockade), named by its row or its tile. What is known of the walls — sections standing, gate, breach, ram, path and garrison count — is read from the Observation's `fronts`, so a remembered Stronghold nobody has eyes on contributes a tile to target and no structural fact at all. No enemy stock, Payroll or unseen Siege progress is invented anywhere in the panel.
 
-Nothing in the simulation changed: no new Command, no new rule, no path or formation change, no hash change. New controls are drawn by the same declarative PixelBuffer generator and the same PixiJS adapter; no external asset, font, glyph, dependency or manual worker was added, and no new queue/cancel mechanic exists.
+Nothing in the simulation changed: no new Command, no new rule, no path or formation change, no hash change. The new pictures are **generated art** like everything else — `src/art/icons.ts` holds ten command icons and ten badges as rows of sixteen or ten characters, one letter per palette ink, drawn through the same PixelBuffer and the same PixiJS adapter and shown in the Atelier's catalogue beside the glyphs, the terrain and the soldiers. A muted copy is the same art in one stone shade, so "cannot be used" is not a second table. No external asset, font, dependency or manual worker was added, and no new queue/cancel mechanic exists.
+
+### The command card, and how an icon is learned
+
+The card is organised by the *kind* of decision, because that is what a Player scans for under pressure: the first row is where the men go (arrow, arrow under crossed blades, blades), the second how they stand (shield, reversed arrow over broken ground, a frontage of spears, ranks in depth), the third what to do about walls (a keep, a sword driven into a wall, the keep ringed). One keep appears in three of the Siege pictures on purpose: a Player learns one object and three overlays.
+
+An icon is translated three ways, and none of them is a separate tutorial: the **one word under it** is the name (`Muovi`, `Marcia`, `Guarnigione`); the **key in the corner** is the shortcut that does the same thing; and **pressing a control that cannot be used** answers with the reason in the panel's notice line. The in-panel guide says so in one sentence, so the legend is where the cards are; the first-entry guidance of [#59](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/59) can build on the same pictures rather than inventing a second vocabulary.
 
 ## Where each acceptance criterion is proved
 
 | Criterion | Where |
 | --- | --- |
 | Squad detail prioritises type, men, Morale, order/destination/refusal, fatigue, ammunition, Payroll, supply and quarters | `tests/ui/hud.test.ts` (model), `e2e/hud.spec.ts` (live page) |
+| Commands are a card of generated pictures with a label and a key, rows by kind, and cost badges on settlement rows | `tests/art/icons.test.ts`, `tests/art/catalogue.test.ts`, `tests/ui/hud.test.ts`, `e2e/commands.spec.ts` |
 | Mixed selection composition, total men, Morale range, exceptions, way back | `tests/ui/hud.test.ts`, `tests/ui/orders.test.ts`, `e2e/commands.spec.ts` |
 | Known eligibility, preserved selection, rule-defined partial execution, individual refusals | `tests/ui/orders.test.ts` (reach, reasons), `e2e/commands.spec.ts` (one of two garrisons, exceptions) |
 | One submission/targeting path, armed state, requirements, unavailable reasons, pending/applied | `tests/ui/orders.test.ts`, `tests/ui/hud.test.ts`, `e2e/commands.spec.ts`, `e2e/surface.spec.ts` |
@@ -28,11 +35,12 @@ Nothing in the simulation changed: no new Command, no new rule, no path or forma
 ## Commands and results
 
 - `npx tsc -b` — checked repeatedly through the work; the final state is clean.
-- `npx vitest run tests/ui/orders.test.ts` — 21 new action-eligibility tests, red before the module existed.
+- `npx vitest run tests/ui/orders.test.ts` — 22 new action-eligibility tests, red before the module existed.
+- `npx vitest run tests/art/icons.test.ts` — 6 new icon tests: tile size, ink, distinct silhouettes, the muted copy, the catalogue names.
 - `npx vitest run tests/ui tests/render` — 154 tests across 11 files, including the new HUD panel, rendered-ink and enemy-front assertions.
 - `npm run lint` — clean.
 - `npm run guard` — all eight fences hold (simulation boundary, AI Observation imports, PixiJS outside `src/render/`, no `Math.random`, no transcendental math, no ambient clock or entropy, no committed assets).
-- `npm run verify` — lint, TypeScript, guards, **1149 tests across 98 files** and the production build all passed on the final code (after the review fixes below).
+- `npm run verify` — lint, TypeScript, guards, **1159 tests across 99 files** and the production build all passed on the final code (after the review fixes and the command-card rework).
 - `npx playwright test` — **87 browser tests passed** on the final code, including the 9 new `e2e/commands.spec.ts` scenarios and the unchanged Atelier, fog, orders, setup, desktop and surface suites. The command scenarios were repeated three times each (`--repeat-each=3`, 27 passed) after one unattributed boot timeout under parallel load; the boot wait now allows twenty seconds.
 - `git diff --check` — no whitespace errors (only the repository's existing CRLF notices).
 
@@ -55,7 +63,7 @@ Nothing in the simulation changed: no new Command, no new rule, no path or forma
 - `construction-{rome,carthage}-{1280x720,1920x1080}.png`: a settlement's Construction page with its tabs, content-backed offers and costs.
 - `commands-{rome,carthage}-{1280x720,1920x1080}.png`: a Squad's command page with Attack-move armed, its requirement line and the Siege offers.
 
-The checks beside those pictures are the ones a picture cannot make cheaply, and they run on every pass: every command and tab rectangle lies inside the detail panel, no two controls overlap, the armed row is drawn on its own ground (asserted from a live `samples` read of the frame, not from the model), and the panel frame holds at least the ground, the edge and the two inks it paints. `tests/ui/hud.test.ts` additionally composes the plate through the production generator and asserts ink inside each command rectangle and the armed tint.
+The checks beside those pictures are the ones a picture cannot make cheaply, and they run on every pass: every command and tab rectangle lies inside the detail panel, no two controls overlap, the card has its three rows of decisions, every picture has ink sampled from the presented frame, the armed row is drawn on its own ground (asserted from a live `samples` read, not from the model), and the panel frame holds at least the ground, the edge and the two inks it paints. `tests/ui/hud.test.ts` additionally composes the plate through the production generator and asserts ink inside each command rectangle and the armed tint.
 
 **Unrun gate, stated plainly:** this harness cannot display images, so the agent did not eyeball the eight PNGs; what is asserted above is geometry, live frame sampling and generated pixels. A human should open the files under `%TEMP%\spqr-issue55` before the visual acceptance in [#59](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/59). The desktop layout is the product; the legacy 640x480 fixture page keeps its own detail rendering and was not given the new panel, which is why its captures are not part of this evidence.
 
@@ -92,4 +100,4 @@ All ten acceptance criteria are covered above. Deliberately not done, because th
 
 ## Remaining gates
 
-Hardware/full-density frame rate (#31), other browsers and mobile, the sibling art tickets, and release/deployment (#32) were not performed or claimed. Software-WebGL Chromium screenshots establish rendering, not hardware frame rate. The eight PNGs were captured but not visually inspected by the agent (see above). Commits are local on `feat/ui-rework` (`c7ae2ab` plus the review follow-up); no push, tracker closure or roadmap change was performed.
+Hardware/full-density frame rate (#31), other browsers and mobile, the sibling art tickets, and release/deployment (#32) were not performed or claimed. Software-WebGL Chromium screenshots establish rendering, not hardware frame rate. The eight PNGs were captured but not visually inspected by the agent (see above). Commits are local on `feat/ui-rework` (`c7ae2ab` plus the review follow-up and the command-card rework); no push, tracker closure or roadmap change was performed.

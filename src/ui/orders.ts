@@ -40,6 +40,7 @@
  * interface does not invent an all-or-nothing group rule, because the rules do
  * not have one.
  */
+import type { BadgeName } from '../art/icons.ts';
 import {
   BUILDINGS,
   amountOf,
@@ -54,9 +55,17 @@ import {
 } from '../content/index.ts';
 import type { EconomyVisible, VisibleSettlement, VisibleSquad } from '../sim/economy-match.ts';
 import type { Faction } from '../sim/faction.ts';
-import { RESOURCE_KINDS } from '../sim/map.ts';
+import { RESOURCE, RESOURCE_KINDS, type ResourceKind } from '../sim/map.ts';
 import { canAssault, SIEGE_RADIUS, type SiegeVisible, type VisibleFront } from '../sim/siege.ts';
 import { message, refusalLabel, resourceLabel, squadLabel, translate, workLabel } from './strings.ts';
+
+/** One figure a settlement's row reads as a badge: a resource, a time, men or denarii. */
+export interface OrderCost {
+  /** The badge that says which figure it is. */
+  readonly badge: BadgeName;
+  /** The figure itself, in the unit the badge names. */
+  readonly value: number;
+}
 
 /** What a set of offers is *about*, which is what decides where they are drawn. */
 export type OrderGroup = 'movement' | 'combat' | 'formation' | 'siege' | 'construction' | 'recruitment';
@@ -98,8 +107,12 @@ export interface OrderOption {
   readonly kind: OrderKind;
   /** Which block of the panel it belongs to. */
   readonly group: OrderGroup;
-  /** The verb, in Italian, as a Player reads it. */
+  /** The verb, in Italian, as a Player reads it in full. */
   readonly label: string;
+  /** The one word under its icon: short enough for a command card. */
+  readonly short: string;
+  /** What pressing it commits to, as badges a row can draw beside the name. */
+  readonly costs: readonly OrderCost[];
   /** The content id or formation it names, when it names one. */
   readonly subject: string | null;
   /** Cost, time or strength: what pressing it commits to, from the content tables. */
@@ -198,17 +211,20 @@ export function squadOrders(
 
   return [
     {
-      id: 'move', kind: 'move', group: 'movement', label: translate('cmd.move'), subject: null, note: null, shortcut: null,
+      id: 'move', kind: 'move', group: 'movement', label: translate('cmd.move'), short: translate('cmdShort.move'),
+      costs: [], subject: null, note: null, shortcut: null,
       target: 'ground', targetHint: translate('target.ground'),
       ...(open ? { enabled: true, reason: null } : blocked(squadsReason)),
     },
     {
-      id: 'attackMove', kind: 'attackMove', group: 'movement', label: translate('cmd.attackMove'), subject: null, note: null, shortcut: 'A',
+      id: 'attackMove', kind: 'attackMove', group: 'movement', label: translate('cmd.attackMove'),
+      short: translate('cmdShort.attackMove'), costs: [], subject: null, note: null, shortcut: 'A',
       target: 'ground', targetHint: translate('target.ground'),
       ...(open ? { enabled: true, reason: null } : blocked(squadsReason)),
     },
     {
-      id: 'attack', kind: 'attack', group: 'movement', label: translate('cmd.attack'), subject: null, note: null, shortcut: null,
+      id: 'attack', kind: 'attack', group: 'movement', label: translate('cmd.attack'), short: translate('cmdShort.attack'),
+      costs: [], subject: null, note: null, shortcut: null,
       target: 'enemy', targetHint: translate('target.enemy'),
       ...(open
         ? enemyTargets(visible).length === 0
@@ -217,22 +233,26 @@ export function squadOrders(
         : blocked(squadsReason)),
     },
     {
-      id: 'hold', kind: 'hold', group: 'combat', label: translate('cmd.hold'), subject: null, note: null, shortcut: 'S',
+      id: 'hold', kind: 'hold', group: 'combat', label: translate('cmd.hold'), short: translate('cmdShort.hold'),
+      costs: [], subject: null, note: null, shortcut: 'S',
       target: 'none', targetHint: null,
       ...(open ? { enabled: true, reason: null } : blocked(squadsReason)),
     },
     {
-      id: 'withdraw', kind: 'withdraw', group: 'combat', label: translate('cmd.withdraw'), subject: null, note: null, shortcut: 'W',
+      id: 'withdraw', kind: 'withdraw', group: 'combat', label: translate('cmd.withdraw'), short: translate('cmdShort.withdraw'),
+      costs: [], subject: null, note: null, shortcut: 'W',
       target: 'none', targetHint: null,
       ...(open ? { enabled: true, reason: null } : blocked(squadsReason)),
     },
     {
-      id: 'formation.line', kind: 'formation', group: 'formation', label: translate('cmd.line'), subject: 'line', note: null, shortcut: 'L',
+      id: 'formation.line', kind: 'formation', group: 'formation', label: translate('cmd.line'), short: translate('cmdShort.line'),
+      costs: [], subject: 'line', note: null, shortcut: 'L',
       target: 'none', targetHint: null,
       ...(open ? { enabled: true, reason: null } : blocked(squadsReason)),
     },
     {
-      id: 'formation.column', kind: 'formation', group: 'formation', label: translate('cmd.column'), subject: 'column', note: null, shortcut: 'C',
+      id: 'formation.column', kind: 'formation', group: 'formation', label: translate('cmd.column'),
+      short: translate('cmdShort.column'), costs: [], subject: 'column', note: null, shortcut: 'C',
       target: 'none', targetHint: null,
       ...(open ? { enabled: true, reason: null } : blocked(squadsReason)),
     },
@@ -275,18 +295,21 @@ function siegeOrders(
 
   return [
     {
-      id: 'garrison', kind: 'garrison', group: 'siege', label: translate('cmd.garrison'), subject: null,
+      id: 'garrison', kind: 'garrison', group: 'siege', label: translate('cmd.garrison'),
+      short: translate('cmdShort.garrison'), costs: [], subject: null,
       note: message('ui.partial', { near: String(garrisonReach(visible, picked).near), total: String(picked.length) }),
       shortcut: null, target: 'settlement', targetHint: translate('target.ownWalled'),
       ...offer(garrisonReason),
     },
     {
-      id: 'assault', kind: 'assault', group: 'siege', label: translate('cmd.assault'), subject: null, note: null,
+      id: 'assault', kind: 'assault', group: 'siege', label: translate('cmd.assault'), short: translate('cmdShort.assault'),
+      costs: [], subject: null, note: null,
       shortcut: null, target: 'settlement', targetHint: translate('target.enemySettlement'),
       ...offer(assaultReason),
     },
     {
-      id: 'blockade', kind: 'blockade', group: 'siege', label: translate('cmd.blockade'), subject: null, note: null,
+      id: 'blockade', kind: 'blockade', group: 'siege', label: translate('cmd.blockade'),
+      short: translate('cmdShort.blockade'), costs: [], subject: null, note: null,
       shortcut: null, target: 'settlement', targetHint: translate('target.enemySettlement'),
       ...offer(blockadeReason),
     },
@@ -329,6 +352,8 @@ function constructionOrders(faction: Faction, settlement: VisibleSettlement): re
       kind: 'build' as const,
       group: 'construction' as const,
       label: workLabel(building.id),
+      short: workLabel(building.id),
+      costs: [...resourceCosts(building.cost), { badge: 'clock', value: building.buildTicks }],
       subject: building.id,
       note: `${costLabel(building.cost)} - ${message('ui.ticksLeft', { ticks: building.buildTicks })}`,
       shortcut: null,
@@ -353,6 +378,8 @@ function recruitmentOrders(faction: Faction, settlement: VisibleSettlement): rea
       kind: 'recruit' as const,
       group: 'recruitment' as const,
       label: squadLabel(type.id),
+      short: squadLabel(type.id),
+      costs: [...resourceCosts(type.cost), { badge: 'men', value: type.strength }, { badge: 'coin', value: type.payroll }],
       subject: type.id,
       note: `${costLabel(type.cost)} - ${typeNote(type)}`,
       shortcut: null,
@@ -367,6 +394,21 @@ function recruitmentOrders(faction: Faction, settlement: VisibleSettlement): rea
 /** What raising one of a type gets: its men and its Payroll, from the content tables. */
 function typeNote(type: SquadType): string {
   return `${translate('ui.men')} ${String(type.strength)} - ${translate('ui.payroll')} ${String(type.payroll)}`;
+}
+
+/** The badge that names each resource, beside the numeral it is drawn with. */
+const RESOURCE_BADGE: Readonly<Record<ResourceKind, BadgeName>> = {
+  [RESOURCE.grain]: 'grain',
+  [RESOURCE.timber]: 'timber',
+  [RESOURCE.stone]: 'stone',
+  [RESOURCE.iron]: 'iron',
+};
+
+/** The resources a cost actually charges, as badges; ones it does not cost are left out. */
+function resourceCosts(cost: ResourceAmounts): readonly OrderCost[] {
+  return RESOURCE_KINDS
+    .map((kind): OrderCost => ({ badge: RESOURCE_BADGE[kind], value: amountOf(cost, kind) }))
+    .filter((entry) => entry.value > 0);
 }
 
 /** A cost, in the resources' own names, with the ones it does not cost left out. */

@@ -44,6 +44,7 @@ import {
   type PixelBuffer,
   type Rgba,
 } from '../art/pixel-buffer.ts';
+import { BADGE_TILE, ICON_TILE, badgeIcon, commandIcon, type BadgeName, type CommandIconName } from '../art/icons.ts';
 import { amountOf } from '../content/index.ts';
 import type { EconomyVisible, VisibleSettlement, VisibleSquad } from '../sim/economy-match.ts';
 import type { Faction } from '../sim/faction.ts';
@@ -61,6 +62,7 @@ import {
   squadOrders,
   type ControlGroupView,
   type GroupSummary,
+  type OrderKind,
   type OrderOption,
   type SettlementTab,
 } from './orders.ts';
@@ -154,6 +156,8 @@ export interface HudOrdersView {
   readonly last: HudOrderStatus | null;
   /** Whether opening an exception from a group left a way back to it. */
   readonly backToGroup: boolean;
+  /** Why the last action pressed is unavailable, shown until the next press. */
+  readonly notice: string | null;
 }
 
 /**
@@ -178,6 +182,8 @@ export interface HudSession {
   readonly groups?: readonly ControlGroupView[];
   /** Whether the panel is showing an individual opened from a group. */
   readonly backToGroup?: boolean;
+  /** Why the action a Player just pressed cannot be taken, or `null`. */
+  readonly notice?: string | null;
   /** Whether the Match is over, which closes every offer. */
   readonly ended?: boolean;
 }
@@ -308,8 +314,10 @@ export interface HudLayout {
   readonly groups: readonly GroupRect[];
   /** The exceptions of a mixed selection, each a row that opens one Squad. */
   readonly exceptions: readonly RowRect[];
-  /** The lines the command area is saying: armed, pending, last given. */
+  /** The lines the command area is saying: unavailable, armed, pending, last given. */
   readonly status: readonly HudText[];
+  /** The rules drawn between two groups of the command card. */
+  readonly commandRules: readonly Rect[];
   /** How far the command list is scrolled, and how far it can be. */
   readonly commandScroll: HudScroll;
 }
@@ -373,8 +381,21 @@ const DETAIL_MIN_HEIGHT = 132;
 /** The tallest, so that a large window leaves the theatre most of its height. */
 const DETAIL_MAX_HEIGHT = 190;
 
-/** One contextual action's row: its text, its air, and the rule between two. */
-const COMMAND_ROW = LINE_STEP + 2;
+/** Air between two command cells, so two pictures are never one picture. */
+const COMMAND_GAP = 2;
+
+/** One command cell: its icon, the air under it, its one-word label and its air. */
+const COMMAND_ROW_HEIGHT = ICON_TILE + 3 + LINE_HEIGHT + 3;
+
+/** One settlement row: a badge, a name and its costs on a single line. */
+const ECONOMY_ROW_HEIGHT = LINE_STEP + 3;
+
+/** The small box a shortcut's letter stands in, at the top right of a command. */
+const KEY_BADGE_WIDTH = LINE_HEIGHT + 2;
+const KEY_BADGE_HEIGHT = LINE_HEIGHT + 2;
+
+/** Air between two costs on a settlement row. */
+const COST_GAP = 3;
 
 /** Air between the minimap and the screen's edge. */
 const MINIMAP_MARGIN = 2;
@@ -395,10 +416,13 @@ export const HUD_VALUE: Rgba = shadeAt(RAMPS.parchment, 6);
 export const HUD_SELECTED: Rgba = shadeAt(RAMPS.bronze, 1);
 
 /** The ground an armed command stands on, waiting for its target. */
-export const HUD_ARMED: Rgba = shadeAt(RAMPS.bronze, 3);
+export const HUD_ARMED: Rgba = shadeAt(RAMPS.bronze, 2);
 
 /** The ink an action that cannot be taken is written in. */
 export const HUD_DISABLED: Rgba = shadeAt(RAMPS.stone, 3);
+
+/** The rule drawn between two groups of the command card. */
+export const HUD_RULE: Rgba = shadeAt(RAMPS.bronze, 1);
 
 /**
  * The HUD's own view of a Faction's economy, as the words and figures a Player
@@ -454,6 +478,7 @@ export function hudModel(
       pending: session.pending ?? 0,
       last: session.last ?? null,
       backToGroup: session.backToGroup ?? false,
+      notice: session.notice ?? null,
     },
   };
 }
@@ -545,7 +570,8 @@ export function hudLayout(model: HudModel, size: HudSize): HudLayout {
   addScrollButtons(buttons, detail, 'detail', detailScroll);
 
   return { size, bar, list, detail, minimap, readouts, headers, rows, text, priority, buttons, listScroll, detailScroll,
-    commands: [], tabs: [], groups: [], exceptions: [], status: [], commandScroll: scrollWindow(0, 0, 1) };
+    commands: [], tabs: [], groups: [], exceptions: [], status: [], commandRules: [],
+    commandScroll: scrollWindow(0, 0, 1) };
 }
 
 /** Wraps every glyph, including a value with no spaces; nothing is ellipsised away. */
@@ -562,6 +588,14 @@ function wrapText(text: string, width: number): string[] {
   }
   if (remaining !== '') lines.push(remaining);
   return lines;
+}
+
+/** A scroll window over items rather than over text lines: `page` items fit at once. */
+function paginate(requested: number, total: number, page: number): HudScroll {
+  const size = Math.max(1, page);
+  const max = Math.max(0, total - size);
+
+  return { offset: Math.min(max, Math.max(0, Math.trunc(requested))), max, page: size };
 }
 
 function scrollWindow(requested: number, total: number, height: number): HudScroll {
@@ -710,6 +744,8 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
       tab.tab === model.tab ? HUD_VALUE : HUD_LABEL, scale);
   }
 
+  for (const rule of layout.commandRules) fillRect(buffer, rule.x, rule.y, rule.width, rule.height, HUD_RULE);
+
   for (const { order, rect } of layout.commands) {
     panel(buffer, rect);
     // The armed action stands on its own ground, inside the panel's edge, so a
@@ -717,17 +753,8 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
     if (model.orders.armed?.id === order.id) {
       fillRect(buffer, rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2, HUD_ARMED);
     }
-    const head = order.shortcut === null ? order.label : message('cmd.withShortcut', { label: order.label, keys: order.shortcut });
-    const ink = order.enabled ? HUD_VALUE : HUD_DISABLED;
-    drawText(buffer, fitText(head, rect.width - 2 * PADDING * scale, scale), rect.x + PADDING * scale,
-      rect.y + (COMMAND_ROW - LINE_HEIGHT) / 2 * scale, ink, scale);
-    const detail = order.enabled ? order.note : order.reason;
-    if (detail !== null) {
-      const at = rect.x + (measureText(head) + 2 * PADDING) * scale;
-      const room = rect.x + rect.width - at - PADDING * scale;
-      if (room > 12 * scale) drawText(buffer, fitText(detail, room, scale), at,
-        rect.y + (COMMAND_ROW - LINE_HEIGHT) / 2 * scale, HUD_LABEL, scale);
-    }
+    if (order.group === 'construction' || order.group === 'recruitment') drawEconomyRow(buffer, order, rect, scale);
+    else drawCommandButton(buffer, order, rect, scale);
   }
 
   for (const group of layout.groups) {
@@ -746,6 +773,128 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
   }
 
   return buffer;
+}
+
+/**
+ * One command as a picture: its icon, its one-word label and its key.
+ *
+ * A control that cannot be used keeps its shape — the same icon, in the one
+ * muted shade — because a Player looking for an action is looking for a picture,
+ * and a blank cell would read as "there is nothing here" rather than as "not now".
+ * Why it cannot be used is the notice line's job, not a sentence squeezed into a
+ * cell that has no room for one.
+ */
+function drawCommandButton(buffer: PixelBuffer, order: OrderOption, rect: Rect, scale: number): void {
+  const ink = order.enabled ? HUD_VALUE : HUD_DISABLED;
+  const iconSize = ICON_TILE * scale;
+  blitScaled(buffer, commandIcon(commandIconFor(order), { muted: !order.enabled }),
+    rect.x + Math.floor((rect.width - iconSize) / 2), rect.y + 2 * scale, scale);
+
+  const label = fitText(order.short, rect.width - 2 * PADDING * scale, scale);
+  drawText(buffer, label, rect.x + Math.floor((rect.width - measureText(label, scale)) / 2),
+    rect.y + (ICON_TILE + 3) * scale, ink, scale);
+
+  if (order.shortcut !== null) drawKeyBadge(buffer, order.shortcut, rect, ink, scale);
+}
+
+/** The key that does the same thing, in a box at the corner of its command. */
+function drawKeyBadge(buffer: PixelBuffer, key: string, rect: Rect, ink: Rgba, scale: number): void {
+  const width = KEY_BADGE_WIDTH * scale;
+  const height = KEY_BADGE_HEIGHT * scale;
+  const x = rect.x + rect.width - width - scale;
+  const y = rect.y + scale;
+
+  fillRect(buffer, x, y, width, height, HUD_BACKGROUND);
+  strokeRect(buffer, x, y, width, height, HUD_BORDER);
+  drawText(buffer, key, x + scale, y + scale, ink, scale);
+}
+
+/**
+ * One settlement row: what it raises, and what that costs.
+ *
+ * The costs are badges and numerals rather than a sentence — a sheaf and `6`, a
+ * clock and `400` — because a column of nine rows is read by scanning a column
+ * of figures, and "Legno 6, Pietra 4, 400 tick" turns nine rows into a paragraph.
+ * A row that cannot be taken is dimmed and locked; the reason is the notice's.
+ */
+function drawEconomyRow(buffer: PixelBuffer, order: OrderOption, rect: Rect, scale: number): void {
+  const ink = order.enabled ? HUD_VALUE : HUD_DISABLED;
+  const badgeSize = BADGE_TILE * scale;
+  const centreY = rect.y + Math.floor((rect.height - LINE_HEIGHT * scale) / 2);
+  const verb: BadgeName = order.group === 'construction' ? 'build' : 'recruit';
+
+  blitScaled(buffer, badgeIcon(verb), rect.x + 2 * scale, rect.y + Math.floor((rect.height - badgeSize) / 2), scale);
+
+  let right = rect.x + rect.width - 3 * scale;
+  if (!order.enabled) {
+    blitScaled(buffer, badgeIcon('lock'), right - badgeSize,
+      rect.y + Math.floor((rect.height - badgeSize) / 2), scale);
+    right -= badgeSize + COST_GAP * scale;
+  }
+
+  const widths = order.costs.map((cost) => (BADGE_TILE + 2) * scale + measureText(String(cost.value), scale));
+  const total = widths.reduce((sum, width) => sum + width, 0) + Math.max(0, order.costs.length - 1) * COST_GAP * scale;
+  let x = right - total;
+  const nameX = rect.x + (BADGE_TILE + 4) * scale;
+  drawText(buffer, fitText(order.short, x - nameX - COST_GAP * scale, scale), nameX, centreY, ink, scale);
+
+  for (const [index, cost] of order.costs.entries()) {
+    blitScaled(buffer, badgeIcon(cost.badge), x, rect.y + Math.floor((rect.height - badgeSize) / 2), scale);
+    drawText(buffer, String(cost.value), x + (BADGE_TILE + 2) * scale, centreY, ink, scale);
+    x += (widths[index] ?? 0) + COST_GAP * scale;
+  }
+}
+
+/**
+ * A Squad's verbs grouped into the rows of the card.
+ *
+ * The row is the *kind* of decision, which is what makes the card readable
+ * without reading it: where to go, how to stand, and what to do about walls. The
+ * rows are not padded, so a row of three pictures sits beside a row of four and
+ * the card reads as three groups rather than as a grid of ten cells.
+ */
+function commandRows(orders: readonly OrderOption[]): readonly (readonly OrderOption[])[] {
+  const rows: OrderOption[][] = [];
+
+  for (const order of orders) {
+    const row = order.group === 'movement' ? 0 : order.group === 'combat' || order.group === 'formation' ? 1 : 2;
+    rows[row] = [...(rows[row] ?? []), order];
+  }
+
+  return rows.filter((row) => row !== undefined);
+}
+
+/** The icon a command is drawn with: the verb's, with the two formations told apart by their id. */
+function commandIconFor(order: OrderOption): CommandIconName {
+  if (order.kind === 'formation') return order.id === 'formation.column' ? 'column' : 'line';
+
+  return COMMAND_ICONS[order.kind];
+}
+
+/** The icon of each verb. The economy's rows carry a badge instead of one of these. */
+const COMMAND_ICONS: Readonly<Record<OrderKind, CommandIconName>> = {
+  move: 'move',
+  attackMove: 'attackMove',
+  attack: 'attack',
+  hold: 'hold',
+  withdraw: 'withdraw',
+  formation: 'line',
+  garrison: 'garrison',
+  assault: 'assault',
+  blockade: 'blockade',
+  build: 'move',
+  recruit: 'move',
+};
+
+/** One art buffer magnified by whole pixels, which is how the HUD scales everything. */
+function blitScaled(target: PixelBuffer, source: PixelBuffer, x: number, y: number, scale: number): void {
+  for (let row = 0; row < source.height; row += 1) {
+    for (let column = 0; column < source.width; column += 1) {
+      const colour = pixelAt(source, column, row);
+      if (colour[3] === 0) continue;
+      fillRect(target, x + column * scale, y + row * scale, scale, scale, colour);
+    }
+  }
 }
 
 /** The most of a string that fits a width, at a magnification; the rest is dropped. */
@@ -1178,6 +1327,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   const text: HudText[] = [];
   const priority: HudText[] = [];
   const status: HudText[] = [];
+  const commandRules: Rect[] = [];
   const headers: HudHeader[] = [];
   const rows: RowRect[] = [];
   const exceptions: RowRect[] = [];
@@ -1227,7 +1377,9 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   const groupStrip = model.groups.length === 0 ? 0 : groupStripRows(model.groups, stripWidth) * LINE_STEP + 4;
   const columnTop = detail.y + inner;
   const columnHeight = detail.height - 2 * inner - groupStrip;
-  const textWidth = Math.max(140, Math.floor((detail.width - 3 * inner) * 0.5));
+  // Commands before prose: the card gets the wider half, because a picture and
+  // its one word do not wrap the way a sentence does.
+  const textWidth = Math.max(140, Math.floor((detail.width - 3 * inner) * 0.44));
   const textX = detail.x + inner;
   const commandX = textX + textWidth + inner;
   const commandWidth = Math.max(80, detail.width - textWidth - 3 * inner);
@@ -1286,6 +1438,12 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     }
     commandY += LINE_STEP + 5;
   }
+  if (model.orders.notice !== null) {
+    for (const word of wrapText(model.orders.notice, commandWidth).slice(0, 2)) {
+      status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
+      commandY += LINE_STEP;
+    }
+  }
   const armed = model.orders.armed;
   if (armed !== null) {
     const words = wrapText(`${message('ui.armed', { name: armed.label })} - ${armed.targetHint ?? ''}`, commandWidth);
@@ -1314,13 +1472,50 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
       rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP + 3 } });
     commandY += LINE_STEP + 5;
   }
+  // The card: rows of pictures for a Squad's verbs, one full-width row per named
+  // thing for a settlement's pages. The two are different questions — "what can
+  // these men do?" and "what can this town raise?" — so they are laid out
+  // differently rather than squeezed into one shape. A Squad's rows *are* the
+  // kinds of decision: motion, orders and formation, and the Siege.
   const commandArea = Math.max(0, columnTop + columnHeight - commandY);
-  const overflowing = model.commands.length * COMMAND_ROW > commandArea;
-  const commandScroll = scrollWindow(model.view.commandOffset ?? 0, model.commands.length,
-    commandArea - (overflowing ? 2 * LINE_STEP : 0));
-  const visibleCommands = model.commands.slice(commandScroll.offset, commandScroll.offset + commandScroll.page);
-  for (const [index, order] of visibleCommands.entries()) {
-    commands.push({ order, rect: { x: commandX, y: commandY + index * COMMAND_ROW, width: commandWidth, height: COMMAND_ROW } });
+  const settlementPage = model.selected?.kind === 'settlement';
+  const cardRows = settlementPage
+    ? model.commands.map((order) => [order])
+    : commandRows(model.commands);
+  const rowHeight = settlementPage ? ECONOMY_ROW_HEIGHT : COMMAND_ROW_HEIGHT;
+  const columns = Math.max(1, ...cardRows.map((row) => row.length));
+  const cellWidth = Math.max(1, Math.floor(commandWidth / columns));
+  let rowsFit = Math.max(1, Math.floor(commandArea / rowHeight));
+  if (cardRows.length > rowsFit) rowsFit = Math.max(1, Math.floor((commandArea - 2 * LINE_STEP) / rowHeight));
+  const commandScroll = paginate(model.view.commandOffset ?? 0, cardRows.length, rowsFit);
+  const visibleRows = cardRows.slice(commandScroll.offset, commandScroll.offset + commandScroll.page);
+  // The card is anchored to the bottom of its column, the way a command card
+  // sits under the hand it is used with: the words that answer a click grow
+  // downwards from the top and the pictures stay where a Player last pressed.
+  const reservedForScroll = commandScroll.max > 0 ? 2 * LINE_STEP : 0;
+  const gridTop = commandY + Math.max(0, commandArea - reservedForScroll - visibleRows.length * rowHeight);
+  for (const [row, items] of visibleRows.entries()) {
+    for (const [column, order] of items.entries()) {
+      commands.push({
+        order,
+        rect: {
+          x: commandX + column * cellWidth,
+          y: gridTop + row * rowHeight,
+          width: cellWidth - COMMAND_GAP,
+          height: rowHeight - COMMAND_GAP,
+        },
+      });
+    }
+    // A rule above every row but the card's own first: the motion commands, the
+    // orders and the Siege are different kinds of decision, and the rule says so.
+    if (!settlementPage && commandScroll.offset + row > 0) {
+      commandRules.push({
+        x: commandX,
+        y: gridTop + row * rowHeight - Math.ceil(COMMAND_GAP / 2),
+        width: commandWidth,
+        height: 1,
+      });
+    }
   }
   if (commandScroll.max > 0) {
     addScrollButtons(buttons, { x: commandX, y: commandY, width: commandWidth, height: commandArea },
@@ -1361,5 +1556,5 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   return { size, bar: rect(bar), list: rect(list), detail: rect(detail), minimap: rect(minimap),
     readouts: placed(readouts), headers: placed(headers), rows: placed(rows), text: placed(text), priority: placed(priority),
     buttons: placed(buttons), listScroll, detailScroll, commands: placed(commands), tabs: placed(tabs), groups: placed(groups),
-    exceptions: placed(exceptions), status: placed(status), commandScroll };
+    exceptions: placed(exceptions), status: placed(status), commandRules: commandRules.map(rect), commandScroll };
 }

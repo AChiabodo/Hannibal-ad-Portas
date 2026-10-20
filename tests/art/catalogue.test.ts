@@ -24,6 +24,15 @@ import {
 } from '../../src/art/terrain';
 import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from '../../src/art/nodes';
 import {
+  BADGE_NAMES,
+  BADGE_TILE,
+  COMMAND_ICON_NAMES,
+  ICON_TILE,
+  badgeIcon,
+  commandIcon,
+  iconEntries,
+} from '../../src/art/icons';
+import {
   FIGURE_FACINGS,
   FIGURE_FRAMES,
   FIGURE_HEIGHT,
@@ -78,6 +87,13 @@ const FIGURES_TOP =
   HEADING_HEIGHT;
 const FIGURE_ROWS_TOP = FIGURES_TOP + LINE_HEIGHT + 3;
 
+/** The icons section's own arithmetic, written out again so its cells are checked rather than trusted. */
+const ICON_CELL = ICON_TILE + 3;
+const BADGE_CELL = BADGE_TILE + 4;
+const ICON_LABEL_WIDTH = Math.max(...['commands', 'badges'].map((label) => measureText(label)));
+const ICONS_TOP =
+  FIGURE_ROWS_TOP + FIGURE_NAMES.length * FIGURE_FACINGS.length * FIGURE_CELL_HEIGHT + SECTION_GAP + HEADING_HEIGHT;
+
 /** The name the catalogue gives a character. */
 function glyphName(character: string): string {
   return `glyph:U+${(character.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')}`;
@@ -92,7 +108,8 @@ describe('the catalogue', () => {
         RAMP_NAMES.length +
         terrainEntries().length +
         nodeEntries().length +
-        figureEntries().length,
+        figureEntries().length +
+        iconEntries().length,
     );
     expect(new Set(names).size).toBe(names.length);
     for (const glyph of GLYPHS) {
@@ -109,6 +126,12 @@ describe('the catalogue', () => {
     }
     for (const entry of figureEntries()) {
       expect(names).toContain(entry.name);
+    }
+    for (const name of COMMAND_ICON_NAMES) {
+      expect(names).toContain(`icon:${name}`);
+    }
+    for (const name of BADGE_NAMES) {
+      expect(names).toContain(`badge:${name}`);
     }
   });
 
@@ -154,6 +177,34 @@ describe('the catalogue', () => {
 });
 
 describe('the catalogue plate', () => {
+  it('places every command icon and badge where its section says', () => {
+    const plate = cataloguePlate();
+    const iconX = PLATE_PADDING + ICON_LABEL_WIDTH + SECTION_GAP - SECTION_GAP + 3;
+
+    for (const [index, name] of COMMAND_ICON_NAMES.entries()) {
+      const icon = commandIcon(name);
+      for (let y = 0; y < icon.height; y += 1) {
+        for (let x = 0; x < icon.width; x += 1) {
+          const entryPixel = pixelAt(icon, x, y);
+          const expected = entryPixel[3] === 0 ? PLATE_BACKGROUND : entryPixel;
+          expect(pixelAt(plate, iconX + index * ICON_CELL + x, ICONS_TOP + y), `icon:${name}`).toEqual(expected);
+        }
+      }
+    }
+
+    for (const [index, name] of BADGE_NAMES.entries()) {
+      const badge = badgeIcon(name);
+      const top = ICONS_TOP + ICON_CELL + Math.floor((ICON_CELL - BADGE_TILE) / 2);
+      for (let y = 0; y < badge.height; y += 1) {
+        for (let x = 0; x < badge.width; x += 1) {
+          const entryPixel = pixelAt(badge, x, y);
+          const expected = entryPixel[3] === 0 ? PLATE_BACKGROUND : entryPixel;
+          expect(pixelAt(plate, iconX + index * BADGE_CELL + 2 + x, top + y), `badge:${name}`).toEqual(expected);
+        }
+      }
+    }
+  });
+
   it('is the size its sections add up to, on the neutral background', () => {
     const plate = cataloguePlate();
 

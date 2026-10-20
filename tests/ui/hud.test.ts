@@ -711,3 +711,70 @@ it('keeps every numbered control group reachable, wrapping the chips rather than
     expect(hudHit(model, DESKTOP, chip.rect.x + 3, chip.rect.y + 3)).toEqual({ kind: 'group', index: chip.index });
   }
 });
+
+/**
+ * The command card (#55, reorganised).
+ *
+ * The layout is asserted as a shape rather than as pixels: four cells to a row
+ * for a Squad's verbs, one full-width row per named thing for a settlement's
+ * pages, a rule where the kind of decision changes, and every label short enough
+ * for the cell it sits in. What the pictures *mean* is the Atelier's and a
+ * human's question; that they are drawn is the render test below.
+ */
+describe('the command card', () => {
+  it('lays a Squad’s verbs out as a grid of pictures, ruled between the kinds of decision', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1], DESKTOP_VIEW, { faction: 'rome' });
+    const layout = hudLayout(model, DESKTOP);
+
+    // Three rows of the card: motion, orders and formation, and the Siege.
+    expect(layout.commands.map((command) => command.order.id)).toEqual([
+      'move', 'attackMove', 'attack',
+      'hold', 'withdraw', 'formation.line', 'formation.column',
+      'garrison', 'assault', 'blockade',
+    ]);
+    const firstRow = layout.commands.slice(0, 3).map((command) => command.rect.y);
+    expect(new Set(firstRow).size).toBe(1);
+    expect(layout.commands[3]!.rect.y).toBeGreaterThan(firstRow[0]!);
+    expect(layout.commands[7]!.rect.y).toBeGreaterThan(layout.commands[3]!.rect.y);
+    expect(layout.commandRules).toHaveLength(2);
+
+    for (const { order, rect } of layout.commands) {
+      expect(measureText(order.short, 2), order.id).toBeLessThanOrEqual(rect.width);
+      expect(rect.x + rect.width).toBeLessThanOrEqual(layout.detail.x + layout.detail.width);
+      expect(rect.y + rect.height).toBeLessThanOrEqual(layout.detail.y + layout.detail.height);
+    }
+  });
+
+  it('gives a settlement one full-width row per thing it can raise, with its costs as badges', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 0 }, [], DESKTOP_VIEW,
+      { faction: 'rome', tab: 'construction' });
+    const layout = hudLayout(model, DESKTOP);
+    const farm = model.commands.find((order) => order.id === 'build:farm');
+
+    expect(farm?.costs.map((cost) => cost.badge)).toContain('clock');
+    expect(layout.commands.every((command) => command.rect.width === layout.commands[0]!.rect.width)).toBe(true);
+    expect(layout.commandRules).toEqual([]);
+  });
+
+  it('draws each verb as ink, the muted ones in one shade, and the notice above them', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1], DESKTOP_VIEW,
+      { faction: 'rome', notice: 'Assalto: Solo Roma ha l\'ariete' });
+    const layout = hudLayout(model, DESKTOP);
+    const buffer = renderPanels(model, DESKTOP);
+    const colours = (rect: { x: number; y: number; width: number; height: number }): ReadonlySet<string> => {
+      const seen = new Set<string>();
+      for (let y = rect.y; y < rect.y + rect.height; y += 1) {
+        for (let x = rect.x; x < rect.x + rect.width; x += 1) {
+          const colour = pixelAt(buffer, x, y);
+          if (colour[3] !== 0) seen.add(colour.join(','));
+        }
+      }
+      return seen;
+    };
+
+    for (const { rect } of layout.commands) expect(colours(rect).size).toBeGreaterThan(1);
+    const disabled = layout.commands.find((command) => !command.order.enabled);
+    if (disabled !== undefined) expect(colours(disabled.rect).size).toBeGreaterThan(0);
+    expect(layout.status.map((line) => line.text).join(' ')).toContain('ariete');
+  });
+});
