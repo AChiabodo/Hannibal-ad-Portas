@@ -17,13 +17,18 @@
  * did — the glyphs, the ramps, the road path, the four markers and every figure and
  * icon are byte-identical before and after, which is what "the terrain was quietened
  * and nothing else was touched" looks like as a diff.
+ *
+ * #57 added ten artefacts and moved the plate they are drawn on: the two Factions'
+ * villages, a Stronghold whole, hurt, breached and under the ram, and the two
+ * remembered places. Every hash already pinned above is untouched, which is the
+ * other half of that review.
  */
 import { describe, expect, it } from 'vitest';
 import { catalogue, cataloguePlate } from '../../src/art/catalogue';
 import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 
 /** The fingerprints recorded from the generators as accepted. */
-const PLATE_HASH = '710051d5f6f235ab';
+const PLATE_HASH = 'e566bc8e1bd75edc';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'glyph:U+0020': '19ce279ecc93e509',
@@ -101,6 +106,19 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'separation:carthage:river': 'b712216999d83b80',
   'separation:carthage:ford': '1b249e7404e701ab',
   'separation:carthage:road': '4433626c7b132ec0',
+  // U6's settlements and fortifications: every specimen the plate shows — both
+  // Factions' villages, the Stronghold whole, hurt and breached, the ram at the
+  // gate, and the two remembered places. A wall that moves a pixel names itself.
+  'site:settlement:rome:seen': 'c7b555092feaf0e2',
+  'site:settlement:carthage:seen': '16d868332ca91372',
+  'site:settlement:none:seen': 'bb2d39411b17668b',
+  'site:stronghold:rome:intact': 'a650634053d52c2f',
+  'site:stronghold:carthage:intact': '11df68855b2d1f4f',
+  'site:stronghold:rome:damaged': '159ffa5a964fd8a3',
+  'site:stronghold:rome:breached': '5117cc405309552d',
+  'site:stronghold:rome:ram': '007bcdd1e7429921',
+  'site:stronghold:carthage:remembered': '36df808b07115242',
+  'site:settlement:rome:remembered': 'e81000f94b859fe8',
 };
 
 describe('the generated output, as a fingerprint', () => {

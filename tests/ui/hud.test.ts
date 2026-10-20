@@ -34,7 +34,8 @@ import {
 import { inspectionView } from '../../src/sim/fog.ts';
 import { MINIMAP_PLATE_HEIGHT, MINIMAP_PLATE_WIDTH, minimapPlate } from '../../src/ui/minimap.ts';
 import { generateMap, TILE_COUNT } from '../../src/sim/map.ts';
-import { translate } from '../../src/ui/strings.ts';
+import type { KnownSite } from '../../src/ui/sites.ts';
+import { message, translate } from '../../src/ui/strings.ts';
 
 const SIZE: HudSize = { width: 640, height: 480 };
 
@@ -651,6 +652,70 @@ it('draws the contextual commands as ink on the panel, and the armed one on its 
   const armed = layout.commands.find((command) => command.order.id === 'attackMove');
   expect(armed).toBeDefined();
   expect(pixelAt(buffer, armed!.rect.x + 1, armed!.rect.y + 1)).toEqual(HUD_ARMED);
+});
+
+/** The enemy Stronghold, as the page hands it to the panel: seen, with its walls. */
+const ENEMY_FRONT: VisibleFront = {
+  settlement: 7,
+  structures: [
+    { kind: 'gate', side: 'north', hp: 42, standing: true },
+    { kind: 'wall', side: 'east', hp: 60, standing: true },
+    { kind: 'wall', side: 'north', hp: 0, standing: false },
+  ],
+  breached: true,
+  siege: 'assault',
+  besieger: 'rome',
+  ram: { hp: 60, remaining: 0, built: true },
+  hold: 0,
+  garrison: 2,
+};
+
+/** That Stronghold as a place the Faction can see (U6). */
+const ENEMY_SITE: KnownSite = {
+  id: 7, kind: 'stronghold', x: 80, y: 80, owner: 'carthage', memory: 'seen', front: ENEMY_FRONT,
+};
+
+/** A place the Faction has only remembered, with no front to read. */
+const REMEMBERED_SITE: KnownSite = {
+  id: 9, kind: 'stronghold', x: 20, y: 60, owner: 'carthage', memory: 'remembered', front: null,
+};
+
+it('opens a place the Faction sees, with its walls, from a click on the map (U6)', () => {
+  const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 7 }, [], {}, { sites: [ENEMY_SITE] });
+  const words = model.detail?.lines.map(lineText) ?? [];
+
+  expect(model.detail?.title).toBe('Roccaforte 7');
+  expect(words).toContain(`${translate('ui.siteState')} ${translate('ui.inSight')}`);
+  expect(words).toContain(`${translate('ui.holder')} ${translate('faction.carthage')}`);
+  expect(words).toContain(`${translate('ui.walls')} ${message('ui.wallsStanding', { standing: 2, total: 3 })}`);
+  expect(words).toContain(`${translate('ui.breach')} ${translate('ui.breached')}`);
+  expect(words).toContain(`${translate('ui.ram')} ${message('ui.ramBuilt', { hp: 60 })}`);
+
+  // Its stock is not this Faction's to read, so the bar names the place and says
+  // the figures are unknown instead of showing four zeroes.
+  const readouts = model.readouts.map(lineText);
+  expect(readouts).toContain(`${translate('ui.settlement')} Roccaforte 7`);
+  expect(readouts).toContain(`${translate('resource.grain')} ${translate('ui.unknown')}`);
+});
+
+it('opens a place it only remembers, and reads no wall into the memory (U6)', () => {
+  const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 9 }, [], {}, { sites: [REMEMBERED_SITE] });
+  const words = model.detail?.lines.map(lineText) ?? [];
+
+  expect(model.detail?.title).toBe('Roccaforte 9');
+  expect(words).toContain(`${translate('ui.siteState')} ${translate('ui.lastKnown')}`);
+  expect(words).toContain(`${translate('ui.walls')} ${translate('ui.frontUnknown')}`);
+  // No wall standing, no breach, no ram and no garrison: the memory holds none.
+  expect(words.some((line) => line.startsWith(translate('ui.wallsStanding').slice(0, 4)))).toBe(false);
+  expect(words.some((line) => line.startsWith(translate('ui.ram')))).toBe(false);
+  expect(words.some((line) => line.startsWith(translate('ui.garrisonCount')))).toBe(false);
+});
+
+it('drops a settlement whose place is neither held nor known', () => {
+  const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 42 }, [], {}, { sites: [ENEMY_SITE] });
+
+  expect(model.selected).toBeNull();
+  expect(model.detail).toBeNull();
 });
 
 it('reads the enemy walls this Faction knows, and never an enemy stock', () => {

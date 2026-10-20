@@ -185,9 +185,18 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     background: BASE.night,
   });
 
+  // The world sorts its children by `zIndex`, because more than one thing now
+  // stands on the theatre: the ground at 0, the settlements on it at 1
+  // (`render/settlement-layer.ts`), the fog at 2, and the dead and the living on
+  // top of all three. The order is a number rather than the order the layers
+  // happened to be built in, so a layer added later cannot land in the wrong place.
   const world = new Container();
+  world.sortableChildren = true;
   stage.root.addChild(world);
-  world.addChild(stage.spriteOf(theatre));
+
+  const ground = stage.spriteOf(theatre);
+  ground.zIndex = 0;
+  world.addChild(ground);
 
   // The fog the page draws, and the sprite it is drawn with. The sprite starts
   // with no texture: the first `paintFog` is what gives it one, so there is no
@@ -199,6 +208,7 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
   let texture: Texture | null = null;
 
   const fogSprite = new Sprite();
+  fogSprite.zIndex = 2;
   world.addChild(fogSprite);
 
   const bounds = {
@@ -287,11 +297,16 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     stage.render();
   };
 
-  /** The fog redrawn and the frame presented, for a debug hook that moved a watch. */
+  /**
+   * The fog redrawn and the frame presented, for a debug hook that moved a watch.
+   *
+   * The whole page is repainted and not only the veil, because what the fog knows
+   * decides what stands on the map: a place is drawn when its ground is in view or
+   * remembered, so moving a watch has to move the settlements with it (#57).
+   */
   const paintFog = (): void => {
     refresher();
-    game.syncMinimap();
-    stage.render();
+    game.sync();
   };
 
   const view: GameView = {
@@ -324,8 +339,9 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
       // changed what it was measuring.
       revealed = inspection ? inspectionView(map, fog.contacts) : null;
       fogSprite.visible = !inspection;
-      game.syncMinimap();
-      stage.render();
+      // Revealing the theatre changes what the fog knows, and therefore what stands
+      // on it: the settlements follow the same call the fog does (#57).
+      game.sync();
     },
     describe: () => ({
       camera,

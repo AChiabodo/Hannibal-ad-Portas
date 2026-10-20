@@ -32,7 +32,12 @@
  *   face and the four things it can do;
  * - **icons**, the command card and the badges the panels read figures with
  *   (#55): one row of verbs and one row of costs, so the pictures a Player
- *   presses can be judged beside everything else the library draws.
+ *   presses can be judged beside everything else the library draws;
+ * - **settlements**, the places on the theatre (#57): a village of each Faction,
+ *   an unclaimed one, the Stronghold whole, hurt and breached, the ram at its
+ *   gate, and the same places as they are *remembered* — which is the section a
+ *   reviewer judges "can I tell a town from a village, a wall from a breach, and
+ *   a place in sight from a place in memory" on.
  */
 
 import {
@@ -56,6 +61,7 @@ import {
   iconEntries,
 } from './icons.ts';
 import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from './nodes.ts';
+import { SITE_SIZE, SITE_SPECIMENS, settlementEntries, siteSprite } from './settlements.ts';
 import {
   SEPARATION_FACTIONS,
   SEPARATION_MATERIALS,
@@ -219,15 +225,36 @@ const ICONS_WIDTH = ICON_LABEL_WIDTH + LABEL_GAP + Math.max(
 /** Height of the icons section: a commands row and a badges row. */
 const ICONS_HEIGHT = 2 * ICON_CELL;
 
+/** The tallest place in the catalogue, which is what a settlement row is as tall as. */
+const SITE_CELL = Math.max(SITE_SIZE.settlement, SITE_SIZE.stronghold) + 4;
+
+/** Height of the settlements section: one row per specimen. */
+const SETTLEMENTS_HEIGHT = SITE_SPECIMENS.length * SITE_CELL;
+
+/** The widest specimen name, which is what the sprites clear. */
+const SITE_LABEL_WIDTH = Math.max(...SITE_SPECIMENS.map((specimen) => measureText(specimen.name)));
+
+/** Width of the settlements section: a specimen's name, and its drawing beside it. */
+const SETTLEMENTS_WIDTH = SITE_LABEL_WIDTH + LABEL_GAP + SITE_CELL;
+
+
 /** The plate's width: the padding, and whichever section is wider. */
 export const PLATE_WIDTH =
   PLATE_PADDING * 2 +
-  Math.max(GLYPH_GRID_WIDTH, RAMPS_WIDTH, TERRAIN_WIDTH, SEPARATION_WIDTH, FIGURES_WIDTH, ICONS_WIDTH);
+  Math.max(
+    GLYPH_GRID_WIDTH,
+    RAMPS_WIDTH,
+    TERRAIN_WIDTH,
+    SEPARATION_WIDTH,
+    FIGURES_WIDTH,
+    ICONS_WIDTH,
+    SETTLEMENTS_WIDTH,
+  );
 
 /** The plate's height, which the sections above add up to. */
 export const PLATE_HEIGHT =
   PLATE_PADDING * 2 +
-  HEADING_HEIGHT * 8 +
+  HEADING_HEIGHT * 9 +
   GLYPH_GRID_HEIGHT +
   RAMPS_HEIGHT +
   TERRAIN_HEIGHT +
@@ -235,7 +262,8 @@ export const PLATE_HEIGHT =
   SEPARATION_HEIGHT +
   FIGURES_HEIGHT +
   ICONS_HEIGHT +
-  SECTION_GAP * 7;
+  SETTLEMENTS_HEIGHT +
+  SECTION_GAP * 8;
 
 /**
  * Every artefact the art library generates, in a stable order: the glyphs in
@@ -264,6 +292,7 @@ export function catalogue(): readonly CatalogueEntry[] {
     ...separationEntries(),
     ...figureEntries(),
     ...iconEntries(),
+    ...settlementEntries(),
   ];
 }
 
@@ -484,6 +513,25 @@ export function cataloguePlate(): PixelBuffer {
 
     blit(plate, badgeIcon(name), PLATE_PADDING + ICON_LABEL_WIDTH + LABEL_GAP + index * BADGE_CELL + 2,
       y + Math.floor((ICON_CELL - BADGE_TILE) / 2));
+  }
+  // The commands row has already been paid for; what is left of the section is the
+  // badges' own row.
+  y += ICON_CELL + SECTION_GAP;
+
+  blit(plate, textPlate('settlements', PLATE_INK), PLATE_PADDING, y);
+  y += HEADING_HEIGHT;
+
+  // One specimen per row: its name, then the drawing itself. A place is drawn on
+  // the plate with no ground under it — the question a settlement has to answer
+  // first is whether its silhouette reads on nothing, and the second is whether
+  // two of them can be told apart beside each other.
+  for (const specimen of SITE_SPECIMENS) {
+    const sprite = siteSprite(specimen.look);
+    const top = y + Math.floor((SITE_CELL - sprite.height) / 2);
+
+    blit(plate, textPlate(specimen.name, PLATE_INK), PLATE_PADDING, top + Math.floor((sprite.height - LINE_HEIGHT) / 2));
+    blit(plate, sprite, PLATE_PADDING + SITE_LABEL_WIDTH + LABEL_GAP, top);
+    y += SITE_CELL;
   }
 
   return plate;

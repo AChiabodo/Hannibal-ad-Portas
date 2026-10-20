@@ -273,6 +273,14 @@ export const STRINGS = {
   'ui.garrisonCount': { it: 'Presidio', en: 'Garrison' },
   'ui.frontUnknown': { it: 'Fortificazioni non note', en: 'Fortifications unknown' },
 
+  // A place the Faction knows but does not hold: what is seen, and what is only
+  // remembered (U6, GLOSSARY: Last known contact).
+  'ui.siteState': { it: 'Stato', en: 'State' },
+  'ui.inSight': { it: 'In vista', en: 'In sight' },
+  'ui.lastKnown': { it: 'Ultimo contatto noto', en: 'Last known contact' },
+  'ui.holder': { it: 'Titolare', en: 'Holder' },
+  'ui.unclaimed': { it: 'Nessuno', en: 'Nobody' },
+
   // The Factions, as a Player reads them.
   'faction.rome': { it: 'Roma', en: 'Rome' },
   'faction.carthage': { it: 'Cartagine', en: 'Carthage' },

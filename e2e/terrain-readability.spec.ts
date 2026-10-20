@@ -143,10 +143,15 @@ async function openMatch(
   });
 }
 
-/** Puts the soldiers' lens on or off: the ground is compared with the men out of it. */
+/**
+ * Puts the lenses on or off: the ground is compared with the men and the towns out
+ * of it, and the men are put back where a scene is about them (#57 adds the towns
+ * to the same lens).
+ */
 async function showSquads(page: Page, visible: boolean): Promise<void> {
   await page.evaluate((show) => {
     window.__SPQR.game?.showSquads(show);
+    window.__SPQR.game?.showSettlements(show);
   }, visible);
 }
 

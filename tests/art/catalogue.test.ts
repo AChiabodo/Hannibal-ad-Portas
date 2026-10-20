@@ -23,6 +23,7 @@ import {
   variantQuadrants,
 } from '../../src/art/terrain';
 import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from '../../src/art/nodes';
+import { settlementEntries } from '../../src/art/settlements';
 import {
   BADGE_NAMES,
   BADGE_TILE,
@@ -134,7 +135,8 @@ describe('the catalogue', () => {
         nodeEntries().length +
         separationEntries().length +
         figureEntries().length +
-        iconEntries().length,
+        iconEntries().length +
+        settlementEntries().length,
     );
     expect(new Set(names).size).toBe(names.length);
     for (const glyph of GLYPHS) {
@@ -160,6 +162,9 @@ describe('the catalogue', () => {
     }
     for (const name of BADGE_NAMES) {
       expect(names).toContain(`badge:${name}`);
+    }
+    for (const entry of settlementEntries()) {
+      expect(names).toContain(entry.name);
     }
   });
 

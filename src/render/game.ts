@@ -83,6 +83,7 @@ import { knows } from '../sim/fog.ts';
 import {
   NOTHING_SELECTED,
   boxBetween,
+  pickableAt,
   selectAt,
   selectIn,
   selectSettlement,
@@ -122,9 +123,12 @@ import {
   type Selection,
 } from '../ui/hud.ts';
 import { minimapPlate, type ViewportRect, type KnownMinimapSite } from '../ui/minimap.ts';
+import { knownSites, siteIdentities, type KnownSite } from '../ui/sites.ts';
 import { createHudLayer, type HudLayer } from './hud.ts';
 import { screenToStage, type Camera } from './camera.ts';
 import { textureOf } from './stage.ts';
+import { createSettlementLayer, type SettlementLayer } from './settlement-layer.ts';
+import { siteRect } from './settlements.ts';
 import { createSquadLayer, type SquadLayer } from './squad-layer.ts';
 import { blockPlacement, blockSize } from './squads.ts';
 import { tileAt, tilePixel } from './terrain.ts';
@@ -141,6 +145,16 @@ export const PLAYER_FACTION: Faction = VIEWED_FACTION;
 const FRAME_BUDGET_MS = 250;
 
 /**
+ * How high the two pickable kinds sort, where they overlap.
+ *
+ * The men are drawn in the layer above the places (`render/squad-layer.ts` at ten
+ * and eleven, `render/settlement-layer.ts` at one, under the fog), so a Squad
+ * standing in a town is what a Player can see and what a click has to take.
+ */
+const LAYER_OF_PLACES = 0;
+const LAYER_OF_MEN = 1;
+
+/**
  * Where an armed action's click landed, as the thing the Command will name.
  *
  * A closed set rather than a bag of optional fields: a `move` has a tile and no
@@ -154,6 +168,19 @@ type OrderPoint =
 /** A Squad, as the page reports it: what the Observation says, and where it is drawn. */
 export interface SquadReport extends VisibleSquad {
   /** The theatre rectangle its men are drawn in, which is the rectangle a click picks. */
+  readonly rect: PickRect;
+}
+
+/**
+ * A settlement, as the page reports it: what the Faction knows of it, and where it
+ * is drawn (ticket U6).
+ *
+ * `rect` is the rectangle the structure is drawn in — the same one the layer blits
+ * and `input/selection.ts` picks — so a test can click what a Player sees and
+ * assert the two agree, instead of guessing at a tile.
+ */
+export interface SiteReport extends KnownSite {
+  /** The theatre rectangle the structure is drawn in, which is the rectangle a click picks. */
   readonly rect: PickRect;
 }
 
@@ -198,6 +225,9 @@ export interface GameSnapshot {
   readonly selection: PlayerSelection;
   /** The Faction's Squads, each with the rectangle its men are drawn in. */
   readonly squads: readonly SquadReport[];
+
+  /** Every place the Faction may see, each with the rectangle its structure is drawn in (U6). */
+  readonly sites: readonly SiteReport[];
   /** The dead this Faction can see: residue, drawn, faded and never hashed (C3). */
   readonly corpses: readonly Corpse[];
   /** What each tile of the theatre is known as, row-major (B4). */
@@ -261,6 +291,15 @@ export interface GameHooks {
   groupBack(): boolean;
   /** The Faction's own Squads, with the rectangle each is drawn in. */
   squads(): readonly SquadReport[];
+
+  /**
+   * Every place this Faction may see now, with the rectangle each is drawn in (U6).
+   *
+   * Own settlements, enemy places it remembers, and places nobody holds that it has
+   * looked at: the same list the settlement layer is handed, so what a test reads is
+   * what the map is showing and not a second opinion about it.
+   */
+  sites(): readonly SiteReport[];
   /**
    * The men who have fallen lately where this Faction can see them, as residue:
    * drawn on the field, faded by their age, and never part of the Match (C3).
@@ -340,6 +379,16 @@ export interface GameHooks {
    * through it — so it is a view hook and not a Command.
    */
   showSquads(visible: boolean): void;
+  /**
+   * Shows or hides the settlements' structures.
+   *
+   * The same kind of lens as `showSquads`, for the same reason: the pixel
+   * comparisons that ask what the *theatre* shows have to be able to take a town
+   * standing on it out of the picture. Nothing about the Match changes — the
+   * places are still there and still pickable at their own rectangles — so it is a
+   * view hook and never a Command.
+   */
+  showSettlements(visible: boolean): void;
   /**
    * The Commands the page has applied lately, stamped with the tick, oldest
    * first: the beginning of the log a replay is made of (E2).
@@ -424,7 +473,10 @@ export function createGame(options: GameOptions): Game {
   const pacing = host.pacing;
 
   const layer: HudLayer = createHudLayer(options.stage);
+  const ground: SettlementLayer = createSettlementLayer(options.world);
   const field: SquadLayer = createSquadLayer(options.world);
+  /** Every settlement on the theatre, by id: the map's own list, and what the minimap walks. */
+  const identities = siteIdentities(match.state.world.map);
   const menu = options.stage.spriteOf(menuPlate(options.size, matchMenu(options.size, 0, config, 1, null)));
   options.stage.root.addChild(menu);
   menu.visible = options.sessionControls !== false;
@@ -471,7 +523,7 @@ export function createGame(options: GameOptions): Game {
   // frame.
   reportVision(match.state.world);
 
-  let model = readModel();
+  let model = readModel(readSites());
   let minimap = readMinimap();
   let dead: readonly Corpse[] = readCorpses();
 
@@ -628,6 +680,11 @@ export function createGame(options: GameOptions): Game {
       field.setVisible(visible === true);
       repainted();
     },
+    showSettlements: (visible) => {
+      ground.setVisible(visible === true);
+      repainted();
+    },
+    sites: () => siteReports(),
     applied: () => [...applied],
     knowledge: () => knowledgeStates(),
   };
@@ -777,6 +834,7 @@ export function createGame(options: GameOptions): Game {
       hud: model,
       selection: human.selection,
       squads: squadReports(),
+      sites: siteReports(),
       corpses: dead,
       knowledge: knowledgeStates(),
       applied: [...applied],
@@ -819,11 +877,12 @@ export function createGame(options: GameOptions): Game {
     return { x: at.x, y: at.y, width: size.width, height: size.height };
   }
 
-  /** The HUD's model, with the panel's selection and every picked Squad. */
-  function readModel(): HudModel {
+  /** The HUD's model, with the panel's selection, every picked Squad and every known place. */
+  function readModel(known: readonly KnownSite[]): HudModel {
     const observation = visible();
     const next = hudModel(observation, strongholdIds(observation), panelSelection(), human.selection.squads,
-      { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset }, session(observation));
+      { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset },
+      session(observation, known));
     if (next.selected?.id !== detailSelection?.id || next.selected?.kind !== detailSelection?.kind) {
       detailOffset = 0;
       commandOffset = 0;
@@ -835,8 +894,8 @@ export function createGame(options: GameOptions): Game {
       smallWindow: desktop && (windowSize().width < 1280 || windowSize().height < 720) } };
   }
 
-  /** What the page knows beside the Observation: its Faction and the Player's own memory. */
-  function session(observation: SiegeVisible): {
+  /** What the page knows beside the Observation: its Faction, the places it sees and the Player's own memory. */
+  function session(observation: SiegeVisible, known: readonly KnownSite[]): {
     readonly faction: Faction;
     readonly tab: SettlementTab;
     readonly armed: string | null;
@@ -846,6 +905,7 @@ export function createGame(options: GameOptions): Game {
     readonly backToGroup: boolean;
     readonly notice: string | null;
     readonly ended: boolean;
+    readonly sites: readonly KnownSite[];
   } {
     return {
       faction,
@@ -857,7 +917,27 @@ export function createGame(options: GameOptions): Game {
       backToGroup: groupMemory !== null && human.selection.squads.length === 1,
       notice: commandNotice,
       ended: result !== null,
+      sites: known,
     };
+  }
+
+  /**
+   * Every place this Faction may see, as `ui/sites.ts` reads its Observation and its
+   * fog (ticket U6).
+   *
+   * One read, three users: the layer draws it, the panel opens what a click on it
+   * names, and the `sites` hook hands it back to a test. There is no second list
+   * anywhere, so what is drawn and what can be picked cannot drift apart.
+   */
+  function readSites(): readonly KnownSite[] {
+    // The fog the picture is veiled with, not the Observation's copy of it: a town
+    // must be drawn exactly when the ground under it is lit on the screen.
+    return knownSites(identities, visible(), options.fog(), faction);
+  }
+
+  /** Every place the Faction may see, with the rectangle each is drawn in. */
+  function siteReports(): readonly SiteReport[] {
+    return readSites().map((site) => ({ ...site, rect: siteRect(site) }));
   }
 
   /** The control groups the Player has bound, in digit order, empty ones left out. */
@@ -901,15 +981,17 @@ export function createGame(options: GameOptions): Game {
     return minimapPlate(match.state.world.map, options.fog(), options.viewport(hudLayout(model, options.size)), ownership);
   }
 
-  /** Both plates, every block, and a frame drawn. */
+  /** Both plates, every block, every structure, and a frame drawn. */
   function repaint(): void {
-    model = readModel();
+    const known = readSites();
+    model = readModel(known);
     const layout = hudLayout(model, options.size);
     listOffset = layout.listScroll.offset;
     detailOffset = layout.detailScroll.offset;
     commandOffset = layout.commandScroll.offset;
     dead = readCorpses();
     layer.panels(model, options.size);
+    ground.update({ sites: known, selected: human.selection.settlement });
     field.update({
       squads: visible().squads,
       selected: human.selection.squads,
@@ -1099,8 +1181,13 @@ export function createGame(options: GameOptions): Game {
       return enemy === null ? false : submitOrder(offer, { kind: 'enemy', squad: enemy.id });
     }
     if (offer.target === 'settlement') {
-      const site = settlementAt(settlementTargets(visible()), tile.x, tile.y);
-      return site === null ? false : targetSettlement(site.id);
+      // The structure a Player can see is the target, by the rectangle it is drawn
+      // in: an armed Assault on the gate of a town is a click on the gatehouse, not
+      // a click on the one tile the rules happen to name it by.
+      const drawn = pickableAt(pickables().filter((pickable) => pickable.kind === 'settlement'), at);
+      const target = drawn?.id ?? settlementAt(settlementTargets(visible()), tile.x, tile.y)?.id;
+
+      return target === undefined ? false : targetSettlement(target);
     }
 
     return false;
@@ -1238,12 +1325,21 @@ export function createGame(options: GameOptions): Game {
   }
 
   /**
-   * The blocks a pick can land on: the Faction's own Squads, the rectangles they
-   * are drawn in, and the row they stand on — which is the order the layer draws
-   * them in, so the one a Player sees on top is the one the click takes.
+   * What a pick can land on: the Faction's own Squads and the places it can see,
+   * with the rectangles they are drawn in, the rows they stand on and the layers
+   * they are drawn in.
+   *
+   * The men sort above the places (`LAYER_OF_MEN` against `LAYER_OF_PLACES`),
+   * which is the order the stage draws them in: a Squad standing in a town is the
+   * thing a Player can see under the pointer, so it is the thing the click takes.
    */
   function pickables(): readonly Pickable[] {
-    return squadReports().map((squad) => ({ id: squad.id, rect: squad.rect, depth: squad.y }));
+    return [
+      ...siteReports().map((site) => ({ kind: 'settlement' as const, id: site.id, rect: site.rect,
+        depth: site.y, layer: LAYER_OF_PLACES })),
+      ...squadReports().map((squad) => ({ kind: 'squad' as const, id: squad.id, rect: squad.rect,
+        depth: squad.y, layer: LAYER_OF_MEN })),
+    ];
   }
 
   /** The settlement ids that are Strongholds, which the Observation does not say and the map does. */

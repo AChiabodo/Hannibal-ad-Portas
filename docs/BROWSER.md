@@ -110,6 +110,8 @@ the camera's hooks and the Match's hooks, and nothing else:
 | `minimapSamples` | `(points) → Rgba[]` | game | The generated minimap, sampled in the same currency the frame is |
 | `knowledge` | `() → Knowledge[]` | game | What the Faction knows of each tile, row-major: unexplored, remembered or in view |
 | `showSquads` | `(visible)` | game | Shows or hides the blocks of men: a lens for comparing the theatre, which changes nothing about the Match |
+| `showSettlements` | `(visible)` | game | Shows or hides the settlements' structures: the same kind of lens, for the pixel comparisons that are about the theatre rather than about what stands on it |
+| `sites` | `() → SiteReport[]` | game | Every place the Faction may see — its own, the enemy's it remembers, and nobody's it has looked at — each with the theatre rectangle its structure is drawn in |
 | `applied` | `() → LoggedCommand<Command>[]` | game | The Commands the page has applied lately, stamped with the tick, oldest first |
 <!-- surface:end -->
 
@@ -154,6 +156,7 @@ a sequence of ticks.
 | `hud` | The Italian interface's model, as it stands |
 | `selection` | What the Player has picked, which is the Player's memory and not the Match's |
 | `squads` | The Faction's Squads, each with the rectangle its men are drawn in |
+| `sites` | Every place the Faction may see, each with the rectangle its structure is drawn in, and what is known of its walls |
 | `corpses` | The dead this Faction can see |
 | `knowledge` | What each tile is known as, row-major, one entry per tile of the theatre |
 | `applied` | The Commands the page has applied lately, oldest first |

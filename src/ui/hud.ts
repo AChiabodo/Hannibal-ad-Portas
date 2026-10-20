@@ -70,6 +70,7 @@ import {
   MINIMAP_PLATE_HEIGHT,
   MINIMAP_PLATE_WIDTH,
 } from './minimap.ts';
+import type { KnownSite } from './sites.ts';
 import { message, refusalLabel, resourceLabel, seasonLabel, squadLabel, translate, workLabel } from './strings.ts';
 
 /** What a Player has selected, or `null` for nothing. */
@@ -186,6 +187,15 @@ export interface HudSession {
   readonly notice?: string | null;
   /** Whether the Match is over, which closes every offer. */
   readonly ended?: boolean;
+  /**
+   * Every place the Faction may see, as `ui/sites.ts` reads its Observation (U6).
+   *
+   * The panel needs it for the places its own list does not hold: an enemy Stronghold
+   * it can see, a village it remembers. The page passes the same list the map is
+   * drawn from, so a structure a Player clicks and the panel that opens cannot be two
+   * different places.
+   */
+  readonly sites?: readonly KnownSite[];
 }
 
 /** Presentation memory only; never part of the Match. Offsets count bitmap text lines. */
@@ -441,9 +451,11 @@ export function hudModel(
   view: HudView = {},
   session: HudSession = {},
 ): HudModel {
+  const sites = session.sites ?? [];
   const picked = pickedSquads(visible, squadSelection);
-  const selected = findSelection(visible, selection) ?? (selection?.kind === 'squad' ? picked[0] ?? null : null);
+  const selected = findSelection(visible, selection, sites) ?? (selection?.kind === 'squad' ? picked[0] ?? null : null);
   const focus = focusSettlement(visible, selected);
+  const known = selected?.kind === 'settlement' ? sites.find((site) => site.id === selected.id) ?? null : null;
   const pickedRows = selected !== null && selected.kind === 'squad' && !picked.some((row) => row.id === selected.id)
     ? [...picked, selected]
     : picked;
@@ -462,11 +474,11 @@ export function hudModel(
 
   return {
     view,
-    readouts: readouts(visible, focus, strongholds),
+    readouts: readouts(visible, focus, strongholds, known),
     rows: rows(visible, strongholds),
     detail: selected === null
       ? null
-      : group !== null ? groupDetail(group) : detail(visible, strongholds, selected),
+      : group !== null ? groupDetail(group) : detail(visible, strongholds, selected, known),
     selected,
     picked: pickedRows,
     commands,
@@ -941,14 +953,20 @@ function readouts(
   visible: EconomyVisible,
   focus: VisibleSettlement | null,
   strongholds: readonly number[],
+  known: KnownSite | null = null,
 ): readonly HudReadout[] {
+  // A place this Faction does not hold is named but not read: its stocks are not
+  // the Faction's to know, so the four resource figures say so rather than zero.
+  const unknown = translate('ui.unknown');
   const lines: HudReadout[] = [
     {
       label: translate('ui.settlement'),
       value:
-        focus === null
-          ? translate('ui.nothingSelected')
-          : message('ui.listItem', { name: settlementName(focus, strongholds), id: focus.id }),
+        known !== null
+          ? message('ui.listItem', { name: siteName(known), id: known.id })
+          : focus === null
+            ? translate('ui.nothingSelected')
+            : message('ui.listItem', { name: settlementName(focus, strongholds), id: focus.id }),
       large: false,
       newRow: true,
     },
@@ -960,8 +978,8 @@ function readouts(
   for (const [index, kind] of RESOURCE_KINDS.entries()) {
     lines.push({
       label: resourceLabel(kind),
-      value: String(focus === null ? 0 : stockOf(focus, kind)),
-      large: true,
+      value: known !== null ? unknown : String(focus === null ? 0 : stockOf(focus, kind)),
+      large: known === null,
       newRow: index === 0,
     });
   }
@@ -1003,10 +1021,16 @@ function detail(
   visible: EconomyVisible,
   strongholds: readonly number[],
   selected: Selection,
+  known: KnownSite | null,
 ): HudDetail | null {
   if (selected.kind === 'settlement') {
     const settlement = visible.settlements.find((candidate) => candidate.id === selected.id);
-    if (settlement === undefined) return null;
+    if (settlement === undefined) {
+      return known === null ? null : {
+        title: message('ui.listItem', { name: siteName(known), id: known.id }),
+        ...knownSiteLines(known),
+      };
+    }
 
     return {
       title: message('ui.listItem', { name: settlementName(settlement, strongholds), id: settlement.id }),
@@ -1072,6 +1096,44 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement)
   }
 
   return { lines, priority: [workStart + Math.max(0, settlement.works.findIndex((work) => !work.standing))] };
+}
+
+/**
+ * A place the Faction knows but does not hold: what is seen of it, or what is only
+ * remembered (U6).
+ *
+ * The panel here is deliberately thinner than a held settlement's, because the
+ * Observation is thinner: a place in view carries a front, and the front carries the
+ * walls, the gate, the breach, the ram and the garrison (ADR-0020), while a place
+ * remembered carries a position and nothing else. So a remembered Stronghold is
+ * *named* and its fortifications are said to be unknown — the panel does not read a
+ * condition, an owner's stock or a garrison out of a memory that never held one.
+ */
+function knownSiteLines(site: KnownSite): Pick<HudDetail, 'lines' | 'priority'> {
+  const lines: HudLine[] = [
+    { label: translate('ui.siteState'), value: translate(site.memory === 'seen' ? 'ui.inSight' : 'ui.lastKnown') },
+    {
+      label: translate('ui.holder'),
+      value: site.owner === null
+        ? translate(site.memory === 'seen' ? 'ui.unclaimed' : 'ui.unknown')
+        : translate(site.owner === 'rome' ? 'faction.rome' : 'faction.carthage'),
+    },
+  ];
+
+  if (site.front !== null) {
+    lines.push(...frontLines(site.front));
+  } else if (site.kind === 'stronghold') {
+    lines.push({ label: translate('ui.walls'), value: translate('ui.frontUnknown') });
+  } else {
+    lines.push({ label: translate('ui.walls'), value: translate('ui.none') });
+  }
+
+  return { lines, priority: [0] };
+}
+
+/** The name a place reads as on the map and in the bar: its kind, not its id. */
+function siteName(site: KnownSite): string {
+  return translate(site.kind === 'stronghold' ? 'ui.stronghold' : 'ui.minorSettlement');
 }
 
 /**
@@ -1222,13 +1284,21 @@ function focusSettlement(visible: EconomyVisible, selected: Selection | null): V
 }
 
 /** A selection, when the Faction's window still holds it. */
-function findSelection(visible: EconomyVisible, selection: Selection | null): Selection | null {
+function findSelection(
+  visible: EconomyVisible,
+  selection: Selection | null,
+  sites: readonly KnownSite[] = [],
+): Selection | null {
   if (selection === null) return null;
 
-  const held =
-    selection.kind === 'settlement'
-      ? visible.settlements.some((candidate) => candidate.id === selection.id)
-      : visible.squads.some((candidate) => candidate.id === selection.id);
+  if (selection.kind === 'squad') {
+    return visible.squads.some((candidate) => candidate.id === selection.id) ? selection : null;
+  }
+
+  // A settlement's panel is open for one of the Faction's own and for a place it
+  // knows: an enemy Stronghold in sight, a village it remembers (U6).
+  const held = visible.settlements.some((candidate) => candidate.id === selection.id)
+    || sites.some((site) => site.id === selection.id);
 
   return held ? selection : null;
 }

@@ -165,7 +165,10 @@ async function boot(page: Page): Promise<ViewState> {
 
   // The army C2 musters is hidden for these comparisons: the ticket under test
   // is the fog, and a Squad standing in it is a second thing on the frame.
-  await page.evaluate(() => window.__SPQR.game?.showSquads(false));
+  await page.evaluate(() => {
+    window.__SPQR.game?.showSquads(false);
+    window.__SPQR.game?.showSettlements(false);
+  });
 
   return describeView(page);
 }

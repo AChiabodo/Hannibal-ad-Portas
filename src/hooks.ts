@@ -111,6 +111,8 @@ export const GAME_HOOKS = [
   'minimapSamples',
   'knowledge',
   'showSquads',
+  'showSettlements',
+  'sites',
   'applied',
 ] as const;
 
@@ -160,6 +162,7 @@ export const SNAPSHOT_FIELDS = [
   'hud',
   'selection',
   'squads',
+  'sites',
   'corpses',
   'knowledge',
   'applied',

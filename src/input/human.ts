@@ -210,11 +210,7 @@ export function createHuman(faction: Faction, canSubmit: () => boolean = () => t
       // The Player's memory against the world it may see: a Squad that has left
       // the field cannot be ordered, and a selection that still named it would
       // send a Command the rules would have to refuse.
-      selection = stillHeld(
-        selection,
-        observation.visible.squads.map((squad) => squad.id),
-        observation.visible.settlements.map((settlement) => settlement.id),
-      );
+      selection = stillHeld(selection, observation.visible.squads.map((squad) => squad.id));
       prune(groups, observation.visible.squads);
 
       const commands: Command[] = [];

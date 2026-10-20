@@ -3,7 +3,7 @@ import type { Rgba } from '../src/art/pixel-buffer';
 import type { AtelierLayout } from '../src/render/atelier-layout';
 import type { ViewState } from '../src/render/boot';
 import type { HudModel, Rect, RowRect, Selection } from '../src/ui/hud';
-import type { GameSnapshot, SquadReport } from '../src/render/game';
+import type { GameSnapshot, SiteReport, SquadReport } from '../src/render/game';
 import type { MatchResult } from '../src/sim/driver';
 import type { Selection as PlayerSelection } from '../src/input/selection';
 import type { Command } from '../src/sim/command';
@@ -197,6 +197,29 @@ export async function groupOf(page: Page, index: number): Promise<readonly numbe
 
     return game.groupOf(which);
   }, index);
+}
+
+/**
+ * Every place the Faction may see, with the rectangle each is drawn in (U6).
+ *
+ * The page's own list, not a recomputation: what a test reads here is what the
+ * settlement layer was handed, so a click the test makes at one of these rectangles
+ * is a click on what the page drew.
+ */
+export async function sites(page: Page): Promise<readonly SiteReport[]> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.sites();
+  });
+}
+
+/** Turns the settlements' lens on or off, as the theatre pixel comparisons need. */
+export async function showSettlements(page: Page, visible: boolean): Promise<void> {
+  await page.evaluate((show) => {
+    window.__SPQR.game?.showSettlements(show);
+  }, visible);
 }
 
 /** The Match's tick, which is what a pause or a fast-forward is measured in. */
