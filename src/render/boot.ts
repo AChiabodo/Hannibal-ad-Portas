@@ -362,8 +362,10 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
       view.selectIn(fromX, fromY, toX, toY, additive);
     },
     orderAt: (kind, screenX, screenY) => view.orderAt(kind, screenX, screenY),
-    orderNow: (kind) => view.orderNow(kind),
-    setFormation: (shape) => view.setFormation(shape),
+    perform: (orderId) => view.perform(orderId),
+    targeting: () => view.targeting(),
+    targetAt: (screenX, screenY) => view.targetAt(screenX, screenY),
+    cancelTargeting: () => view.cancelTargeting(),
     bindGroup: (index) => view.bindGroup(index),
     recallGroup: (index) => view.recallGroup(index),
     clearSelection: () => view.select(null),

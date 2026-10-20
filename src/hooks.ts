@@ -60,7 +60,9 @@ export const VIEW_HOOKS = [
  * The interface, the Player's hands, pacing and inspection. `submit` is the
  * one full-Command entry: it queues through the same human Controller as the
  * pointer and keyboard, validates the vocabulary and refuses foreign Factions.
- * Complete visible economy and Siege panels are the responsibility of #55.
+ * `perform` is the one contextual-action entry the panels' buttons use: it arms
+ * an action that needs a target and submits one that does not, through that same
+ * seam, so a button is never a second way into the Match (#55).
  */
 export const GAME_HOOKS = [
   'preferences', 'setUiScale', 'toggleNavigator', 'toggleGuide', 'resetPreferences', 'centerSelection', 'navigateMinimap', 'doubleClickAt',
@@ -77,6 +79,13 @@ export const GAME_HOOKS = [
   'hudRows',
   'hudLayout',
   'scrollHud',
+  'perform',
+  'cancelTargeting',
+  'targeting',
+  'targetAt',
+  'targetSettlement',
+  'setTab',
+  'groupBack',
   'squads',
   'corpses',
   'selectAt',

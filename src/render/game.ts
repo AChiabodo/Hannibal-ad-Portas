@@ -48,7 +48,21 @@
  */
 import { type Container } from 'pixi.js';
 import { pixelAt, type Rgba } from '../art/pixel-buffer.ts';
-import { type Command, type Formation } from '../sim/command.ts';
+import {
+  attack,
+  attackMove,
+  assault,
+  blockade,
+  build,
+  formation,
+  garrison,
+  hold,
+  move,
+  recruit,
+  withdraw,
+  type Command,
+  type Formation,
+} from '../sim/command.ts';
 import { type MatchResult } from '../sim/driver.ts';
 import {
   eyesOfEconomy,
@@ -79,7 +93,34 @@ import {
 import { createBrowserMatch, type BrowserMatchOptions } from '../input/match-host.ts';
 import type { MatchConfiguration } from '../input/match-setup.ts';
 import { type SiegeVisible } from '../sim/siege.ts';
-import { hudLayout, hudModel, hitTest, type HudLayout, type HudModel, type HudSize, type Rect, type RowRect, type Selection } from '../ui/hud.ts';
+import {
+  CONTROL_GROUPS,
+} from '../input/human.ts';
+import {
+  SETTLEMENT_TABS,
+  controlGroupViews,
+  enemyAt,
+  enemyTargets,
+  garrisonReach,
+  settlementAt,
+  settlementTargets,
+  type ControlGroupView,
+  type OrderOption,
+  type SettlementTab,
+} from '../ui/orders.ts';
+import {
+  hudHit,
+  hudLayout,
+  hudModel,
+  type HudAction,
+  type HudLayout,
+  type HudModel,
+  type HudOrderStatus,
+  type HudSize,
+  type Rect,
+  type RowRect,
+  type Selection,
+} from '../ui/hud.ts';
 import { minimapPlate, type ViewportRect, type KnownMinimapSite } from '../ui/minimap.ts';
 import { createHudLayer, type HudLayer } from './hud.ts';
 import { screenToStage, type Camera } from './camera.ts';
@@ -184,7 +225,29 @@ export interface GameHooks {
   /** The exact text, controls and scrolling windows drawn by the HUD. */
   hudLayout(): HudLayout;
   /** Scrolls a HUD region by bitmap text lines; presentation only. */
-  scrollHud(region: 'list' | 'detail', lines: number): void;
+  scrollHud(region: 'list' | 'detail' | 'commands', lines: number): void;
+  /**
+   * Performs a contextual action by its stable id, as pressing its button does.
+   *
+   * One path for every control: an offer that needs a target is **armed** here
+   * and waits for the next click, and one that needs none is submitted now. Both
+   * end at `human.submit`, so a button cannot become a way around the seam.
+   *
+   * @returns whether the action existed and was taken (armed or submitted).
+   */
+  perform(orderId: string): boolean;
+  /** Cancels an armed action, and nothing else. @returns whether one was armed. */
+  cancelTargeting(): boolean;
+  /** What is armed, or `null`. */
+  targeting(): string | null;
+  /** Completes the armed action at a screen point. */
+  targetAt(screenX: number, screenY: number): boolean;
+  /** Completes an armed action at a settlement a list row named. */
+  targetSettlement(settlement: number): boolean;
+  /** Opens one page of a settlement's panel. */
+  setTab(tab: SettlementTab): void;
+  /** Picks the group an individual exception was opened from. */
+  groupBack(): boolean;
   /** The Faction's own Squads, with the rectangle each is drawn in. */
   squads(): readonly SquadReport[];
   /**
@@ -367,8 +430,17 @@ export function createGame(options: GameOptions): Game {
   let seenEyes = '';
   let listOffset = 0;
   let detailOffset = 0;
+  let commandOffset = 0;
   let detailSelection: Selection | null = null;
   const applied: LoggedCommand<Command>[] = [];
+  /** Which page of a settlement's panel is open (#55): the Player's, never the Match's. */
+  let tab: SettlementTab = 'overview';
+  /** The action waiting for a click, by its stable id, or `null`. */
+  let armed: string | null = null;
+  /** The last order given on this page, and whether the seam has taken it yet. */
+  let submission: HudOrderStatus | null = null;
+  /** The group an individual exception was opened from, so there is a way back. */
+  let groupMemory: readonly number[] | null = null;
 
   /**
    * The tick the page's Match ends on: a Match's own horizon, the same three game
@@ -427,7 +499,7 @@ export function createGame(options: GameOptions): Game {
     },
     doubleClickAt: (x, y) => {
       if (menu.visible && contains(readMenu().rect, x, y)) return;
-      if (hitTest(model, options.size, x, y) !== null) hooks.centerSelection();
+      if (hudHit(model, options.size, x, y)?.kind === 'selection') hooks.centerSelection();
     },
     submit: (command) => human.submit(command),
     configuration: () => ({ ...config }),
@@ -462,9 +534,22 @@ export function createGame(options: GameOptions): Game {
       if (!Number.isSafeInteger(lines)) throw new RangeError('HUD scroll must be whole text lines');
       const layout = hudLayout(model, options.size);
       if (region === 'list') listOffset = layout.listScroll.offset + lines;
+      else if (region === 'commands') commandOffset = layout.commandScroll.offset + lines;
       else detailOffset = layout.detailScroll.offset + lines;
       repaint();
     },
+    perform: (orderId) => perform(orderId),
+    cancelTargeting: () => cancelTargeting(),
+    targeting: () => armed,
+    targetAt: (screenX, screenY) => targetAt(screenX, screenY),
+    targetSettlement: (settlement) => targetSettlement(settlement),
+    setTab: (next) => {
+      if (!SETTLEMENT_TABS.includes(next)) throw new RangeError(`"${String(next)}" is not a settlement page`);
+      tab = next;
+      commandOffset = 0;
+      repaint();
+    },
+    groupBack: () => groupBack(),
     squads: () => squadReports(),
     corpses: () => dead,
     selectAt: (x, y, additive = false) => {
@@ -474,10 +559,18 @@ export function createGame(options: GameOptions): Game {
       pickInBox(fromX, fromY, toX, toY, additive);
     },
     orderAt: (kind, x, y) => orderAt(kind, x, y),
-    orderNow: (kind) => human.order({ kind }) && repainted(),
-    setFormation: (shape) => human.order({ kind: 'formation', formation: shape }) && repainted(),
-    bindGroup: (index) => human.bindGroup(index) && repainted(),
-    recallGroup: (index) => human.recallGroup(index) && repainted(),
+    orderNow: (kind) => perform(kind),
+    setFormation: (shape) => perform(`formation.${shape}`),
+    bindGroup: (index) => {
+      const bound = human.bindGroup(index);
+      if (bound) repaint();
+      return bound;
+    },
+    recallGroup: (index) => {
+      const recalled = human.recallGroup(index);
+      if (recalled) { groupMemory = null; repaint(); }
+      return recalled;
+    },
     groupOf: (index) => human.groupOf(index),
     tick: () => match.state.tick,
     advance: (ticks) => {
@@ -714,15 +807,48 @@ export function createGame(options: GameOptions): Game {
 
   /** The HUD's model, with the panel's selection and every picked Squad. */
   function readModel(): HudModel {
-    const window = visible();
-    const next = hudModel(window, strongholdIds(window), panelSelection(), human.selection.squads,
-      { ended: result !== null, paused: pacing.paused, listOffset, detailOffset });
-    if (next.selected?.id !== detailSelection?.id || next.selected?.kind !== detailSelection?.kind) detailOffset = 0;
+    const observation = visible();
+    const next = hudModel(observation, strongholdIds(observation), panelSelection(), human.selection.squads,
+      { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset }, session(observation));
+    if (next.selected?.id !== detailSelection?.id || next.selected?.kind !== detailSelection?.kind) {
+      detailOffset = 0;
+      commandOffset = 0;
+    }
     detailSelection = next.selected;
-    return { ...next, view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset,
+    return { ...next, view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
       desktop, navigatorExpanded, sessionOpen, speed: pacing.speed, ...preferences, tick: match.state.tick,
       scaleWarning: desktop && (windowSize().width < 640 * preferences.uiScale || windowSize().height < 360 * preferences.uiScale),
       smallWindow: desktop && (windowSize().width < 1280 || windowSize().height < 720) } };
+  }
+
+  /** What the page knows beside the Observation: its Faction and the Player's own memory. */
+  function session(observation: SiegeVisible): {
+    readonly faction: Faction;
+    readonly tab: SettlementTab;
+    readonly armed: string | null;
+    readonly pending: number;
+    readonly last: HudOrderStatus | null;
+    readonly groups: readonly ControlGroupView[];
+    readonly backToGroup: boolean;
+    readonly ended: boolean;
+  } {
+    return {
+      faction,
+      tab,
+      armed,
+      pending: human.pending,
+      last: submission === null ? null : { ...submission, status: human.pending > 0 ? 'pending' : 'applied' },
+      groups: controlGroupViews(observation, boundGroups()),
+      backToGroup: groupMemory !== null && human.selection.squads.length === 1,
+      ended: result !== null,
+    };
+  }
+
+  /** The control groups the Player has bound, in digit order, empty ones left out. */
+  function boundGroups(): readonly { readonly index: number; readonly squads: readonly number[] }[] {
+    return CONTROL_GROUPS
+      .map((index) => ({ index, squads: human.groupOf(index) }))
+      .filter((group) => group.squads.length > 0);
   }
 
   function windowSize(): HudSize { return { width: window.innerWidth, height: window.innerHeight }; }
@@ -765,6 +891,7 @@ export function createGame(options: GameOptions): Game {
     const layout = hudLayout(model, options.size);
     listOffset = layout.listScroll.offset;
     detailOffset = layout.detailScroll.offset;
+    commandOffset = layout.commandScroll.offset;
     dead = readCorpses();
     layer.panels(model, options.size);
     field.update({
@@ -842,37 +969,241 @@ export function createGame(options: GameOptions): Game {
     }
     if (menu.visible && contains(readMenu().rect, screenX, screenY)) return;
     const layout = hudLayout(model, options.size);
-    const button = layout.buttons.find(({ rect }) => containsPoint(rect, screenX, screenY));
-    if (button !== undefined) {
-      if (!button.enabled) return;
-      if (button.action === 'pause') {
-        if (pacing.paused) hooks.resume();
-        else hooks.pause();
-      } else if (button.action === 'session') { sessionOpen = !sessionOpen; repaint(); }
-      else if (button.action === 'speed1') hooks.setSpeed(1);
-      else if (button.action === 'speed2') hooks.setSpeed(2);
-      else if (button.action === 'speed3') hooks.setSpeed(3);
-      else if (button.action === 'center') hooks.centerSelection();
-      else if (button.action === 'navigator') hooks.toggleNavigator();
-      else {
-        const region = button.action.startsWith('list') ? 'list' : 'detail';
-        const scroll = region === 'list' ? layout.listScroll : layout.detailScroll;
-        hooks.scrollHud(region, button.action.endsWith('Next') ? scroll.page : -scroll.page);
-      }
-      return;
-    }
-    const row = hitTest(model, options.size, screenX, screenY);
-    if (row !== null) {
-      human.select(asPicked(row));
-      repaint();
+    const hit = hudHit(model, options.size, screenX, screenY);
+    if (hit !== null) {
+      if (hit.kind === 'button') hudButton(hit.action);
+      else if (hit.kind === 'order') perform(hit.order.id);
+      else if (hit.kind === 'tab') hooks.setTab(hit.tab);
+      else if (hit.kind === 'group') hooks.recallGroup(hit.index);
+      else if (armed !== null && hit.selection.kind === 'settlement') targetSettlement(hit.selection.id);
+      else pickSelection(hit.selection, layout.exceptions.some((row) => row.selection.kind === hit.selection.kind
+        && row.selection.id === hit.selection.id));
       return;
     }
 
     if (underInterface(screenX, screenY)) return;
 
+    // An armed action owns the next click on the theatre: that is the one thing
+    // that makes a button and a keyboard shortcut the same gesture.
+    if (armed !== null) {
+      targetAt(screenX, screenY);
+      return;
+    }
+
     const at = screenToStage(options.camera(), screenX, screenY);
     human.select(selectAt(human.selection, pickables(), at, additive));
+    groupMemory = null;
     repaint();
+  }
+
+  /** One of the bar's own buttons, pressed. */
+  function hudButton(action: HudAction): void {
+    const layout = hudLayout(model, options.size);
+    if (action === 'pause') {
+      if (pacing.paused) hooks.resume();
+      else hooks.pause();
+    } else if (action === 'session') { sessionOpen = !sessionOpen; repaint(); }
+    else if (action === 'speed1') hooks.setSpeed(1);
+    else if (action === 'speed2') hooks.setSpeed(2);
+    else if (action === 'speed3') hooks.setSpeed(3);
+    else if (action === 'center') hooks.centerSelection();
+    else if (action === 'navigator') hooks.toggleNavigator();
+    else if (action === 'groupBack') hooks.groupBack();
+    else {
+      const region = action.startsWith('list') ? 'list' : action.startsWith('commands') ? 'commands' : 'detail';
+      const scroll = region === 'list' ? layout.listScroll : region === 'commands' ? layout.commandScroll : layout.detailScroll;
+      hooks.scrollHud(region, action.endsWith('Next') ? scroll.page : -scroll.page);
+    }
+  }
+
+  /**
+   * A row a Player pressed: it selects what it names, and an *exception* opened
+   * from a group keeps the group it came from, so the panel can offer the way
+   * back. A row pressed from the navigator is a new selection and keeps nothing.
+   */
+  function pickSelection(selection: Selection, fromException = false): void {
+    const previous = human.selection.squads;
+    human.select(asPicked(selection));
+    groupMemory = fromException && previous.length > 1 ? [...previous] : null;
+    armed = null;
+    repaint();
+  }
+
+  /**
+   * Performs one contextual action: arms it if it has a target to ask for, and
+   * submits it now if it has not.
+   *
+   * The offer is read from the model, so an action the panel is showing as
+   * unavailable cannot be taken by calling it here either — which is what keeps
+   * a button and a hook from disagreeing about the rules.
+   */
+  function perform(orderId: string): boolean {
+    const offer = model.commands.find((order) => order.id === orderId);
+    if (offer === undefined || !offer.enabled) return false;
+    if (offer.target !== 'none') {
+      armed = offer.id;
+      repaint();
+      return true;
+    }
+
+    return submitOrder(offer);
+  }
+
+  /** Cancels an armed action. A Command already submitted is not a target, and is never cancelled. */
+  function cancelTargeting(): boolean {
+    if (armed === null) return false;
+    armed = null;
+    repaint();
+    return true;
+  }
+
+  /** Completes the armed action at a screen point. */
+  function targetAt(screenX: number, screenY: number): boolean {
+    const offer = armed === null ? undefined : model.commands.find((order) => order.id === armed);
+    if (offer === undefined) return false;
+    if (underInterface(screenX, screenY)) return false;
+
+    const at = screenToStage(options.camera(), screenX, screenY);
+    const tile = tileAt(at.x, at.y);
+    if (tile.x < 0 || tile.y < 0 || tile.x >= MAP_WIDTH || tile.y >= MAP_HEIGHT) return false;
+
+    if (offer.target === 'ground') return submitOrder(offer, { x: tile.x, y: tile.y });
+    if (offer.target === 'enemy') {
+      const enemy = enemyAt(enemyTargets(visible()), tile.x, tile.y);
+      return enemy === null ? false : submitOrder(offer, { squad: enemy.id });
+    }
+    if (offer.target === 'settlement') {
+      const site = settlementAt(settlementTargets(visible()), tile.x, tile.y);
+      return site === null ? false : targetSettlement(site.id);
+    }
+
+    return false;
+  }
+
+  /**
+   * Completes the armed action at a settlement a list row named.
+   *
+   * The rules still decide whether the settlement is one the action may name — a
+   * garrison of ground this Faction does not hold, an assault on open ground, a
+   * blockade of nothing. The interface only refuses a target it *knows* is wrong
+   * (a remembered settlement is not a walled one), and stays armed when it does,
+   * so the requirement line keeps saying what to click.
+   */
+  function targetSettlement(settlement: number): boolean {
+    const offer = armed === null ? undefined : model.commands.find((order) => order.id === armed);
+    if (offer === undefined || offer.target !== 'settlement') return false;
+
+    const target = settlementTargets(visible()).find((site) => site.id === settlement);
+    if (target === undefined) return false;
+    if (offer.id === 'garrison' && (!target.own || target.walled !== true)) return false;
+    if (offer.id === 'assault' && (target.own || target.walled !== true)) return false;
+    if (offer.id === 'blockade' && target.own) return false;
+
+    return submitOrder(offer, { settlement });
+  }
+
+  /** Picks the group an individual exception was opened from. */
+  function groupBack(): boolean {
+    if (groupMemory === null || groupMemory.length < 2) return false;
+    human.select({ squads: [...groupMemory], settlement: null });
+    groupMemory = null;
+    repaint();
+    return true;
+  }
+
+  /**
+   * Turns an offer into one real Command and hands it to the human Controller.
+   *
+   * This is the single submission path every control ends at: a button, a key, a
+   * right click and a test hook all arrive here, and nothing here can write to
+   * the Match — `human.submit` validates the Command and the tick applies it.
+   */
+  function submitOrder(
+    offer: OrderOption,
+    target?: { readonly x?: number; readonly y?: number; readonly squad?: number; readonly settlement?: number },
+  ): boolean {
+    const squads = human.selection.squads;
+    const command = commandFor(offer, squads, target);
+    if (command === null || !human.submit(command)) return false;
+
+    submission = {
+      name: offer.label,
+      status: 'pending',
+      tick: match.state.tick,
+      detail: offer.id === 'garrison' && target?.settlement !== undefined
+        ? garrisonDetail(human.selection.squads, target.settlement)
+        : null,
+    };
+    armed = null;
+    repaint();
+    return true;
+  }
+
+  /** The Command one offer means, or `null` when the selection cannot address it. */
+  function commandFor(
+    offer: OrderOption,
+    squads: readonly number[],
+    target?: { readonly x?: number; readonly y?: number; readonly squad?: number; readonly settlement?: number },
+  ): Command | null {
+    const settlement = target?.settlement ?? (human.selection.settlement === null ? undefined : human.selection.settlement);
+
+    switch (offer.id) {
+      case 'move':
+      case 'attackMove':
+        return target?.x === undefined || target.y === undefined ? null
+          : offer.id === 'move' ? move(faction, squads, target.x, target.y)
+            : attackMove(faction, squads, target.x, target.y);
+      case 'attack':
+        return target?.squad === undefined ? null : attack(faction, squads, target.squad);
+      case 'hold':
+        return hold(faction, squads);
+      case 'withdraw':
+        return withdraw(faction, squads);
+      case 'formation.line':
+      case 'formation.column':
+        return formation(faction, squads, offer.id === 'formation.line' ? 'line' : 'column');
+      case 'garrison':
+        return settlement === undefined ? null : garrison(faction, squads, settlement);
+      case 'assault':
+        return settlement === undefined ? null : assault(faction, squads, settlement);
+      case 'blockade':
+        return settlement === undefined ? null : blockade(faction, squads, settlement);
+      default:
+        break;
+    }
+
+    if (offer.subject === null) return null;
+    if (offer.id.startsWith('build:')) {
+      return human.selection.settlement === null ? null : build(faction, human.selection.settlement, offer.subject);
+    }
+    if (offer.id.startsWith('recruit:')) {
+      return human.selection.settlement === null ? null : recruit(faction, human.selection.settlement, offer.subject, 1);
+    }
+
+    return null;
+  }
+
+  /** How many of the picked Squads stand in reach of the settlement a garrison named. */
+  function garrisonDetail(ids: readonly number[], settlement: number): string | null {
+    const observation = visible();
+    const picked = observation.squads.filter((squad) => ids.includes(squad.id));
+    if (picked.length === 0) return null;
+    const near = garrisonReach(observation, picked, settlement);
+
+    return message('ui.partial', { near: near.near, total: near.total });
+  }
+
+  /** An order to a screen point, given to the Squads picked when the Player clicked. */
+  function orderAt(kind: 'move' | 'attackMove', screenX: number, screenY: number): boolean {
+    // A right click on the interface is a click on the interface: the panels are
+    // drawn over the theatre, and an order that landed on the tile behind a
+    // panel would be a destination nobody asked for.
+    if (underInterface(screenX, screenY)) return false;
+    const offer = model.commands.find((order) => order.id === kind);
+    if (offer === undefined || !offer.enabled) return false;
+    armed = kind;
+
+    return targetAt(screenX, screenY);
   }
 
   /** Whether a screen point falls on one of the interface's panels rather than on the theatre. */
@@ -903,20 +1234,6 @@ export function createGame(options: GameOptions): Game {
     return squadReports().map((squad) => ({ id: squad.id, rect: squad.rect, depth: squad.y }));
   }
 
-  /** An order to a screen point, given to the Squads picked when the Player clicked. */
-  function orderAt(kind: 'move' | 'attackMove', screenX: number, screenY: number): boolean {
-    // A right click on the interface is a click on the interface: the panels are
-    // drawn over the theatre, and an order that landed on the tile behind a
-    // panel would be a destination nobody asked for.
-    if (underInterface(screenX, screenY)) return false;
-
-    const at = screenToStage(options.camera(), screenX, screenY);
-    const tile = tileAt(at.x, at.y);
-    if (tile.x < 0 || tile.y < 0 || tile.x >= MAP_WIDTH || tile.y >= MAP_HEIGHT) return false;
-
-    return human.order({ kind, x: tile.x, y: tile.y }) && repainted();
-  }
-
   /** The settlement ids that are Strongholds, which the Observation does not say and the map does. */
   function strongholdIds(window: EconomyVisible): readonly number[] {
     const sites = match.state.world.map.strongholds;
@@ -925,8 +1242,4 @@ export function createGame(options: GameOptions): Game {
       .filter((settlement) => sites.some((site) => site.x === settlement.x && site.y === settlement.y))
       .map((settlement) => settlement.id);
   }
-}
-
-function containsPoint(rect: Rect, x: number, y: number): boolean {
-  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
 }

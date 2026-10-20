@@ -112,7 +112,7 @@ test('shows a Squad its morale and its Payroll when it is selected', async ({ pa
 
   expect(model.detail?.title).toBe('Reparto 1');
   expect(words).toContain(`${translate('ui.type')} Astati`);
-  expect(words).toContain(`${translate('ui.morale')} 10`);
+  expect(words).toContain(`${translate('ui.morale')} 10/10`);
   expect(words).toContain(`${translate('ui.payroll')} 3`);
 });
 

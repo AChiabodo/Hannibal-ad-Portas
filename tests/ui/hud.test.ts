@@ -18,8 +18,10 @@ import { describe, expect, it } from 'vitest';
 import { measureText } from '../../src/art/font.ts';
 import { pixelAt, TRANSPARENT, type PixelBuffer } from '../../src/art/pixel-buffer.ts';
 import type { EconomyVisible } from '../../src/sim/economy-match.ts';
+import type { VisibleFront } from '../../src/sim/siege.ts';
 import { RESOURCE } from '../../src/sim/map.ts';
 import {
+  HUD_ARMED,
   HUD_BACKGROUND,
   hitTest,
   hudLayout,
@@ -157,7 +159,7 @@ describe('the HUD model', () => {
     expect(words).toContain(`${translate('ui.population')} 14`);
     expect(words).toContain(`${translate('resource.grain')} 7`);
     expect(words).toContain(`${translate('resource.iron')} 4`);
-    expect(words).toContain(`${translate('ui.labour')} 3/3/2/0`);
+    expect(words).toContain(`${translate('ui.labourAuto')} 3/3/2/0`);
     expect(words.join('\n')).toContain('Villa');
     expect(words.join('\n')).toContain(translate('ui.workBuilding'));
   });
@@ -168,12 +170,28 @@ describe('the HUD model', () => {
 
     expect(model.detail?.title).toBe('Reparto 1');
     expect(words).toContain(`${translate('ui.type')} Astati`);
-    expect(words).toContain(`${translate('ui.men')} 120`);
-    expect(words).toContain(`${translate('ui.morale')} 8`);
+    // Current against what the type is worth, which is the whole point of "90/120".
+    expect(words).toContain(`${translate('ui.men')} 120/120`);
+    expect(words).toContain(`${translate('ui.morale')} 8/10`);
     expect(words).toContain(`${translate('ui.payroll')} 3`);
     expect(words).toContain(`${translate('ui.unpaid')} 1`);
     expect(words).toContain(`${translate('ui.home')} 0`);
     expect(words).toContain(`${translate('ui.order')} ${translate('order.standing')}`);
+    // Where it is going, and what its country is doing for it.
+    expect(words).toContain(`${translate('ui.destination')} ${translate('ui.none')}`);
+    expect(words).toContain(`${translate('ui.supply')} ${translate('supply.inTerritory')}`);
+    expect(words).toContain(`${translate('ui.quarters')} ${translate('quarters.field')}`);
+    expect(words).toContain(`${translate('ui.engaged')} ${translate('ui.yes')}`);
+  });
+
+  it('reads a Squad’s destination and refusal as the answer to the click it gave', () => {
+    const marching = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 });
+
+    expect(marching.detail?.lines.map(lineText)).toContain(`${translate('ui.destination')} ${translate('ui.none')}`);
+
+    const going = hudModel({ ...VISIBLE, squads: [{ ...VISIBLE.squads[0]!, goal: { x: 20, y: 21 } }] },
+      STRONGHOLDS, { kind: 'squad', id: 1 });
+    expect(going.detail?.lines.map(lineText)).toContain(`${translate('ui.destination')} 20,21`);
   });
 
   it('says why a Squad is not doing what it was told, in words a Player reads', () => {
@@ -226,7 +244,7 @@ describe('the HUD model', () => {
     expect(model.detail?.lines.map(lineText)).toContain(`${translate('ui.order')} ${translate('order.marching')}`);
   });
 
-  it('highlights every Squad a box selection picked, and shows the first one’s panel', () => {
+  it('summarises a mixed selection instead of pretending it is one Squad', () => {
     const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1, 2]);
 
     expect(model.picked).toEqual([
@@ -234,7 +252,8 @@ describe('the HUD model', () => {
       { kind: 'squad', id: 2 },
     ]);
     expect(model.selected).toEqual({ kind: 'squad', id: 1 });
-    expect(model.detail?.title).toBe('Reparto 1');
+    expect(model.group).toMatchObject({ squads: 2, composition: 'Astati 1, Principi 1', men: 234, moraleMin: 8, moraleMax: 12 });
+    expect(model.detail?.lines.map(lineText)).toContain(`${translate('ui.composition')} Astati 1, Principi 1`);
 
     // The panel's own Squad is highlighted even when the caller forgot to list
     // it: a panel with no highlighted row would be a selection nobody can see.
@@ -304,7 +323,7 @@ describe('the HUD on screen', () => {
   it('pins an active Work and makes all wrapped secondary text reachable', () => {
     const selected = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 2 });
     expect(hudLayout(selected, SIZE).priority.map((line) => line.text).join(' '))
-      .toContain('Cantieri: Villa - In costruzione 120 tick');
+      .toContain('Cantieri: Villa - In costruzione (120 tick)');
     const long = { label: 'Una descrizione molto lunga del lavoro', value: '1234567890123456789012345678901234567890' };
     const model = { ...selected, detail: { ...selected.detail!, lines: [...selected.detail!.lines, long] } };
     const reached: string[] = [];
@@ -530,4 +549,135 @@ it('keeps a long navigator row under the pointer when selection opens contextual
   const last = initial.rows.at(-1)!;
   const selected = hudModel(visible, [0], last.selection, [], view);
   expect(hitTest(selected, size, last.rect.x + 5, last.rect.y + 5)).toEqual(last.selection);
+});
+
+/**
+ * The contextual panels (#55).
+ *
+ * A button a Player presses and a row a Player opens are the same two things a
+ * panel draws and a click reads, so these assertions are about geometry as much
+ * as text: every offer is inside the panel, every offer's words fit its row, and
+ * an exception opens the Squad it names.
+ */
+const DESKTOP = { width: 1280, height: 720 };
+const DESKTOP_VIEW = { desktop: true, uiScale: 2, navigator: true };
+
+describe('the contextual command panel', () => {
+  it('offers the military actions a picked Squad has, inside the detail panel', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1], DESKTOP_VIEW, { faction: 'rome' });
+    const layout = hudLayout(model, DESKTOP);
+
+    expect(model.commands.map((order) => order.id)).toContain('move');
+    expect(model.commands.map((order) => order.id)).toContain('hold');
+    expect(layout.commands.length).toBeGreaterThan(0);
+    for (const command of layout.commands) {
+      expect(command.rect.x).toBeGreaterThanOrEqual(layout.detail.x);
+      expect(command.rect.x + command.rect.width).toBeLessThanOrEqual(layout.detail.x + layout.detail.width);
+      expect(command.rect.y + command.rect.height).toBeLessThanOrEqual(layout.detail.y + layout.detail.height);
+    }
+  });
+
+  it('opens the exception of a mixed selection as the Squad it names', () => {
+    const squads = [{ ...VISIBLE.squads[0]!, routing: true }, VISIBLE.squads[1]!];
+    const model = hudModel({ ...VISIBLE, squads }, STRONGHOLDS, { kind: 'squad', id: 1 }, [1, 2], DESKTOP_VIEW);
+    const layout = hudLayout(model, DESKTOP);
+
+    expect(model.group?.exceptions.map((exception) => exception.squad)).toEqual([1]);
+    expect(layout.exceptions.map((row) => row.selection)).toEqual([{ kind: 'squad', id: 1 }]);
+  });
+
+  it('separates a settlement’s pages and offers the content-backed works of the open one', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 0 }, [], DESKTOP_VIEW,
+      { faction: 'rome', tab: 'construction' });
+    const layout = hudLayout(model, DESKTOP);
+
+    expect(layout.tabs.map((tab) => tab.tab)).toEqual(['overview', 'construction', 'recruitment']);
+    expect(model.commands.map((order) => order.id)).toContain('build:farm');
+    expect(model.commands.every((order) => order.reason === null || order.enabled === false)).toBe(true);
+  });
+
+  it('shows numbered control groups as visible controls', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1], DESKTOP_VIEW,
+      { groups: [{ index: 1, count: 2, composition: 'Astati 1, Principi 1' }] });
+    const layout = hudLayout(model, DESKTOP);
+
+    expect(layout.groups.map((group) => group.index)).toEqual([1]);
+    expect(layout.groups[0]!.rect.width).toBeGreaterThan(0);
+  });
+
+  it('says what an armed action is waiting for, and what is still queued', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1], { ...DESKTOP_VIEW, paused: true },
+      { armed: 'attackMove', pending: 2 });
+    const layout = hudLayout(model, DESKTOP);
+    const said = layout.status.map((line) => line.text).join(' ');
+
+    expect(model.orders.armed?.id).toBe('attackMove');
+    expect(said).toContain(translate('cmd.attackMove'));
+    expect(said).toContain(translate('target.ground'));
+    expect(said).toContain(translate('ui.pendingPaused').replace('{count}', '2'));
+  });
+
+  it('does not draw an offer outside the panel when the command list overflows', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 0 }, [], DESKTOP_VIEW,
+      { faction: 'rome', tab: 'construction' });
+    const layout = hudLayout(model, { width: 1280, height: 720 });
+
+    for (const command of layout.commands) {
+      expect(command.rect.y + command.rect.height).toBeLessThanOrEqual(layout.detail.y + layout.detail.height);
+    }
+    expect(layout.commandScroll.page).toBeGreaterThan(0);
+  });
+});
+
+it('draws the contextual commands as ink on the panel, and the armed one on its own ground', () => {
+  const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1], DESKTOP_VIEW,
+    { faction: 'rome', armed: 'attackMove' });
+  const layout = hudLayout(model, DESKTOP);
+  const buffer = renderPanels(model, DESKTOP);
+  const ink = (rect: { x: number; y: number; width: number; height: number }): number => {
+    let painted = 0;
+    for (let y = rect.y; y < rect.y + rect.height; y += 1) {
+      for (let x = rect.x; x < rect.x + rect.width; x += 1) {
+        if (pixelAt(buffer, x, y) !== HUD_BACKGROUND) painted += 1;
+      }
+    }
+
+    return painted;
+  };
+
+  expect(layout.commands.length).toBeGreaterThan(0);
+  for (const command of layout.commands) expect(ink(command.rect)).toBeGreaterThan(0);
+  const armed = layout.commands.find((command) => command.order.id === 'attackMove');
+  expect(armed).toBeDefined();
+  expect(pixelAt(buffer, armed!.rect.x + 1, armed!.rect.y + 1)).toEqual(HUD_ARMED);
+});
+
+it('reads the enemy walls this Faction knows, and never an enemy stock', () => {
+  const front: VisibleFront = {
+    settlement: 7,
+    structures: [
+      { kind: 'gate', side: 'north', hp: 42, standing: true },
+      { kind: 'wall', side: 'east', hp: 60, standing: true },
+    ],
+    breached: false,
+    siege: 'blockade',
+    besieger: 'rome',
+    ram: null,
+    hold: 0,
+    garrison: 2,
+  };
+  const siege = { ...VISIBLE, fog: inspectionView(generateMap(7)), contacts: [], enemies: [], fronts: [front] };
+  const model = hudModel(siege, STRONGHOLDS, { kind: 'squad', id: 1 });
+  const walls = model.detail?.lines.find((line) => line.label === 'Roccaforte 7');
+
+  expect(walls).toBeDefined();
+  expect(walls?.value).toContain(`${translate('ui.walls')} 2/2`);
+  expect(walls?.value).toContain(translate('ui.gate'));
+  expect(walls?.value).toContain(`${translate('ui.garrisonCount')} 2`);
+  expect(walls?.value).toContain(translate('cmd.blockade'));
+
+  // The enemy's settlement is not in this Faction's settlements, so its stock —
+  // which is an enemy figure — never reaches the panel.
+  const words = model.detail?.lines.filter((line) => line.label === translate('resource.grain')).length;
+  expect(words).toBe(0);
 });

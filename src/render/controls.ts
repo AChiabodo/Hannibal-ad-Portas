@@ -25,8 +25,16 @@
  * | `l` / `c` | hold a `line` / a `column` |
  * | ctrl (or ⌘) + digit | bind the picked Squads to that control group |
  * | digit | pick the Squads that group holds |
- * | escape | drop the picked set, or the order being armed |
+ * | escape | cancel the action being armed, or else drop the picked set |
  * | space | pause and resume |
+ *
+ * ## One armed action, whoever armed it
+ *
+ * The armed action is the **page's**, not this module's: a button, a shortcut and
+ * the classic `a` all call the same `perform`, and the page answers a click with
+ * whatever it has armed. That is what #55's "buttons and existing shortcuts use
+ * one submission/targeting path" means in practice — there is one piece of state
+ * and one place it is read, so no gesture can be the only way to do something.
  *
  * ## Why the marquee is a buffer
  *
@@ -43,7 +51,6 @@
  * leaves a camera move behind it; a box leaves a selection.
  */
 import { Container, Sprite } from 'pixi.js';
-import type { Formation } from '../sim/command.ts';
 import type { HudLayout, Rect } from '../ui/hud.ts';
 import { marquee } from '../ui/marquee.ts';
 import { textureOf, type Stage } from './stage.ts';
@@ -70,10 +77,14 @@ export interface ControlTarget {
   readonly selectIn: (fromX: number, fromY: number, toX: number, toY: number, additive: boolean) => void;
   /** Gives the picked Squads a move or an attack-move to a screen point. */
   readonly orderAt: (kind: 'move' | 'attackMove', screenX: number, screenY: number) => boolean;
-  /** Gives the picked Squads an order that needs no map point. */
-  readonly orderNow: (kind: 'hold' | 'withdraw') => boolean;
-  /** Sets the shape the picked Squads hold. */
-  readonly setFormation: (shape: Formation) => boolean;
+  /** Performs a contextual action by its stable id: arms it, or submits it. */
+  readonly perform: (orderId: string) => boolean;
+  /** Whether an action is waiting for a target. */
+  readonly targeting: () => string | null;
+  /** Completes the armed action at a screen point. */
+  readonly targetAt: (screenX: number, screenY: number) => boolean;
+  /** Cancels an armed action, and says whether there was one. */
+  readonly cancelTargeting: () => boolean;
   /** Binds the picked Squads to a control group. */
   readonly bindGroup: (index: number) => boolean;
   /** Picks the Squads a control group holds. */
@@ -120,7 +131,6 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
   let press: Press | null = null;
   let minimapPress = false;
   let interfacePress = false;
-  let armed: 'attackMove' | null = null;
 
   const canvas = stage.canvas;
   const local = (event: MouseEvent): { readonly x: number; readonly y: number } => {
@@ -183,8 +193,8 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
       // what the next click means.
       if (finished.appliedX === 0 && finished.appliedY === 0) {
         const at = local(event);
-        target.orderAt(armed ?? (event.shiftKey ? 'attackMove' : 'move'), at.x, at.y);
-        armed = null;
+        if (target.targeting() !== null) target.targetAt(at.x, at.y);
+        else target.orderAt(event.shiftKey ? 'attackMove' : 'move', at.x, at.y);
       }
       return;
     }
@@ -208,9 +218,8 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
     const layout = target.hudLayout();
     const overHud = (target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap])
       .some((rect) => contains(rect, to.x, to.y));
-    if (armed !== null && !overHud) {
-      target.orderAt(armed, to.x, to.y);
-      armed = null;
+    if (target.targeting() !== null && !overHud) {
+      target.targetAt(to.x, to.y);
       return;
     }
 
@@ -281,27 +290,28 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
         break;
       case 'a':
       case 'A':
-        armed = 'attackMove';
+        target.perform('attackMove');
         break;
       case 's':
       case 'S':
-        target.orderNow('hold');
+        target.perform('hold');
         break;
       case 'w':
       case 'W':
-        target.orderNow('withdraw');
+        target.perform('withdraw');
         break;
       case 'l':
       case 'L':
-        target.setFormation('line');
+        target.perform('formation.line');
         break;
       case 'c':
       case 'C':
-        target.setFormation('column');
+        target.perform('formation.column');
         break;
       case 'Escape':
-        if (armed !== null) armed = null;
-        else target.clearSelection();
+        // Escape cancels the action being aimed, and only then the selection: a
+        // Command already submitted is not a target and is never taken back.
+        if (!target.cancelTargeting()) target.clearSelection();
         break;
       case ' ':
         target.togglePause();
