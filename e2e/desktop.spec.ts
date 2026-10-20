@@ -201,3 +201,18 @@ for (const faction of ['rome', 'carthage'] as const) {
     }
   });
 }
+
+test('options drawer consumes double-clicks over the covered navigator', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await ready(page);
+  const row = await page.evaluate(() => window.__SPQR.game!.hudRows()[0]!);
+  await page.mouse.click(row.rect.x + 4, row.rect.y + 4);
+  await page.evaluate(() => window.__SPQR.view!.panBy(200, 100));
+  const camera = await page.evaluate(() => window.__SPQR.view!.describe().camera);
+  await clickAction(page, 'session');
+  await page.mouse.dblclick(row.rect.x + 2, row.rect.y + 4);
+  expect(await page.evaluate(() => window.__SPQR.view!.describe().camera)).toEqual(camera);
+  await clickAction(page, 'session');
+  await page.mouse.dblclick(row.rect.x + 2, row.rect.y + 4);
+  expect(await page.evaluate(() => window.__SPQR.view!.describe().camera)).not.toEqual(camera);
+});

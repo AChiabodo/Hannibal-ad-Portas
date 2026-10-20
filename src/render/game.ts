@@ -425,7 +425,10 @@ export function createGame(options: GameOptions): Game {
       options.centerOn?.(at.x, at.y);
       return true;
     },
-    doubleClickAt: (x, y) => { if (hitTest(model, options.size, x, y) !== null) hooks.centerSelection(); },
+    doubleClickAt: (x, y) => {
+      if (menu.visible && contains(readMenu().rect, x, y)) return;
+      if (hitTest(model, options.size, x, y) !== null) hooks.centerSelection();
+    },
     submit: (command) => human.submit(command),
     configuration: () => ({ ...config }),
     matchLayout: () => readMenu(),

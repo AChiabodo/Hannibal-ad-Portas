@@ -371,4 +371,3 @@ function clearMarquee(overlay: Container, sprite: Sprite | null): void {
   sprite.destroy();
   overlay.removeChildren();
 }
-
