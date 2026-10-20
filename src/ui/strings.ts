@@ -70,6 +70,10 @@ export type StringTable = Readonly<Record<string, Translation>>;
  * its own synonyms makes the glossary a document nobody uses.
  */
 export const STRINGS = {
+  'ui.keyboard': { it: 'F6: controlli. Tab: scegli. Invio: attiva. Esc: torna alla mappa.', en: 'F6: controls. Tab: choose. Enter: activate. Esc: return to the map.' },
+  'ui.commandHelp': { it: 'Icone: passa il puntatore o usa F6 per leggere gli ordini.', en: 'Icons: hover or use F6 to read orders.' },
+  'ui.commandNow': { it: 'Ordine immediato', en: 'Immediate order' },
+  'ui.scaleFitted': { it: 'UI {requested}x > {scale}x', en: 'UI {requested}x > {scale}x' },
   'match.setup': { it: 'Prepara la partita', en: 'Match setup' },
   'match.objective': { it: 'Obiettivo: conquistare la Roccaforte nemica con un Assalto o un Blocco. La partita dura tre anni; se nessuno vince, finisce allo scadere.', en: 'Objective: take the enemy Stronghold by Assault or Blockade. The Match lasts three years; if nobody wins, it ends on the clock.' },
   'match.factionHelp': { it: 'Fazione: Roma schiera fanteria disciplinata; Cartagine mercenari veloci ed elefanti. Cambia i reparti e l\'economia.', en: 'Faction: Rome fields disciplined foot; Carthage fast mercenaries and elephants. It changes the roster and the economy.' },
@@ -139,7 +143,7 @@ export const STRINGS = {
   'guide.move': { it: 'Indica una destinazione: clic destro sul terreno, oppure icona Muovi e clic. I comandi sono in basso a destra.', en: 'Give it a destination: right-click the ground, or press the Move icon and click. The Commands sit at the bottom right.' },
   'guide.complete': { it: 'Guida completata. L\'esito dell\'ordine compare sopra i comandi; Spazio ferma e riprende la partita.', en: 'Guide complete. The order\'s result appears above the Commands; Space pauses and resumes the Match.' },
   'ui.smallWindow': { it: 'Consigliata finestra desktop 1280x720. Scorri la pagina per i controlli.', en: 'Desktop window 1280x720 recommended. Scroll the page for controls.' },
-  'ui.scaleWarning': { it: 'Scala richiesta troppo grande: scorri la pagina o cambia scala UI.', en: 'Requested scale too large: scroll the page or change UI scale.' },
+  'ui.scaleWarning': { it: 'Scala richiesta troppo grande: adattata alla finestra. La preferenza resta salvata.', en: 'Requested scale too large: fitted to the window. The preference is still saved.' },
   'ui.year': { it: 'Anno', en: 'Year' },
   'ui.season': { it: 'Stagione', en: 'Season' },
   'ui.treasury': { it: 'Tesoreria', en: 'Treasury' },

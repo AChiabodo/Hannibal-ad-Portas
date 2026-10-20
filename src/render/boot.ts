@@ -92,7 +92,6 @@ import { DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from './v
 import { matchAddress, type MatchConfiguration } from '../input/match-setup.ts';
 import type { BrowserMatchOptions } from '../input/match-host.ts';
 import { translate } from '../ui/strings.ts';
-import { loadUiPreferences, type UiPreferences } from '../ui/preferences.ts';
 import { ENTRY_PATH } from './entry-path.ts';
 
 /**
@@ -177,11 +176,11 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
   const map = generateMap(config.seed);
   const theatre = renderTerrain(map);
   const desktop = options.sessionControls !== false;
-  const dimensions = (preferences: UiPreferences) => desktop
-    ? { width: Math.max(window.innerWidth, 640 * preferences.uiScale), height: Math.max(window.innerHeight, 360 * preferences.uiScale) }
+  const dimensions = () => desktop
+    ? { width: Math.max(window.innerWidth, 640), height: Math.max(window.innerHeight, 360) }
     : { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT };
   const stage = await createStage(mount, {
-    ...dimensions(loadUiPreferences()),
+    ...dimensions(),
     background: BASE.night,
   });
 
@@ -361,6 +360,8 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
   // The pointer and the keyboard end at the very hooks a test calls, so what a
   // Player does and what a browser test does are the same code path (C2).
   bindControls(stage, {
+    hoverAt: (x, y) => view.hoverAt(x, y),
+    interfaceKey: (key, reverse) => view.interfaceKey(key, reverse),
     navigateMinimap: (x, y) => view.navigateMinimap(x, y),
     doubleClickAt: (x, y) => view.doubleClickAt(x, y),
     centerSelection: () => view.centerSelection(),
@@ -395,8 +396,8 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     scrollHud: (region, lines) => view.scrollHud(region, lines),
   });
 
-  function relayout(preferences: UiPreferences): void {
-    const next = dimensions(preferences);
+  function relayout(): void {
+    const next = dimensions();
     stage.resize(next.width, next.height);
     Object.assign(size, next);
     bounds.width = next.width;
@@ -422,7 +423,7 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     const home = map.strongholds[config.faction === 'rome' ? 0 : 1];
     const at = tilePixel(home.x, home.y);
     centerOn(at.x, at.y);
-    window.addEventListener('resize', () => { relayout(game.hooks.preferences()); game.sync(); });
+    window.addEventListener('resize', () => { relayout(); game.sync(); });
   }
   game.start();
   stage.canvas.tabIndex = 0;

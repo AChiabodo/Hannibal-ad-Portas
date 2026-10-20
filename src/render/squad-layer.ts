@@ -52,7 +52,7 @@ import {
   markerPlacement,
 } from './indicators.ts';
 import { textureOf } from './stage.ts';
-import { blockPlacement, squadBlock, squadFrameKey } from './squads.ts';
+import { blockPlacement, squadBlock, squadFrameKey, visualShape } from './squads.ts';
 import { tilePixel } from './terrain.ts';
 import { standardInsignia } from '../art/figures.ts';
 
@@ -199,16 +199,9 @@ export function createSquadLayer(parent: Container): SquadLayer {
         const selected = field.selected.includes(squad.id);
         const key = squadFrameKey(squad, { tick: field.tick, faction: field.faction, selected });
         const drawn = squads.get(squad.id);
-        const at = blockPlacement(tilePixel(squad.x, squad.y), {
-          men: squad.figures,
-          formation: squad.formation,
-          facing: squad.facing,
-        });
-        const placement = markerPlacement(tilePixel(squad.x, squad.y), {
-          men: squad.figures,
-          formation: squad.formation,
-          facing: squad.facing,
-        });
+        const shape = visualShape(squad);
+        const at = blockPlacement(tilePixel(squad.x, squad.y), shape);
+        const placement = markerPlacement(tilePixel(squad.x, squad.y), shape);
 
         if (drawn === undefined) {
           const sprite = new Sprite(textureOf(squadBlock(squad, { tick: field.tick, faction: field.faction, selected })));

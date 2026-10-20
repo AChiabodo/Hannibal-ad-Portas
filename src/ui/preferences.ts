@@ -6,6 +6,11 @@ export interface UiPreferences {
 }
 export const DEFAULT_UI_PREFERENCES: UiPreferences = { uiScale: 2, navigator: true, guideDismissed: false };
 
+/** Keep the requested preference, but fit every control on the current desktop. */
+export function fittedUiScale(requested: number, size: { readonly width: number; readonly height: number }): number {
+  return Math.max(1, Math.min(requested, Math.floor(size.width / 640), Math.floor(size.height / 360)));
+}
+
 /** The one storage key presentation preferences use; exported for a test that seeds them. */
 export const UI_PREFERENCES_KEY = 'spqr.ui.v1';
 const KEY = UI_PREFERENCES_KEY;

@@ -22,6 +22,7 @@ import type { VisibleFront } from '../../src/sim/siege.ts';
 import { RESOURCE } from '../../src/sim/map.ts';
 import {
   HUD_ARMED,
+  HUD_SELECTED,
   HUD_BACKGROUND,
   hitTest,
   hudHit,
@@ -566,6 +567,27 @@ it('keeps a long navigator row under the pointer when selection opens contextual
 const DESKTOP = { width: 1280, height: 720 };
 const DESKTOP_VIEW = { desktop: true, uiScale: 2, navigator: true };
 
+it('leaves most of the theatre visible with a compact command dock', () => {
+  const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1], DESKTOP_VIEW);
+  for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
+    const layout = hudLayout(model, size);
+    expect(layout.detail.height).toBeLessThanOrEqual(size.height === 720 ? 250 : 290);
+    expect(layout.commands).toHaveLength(10);
+  }
+});
+
+it('keeps settlement text inside its column and paints the selected page', () => {
+  const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 0 }, [], DESKTOP_VIEW,
+    { faction: 'rome', tab: 'construction' });
+  const layout = hudLayout(model, { width: 1280, height: 720 });
+  const leftEdgeOfCard = Math.min(...layout.tabs.map(({ rect }) => rect.x));
+  for (const line of [...layout.text, ...layout.priority].filter(({ rect }) => rect.y >= layout.detail.y && rect.x < leftEdgeOfCard)) {
+    expect(line.rect.x + measureText(line.text, 2), line.text).toBeLessThan(leftEdgeOfCard);
+  }
+  const selected = layout.tabs.find(({ tab }) => tab === 'construction')!.rect;
+  expect(pixelAt(renderPanels(model, { width: 1280, height: 720 }), selected.x + 2, selected.y + 2)).toEqual(HUD_SELECTED);
+});
+
 describe('the contextual command panel', () => {
   it('offers the military actions a picked Squad has, inside the detail panel', () => {
     const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1], DESKTOP_VIEW, { faction: 'rome' });
@@ -701,6 +723,7 @@ it('opens a settlement the Faction sees, with its walls, from a click on the map
   const readouts = model.readouts.map(lineText);
   expect(readouts).toContain(`${translate('ui.settlement')} Roccaforte 7`);
   expect(readouts).toContain(`${translate('resource.grain')} ${translate('ui.unknown')}`);
+  expect(model.commands, 'an enemy settlement has no military command card').toEqual([]);
 });
 
 it('opens a settlement it only remembers, and reads no wall into the memory (U6)', () => {

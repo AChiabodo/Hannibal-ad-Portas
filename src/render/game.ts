@@ -133,11 +133,11 @@ import { textureOf } from './stage.ts';
 import { SETTLEMENT_LAYER, createSettlementLayer, type SettlementLayer } from './settlement-layer.ts';
 import { siteDepth, siteRect } from './settlements.ts';
 import { SQUAD_LAYER, createSquadLayer, type SquadLayer } from './squad-layer.ts';
-import { blockPlacement, blockSize } from './squads.ts';
+import { blockPlacement, blockSize, visualShape } from './squads.ts';
 import { tileAt, tilePixel } from './terrain.ts';
 import { VIEWED_FACTION } from './view.ts';
 import type { PixelPoint, Stage } from './stage.ts';
-import { DEFAULT_UI_PREFERENCES, loadUiPreferences, saveUiPreferences, type UiPreferences } from '../ui/preferences.ts';
+import { DEFAULT_UI_PREFERENCES, fittedUiScale, loadUiPreferences, saveUiPreferences, type UiPreferences } from '../ui/preferences.ts';
 import { matchMenu, desktopMatchMenu, menuPlate, contains, type MatchMenu } from '../ui/match-menu.ts';
 import { GUIDE_CLOSED, GUIDE_FIRST_ENTRY, guideNext, guidePanel, type GuideActionName, type GuideEvent, type GuideState } from '../ui/guide.ts';
 import { message, translate } from '../ui/strings.ts';
@@ -299,6 +299,10 @@ export interface GameHooks {
   hudRows(): readonly RowRect[];
   /** The exact text, controls and scrolling windows drawn by the HUD. */
   hudLayout(): HudLayout;
+  /** Highlights the command under the pointer and exposes its full name/help. */
+  hoverAt(x: number, y: number): void;
+  /** F6 enters UI focus; Tab traverses, Enter/Space activate, Escape leaves. */
+  interfaceKey(key: string, reverse?: boolean): boolean;
   /** Scrolls a HUD region by bitmap text lines; presentation only. */
   scrollHud(region: 'list' | 'detail' | 'commands' | 'notices', lines: number): void;
   /**
@@ -558,6 +562,8 @@ export function createGame(options: GameOptions): Game {
   const applied: LoggedCommand<Command>[] = [];
   /** Which page of a settlement's panel is open (#55): the Player's, never the Match's. */
   let tab: SettlementTab = 'overview';
+  let focusId: string | null = null;
+  let hoveredOrder: string | null = null;
   /** The action waiting for a click, by its stable id, or `null`. */
   let armed: string | null = null;
   /** The last order given on this page, and whether the seam has taken it yet. */
@@ -640,7 +646,7 @@ export function createGame(options: GameOptions): Game {
     navigateMinimap: (x, y) => {
       const rect = hudLayout(model, options.size).minimap;
       if (!contains(rect, x, y)) return false;
-      const scale = desktop ? preferences.uiScale : 1;
+      const scale = desktop ? model.view.uiScale ?? 2 : 1;
       const tileX = Math.max(0, Math.min(MAP_WIDTH - 1, Math.floor((x - rect.x) / scale) - 2));
       const tileY = Math.max(0, Math.min(MAP_HEIGHT - 1, Math.floor((y - rect.y) / scale) - 2));
       const at = tilePixel(tileX, tileY);
@@ -681,6 +687,14 @@ export function createGame(options: GameOptions): Game {
     },
     hudRows: () => hudLayout(model, options.size).rows,
     hudLayout: () => hudLayout(model, options.size),
+    hoverAt: (x, y) => {
+      const hit = hudHit(model, options.size, x, y);
+      const next = hit?.kind === 'order' && !(menu.visible && contains(readMenu().rect, x, y)) ? hit.order.id : null;
+      if (next === hoveredOrder) return;
+      hoveredOrder = next;
+      repaint();
+    },
+    interfaceKey: (key, reverse = false) => interfaceKey(key, reverse),
     scrollHud: (region, lines) => {
       if (!Number.isSafeInteger(lines)) throw new RangeError('HUD scroll must be whole text lines');
       const layout = hudLayout(model, options.size);
@@ -1118,7 +1132,7 @@ export function createGame(options: GameOptions): Game {
   function rectOf(squad: VisibleSquad): PickRect {
     // The block is drawn from the figures the Squad is drawn as, which is its
     // strength for a body of men and one for a beast (C4).
-    const shape = { men: squad.figures, formation: squad.formation, facing: squad.facing };
+    const shape = visualShape(squad);
     const at = blockPlacement(tilePixel(squad.x, squad.y), shape);
     const size = blockSize(shape);
 
@@ -1138,7 +1152,8 @@ export function createGame(options: GameOptions): Game {
     detailSelection = next.selected;
     return { ...next, view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
       noticesOpen, noticeOffset,
-      desktop, navigatorExpanded, sessionOpen, speed: pacing.speed, ...preferences, tick: match.state.tick,
+      desktop, navigatorExpanded, sessionOpen, speed: pacing.speed, ...preferences,
+      uiScale: fittedUiScale(preferences.uiScale, windowSize()), tick: match.state.tick,
       scaleWarning: desktop && (windowSize().width < 640 * preferences.uiScale || windowSize().height < 360 * preferences.uiScale),
       smallWindow: desktop && (windowSize().width < 1280 || windowSize().height < 720) } };
   }
@@ -1245,6 +1260,10 @@ export function createGame(options: GameOptions): Game {
     notices = noticeBook.read(observation, match.state.tick);
     orderMarks = pruneOrderMarks(orderMarks, observation.squads);
     model = readModel(known, observation);
+    const focused = interfaceControls().find(({ id }) => id === focusId);
+    if (focused === undefined) focusId = null;
+    model = { ...model, view: { ...model.view, focus: focused?.rect ?? null,
+      hoveredOrder: focused?.id.startsWith('order:') ? focused.id.slice(6) : hoveredOrder } };
     const layout = hudLayout(model, options.size);
     listOffset = layout.listScroll.offset;
     detailOffset = layout.detailScroll.offset;
@@ -1269,9 +1288,9 @@ export function createGame(options: GameOptions): Game {
     layer.minimap(model, minimap, options.size);
     menu.visible = desktop && (sessionOpen || (result !== null && !resultDismissed));
     const oldMenu = menu.texture;
-    menu.texture = textureOf(menuPlate(options.size, readMenu(), desktop ? preferences.uiScale : 1));
+    menu.texture = textureOf(menuPlate(options.size, readMenu(), desktop ? model.view.uiScale ?? 2 : 1, model.view.focus ?? null));
     oldMenu.destroy(true);
-    options.stage.canvas.setAttribute('aria-label', [...layout.readouts.map(({ line }) => `${line.label} ${line.value}`), ...layout.buttons.map(({ text }) => text), ...(guide.open ? [...layout.guideText.map(({ text }) => text), ...layout.guideButtons.map(({ text }) => text)] : []), ...(menu.visible ? [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)] : [])].join('. '));
+    options.stage.canvas.setAttribute('aria-label', [translate('ui.keyboard'), focused?.label ?? '', ...layout.readouts.map(({ line }) => `${line.label} ${line.value}`), ...layout.buttons.map(({ text }) => text), ...(guide.open ? [...layout.guideText.map(({ text }) => text), ...layout.guideButtons.map(({ text }) => text)] : []), ...(menu.visible ? [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)] : [])].join('. '));
     options.stage.render();
   }
 
@@ -1313,6 +1332,9 @@ export function createGame(options: GameOptions): Game {
 
   /** A click at a screen point: the interface's rows first, then the men on the map. */
   function pickAt(screenX: number, screenY: number, additive: boolean): void {
+    const wasFocused = focusId !== null;
+    focusId = null;
+    if (wasFocused) repaint();
     if (hooks.navigateMinimap(screenX, screenY)) return;
     const menuButton = menu.visible ? readMenu().buttons.find(({ rect }) => contains(rect, screenX, screenY)) : undefined;
     if (menuButton !== undefined) {
@@ -1356,6 +1378,62 @@ export function createGame(options: GameOptions): Game {
     groupMemory = null;
     noteGuide({ kind: 'selection', what: whatIsSelected() });
     repaint();
+  }
+
+  /** Only visible controls participate; an options drawer owns its own focus. */
+  function interfaceControls(): readonly { id: string; label: string; rect: Rect }[] {
+    if (desktop && (sessionOpen || (result !== null && !resultDismissed))) {
+      return readMenu().buttons.map((button) => ({ id: `menu:${button.action}`, label: button.text, rect: button.rect }));
+    }
+    const layout = hudLayout(model, options.size);
+    const controls = [
+      ...layout.buttons.map((button) => ({ id: `button:${button.action}`, label: button.text, rect: button.rect })),
+      ...layout.rows.map((row) => ({ id: `row:${row.selection.kind}:${String(row.selection.id)}`, label: model.rows.find((r) => r.selection.id === row.selection.id && r.selection.kind === row.selection.kind)?.label ?? '', rect: row.rect })),
+      ...layout.tabs.map((tab) => ({ id: `tab:${tab.tab}`, label: translate(`tab.${tab.tab}`), rect: tab.rect })),
+      ...layout.commands.map(({ order, rect }) => ({ id: `order:${order.id}`, label: order.label, rect })),
+      ...layout.groups.map((group) => ({ id: `group:${String(group.index)}`, label: `${translate('ui.groups')} ${String(group.index)}`, rect: group.rect })),
+      ...layout.exceptions.map((row) => ({ id: `exception:${String(row.selection.id)}`, label: model.group?.exceptions.find((entry) => entry.squad === row.selection.id)?.name ?? '', rect: row.rect })),
+      ...layout.noticeRows.map((row) => ({ id: `notice:${row.id}`, label: notices.find((entry) => entry.id === row.id)?.label ?? '', rect: row.rect })),
+      ...layout.guideButtons.map((button) => ({ id: `guide:${button.action}`, label: button.text, rect: button.rect })),
+    ];
+    const ids = new Set<string>();
+    return controls.filter((control) => {
+      if (ids.has(control.id)) return false;
+      const x = control.rect.x + control.rect.width / 2;
+      const y = control.rect.y + control.rect.height / 2;
+      if (layout.guide.height > 0 && contains(layout.guide, x, y) && !control.id.startsWith('guide:')) return false;
+      ids.add(control.id);
+      return true;
+    });
+  }
+
+  function interfaceKey(key: string, reverse: boolean): boolean {
+    if (!desktop || (key !== 'F6' && focusId === null)) return false;
+    const controls = interfaceControls();
+    if (controls.length === 0) return false;
+    if (key === 'F6' || key === 'Tab') {
+      const found = controls.findIndex(({ id }) => id === focusId);
+      const index = found < 0 && reverse ? 0 : found;
+      focusId = controls[(index + (reverse ? -1 : 1) + controls.length) % controls.length]!.id;
+      repaint();
+      return true;
+    }
+    if (key === 'Escape') {
+      focusId = null;
+      cancelTargeting();
+      repaint();
+      return true;
+    }
+    if (key === 'Enter' || key === ' ') {
+      const focused = controls.find(({ id }) => id === focusId);
+      if (focused !== undefined) {
+        pickAt(focused.rect.x + focused.rect.width / 2, focused.rect.y + focused.rect.height / 2, false);
+        focusId = focused.id;
+        repaint();
+      }
+      return true;
+    }
+    return false;
   }
 
   /** One of the bar's own buttons, pressed. */

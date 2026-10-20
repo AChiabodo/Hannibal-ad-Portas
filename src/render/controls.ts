@@ -61,6 +61,8 @@ import { textureOf, type Stage } from './stage.ts';
  * the page can be read in either order.
  */
 export interface ControlTarget {
+  readonly hoverAt?: (x: number, y: number) => void;
+  readonly interfaceKey?: (key: string, reverse: boolean) => boolean;
   readonly navigateMinimap: (x: number, y: number) => boolean;
   readonly doubleClickAt: (x: number, y: number) => void;
   readonly centerSelection: () => void;
@@ -97,7 +99,7 @@ export interface ControlTarget {
   readonly hudLayout: () => HudLayout;
   /** Includes session chrome, so an armed map order cannot swallow a menu click. */
   readonly hudRects?: () => readonly Rect[];
-  readonly scrollHud: (region: 'list' | 'detail', lines: number) => void;
+  readonly scrollHud: (region: 'list' | 'detail' | 'commands' | 'notices', lines: number) => void;
 }
 
 /** How far a press must travel, in screen pixels, before it is a drag and not a click. */
@@ -128,6 +130,7 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
   stage.root.addChild(overlay);
 
   let marqueeSprite: Sprite | null = null;
+  stage.canvas.addEventListener('pointerleave', () => target.hoverAt?.(-1, -1));
   let press: Press | null = null;
   let minimapPress = false;
   let interfacePress = false;
@@ -154,6 +157,7 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
   });
 
   canvas.addEventListener('pointermove', (event) => {
+    if (press === null) { const at = local(event); target.hoverAt?.(at.x, at.y); }
     if (press === null || event.pointerId !== press.pointerId) return;
 
     if (minimapPress) {
@@ -248,7 +252,8 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
         if (topmost && (topmost.x !== layout[region].x || topmost.y !== layout[region].y ||
           topmost.width !== layout[region].width || topmost.height !== layout[region].height)) continue;
         if (contains(layout[region], at.x, at.y)) {
-          target.scrollHud(region, event.deltaY < 0 ? -3 : 3);
+          const cardX = Math.min(...layout.commands.map(({ rect }) => rect.x), ...layout.tabs.map(({ rect }) => rect.x));
+          target.scrollHud(region === 'detail' && at.x >= cardX ? 'commands' : region, event.deltaY < 0 ? -3 : 3);
           return;
         }
       }
@@ -264,6 +269,10 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
     // the page has one today, and the day it does this is already right.
     const element = event.target;
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return;
+    if (target.interfaceKey?.(event.key, event.shiftKey)) {
+      event.preventDefault();
+      return;
+    }
 
     const digit = Number(event.key);
     if (Number.isInteger(digit) && digit >= 1 && digit <= 9) {

@@ -66,6 +66,8 @@ import {
 import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from './nodes.ts';
 import { CONDITION_MARKS, FACING_MARKS, ORDER_MARK_KINDS, markerEntries } from './markers.ts';
 import { SITE_SIZE, SITE_SPECIMENS, settlementEntries, siteSprite } from './settlements.ts';
+import { interfaceEntries } from './interface.ts';
+import { appearanceEntries } from '../ui/appearance.ts';
 import {
   SEPARATION_FACTIONS,
   SEPARATION_MATERIALS,
@@ -268,6 +270,9 @@ const SITE_LABEL_WIDTH = Math.max(...SITE_SPECIMENS.map((specimen) => measureTex
 /** Width of the settlements section: a specimen's name, and its drawing beside it. */
 const SETTLEMENTS_WIDTH = SITE_LABEL_WIDTH + LABEL_GAP + SITE_CELL;
 
+const INTERFACE_ENTRIES = [...interfaceEntries(), ...appearanceEntries()];
+const INTERFACE_HEIGHT = INTERFACE_ENTRIES.reduce((height, entry) => height + HEADING_HEIGHT + entry.buffer.height + SECTION_GAP, 0);
+
 
 /** The plate's width: the padding, and whichever section is wider. */
 export const PLATE_WIDTH =
@@ -281,6 +286,7 @@ export const PLATE_WIDTH =
     MARKS_WIDTH,
     ICONS_WIDTH,
     SETTLEMENTS_WIDTH,
+    ...INTERFACE_ENTRIES.map(({ buffer }) => buffer.width),
   );
 
 /** The plate's height, which the sections above add up to. */
@@ -296,7 +302,7 @@ export const PLATE_HEIGHT =
   MARKS_HEIGHT +
   ICONS_HEIGHT +
   SETTLEMENTS_HEIGHT +
-  SECTION_GAP * 9;
+  SECTION_GAP * 9 + SECTION_GAP + INTERFACE_HEIGHT;
 
 /**
  * Every artefact the art library generates, in a stable order: the glyphs in
@@ -327,6 +333,8 @@ export function catalogue(): readonly CatalogueEntry[] {
     ...markerEntries(),
     ...iconEntries(),
     ...settlementEntries(),
+    ...interfaceEntries(),
+    ...appearanceEntries(),
   ];
 }
 
@@ -619,6 +627,14 @@ export function cataloguePlate(): PixelBuffer {
     blit(plate, textPlate(specimen.name, PLATE_INK), PLATE_PADDING, top + Math.floor((sprite.height - LINE_HEIGHT) / 2));
     blit(plate, sprite, PLATE_PADDING + SITE_LABEL_WIDTH + LABEL_GAP, top);
     y += SITE_CELL;
+  }
+
+  y += SECTION_GAP;
+  for (const entry of INTERFACE_ENTRIES) {
+    blit(plate, textPlate(entry.name, PLATE_INK), PLATE_PADDING, y);
+    y += HEADING_HEIGHT;
+    blit(plate, entry.buffer, PLATE_PADDING, y);
+    y += entry.buffer.height + SECTION_GAP;
   }
 
   return plate;

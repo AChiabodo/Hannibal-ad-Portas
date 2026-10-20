@@ -78,6 +78,8 @@ export const GAME_HOOKS = [
   'hudRects',
   'hudRows',
   'hudLayout',
+  'hoverAt',
+  'interfaceKey',
   'scrollHud',
   'perform',
   'cancelTargeting',

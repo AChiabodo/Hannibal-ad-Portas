@@ -77,6 +77,8 @@ the camera's hooks and the Match's hooks, and nothing else:
 | `hudRects` | `() → Rect[]` | game | Every rectangle the interface covers, which is what the theatre cannot be read through |
 | `hudRows` | `() → RowRect[]` | game | Where each selectable row stands, so a test presses the row a Player would |
 | `hudLayout` | `() → HudLayout` | game | The text, button rectangles, enabled states and scroll windows actually drawn |
+| `hoverAt` | `(x, y)` | game | Highlights the pointer's command and shows its full name, shortcut and requirement above the compact card; presentation only |
+| `interfaceKey` | `(key, reverse?) → boolean` | game | F6 enters UI focus; Tab/Shift+Tab traverse visible controls, Enter/Space press the focused rectangle, Escape leaves focus and cancels targeting. Returns whether the UI consumed the key; `hud().view.focus` is its drawn rectangle. Plain Tab retains navigator toggling outside UI focus. |
 | `scrollHud` | `(region, lines)` | game | Scrolls `list`, `detail`, `commands` or `notices` by whole bitmap text lines, without changing selection or the Match |
 | `perform` | `(orderId) → boolean` | game | Performs one contextual action: arms it when it needs a target, submits it otherwise, through the shared human Controller |
 | `cancelTargeting` | `() → boolean` | game | Cancels the armed action and nothing else: a Command already submitted is never taken back |

@@ -34,9 +34,25 @@ import { catalogue, cataloguePlate } from '../../src/art/catalogue';
 import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 
 /** The fingerprints recorded from the generators as accepted. */
-const PLATE_HASH = '280d0f795302fecb';
+// U9: deliberately add the reviewed UI surfaces and real layout specimens.
+const PLATE_HASH = 'dc7f9ff9c7d18c58';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
+  'ui:carthage-column': '4b56aa9f36f49c4a',
+  'ui:carthage-line': '73b1d1b02cffe05a',
+  'ui:rome-column': 'a08469a1781f8143',
+  'ui:rome-line': 'fde3a2c084513c3a',
+  'interface:idle': '949bdad4ac7c1977',
+  'interface:selected': '441968d0f235a997',
+  'interface:armed': '7ccadea48dd904b7',
+  'interface:disabled': '4612506f4557e9b7',
+  'interface:focus': '74aad50e7b9be297',
+  'ui:setup': '82906ab423edd8b4',
+  'ui:squad': '69db12c004c98aa7',
+  'ui:armed-pending': 'be5b1e5381012a2d',
+  'ui:construction': '02bca410e02e4c6e',
+  'ui:options': '1e03d0df52d0241e',
+  'ui:result': 'e641e2c442783d44',
   'glyph:U+0020': '19ce279ecc93e509',
   'glyph:U+0041': 'aae456011072287d',
   'glyph:U+0061': 'b702478adf79d775',
@@ -81,16 +97,16 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'figure:elephant:south:attack:1': '480d980f6dc7b225',
   // #55's command card: one hash per verb, so an icon that is redrawn names
   // itself — and a few badges, which are read beside a numeral.
-  'icon:move': '5142f40c96217728',
-  'icon:attackMove': '3b0b502fd6b469ae',
-  'icon:attack': 'dfeb67d910a4d845',
-  'icon:hold': 'abe4fec9919d673d',
-  'icon:withdraw': 'b85e658d3f72c5c8',
-  'icon:line': '31ffc0b2375ad82b',
-  'icon:column': '8cb3b931c70e7785',
-  'icon:garrison': 'a88f53fe932cee07',
-  'icon:assault': '45243b1dfa42d88f',
-  'icon:blockade': '5eadf658dd51a5d9',
+  'icon:move': '952e726e0eb37f6a',
+  'icon:attackMove': '53964edea73a915a',
+  'icon:attack': '11b74db46105d1bd',
+  'icon:hold': 'a5f3b42e4270dc84',
+  'icon:withdraw': 'cb788016de9614fa',
+  'icon:line': '283aa81ffa65652a',
+  'icon:column': 'b3e799eba94c99d2',
+  'icon:garrison': 'c7dd4c2e78f23077',
+  'icon:assault': 'd874def643ce88c4',
+  'icon:blockade': '81721f3e3139d215',
   'badge:grain': 'c018f12758926e0a',
   'badge:clock': '0ee8bfa2e5051795',
   'badge:lock': '8d7b02a5b46f1b25',

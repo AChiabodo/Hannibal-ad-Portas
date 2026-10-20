@@ -516,8 +516,11 @@ differ, which five arms and nine types could not do.
 single beast weather a round or two of a Roman line instead of dying to the
 first blow. `figuresOf(type)` is the one place the two numbers are tied, and the
 Observation carries both, so a drawing code lays out a beast as one figure and a
-body of men as one figure per man; `render/squads.ts` uses the figures and the
-fight uses the strength. Everything else about an elephant is an ordinary Squad:
+body of men as a strength-backed figure count. The UI projects three representative
+soldiers per four men (rounded up), at the original 10x14 size with five-pixel
+spacing; a 120-man Squad draws 90, and the HUD still says 120. The elephant stays
+one figure. This presentation convention changes neither strength nor combat,
+pathfinding or formation rules. Everything else about an elephant is an ordinary Squad:
 it is recruited, paid, ordered, flanked and routed like any other (the ticket's
 own "an ordinary Squad type with an extraordinary figure").
 

@@ -74,6 +74,7 @@ import type { KnownSite } from './sites.ts';
 import type { Notice } from './conditions.ts';
 import type { ForecastLine } from './forecast.ts';
 import type { GuidePanel } from './guide.ts';
+import { paintControl, paintFocus } from '../art/interface.ts';
 import { message, refusalLabel, resourceLabel, seasonLabel, squadLabel, translate, workLabel } from './strings.ts';
 
 /** What a Player has selected, or `null` for nothing. */
@@ -209,6 +210,8 @@ export interface HudSession {
 
 /** Presentation memory only; never part of the Match. Offsets count bitmap text lines. */
 export interface HudView {
+  readonly focus?: Rect | null;
+  readonly hoveredOrder?: string | null;
   readonly desktop?: boolean;
   readonly sessionOpen?: boolean;
   readonly scaleWarning?: boolean;
@@ -423,19 +426,19 @@ const LIST_WIDTH = 150;
 const DETAIL_HEIGHT = 128;
 
 /** How tall the desktop's detail panel is: a share of the screen, within bounds. */
-const DETAIL_SHARE = 0.42;
+const DETAIL_SHARE = 0.31;
 
 /** The narrowest a desktop detail panel is drawn, in bitmap pixels. */
-const DETAIL_MIN_HEIGHT = 132;
+const DETAIL_MIN_HEIGHT = 114;
 
 /** The tallest, so that a large window leaves the theatre most of its height. */
-const DETAIL_MAX_HEIGHT = 190;
+const DETAIL_MAX_HEIGHT = 132;
 
 /** Air between two command cells, so two pictures are never one picture. */
 const COMMAND_GAP = 2;
 
 /** One command cell: its icon, the air under it, its one-word label and its air. */
-const COMMAND_ROW_HEIGHT = ICON_TILE + 3 + LINE_HEIGHT + 3;
+const COMMAND_ROW_HEIGHT = ICON_TILE + 6;
 
 /** One settlement row: a badge, a name and its costs on a single line. */
 const ECONOMY_ROW_HEIGHT = LINE_STEP + 3;
@@ -509,7 +512,7 @@ export function hudModel(
   const group = selected?.kind === 'squad' && pickedSquadList.length > 1 ? groupSummary(pickedSquadList) : null;
   const commands = settlement !== null
     ? settlementOrders(visible, faction, settlement, tab, ended)
-    : squadOrders(visible, faction, pickedSquadList, ended);
+    : selected?.kind === 'settlement' ? [] : squadOrders(visible, faction, pickedSquadList, ended);
   const armed = session.armed == null ? null : commands.find((order) => order.id === session.armed) ?? null;
 
   return {
@@ -648,6 +651,21 @@ export function wrapText(text: string, width: number): string[] {
 }
 
 /** A scroll window over items rather than over text lines: `page` items fit at once. */
+function compactLines(lines: readonly string[], width: number): readonly string[] {
+  const packed: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const left = lines[index]!;
+    const right = lines[index + 1];
+    const half = Math.floor(width / 2);
+    if (right !== undefined && measureText(left) + 6 <= half && measureText(right) <= width - half) {
+      const gap = Math.max(1, Math.ceil((half - measureText(left)) / 6));
+      packed.push(`${left}${' '.repeat(gap)}${right}`);
+      index += 1;
+    } else packed.push(...wrapText(left, width));
+  }
+  return packed;
+}
+
 function paginate(requested: number, total: number, page: number): HudScroll {
   const size = Math.max(1, page);
   const max = Math.max(0, total - size);
@@ -792,9 +810,6 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
       fillRect(buffer, row.rect.x, row.rect.y, row.rect.width, row.rect.height, HUD_SELECTED);
     }
   }
-  for (const line of layout.text) drawText(buffer, line.text, line.rect.x, line.rect.y, HUD_LABEL, scale);
-  for (const line of layout.priority) drawText(buffer, line.text, line.rect.x, line.rect.y, HUD_VALUE, scale);
-
   // The exceptions of a mixed selection are rows like any other row, and the one
   // whose panel is open stands on the same bronze the navigator uses.
   if (model.group !== null) {
@@ -805,10 +820,11 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
       }
     }
   }
+  for (const line of layout.text) drawText(buffer, line.text, line.rect.x, line.rect.y, HUD_LABEL, scale);
+  for (const line of layout.priority) drawText(buffer, line.text, line.rect.x, line.rect.y, HUD_VALUE, scale);
 
   for (const tab of layout.tabs) {
-    if (tab.tab === model.tab) fillRect(buffer, tab.rect.x, tab.rect.y, tab.rect.width, tab.rect.height, HUD_SELECTED);
-    panel(buffer, tab.rect);
+    paintControl(buffer, tab.rect, tab.tab === model.tab ? 'selected' : 'idle');
     drawText(buffer, translate(`tab.${tab.tab}`), tab.rect.x + PADDING * scale, tab.rect.y + 3 * scale,
       tab.tab === model.tab ? HUD_VALUE : HUD_LABEL, scale);
   }
@@ -816,12 +832,10 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
   for (const rule of layout.commandRules) fillRect(buffer, rule.x, rule.y, rule.width, rule.height, HUD_RULE);
 
   for (const { order, rect } of layout.commands) {
-    panel(buffer, rect);
     // The armed action stands on its own ground, inside the panel's edge, so a
     // Player can see which of several orders is the one waiting for a click.
-    if (model.orders.armed?.id === order.id) {
-      fillRect(buffer, rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2, HUD_ARMED);
-    }
+    paintControl(buffer, rect, model.orders.armed?.id === order.id ? 'armed' : !order.enabled ? 'disabled'
+      : model.view.hoveredOrder === order.id ? 'selected' : 'idle');
     if (order.group === 'construction' || order.group === 'recruitment') drawEconomyRow(buffer, order, rect, scale);
     else drawCommandButton(buffer, order, rect, scale);
   }
@@ -849,6 +863,7 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
     drawText(buffer, button.text, button.rect.x + PADDING * scale, button.rect.y + 5 * scale, button.enabled ? HUD_VALUE : HUD_BORDER, scale);
   }
 
+  if (model.view.focus) paintFocus(buffer, model.view.focus);
   return buffer;
 }
 
@@ -864,12 +879,13 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
 function drawCommandButton(buffer: PixelBuffer, order: OrderOption, rect: Rect, scale: number): void {
   const ink = order.enabled ? HUD_VALUE : HUD_DISABLED;
   const iconSize = ICON_TILE * scale;
+  const labelWidth = measureText(order.short, scale);
+  const showLabel = rect.width >= iconSize + labelWidth + 2 * PADDING * scale + (order.shortcut === null ? 0 : KEY_BADGE_WIDTH * scale);
+  const iconX = showLabel ? rect.x + PADDING * scale : rect.x + Math.floor((rect.width - iconSize) / 2);
   blitScaled(buffer, commandIcon(commandIconFor(order), { muted: !order.enabled }),
-    rect.x + Math.floor((rect.width - iconSize) / 2), rect.y + 2 * scale, scale);
-
-  const label = fitText(order.short, rect.width - 2 * PADDING * scale, scale);
-  drawText(buffer, label, rect.x + Math.floor((rect.width - measureText(label, scale)) / 2),
-    rect.y + (ICON_TILE + 3) * scale, ink, scale);
+    iconX, rect.y + Math.floor((rect.height - iconSize) / 2), scale);
+  if (showLabel) drawText(buffer, order.short, iconX + iconSize + 2 * scale,
+    rect.y + Math.floor((rect.height - LINE_HEIGHT * scale) / 2), ink, scale);
 
   if (order.shortcut !== null) drawKeyBadge(buffer, order.shortcut, rect, ink, scale);
 }
@@ -1043,8 +1059,8 @@ function readouts(
   for (const [index, kind] of RESOURCE_KINDS.entries()) {
     lines.push({
       label: resourceLabel(kind),
-      value: known !== null ? unknown : String(focus === null ? 0 : stockOf(focus, kind)),
-      large: known === null,
+      value: known !== null && known.id !== focus?.id ? unknown : String(focus === null ? 0 : stockOf(focus, kind)),
+      large: known === null || known.id === focus?.id,
       newRow: index === 0,
     });
   }
@@ -1450,7 +1466,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   // Commands before scenery (#54): the panel is as tall as the actions in it,
   // and the navigator and the theatre yield to it rather than the other way.
   const detailHeight = hasDetail
-    ? Math.max(DETAIL_MIN_HEIGHT, Math.min(DETAIL_MAX_HEIGHT, Math.round(height * DETAIL_SHARE))) : 28;
+    ? Math.max(DETAIL_MIN_HEIGHT, Math.min(DETAIL_MAX_HEIGHT, Math.round(height * DETAIL_SHARE))) + (model.groups.length > 0 ? 10 : 0) : 28;
   const detail: Rect = { x: 0, y: height - detailHeight, width: width - MINIMAP_PLATE_WIDTH, height: detailHeight };
   const minimap: Rect = { x: detail.width, y: height - MINIMAP_PLATE_HEIGHT, width: MINIMAP_PLATE_WIDTH, height: MINIMAP_PLATE_HEIGHT };
   const showNavigator = model.view.navigator !== false && (model.view.navigatorExpanded || (!model.view.scaleWarning && !model.view.smallWindow));
@@ -1520,14 +1536,6 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   const commandWidth = Math.max(80, detail.width - textWidth - 3 * inner);
 
   let textY = columnTop;
-  const stocks = model.readouts[0];
-  if (stocks !== undefined && hasDetail && model.selected?.kind === 'settlement') {
-    text.push({
-      text: `${stocks.value} / ${model.readouts.slice(4).map((r) => `${r.label}: ${r.value}`).join(' / ')}`,
-      rect: { x: textX, y: textY, width: textWidth, height: LINE_STEP },
-    });
-    textY += LINE_STEP;
-  }
   let secondary: readonly string[] = [];
   if (model.detail !== null) {
     const main = [model.detail.title, ...model.detail.priority.flatMap((index) => {
@@ -1538,8 +1546,8 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
       priority.push({ text: word, rect: { x: textX, y: textY, width: textWidth, height: LINE_STEP } });
       textY += LINE_STEP;
     }
-    secondary = model.detail.lines.filter((_line, index) => !model.detail?.priority.includes(index))
-      .flatMap((line) => wrapText(`${line.label}: ${line.value}`, textWidth));
+    secondary = compactLines(model.detail.lines.filter((_line, index) => !model.detail?.priority.includes(index))
+      .map((line) => `${line.label}: ${line.value}`), textWidth);
     if (model.group !== null && model.group.exceptions.length > 0) {
       text.push({ text: translate('ui.exceptions'), rect: { x: textX, y: textY, width: textWidth, height: LINE_STEP } });
       textY += LINE_STEP;
@@ -1556,7 +1564,9 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     textY += LINE_STEP;
   }
   const secondaryTop = textY;
-  const detailScroll = scrollWindow(model.view.detailOffset ?? 0, secondary.length, Math.max(0, columnTop + columnHeight - secondaryTop));
+  const secondaryRoom = Math.max(0, columnTop + columnHeight - secondaryTop);
+  const detailScroll = scrollWindow(model.view.detailOffset ?? 0, secondary.length,
+    secondary.length * LINE_STEP > secondaryRoom ? Math.max(0, secondaryRoom - 2 * LINE_STEP) : secondaryRoom);
   for (const [index, word] of secondary.slice(detailScroll.offset, detailScroll.offset + detailScroll.page).entries()) {
     text.push({ text: word, rect: { x: textX, y: secondaryTop + index * LINE_STEP, width: textWidth, height: LINE_STEP } });
   }
@@ -1566,6 +1576,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   // The commands column: the settlement's pages first, then what the last order
   // did, then the offers themselves.
   let commandY = columnTop;
+  const statusTop = commandY;
   if (model.selected?.kind === 'settlement') {
     const tabWidth = Math.floor((commandWidth - (SETTLEMENT_TABS.length - 1) * 2) / SETTLEMENT_TABS.length);
     for (const [index, tab] of SETTLEMENT_TABS.entries()) {
@@ -1588,7 +1599,9 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     }
   }
   const last = model.orders.last;
-  if (last !== null) {
+  const inspected = model.commands.find((order) => order.id === model.view.hoveredOrder);
+  const inspectHint = inspected !== undefined && inspected.label !== last?.name && armed === null && model.orders.notice === null;
+  if (last !== null && !inspectHint && armed === null && model.orders.notice === null) {
     const words = wrapText(message('ui.submitted', { name: last.name }), commandWidth);
     for (const word of words) {
       status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
@@ -1607,6 +1620,16 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
       rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP + 3 } });
     commandY += LINE_STEP + 5;
   }
+  const hovered = inspected;
+  if ((status.length === 0 || inspectHint) && model.selected?.kind === 'squad') {
+    const hint = hovered === undefined ? translate('ui.commandHelp')
+      : `${hovered.label}${hovered.shortcut === null ? '' : ` [${hovered.shortcut}]`} - ${hovered.reason ?? hovered.targetHint ?? hovered.note ?? translate('ui.commandNow')}`;
+    for (const word of wrapText(hint, commandWidth).slice(0, 2)) {
+      status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
+      commandY += LINE_STEP;
+    }
+  }
+  if (model.selected?.kind === 'squad') commandY = Math.max(commandY, statusTop + 3 * LINE_STEP);
   // The card: rows of pictures for a Squad's verbs, one full-width row per named
   // thing for a settlement's pages. The two are different questions — "what can
   // these men do?" and "what can this town raise?" — so they are laid out
@@ -1618,8 +1641,6 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     ? model.commands.map((order) => [order])
     : commandRows(model.commands);
   const rowHeight = settlementPage ? ECONOMY_ROW_HEIGHT : COMMAND_ROW_HEIGHT;
-  const columns = Math.max(1, ...cardRows.map((row) => row.length));
-  const cellWidth = Math.max(1, Math.floor(commandWidth / columns));
   let rowsFit = Math.max(1, Math.floor(commandArea / rowHeight));
   if (cardRows.length > rowsFit) rowsFit = Math.max(1, Math.floor((commandArea - 2 * LINE_STEP) / rowHeight));
   const commandScroll = paginate(model.view.commandOffset ?? 0, cardRows.length, rowsFit);
@@ -1630,6 +1651,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   const reservedForScroll = commandScroll.max > 0 ? 2 * LINE_STEP : 0;
   const gridTop = commandY + Math.max(0, commandArea - reservedForScroll - visibleRows.length * rowHeight);
   for (const [row, items] of visibleRows.entries()) {
+    const cellWidth = Math.max(1, Math.floor(commandWidth / items.length));
     for (const [column, order] of items.entries()) {
       commands.push({
         order,

@@ -5,11 +5,11 @@
  * and a strength — and it holds its men's places only as a *derivation*
  * (`sim/squad.ts`: `menOf`, `frontage`, `depth`). This module is the other end
  * of that derivation: it takes the same shape the rules take, asks the same
- * function where each man stands, and composes a `PixelBuffer` of that many
- * soldiers. So "a Squad is rendered as its soldiers in formation" is not a rule
- * that could disagree with the simulation's — it is the simulation's own list,
- * drawn — and "individual soldiers visibly thin out as the Squad loses strength"
- * is the list being shorter, with nobody shuffling.
+ * function where a representative figure stands. The UI draws three figures per
+ * four men, rounded up, at the original soldier size and with five-pixel spacing
+ * (#62, explicit Player preference). Strength and formation rules remain the
+ * simulation's; this projection only makes the silhouettes easier to see.
+ * Losses shorten the representative list from its back, without shuffling.
  *
  * ## Where the drawing lives
  *
@@ -118,7 +118,7 @@ export const FIGURE_FACING_OF_FACING: Readonly<Record<Facing, FigureFacing>> = {
  * shields overlapping, not a row of men with gaps between them, and the overlap
  * is what makes a hundred and twenty men read as one block at the lowest zoom.
  */
-export const FILE_STEP = 4;
+export const FILE_STEP = 5;
 
 /**
  * How far apart two ranks stand, in pixels: the same, for the same reason.
@@ -127,7 +127,12 @@ export const FILE_STEP = 4;
  * few pixels up the screen; the overlap is what makes a column deep rather than
  * tall.
  */
-export const RANK_STEP = 4;
+export const RANK_STEP = 5;
+
+/** Three representative figures per four men; beasts stay one figure. UI only. */
+export function visualShape(squad: Pick<VisibleSquad, 'figures' | 'formation' | 'facing'>): BlockShape {
+  return { men: Math.ceil(squad.figures * 3 / 4), formation: squad.formation, facing: squad.facing };
+}
 
 /**
  * The shape of a block, as the words a drawing code speaks: a formation, a
@@ -194,9 +199,9 @@ export function blockMen(shape: BlockShape): readonly PlacedMan[] {
     // The front rank is the block's origin and the ranks grow *behind* it, so a
     // Squad that loses a rank loses the men furthest from where it stands and
     // nobody shuffles; the files are centred on the frontage, which only changes
-    // when the last few men are left. Whole pixels, rounded toward zero, so the
+    // when the last few men are left. Whole pixels, rounded down, so the
     // same shape and facing is the same layout on every engine.
-    const along = Math.trunc(((2 * man.file - (front - 1)) * FILE_STEP) / 2);
+    const along = Math.floor(((2 * man.file - (front - 1)) * FILE_STEP) / 2);
     const behind = man.rank * RANK_STEP;
 
     return { ...man, ...turned(shape.facing, along, behind) };
@@ -285,11 +290,7 @@ export function squadBlock(squad: VisibleSquad, options: BlockOptions = {}): Pix
     throw new RangeError(`"${squad.type}" is not a Squad type the rosters draw`);
   }
 
-  const shape: BlockShape = {
-    men: squad.figures,
-    formation: squad.formation,
-    facing: squad.facing,
-  };
+  const shape = visualShape(squad);
   const men = blockMen(shape);
   const size = blockSize(shape);
   const block = createPixelBuffer(size.width, size.height);
