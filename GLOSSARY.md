@@ -33,6 +33,12 @@ One quarter of a Match's game year, and the Match's strategic clock: harvest in 
 _UI_: Stagione
 _Avoid_: Turn, phase, cycle
 
+**Tick**:
+The Match's smallest step: one tenth of a second at the pace the simulation runs, and the unit a timer, an order's queue and a Season's progress are counted in. It is the clock, never a turn — a Match steps ten thousandths of a second regardless of who is watching.
+_UI_: tick
+_UI note_: the interface's own word for a countdown keeps the code's short word because it is a number a Player reads beside a work or a ram, and no Italian term for it exists in the glossary.
+_Avoid_: Turn, frame, step (a frame is the renderer's, and a step is a Command)
+
 **Year**:
 Four Seasons of Match time, counted from one. A Match is bound to three of them — twenty-five thousand two hundred ticks, in a browser and headless alike — and a caller may hand over another bound, but not none.
 _UI_: Anno

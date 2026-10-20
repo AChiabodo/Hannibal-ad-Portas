@@ -53,7 +53,9 @@ interface Rect {
 async function bootScene(page: Page, faction: 'rome' | 'carthage'): Promise<void> {
   await page.setViewportSize(VIEWPORT);
   await page.goto(`/e2e/commands-fixture.html?faction=${faction}`);
-  await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
+  // Booting a WebGL page beside eight other workers can take longer than the
+  // default five seconds; the assertion is that it booted, not that it was quick.
+  await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached({ timeout: 20_000 });
   await page.evaluate(() => window.__SPQR.game!.pause());
   await advance(page, 1);
   await expect.poll(async () => (await hud(page)).commands.length).toBeGreaterThan(0);
@@ -260,6 +262,11 @@ test('a Squad is ordered by its buttons, by an armed click and by the same key',
   await page.keyboard.press('l');
   await advance(page, 1);
   expect(await lastCommand(page)).toMatchObject({ kind: 'formation', formation: 'line' });
+
+  // Withdraw is its own visible action, and the rules obey it as a real Command.
+  await pressCommand(page, 'withdraw');
+  await advance(page, 1);
+  expect(await lastCommand(page)).toMatchObject({ kind: 'withdraw', squads: [nearest] });
 });
 
 test('an enemy in sight is attacked by its own explicit action', async ({ page }) => {

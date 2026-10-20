@@ -140,6 +140,17 @@ export const PLAYER_FACTION: Faction = VIEWED_FACTION;
 /** The longest a single frame may pay for: a background tab does not owe the Match an hour. */
 const FRAME_BUDGET_MS = 250;
 
+/**
+ * Where an armed action's click landed, as the thing the Command will name.
+ *
+ * A closed set rather than a bag of optional fields: a `move` has a tile and no
+ * settlement, an `attack` has an enemy and no tile, and the type says so.
+ */
+type OrderPoint =
+  | { readonly kind: 'ground'; readonly x: number; readonly y: number }
+  | { readonly kind: 'enemy'; readonly squad: number }
+  | { readonly kind: 'settlement'; readonly settlement: number };
+
 /** A Squad, as the page reports it: what the Observation says, and where it is drawn. */
 export interface SquadReport extends VisibleSquad {
   /** The theatre rectangle its men are drawn in, which is the rectangle a click picks. */
@@ -1067,10 +1078,10 @@ export function createGame(options: GameOptions): Game {
     const tile = tileAt(at.x, at.y);
     if (tile.x < 0 || tile.y < 0 || tile.x >= MAP_WIDTH || tile.y >= MAP_HEIGHT) return false;
 
-    if (offer.target === 'ground') return submitOrder(offer, { x: tile.x, y: tile.y });
+    if (offer.target === 'ground') return submitOrder(offer, { kind: 'ground', x: tile.x, y: tile.y });
     if (offer.target === 'enemy') {
       const enemy = enemyAt(enemyTargets(visible()), tile.x, tile.y);
-      return enemy === null ? false : submitOrder(offer, { squad: enemy.id });
+      return enemy === null ? false : submitOrder(offer, { kind: 'enemy', squad: enemy.id });
     }
     if (offer.target === 'settlement') {
       const site = settlementAt(settlementTargets(visible()), tile.x, tile.y);
@@ -1099,7 +1110,7 @@ export function createGame(options: GameOptions): Game {
     if (offer.id === 'assault' && (target.own || target.walled !== true)) return false;
     if (offer.id === 'blockade' && target.own) return false;
 
-    return submitOrder(offer, { settlement });
+    return submitOrder(offer, { kind: 'settlement', settlement });
   }
 
   /** Picks the group an individual exception was opened from. */
@@ -1118,20 +1129,17 @@ export function createGame(options: GameOptions): Game {
    * right click and a test hook all arrive here, and nothing here can write to
    * the Match — `human.submit` validates the Command and the tick applies it.
    */
-  function submitOrder(
-    offer: OrderOption,
-    target?: { readonly x?: number; readonly y?: number; readonly squad?: number; readonly settlement?: number },
-  ): boolean {
+  function submitOrder(offer: OrderOption, point?: OrderPoint): boolean {
     const squads = human.selection.squads;
-    const command = commandFor(offer, squads, target);
+    const command = commandFor(offer, squads, point);
     if (command === null || !human.submit(command)) return false;
 
     submission = {
       name: offer.label,
       status: 'pending',
       tick: match.state.tick,
-      detail: offer.id === 'garrison' && target?.settlement !== undefined
-        ? garrisonDetail(human.selection.squads, target.settlement)
+      detail: offer.kind === 'garrison' && point?.kind === 'settlement'
+        ? garrisonDetail(squads, point.settlement)
         : null,
     };
     armed = null;
@@ -1140,47 +1148,35 @@ export function createGame(options: GameOptions): Game {
   }
 
   /** The Command one offer means, or `null` when the selection cannot address it. */
-  function commandFor(
-    offer: OrderOption,
-    squads: readonly number[],
-    target?: { readonly x?: number; readonly y?: number; readonly squad?: number; readonly settlement?: number },
-  ): Command | null {
-    const settlement = target?.settlement ?? (human.selection.settlement === null ? undefined : human.selection.settlement);
-
-    switch (offer.id) {
+  function commandFor(offer: OrderOption, squads: readonly number[], point?: OrderPoint): Command | null {
+    // A Siege names the settlement the click produced, and nothing else: a Squad
+    // selection cannot carry one, which is why the target is a separate answer.
+    switch (offer.kind) {
       case 'move':
+        return point?.kind === 'ground' ? move(faction, squads, point.x, point.y) : null;
       case 'attackMove':
-        return target?.x === undefined || target.y === undefined ? null
-          : offer.id === 'move' ? move(faction, squads, target.x, target.y)
-            : attackMove(faction, squads, target.x, target.y);
+        return point?.kind === 'ground' ? attackMove(faction, squads, point.x, point.y) : null;
       case 'attack':
-        return target?.squad === undefined ? null : attack(faction, squads, target.squad);
+        return point?.kind === 'enemy' ? attack(faction, squads, point.squad) : null;
       case 'hold':
         return hold(faction, squads);
       case 'withdraw':
         return withdraw(faction, squads);
-      case 'formation.line':
-      case 'formation.column':
-        return formation(faction, squads, offer.id === 'formation.line' ? 'line' : 'column');
+      case 'formation':
+        return offer.subject === 'column' ? formation(faction, squads, 'column') : formation(faction, squads, 'line');
       case 'garrison':
-        return settlement === undefined ? null : garrison(faction, squads, settlement);
+        return point?.kind === 'settlement' ? garrison(faction, squads, point.settlement) : null;
       case 'assault':
-        return settlement === undefined ? null : assault(faction, squads, settlement);
+        return point?.kind === 'settlement' ? assault(faction, squads, point.settlement) : null;
       case 'blockade':
-        return settlement === undefined ? null : blockade(faction, squads, settlement);
-      default:
-        break;
+        return point?.kind === 'settlement' ? blockade(faction, squads, point.settlement) : null;
+      case 'build':
+        return offer.subject === null || human.selection.settlement === null
+          ? null : build(faction, human.selection.settlement, offer.subject);
+      case 'recruit':
+        return offer.subject === null || human.selection.settlement === null
+          ? null : recruit(faction, human.selection.settlement, offer.subject, 1);
     }
-
-    if (offer.subject === null) return null;
-    if (offer.id.startsWith('build:')) {
-      return human.selection.settlement === null ? null : build(faction, human.selection.settlement, offer.subject);
-    }
-    if (offer.id.startsWith('recruit:')) {
-      return human.selection.settlement === null ? null : recruit(faction, human.selection.settlement, offer.subject, 1);
-    }
-
-    return null;
   }
 
   /** How many of the picked Squads stand in reach of the settlement a garrison named. */

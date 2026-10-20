@@ -43,7 +43,6 @@
 import {
   BUILDINGS,
   amountOf,
-  figuresOf,
   pay,
   squadTypeOf,
   squadTypeCode,
@@ -65,8 +64,19 @@ export type OrderGroup = 'movement' | 'combat' | 'formation' | 'siege' | 'constr
 /** What an armed offer is waiting for, and therefore which click answers it. */
 export type OrderTarget = 'none' | 'ground' | 'enemy' | 'settlement';
 
-/** The three Siege decisions a Player can take, in the order the panel offers them. */
-export type SiegeAction = 'garrison' | 'assault' | 'blockade';
+/** The verb an offer means, as the page dispatches on it. */
+export type OrderKind =
+  | 'move'
+  | 'attackMove'
+  | 'attack'
+  | 'hold'
+  | 'withdraw'
+  | 'formation'
+  | 'garrison'
+  | 'assault'
+  | 'blockade'
+  | 'build'
+  | 'recruit';
 
 /** The three pages of a settlement's panel (#55). */
 export type SettlementTab = 'overview' | 'construction' | 'recruitment';
@@ -84,6 +94,8 @@ export const SETTLEMENT_TABS: readonly SettlementTab[] = ['overview', 'construct
 export interface OrderOption {
   /** Stable dispatch id: `move`, `formation.line`, `build:farm`, `recruit:hastati`. */
   readonly id: string;
+  /** The verb it means, so a caller switches on a fact rather than parses the id. */
+  readonly kind: OrderKind;
   /** Which block of the panel it belongs to. */
   readonly group: OrderGroup;
   /** The verb, in Italian, as a Player reads it. */
@@ -186,17 +198,17 @@ export function squadOrders(
 
   return [
     {
-      id: 'move', group: 'movement', label: translate('cmd.move'), subject: null, note: null, shortcut: null,
+      id: 'move', kind: 'move', group: 'movement', label: translate('cmd.move'), subject: null, note: null, shortcut: null,
       target: 'ground', targetHint: translate('target.ground'),
       ...(open ? { enabled: true, reason: null } : blocked(squadsReason)),
     },
     {
-      id: 'attackMove', group: 'movement', label: translate('cmd.attackMove'), subject: null, note: null, shortcut: 'A',
+      id: 'attackMove', kind: 'attackMove', group: 'movement', label: translate('cmd.attackMove'), subject: null, note: null, shortcut: 'A',
       target: 'ground', targetHint: translate('target.ground'),
       ...(open ? { enabled: true, reason: null } : blocked(squadsReason)),
     },
     {
-      id: 'attack', group: 'movement', label: translate('cmd.attack'), subject: null, note: null, shortcut: null,
+      id: 'attack', kind: 'attack', group: 'movement', label: translate('cmd.attack'), subject: null, note: null, shortcut: null,
       target: 'enemy', targetHint: translate('target.enemy'),
       ...(open
         ? enemyTargets(visible).length === 0
@@ -205,22 +217,22 @@ export function squadOrders(
         : blocked(squadsReason)),
     },
     {
-      id: 'hold', group: 'combat', label: translate('cmd.hold'), subject: null, note: null, shortcut: 'S',
+      id: 'hold', kind: 'hold', group: 'combat', label: translate('cmd.hold'), subject: null, note: null, shortcut: 'S',
       target: 'none', targetHint: null,
       ...(open ? { enabled: true, reason: null } : blocked(squadsReason)),
     },
     {
-      id: 'withdraw', group: 'combat', label: translate('cmd.withdraw'), subject: null, note: null, shortcut: 'W',
+      id: 'withdraw', kind: 'withdraw', group: 'combat', label: translate('cmd.withdraw'), subject: null, note: null, shortcut: 'W',
       target: 'none', targetHint: null,
       ...(open ? { enabled: true, reason: null } : blocked(squadsReason)),
     },
     {
-      id: 'formation.line', group: 'formation', label: translate('cmd.line'), subject: 'line', note: null, shortcut: 'L',
+      id: 'formation.line', kind: 'formation', group: 'formation', label: translate('cmd.line'), subject: 'line', note: null, shortcut: 'L',
       target: 'none', targetHint: null,
       ...(open ? { enabled: true, reason: null } : blocked(squadsReason)),
     },
     {
-      id: 'formation.column', group: 'formation', label: translate('cmd.column'), subject: 'column', note: null, shortcut: 'C',
+      id: 'formation.column', kind: 'formation', group: 'formation', label: translate('cmd.column'), subject: 'column', note: null, shortcut: 'C',
       target: 'none', targetHint: null,
       ...(open ? { enabled: true, reason: null } : blocked(squadsReason)),
     },
@@ -242,36 +254,41 @@ function siegeOrders(
   ended: boolean,
 ): readonly OrderOption[] {
   const squads = picked.length > 0 && !ended;
-  const ownWalls = settlementTargets(visible).some((target) => target.own && target.walled === true);
-  const enemyWalls = enemyWalledKnown(visible);
-  const enemySettlement = settlementTargets(visible).some((target) => !target.own);
-  const owned = (can: boolean, why: string): { readonly enabled: boolean; readonly reason: string | null } =>
-    (can ? { enabled: true, reason: null } : { enabled: false, reason: why });
+  const targets = settlementTargets(visible);
+  const ownWalls = targets.some((target) => target.own && target.walled === true);
+  const enemyWalls = targets.some((target) => !target.own && target.walled === true);
+  const enemySettlement = targets.some((target) => !target.own);
 
-  const garrisonReason = ended ? translate('reason.ended') : !squads ? translate('reason.noSquads')
-    : !ownWalls ? translate('reason.noOwnWalls') : '';
-  const assaultReason = ended ? translate('reason.ended') : !squads ? translate('reason.noSquads')
-    : !canAssault(faction) ? translate('reason.noRam')
-      : !enemyWalls ? translate('reason.noEnemyWalls') : '';
-  const blockadeReason = ended ? translate('reason.ended') : !squads ? translate('reason.noSquads')
-    : !enemySettlement ? translate('reason.noEnemySettlement') : '';
+  /** Why an offer is not on offer, or `null` when it is. */
+  const refusal = (missing: boolean, why: string): string | null => {
+    if (ended) return translate('reason.ended');
+    if (!squads) return translate('reason.noSquads');
+
+    return missing ? why : null;
+  };
+  const garrisonReason = refusal(!ownWalls, translate('reason.noOwnWalls'));
+  const assaultReason = refusal(!canAssault(faction) || !enemyWalls,
+    canAssault(faction) ? translate('reason.noEnemyWalls') : translate('reason.noRam'));
+  const blockadeReason = refusal(!enemySettlement, translate('reason.noEnemySettlement'));
+  const offer = (reason: string | null): { readonly enabled: boolean; readonly reason: string | null } =>
+    ({ enabled: reason === null, reason });
 
   return [
     {
-      id: 'garrison', group: 'siege', label: translate('cmd.garrison'), subject: null,
+      id: 'garrison', kind: 'garrison', group: 'siege', label: translate('cmd.garrison'), subject: null,
       note: message('ui.partial', { near: String(garrisonReach(visible, picked).near), total: String(picked.length) }),
       shortcut: null, target: 'settlement', targetHint: translate('target.ownWalled'),
-      ...owned(garrisonReason === '', garrisonReason),
+      ...offer(garrisonReason),
     },
     {
-      id: 'assault', group: 'siege', label: translate('cmd.assault'), subject: null, note: null,
+      id: 'assault', kind: 'assault', group: 'siege', label: translate('cmd.assault'), subject: null, note: null,
       shortcut: null, target: 'settlement', targetHint: translate('target.enemySettlement'),
-      ...owned(assaultReason === '', assaultReason),
+      ...offer(assaultReason),
     },
     {
-      id: 'blockade', group: 'siege', label: translate('cmd.blockade'), subject: null, note: null,
+      id: 'blockade', kind: 'blockade', group: 'siege', label: translate('cmd.blockade'), subject: null, note: null,
       shortcut: null, target: 'settlement', targetHint: translate('target.enemySettlement'),
-      ...owned(blockadeReason === '', blockadeReason),
+      ...offer(blockadeReason),
     },
   ];
 }
@@ -309,6 +326,7 @@ function constructionOrders(faction: Faction, settlement: VisibleSettlement): re
 
     return {
       id: `build:${building.id}`,
+      kind: 'build' as const,
       group: 'construction' as const,
       label: workLabel(building.id),
       subject: building.id,
@@ -332,6 +350,7 @@ function recruitmentOrders(faction: Faction, settlement: VisibleSettlement): rea
 
     return {
       id: `recruit:${type.id}`,
+      kind: 'recruit' as const,
       group: 'recruitment' as const,
       label: squadLabel(type.id),
       subject: type.id,
@@ -355,7 +374,7 @@ function costLabel(cost: ResourceAmounts): string {
   const parts = RESOURCE_KINDS
     .map((kind) => [kind, amountOf(cost, kind)] as const)
     .filter(([, amount]) => amount > 0)
-    .map(([kind, amount]) => `${resourceLabel(kind)} ${String(amount)}`);
+    .map(([kind, amount]) => message('ui.costItem', { name: resourceLabel(kind), amount }));
 
   return parts.length === 0 ? translate('ui.none') : parts.join(', ');
 }
@@ -402,7 +421,10 @@ export function settlementTargets(visible: EconomyVisible | SiegeVisible): reado
       x: contact.x,
       y: contact.y,
       own: false,
-      walled: walledOf(visible, contact.id),
+      // A Stronghold is walled by its kind, which is what the contact remembers;
+      // an open settlement's walls are the front's business, and a front this
+      // Faction has no eyes on is no front at all (ADR-0020).
+      walled: contact.kind === 'stronghold' ? true : walledOf(visible, contact.id),
     }));
 
   return [...own, ...remembered];
@@ -443,28 +465,34 @@ export function settlementAt(
   x: number,
   y: number,
 ): SettlementTarget | null {
-  let best: SettlementTarget | null = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
-
-  for (const target of targets) {
-    const distance = Math.max(Math.abs(target.x - x), Math.abs(target.y - y));
-    if (distance > SIEGE_RADIUS || distance >= bestDistance) continue;
-    best = target;
-    bestDistance = distance;
-  }
-
-  return best;
+  return nearestWithin(targets, x, y, SIEGE_RADIUS);
 }
 
 /** Which enemy Squad a click on the map names, as the target of an armed attack. */
 export function enemyAt(targets: readonly EnemyTarget[], x: number, y: number): EnemyTarget | null {
-  let best: EnemyTarget | null = null;
+  return nearestWithin(targets, x, y, 1);
+}
+
+/**
+ * The nearest of a list within a distance, in the rules' own measure (Chebyshev).
+ *
+ * Both target questions are the same question — "what did this click mean?" — so
+ * they answer it the same way, with one radius each: a settlement is a place and
+ * a Squad is a block of men standing on one.
+ */
+function nearestWithin<T extends { readonly x: number; readonly y: number }>(
+  candidates: readonly T[],
+  x: number,
+  y: number,
+  radius: number,
+): T | null {
+  let best: T | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
 
-  for (const target of targets) {
-    const distance = Math.max(Math.abs(target.x - x), Math.abs(target.y - y));
-    if (distance > 1 || distance >= bestDistance) continue;
-    best = target;
+  for (const candidate of candidates) {
+    const distance = Math.max(Math.abs(candidate.x - x), Math.abs(candidate.y - y));
+    if (distance > radius || distance >= bestDistance) continue;
+    best = candidate;
     bestDistance = distance;
   }
 
@@ -491,7 +519,9 @@ export function compositionOf(types: readonly string[]): string {
   const counts = new Map<string, number>();
   for (const type of types) counts.set(type, (counts.get(type) ?? 0) + 1);
 
-  return [...counts].map(([type, count]) => `${squadLabel(type)} ${String(count)}`).join(', ');
+  return [...counts]
+    .map(([type, count]) => message('ui.compositionItem', { name: squadLabel(type), count }))
+    .join(', ');
 }
 
 /**
@@ -504,7 +534,7 @@ function exceptionsOf(picked: readonly VisibleSquad[]): readonly GroupException[
   const found: GroupException[] = [];
 
   for (const squad of picked) {
-    const name = `${squadLabel(squad.type)} ${String(squad.id)}`;
+    const name = message('ui.listItem', { name: squadLabel(squad.type), id: squad.id });
     if (squad.routing) found.push({ squad: squad.id, name, reason: translate('order.routing') });
     else if (squad.refused !== null) found.push({ squad: squad.id, name, reason: refusalLabel(squad.refused) });
     else if (squad.unpaid > 0) {
@@ -532,28 +562,21 @@ export function controlGroupViews(
     });
 }
 
-/** The figures a Squad has left, against what its type is counted as at full strength. */
-export function menOf(squad: VisibleSquad): { readonly men: number; readonly max: number } {
+/** The content type a Squad names, or `undefined` when no table knows it. */
+function typeOf(squad: VisibleSquad): SquadType | undefined {
   const code = squadTypeCode(squad.type);
-  const type = code === undefined ? undefined : squadTypeOf(code);
 
-  return { men: squad.men, max: type?.strength ?? squad.men };
+  return code === undefined ? undefined : squadTypeOf(code);
+}
+
+/** The men a Squad has left, against what its type is counted as at full strength. */
+export function menOf(squad: VisibleSquad): { readonly men: number; readonly max: number } {
+  return { men: squad.men, max: typeOf(squad)?.strength ?? squad.men };
 }
 
 /** The Morale a Squad has, against the most its type ever had. */
 export function moraleOf(squad: VisibleSquad): { readonly morale: number; readonly max: number } {
-  const code = squadTypeCode(squad.type);
-  const type = code === undefined ? undefined : squadTypeOf(code);
-
-  return { morale: squad.morale, max: type?.morale ?? squad.morale };
-}
-
-/** How many figures a Squad is drawn as, against what its type is drawn as at full strength. */
-export function figuresDetail(squad: VisibleSquad): { readonly figures: number; readonly max: number } {
-  const code = squadTypeCode(squad.type);
-  const type = code === undefined ? undefined : squadTypeOf(code);
-
-  return { figures: squad.figures, max: type === undefined ? squad.figures : figuresOf(type, type.strength) };
+  return { morale: squad.morale, max: typeOf(squad)?.morale ?? squad.morale };
 }
 
 /** Whether an Observation is the Siege's own, which is what carries fronts and contacts. */

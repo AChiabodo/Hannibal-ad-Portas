@@ -260,7 +260,19 @@ describe('what the panel knows of a settlement', () => {
     const targets = settlementTargets(visible({ contacts: [ENEMY_STRONGHOLD] }));
 
     expect(targets).toContainEqual({ id: 0, x: 10, y: 10, own: true, walled: true });
-    expect(targets).toContainEqual({ id: 7, x: 40, y: 40, own: false, walled: null });
+    // A Stronghold is walled by its kind, which is what the contact remembers;
+    // no wall state of its own is invented.
+    expect(targets).toContainEqual({ id: 7, x: 40, y: 40, own: false, walled: true });
+  });
+
+  it('offers an assault only on a target it can also name', () => {
+    // The offer and the target list must agree: an armed action that every click
+    // then refuses would be a button that can never be completed.
+    const known = visible({ contacts: [ENEMY_STRONGHOLD] });
+    const assault = squadOrders(known, 'rome', [HASTATI]).find((order) => order.id === 'assault');
+
+    expect(assault?.enabled).toBe(true);
+    expect(settlementTargets(known).find((target) => target.id === ENEMY_STRONGHOLD.id)?.walled).toBe(true);
   });
 
   it('turns a click near a settlement into that settlement, and nothing else', () => {

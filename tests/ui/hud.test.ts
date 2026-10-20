@@ -681,3 +681,19 @@ it('reads the enemy walls this Faction knows, and never an enemy stock', () => {
   const words = model.detail?.lines.filter((line) => line.label === translate('resource.grain')).length;
   expect(words).toBe(0);
 });
+
+it('keeps every numbered control group reachable, wrapping the chips rather than dropping them', () => {
+  const groups = Array.from({ length: 9 }, (_unused, index) => ({
+    index: index + 1,
+    count: 1,
+    composition: 'Astati 1',
+  }));
+  const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'squad', id: 1 }, [1], DESKTOP_VIEW, { groups });
+  const layout = hudLayout(model, DESKTOP);
+
+  expect(layout.groups.map((group) => group.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  for (const chip of layout.groups) {
+    expect(chip.rect.y + chip.rect.height).toBeLessThanOrEqual(layout.detail.y + layout.detail.height);
+    expect(chip.rect.x + chip.rect.width).toBeLessThanOrEqual(layout.detail.x + layout.detail.width);
+  }
+});

@@ -32,8 +32,8 @@ Nothing in the simulation changed: no new Command, no new rule, no path or forma
 - `npx vitest run tests/ui tests/render` — 154 tests across 11 files, including the new HUD panel, rendered-ink and enemy-front assertions.
 - `npm run lint` — clean.
 - `npm run guard` — all eight fences hold (simulation boundary, AI Observation imports, PixiJS outside `src/render/`, no `Math.random`, no transcendental math, no ambient clock or entropy, no committed assets).
-- `npm run verify` — lint, TypeScript, guards, **1147 tests across 98 files** and the production build all passed on the final code.
-- `npx playwright test` — **87 browser tests passed** on the final code, including the 9 new `e2e/commands.spec.ts` scenarios and the unchanged Atelier, fog, orders, setup, desktop and surface suites.
+- `npm run verify` — lint, TypeScript, guards, **1149 tests across 98 files** and the production build all passed on the final code (after the review fixes below).
+- `npx playwright test` — **87 browser tests passed** on the final code, including the 9 new `e2e/commands.spec.ts` scenarios and the unchanged Atelier, fog, orders, setup, desktop and surface suites. The command scenarios were repeated three times each (`--repeat-each=3`, 27 passed) after one unattributed boot timeout under parallel load; the boot wait now allows twenty seconds.
 - `git diff --check` — no whitespace errors (only the repository's existing CRLF notices).
 
 ## Exact interaction paths
@@ -45,6 +45,7 @@ Nothing in the simulation changed: no new Command, no new rule, no path or forma
 - Settlement row → `Costruzione` tab → `Fattoria` (cost and ticks from the content table) → `build`; next tick the work appears "In costruzione (…)". `Reclutamento` tab → `Astati` → `recruit` count 1.
 - Rome: Squad beside the enemy Stronghold → panel names Mura/Porta/Presidio of the known front → bar `Centra [F]` → `Assalto` → click the Stronghold tile → `assault`. Carthage: `Assalto` disabled with the ram reason, `Blocco` submits a `blockade`.
 - Two Squads → `Ctrl+1` → numbered chip `1 Astati 2` visible → clear selection → click the chip → both Squads picked again.
+- Button `Ritirata` (and `W`) → `withdraw` in the log, obeyed by combat rather than by movement.
 - Both Factions, 1280x720 and 1920x1080: construction page and Squad page captured; controls asserted inside the detail panel, non-overlapping, and the armed row's pixels differ before and after arming.
 
 ## Rendered evidence and applicability
@@ -60,9 +61,25 @@ The checks beside those pictures are the ones a picture cannot make cheaply, and
 
 Both Factions and both reference resolutions are covered, as are visible and remembered information: known enemy fronts are drawn; a remembered settlement contributes a target tile and no structural fact. Visible/remembered/unknown transitions are exercised by the existing fog suite, which still passes. HUD pixels are screen-space and identical at every map zoom, so repeating each capture at zooms 1–8 would restate the same plate; the full browser suite still exercises 1–8. No art definition, palette or glyph changed, so no new Atelier entry is applicable; the existing Atelier suite passed.
 
+## Review
+
+Two-axis review against `8ee5f4c` (commit `c7ae2ab`), both axes run independently.
+
+**Standards.** No hard standard breach was found; the review raised three consistency points, all resolved in the follow-up commit:
+
+- Italian word "tick" had no GLOSSARY entry; a **Tick** entry with its `_UI_` word and the reason it stays the code's short word now records the decision.
+- Player-facing name/id and cost/composition glue was composed in code instead of the table; `exceptionsOf`, `compositionOf`, `costLabel`, the control-group chip and the known-front line now read `ui.listItem`, `ui.compositionItem`, `ui.costItem`, `ui.groupChip` and the existing `ui.wallsStanding`.
+- Judgement-call smells taken: `OrderOption` now carries an `OrderKind` discriminator instead of a packed `id` parsed with `startsWith`; the target a click produces is a closed `OrderPoint` union instead of a bag of optional fields; `settlementAt`/`enemyAt` share one Chebyshev reader; the type lookup behind men/Morale is written once; the Siege reason ladder is written once without an empty-string sentinel; the control-group chip's text is composed in one function; `figuresDetail` and the unused `SiegeAction` were removed as speculative.
+
+**Spec.** One P1 and two P2s, all resolved:
+
+- **P1, fixed.** The Assault offer treated a *remembered* Stronghold as walled (`enemyWalledKnown`) while the target list marked the same settlement `walled: null` and `targetSettlement` refused it — a button that armed an action no click could complete. `settlementTargets` now records a Stronghold contact as walled **by its kind** (what the contact remembers), the offer and the target agree, and a regression test asserts the agreement. No structural state is inferred: the front's walls, gate, breach, ram and garrison still come only from an Observation that has the front.
+- **P2, fixed.** No new scenario pressed Withdraw; the visible `Ritirata` button now submits it in the command spec.
+- **P2, fixed.** The control-group strip silently dropped chips that did not fit; it now wraps to as many rows as the digits need, computed from the same chip text the drawing uses, with a nine-group test.
+
 ## Standards
 
-Implementation re-read against the repository's own standards: the panel model stays in `ui/` (Node-testable, no engine), the page keeps the only PixiJS and wall-clock code, every player-facing word comes from the string table (the no-literal-text test passes), and all offers are read from `content/` with the same `pay()`/tier rules the economy uses. No documented standard violation is known; the ARIA label and the page hooks were extended with the new controls in the same shape as before.
+Implementation re-read against the repository's own standards: the panel model stays in `ui/` (Node-testable, no engine), the page keeps the only PixiJS and wall-clock code, every player-facing word comes from the string table (the no-literal-text test passes), and all offers are read from `content/` with the same `pay()`/tier rules the economy uses.
 
 ## Spec
 
@@ -70,4 +87,4 @@ All ten acceptance criteria are covered above. Deliberately not done, because th
 
 ## Remaining gates
 
-Hardware/full-density frame rate (#31), other browsers and mobile, the sibling art tickets, and release/deployment (#32) were not performed or claimed. Software-WebGL Chromium screenshots establish rendering, not hardware frame rate. The eight PNGs were captured but not visually inspected by the agent (see above). Commits are local on `feat/ui-rework`; no push, tracker closure or roadmap change was performed.
+Hardware/full-density frame rate (#31), other browsers and mobile, the sibling art tickets, and release/deployment (#32) were not performed or claimed. Software-WebGL Chromium screenshots establish rendering, not hardware frame rate. The eight PNGs were captured but not visually inspected by the agent (see above). Commits are local on `feat/ui-rework` (`c7ae2ab` plus the review follow-up); no push, tracker closure or roadmap change was performed.

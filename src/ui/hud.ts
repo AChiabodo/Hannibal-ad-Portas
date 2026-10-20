@@ -733,7 +733,7 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
   for (const group of layout.groups) {
     panel(buffer, group.rect);
     const thought = model.groups.find((candidate) => candidate.index === group.index);
-    const label = `${String(group.index)} ${thought === undefined || thought.composition === '' ? translate('ui.none') : thought.composition}`;
+    const label = thought === undefined ? String(group.index) : groupChipText(thought);
     drawText(buffer, fitText(label, group.rect.width - 2 * PADDING * scale, scale), group.rect.x + PADDING * scale,
       group.rect.y + 1 * scale, HUD_VALUE, scale);
   }
@@ -1022,7 +1022,7 @@ function frontState(front: VisibleFront): string {
   const standing = front.structures.filter((structure) => structure.standing).length;
   const gate = front.structures.find((structure) => structure.kind === 'gate');
   const parts = [
-    `${translate('ui.walls')} ${String(standing)}/${String(front.structures.length)}`,
+    `${translate('ui.walls')} ${message('ui.wallsStanding', { standing, total: front.structures.length })}`,
     `${translate('ui.breach')} ${translate(front.breached ? 'ui.breached' : 'ui.no')}`,
   ];
   if (gate !== undefined) {
@@ -1032,7 +1032,7 @@ function frontState(front: VisibleFront): string {
     parts.push(`${translate('ui.ram')} ${front.ram.built ? message('ui.ramBuilt', { hp: front.ram.hp }) : message('ui.ramBuilding', { ticks: front.ram.remaining })}`);
   }
   parts.push(front.siege === null ? translate('ui.none') : translate(front.siege === 'assault' ? 'cmd.assault' : 'cmd.blockade'));
-  parts.push(`${translate('ui.garrisonCount')} ${String(front.garrison)}`);
+  parts.push(message('ui.listItem', { name: translate('ui.garrisonCount'), id: front.garrison }));
 
   return parts.join(' - ');
 }
@@ -1092,6 +1092,31 @@ function stockOf(settlement: VisibleSettlement, kind: ResourceKind): number {
 /** How many of a settlement's people work the land for one resource. */
 function landOf(settlement: VisibleSettlement, kind: ResourceKind): number {
   return amountOf(settlement.land, kind);
+}
+
+/** How many rows of numbered chips a strip that wide needs. */
+function groupStripRows(groups: readonly ControlGroupView[], stripWidth: number): number {
+  let rows = 1;
+  let used = 0;
+
+  for (const group of groups) {
+    const width = Math.min(stripWidth, measureText(groupChipText(group)) + 8);
+    if (used > 0 && used + width + 3 > stripWidth) {
+      rows += 1;
+      used = 0;
+    }
+    used += width + 3;
+  }
+
+  return rows;
+}
+
+/** What a numbered control group's chip says: its digit and what it holds. */
+function groupChipText(group: ControlGroupView): string {
+  return message('ui.groupChip', {
+    index: group.index,
+    composition: group.composition === '' ? translate('ui.none') : group.composition,
+  });
 }
 
 /** A panel: a dark ground and a one-pixel edge. */
@@ -1190,7 +1215,10 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   // what can be done about it on the right, and the numbered groups underneath.
   // A click has to land on the rectangle that was drawn, so both are placed once.
   const inner = 4;
-  const groupStrip = model.groups.length === 0 ? 0 : LINE_STEP + 4;
+  // The group strip is as many rows as nine digits actually need: a bound group
+  // that is not drawn is a bound group a Player cannot recall.
+  const stripWidth = detail.width - 2 * inner - 46;
+  const groupStrip = model.groups.length === 0 ? 0 : groupStripRows(model.groups, stripWidth) * LINE_STEP + 4;
   const columnTop = detail.y + inner;
   const columnHeight = detail.height - 2 * inner - groupStrip;
   const textWidth = Math.max(140, Math.floor((detail.width - 3 * inner) * 0.5));
@@ -1298,12 +1326,16 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     const stripY = detail.y + detail.height - groupStrip + 2;
     text.push({ text: translate('ui.groups'), rect: { x: textX, y: stripY, width: 44, height: LINE_STEP } });
     let chipX = textX + 46;
+    let chipY = stripY;
     const chipHeight = LINE_STEP + 1;
     for (const group of model.groups) {
-      const label = `${String(group.index)} ${group.composition === '' ? translate('ui.none') : group.composition}`;
-      const chipWidth = Math.min(commandWidth, measureText(label) + 8);
-      if (chipX + chipWidth > detail.x + detail.width - inner) break;
-      groups.push({ index: group.index, rect: { x: chipX, y: stripY, width: chipWidth, height: chipHeight } });
+      const label = groupChipText(group);
+      const chipWidth = Math.min(stripWidth, measureText(label) + 8);
+      if (chipX + chipWidth > detail.x + detail.width - inner) {
+        chipX = textX + 46;
+        chipY += LINE_STEP;
+      }
+      groups.push({ index: group.index, rect: { x: chipX, y: chipY, width: chipWidth, height: chipHeight } });
       chipX += chipWidth + 3;
     }
   }
