@@ -137,6 +137,22 @@ describe('a human Controller', () => {
     expect(human.pending).toBe(0);
   });
 
+  it('keeps the settlement whose panel a click opened, whatever the Faction holds', () => {
+    // A place on the map has a panel a Player can open by clicking its structure
+    // (U6): the enemy's Stronghold in sight, a village it remembers, a village
+    // nobody holds. None of those is one of the Faction's own settlements, and the
+    // Controller must not close the panel on the next tick for that.
+    const human = createHuman('rome');
+    human.select({ squads: [], settlement: 4 });
+
+    human.decide(observationWith([1], [0]));
+    expect(human.selection).toEqual({ squads: [], settlement: 4 });
+
+    human.select({ squads: [1], settlement: 4 });
+    human.decide(observationWith([1], [0]));
+    expect(human.selection).toEqual({ squads: [1], settlement: 4 });
+  });
+
   it('drops a Squad that has left the field from what it has picked', () => {
     const human = picked(1, 2);
 

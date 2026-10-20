@@ -1,8 +1,20 @@
 name: CI
 
 on:
+  # Feature branches are covered by their pull request. Pushing a branch that
+  # already has a pull request used to run the whole workflow twice; it no longer
+  # does. A merge or a direct push to the integration branches is still checked.
   push:
+    branches: [main, develop]
   pull_request:
+  # Visual-frame production is explicit (#64): a manual run asks for it, and the
+  # routine profiles never produce pictures.
+  workflow_dispatch:
+    inputs:
+      visual:
+        description: Produce visual frames (slow; not a gate)
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -160,8 +172,104 @@ jobs:
       - name: Guard the fences
         run: npm run guard
 
-  browser:
-    name: Headless Chromium, software WebGL
+  plan:
+    name: Which browser gates are required
+    runs-on: ubuntu-latest
+    outputs:
+      smoke: ${{ steps.select.outputs.smoke }}
+      acceptance: ${{ steps.select.outputs.acceptance }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          # The selection compares the branch with its base, which needs history.
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      # Two levels, in scripts/selection-rules.mjs and unit-tested there:
+      #
+      #   main pull request, main push, manual run -> smoke + acceptance
+      #   push to develop                          -> smoke (post-merge net)
+      #   develop pull request                     -> fast checks only
+      #   develop pull request + `browser` label    -> smoke + acceptance
+      #
+      # Documentation may skip complete acceptance but still takes the smoke.
+      # A crashed selection, an unreadable diff or an unexpected target branch
+      # runs both gates: the fail-safe direction is more evidence, never less.
+      - name: Select the gates
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref || 'main' }}
+          BRANCH: ${{ github.ref_name }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          args=(
+            --event "$EVENT"
+            --branch "$BRANCH"
+            --base-branch "$BASE_BRANCH"
+            --labels "$LABELS"
+            --github
+          )
+          if [ -n "$BASE_SHA" ]; then
+            args+=(--base "$BASE_SHA")
+          fi
+
+          if ! decided=$(node scripts/selection.mjs "${args[@]}"); then
+            decided=$(printf 'smoke=true\nacceptance=true\n')
+            echo "selection failed: browser gates run (fail-safe)" >&2
+          fi
+          printf '%s\n' "$decided" >> "$GITHUB_OUTPUT"
+
+  browser-smoke:
+    name: Real browser smoke
+    needs: plan
+    # `false` is the only answer that skips the smoke. A failed or skipped plan
+    # leaves the output empty, and an empty answer runs it.
+    if: ${{ !cancelled() && needs.plan.outputs.smoke != 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Chromium provisioning is separate from the 90-second smoke budget: it is
+      # an install, not a check (ticket #64).
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Boot the real entry, give one ordinary Command through a real gesture,
+      # and read the frame and the console back. No art or economy matrix.
+      - name: Smoke
+        run: npm run test:smoke
+
+      - name: Upload the Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-smoke
+          path: playwright-report/
+          retention-days: 7
+
+  browser-acceptance:
+    name: Headless Chromium, complete acceptance
+    needs: plan
+    # `false` is the only answer that skips the gate. A failed or skipped plan
+    # leaves the output empty, and an empty answer runs acceptance.
+    if: ${{ !cancelled() && needs.plan.outputs.acceptance != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out
@@ -180,14 +288,59 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       # Headless Chromium has no GPU here; --enable-unsafe-swiftshader in
-      # playwright.config.ts is what lets WebGL fall back to SwiftShader.
+      # playwright.config.ts is what lets WebGL fall back to SwiftShader. Every
+      # browser spec runs, with visual captures off: the frames are produced by
+      # the explicit visual profile, not by the gate.
       - name: End-to-end
-        run: npm run test:e2e
+        run: npm run test:accept
 
       - name: Upload the Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-acceptance
+          path: playwright-report/
+          retention-days: 7
+
+  visual-frames:
+    name: Visual frames (explicit, not a gate)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.visual }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Sequential by default: software WebGL at 1920x1080 is the slowest thing
+      # this repository runs. The same assertions as acceptance, with pictures.
+      - name: Produce the frames
+        env:
+          SPQR_VISUAL_DIR: ${{ runner.temp }}/spqr-visual
+        run: npm run test:visual
+
+      - name: Upload the frames
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: spqr-visual-frames
+          path: ${{ runner.temp }}/spqr-visual/
+          retention-days: 7
+
+      - name: Upload the Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-visual
           path: playwright-report/
           retention-days: 7

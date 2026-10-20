@@ -23,9 +23,9 @@ import {
   blockPlacement,
   blockSize,
   frameStepOf,
-  orderMarker,
   squadBlock,
   squadFrameKey,
+  visualShape,
   type BlockShape,
 } from '../../src/render/squads';
 import { hashPixelBuffer, pixelAt, type PixelBuffer } from '../../src/art/pixel-buffer';
@@ -142,6 +142,14 @@ describe('the places a block’s men stand in', () => {
 });
 
 describe('a block of men, drawn', () => {
+  it('uses 90 representative figures for 120 men without shrinking a soldier', () => {
+    const squad = squadOf({ men: 120 });
+    expect(visualShape(squad)).toEqual({ men: 90, formation: 'line', facing: 'south' });
+    const block = squadBlock(squad);
+    expect({ width: block.width, height: block.height }).toEqual({ width: 65, height: 49 });
+    expect(squad.men).toBe(120);
+    expect(squad.figures).toBe(120);
+  });
   it('draws fewer soldiers when the Squad has fewer men', () => {
     const full = squadBlock(squadOf({ men: 120 }));
     const thin = squadBlock(squadOf({ men: 60 }));
@@ -249,15 +257,6 @@ describe('where a block stands', () => {
 
     // The block got a rank shorter and its top edge moved down by exactly that,
     // so the men in the ranks that are left are drawn where they were.
-    expect(thinTop - fullTop).toBe(4);
-  });
-
-  it('draws the mark of an order as a diamond of its own size', () => {
-    const mark = orderMarker();
-
-    expect(mark.width).toBe(mark.height);
-    expect(ink(mark)).toBeGreaterThan(0);
-    // Hollow: the middle of the four edges is ink and the corners are not.
-    expect(pixelAt(mark, 0, 0)[3]).toBe(0);
+    expect(thinTop - fullTop).toBe(5);
   });
 });

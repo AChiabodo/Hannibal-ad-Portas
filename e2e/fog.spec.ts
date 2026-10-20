@@ -24,8 +24,7 @@ import { UNEXPLORED, renderFog } from '../src/render/fog';
 import { renderTerrain, tilePixel } from '../src/render/terrain';
 import { openingEyes } from '../src/render/opening';
 import { DEFAULT_SEED, VIEWED_FACTION } from '../src/render/view';
-import type { Rect } from '../src/ui/hud';
-import { describeView, hudRects, samples } from './hooks';
+import { covers, describeView, hudRects, samples } from './hooks';
 
 /** The theatre the page is showing, and the Stronghold its player starts in. */
 const MAP: MapGrid = generateMap(DEFAULT_SEED);
@@ -125,11 +124,6 @@ async function expectDrawn(page: Page, image: PixelBuffer, context: string, tole
   expect(wrong, `${context}: mismatched pixels of ${String(points.length)}`).toBe(0);
 }
 
-/** Whether a screen point falls on the interface rather than on the theatre. */
-function covers(rect: Rect, x: number, y: number): boolean {
-  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
-}
-
 /** Puts a stage pixel in the middle of the viewport, by panning whole pixels, where the map allows. */
 async function centreOn(page: Page, stageX: number, stageY: number): Promise<ViewState> {
   const before = await describeView(page);
@@ -163,7 +157,7 @@ async function pixelOfTile(page: Page, tile: Site): Promise<Rgba> {
 
 /** Boots the page and waits for the hooks, as `boot.spec.ts` does. */
 async function boot(page: Page): Promise<ViewState> {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
   const report = await page.evaluate(() => window.__SPQR.boot);
@@ -171,7 +165,10 @@ async function boot(page: Page): Promise<ViewState> {
 
   // The army C2 musters is hidden for these comparisons: the ticket under test
   // is the fog, and a Squad standing in it is a second thing on the frame.
-  await page.evaluate(() => window.__SPQR.game?.showSquads(false));
+  await page.evaluate(() => {
+    window.__SPQR.game?.showSquads(false);
+    window.__SPQR.game?.showSettlements(false);
+  });
 
   return describeView(page);
 }

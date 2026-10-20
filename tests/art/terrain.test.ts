@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CLASS_OF,
   CLASS_PRIORITY,
+  MATERIAL_TEXTURES,
   MATERIALS,
   QUADRANT,
   ROAD_SHAPES,
@@ -28,6 +29,7 @@ import {
   TERRAIN_TILE,
   TERRAIN_VARIANTS,
   cellTile,
+  materialShades,
   materialTile,
   materialVariantTiles,
   referenceBackground,
@@ -41,7 +43,8 @@ import {
   type TerrainMaterial,
 } from '../../src/art/terrain';
 import { TRANSPARENT, hashPixelBuffer, pixelAt } from '../../src/art/pixel-buffer';
-import { RAMPS, shadeAt } from '../../src/art/palette';
+import { DETAIL_RAMPS, RAMPS, shadeAt } from '../../src/art/palette';
+import { luminance } from './brightness';
 
 /** One quarter turn clockwise of a quadrant or connection mask, written the way the tests read masks. */
 function turn(mask: number, times = 1): number {
@@ -100,6 +103,58 @@ function meanColour(material: TerrainMaterial): readonly [number, number, number
   return [sum[0] ?? 0, sum[1] ?? 0, sum[2] ?? 0];
 }
 
+/** Whether two colours are the same, channel for channel. */
+function sameColour(left: readonly number[], right: readonly number[]): boolean {
+  return left[0] === right[0] && left[1] === right[1] && left[2] === right[2] && left[3] === right[3];
+}
+
+/** A shade written down the way a test compares it: the ramp it comes from and its index. */
+function shadeName(ramp: string, index: number): string {
+  return `${ramp}:${String(index)}`;
+}
+
+/** The name of the shade a pixel is, or `unlisted` when it is not a shade of any detail ramp. */
+function shadeOf(colour: readonly number[]): string {
+  for (const [ramp, shades] of Object.entries(DETAIL_RAMPS)) {
+    const index = shades.findIndex((shade) => sameColour(shade, colour));
+    if (index >= 0) return shadeName(ramp, index);
+  }
+
+  return 'unlisted';
+}
+
+/**
+ * How hard the terrain under a soldier flickers: the mean brightness jump from a
+ * pixel to the one beside it.
+ *
+ * The number a repeated terrain detail is judged by, because an edge between a man
+ * and the grass is one jump and a texture that jumps as hard as he does is a
+ * texture competing with him. Averaged over every horizontal and vertical
+ * neighbour in the tile, so one deliberate feature — a furrow, a wave — counts for
+ * what it covers and not for how far it is from the body.
+ */
+function meanNeighbourJump(material: TerrainMaterial): number {
+  const tile = materialTile(material);
+  let total = 0;
+  let pairs = 0;
+
+  for (let y = 0; y < TERRAIN_TILE; y += 1) {
+    for (let x = 0; x < TERRAIN_TILE; x += 1) {
+      for (const [nx, ny] of [
+        [x + 1, y],
+        [x, y + 1],
+      ] as const) {
+        if (nx >= TERRAIN_TILE || ny >= TERRAIN_TILE) continue;
+
+        total += Math.abs(luminance(pixelAt(tile, x, y)) - luminance(pixelAt(tile, nx, ny)));
+        pairs += 1;
+      }
+    }
+  }
+
+  return total / pairs;
+}
+
 describe('the terrain materials', () => {
   it('draws every material as a whole, opaque tile of the size the plan fixes', () => {
     for (const material of MATERIALS) {
@@ -143,6 +198,57 @@ describe('the terrain materials', () => {
   it('gives water a ramp of its own, because a river drawn out of stone reads as wet rock', () => {
     expect(RAMPS.water.length).toBeGreaterThan(3);
     expect(pixelAt(materialTile('river'), 0, 0)[2]).toBeGreaterThan(pixelAt(materialTile('river'), 0, 0)[0]);
+  });
+
+  it('paints each material from the shades its own texture declares, and no others', () => {
+    for (const material of MATERIALS) {
+      const tile = materialTile(material);
+      const declared = new Set(materialShades(material).map((shade) => shadeName(shade.ramp, shade.index)));
+
+      for (let y = 0; y < TERRAIN_TILE; y += 1) {
+        for (let x = 0; x < TERRAIN_TILE; x += 1) {
+          expect(declared.has(shadeOf(pixelAt(tile, x, y))), `${material} at (${String(x)}, ${String(y)})`).toBe(
+            true,
+          );
+        }
+      }
+    }
+  });
+
+  it('dithers a terrain one detail step at a time, and gives its mark no more room than it declares', () => {
+    for (const material of MATERIALS) {
+      const texture = MATERIAL_TEXTURES[material];
+      const tile = materialTile(material);
+      const mark = shadeName(texture.mark.ramp, texture.mark.index);
+      let markPixels = 0;
+
+      // The dither is the terrain's own base, one step either side of the body: two
+      // neighbouring shades of one ramp, which is what "texture, not flicker" means.
+      expect(Math.abs(texture.dark - texture.body), material).toBe(1);
+      if (texture.mark.ramp === texture.ramp) {
+        expect(Math.abs(texture.mark.index - texture.body), material).toBeLessThanOrEqual(2);
+      }
+      expect(texture.markShare, material).toBeGreaterThan(0);
+      expect(texture.markShare, material).toBeLessThanOrEqual(0.25);
+
+      for (let y = 0; y < TERRAIN_TILE; y += 1) {
+        for (let x = 0; x < TERRAIN_TILE; x += 1) {
+          if (shadeOf(pixelAt(tile, x, y)) === mark) markPixels += 1;
+        }
+      }
+      expect(markPixels / (TERRAIN_TILE * TERRAIN_TILE), `${material} mark`).toBeLessThanOrEqual(texture.markShare);
+    }
+  });
+
+  it('keeps ordinary terrain quieter than a ramp step, so the men on it are what the eye finds', () => {
+    // A standard shade of a ramp steps twenty percentage points of that ramp's
+    // spread and a detail shade ten. No terrain may flicker as hard as the coarser
+    // step, or its repeated detail competes with the figures standing on it — which
+    // is the whole of ticket U5, as a number. Before U5 the worst of these was hill at
+    // 35.6 and plain at 19.6; the bar is ten, and every material clears it with room.
+    for (const material of MATERIALS) {
+      expect(meanNeighbourJump(material), material).toBeLessThanOrEqual(10);
+    }
   });
 });
 

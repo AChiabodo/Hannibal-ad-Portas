@@ -10,7 +10,7 @@
  * Faction — the one the page shows — so what the page shows and what that
  * Faction may decide on come from the same object. B7 puts the interface over
  * both and the Match behind them, and C2 puts men on the map and a hand on them:
- * `render/game.ts` musters a Roman army, draws each Squad as its soldiers
+ * `render/game.ts` hosts both Controllers, draws recruited Squads as their soldiers
  * (`render/squads.ts`) and hands the Player's orders to the Match as Commands
  * (`input/human.ts`).
  *
@@ -89,6 +89,10 @@ import {
   type Stage,
 } from './stage.ts';
 import { DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from './view.ts';
+import { matchAddress, type MatchConfiguration } from '../input/match-setup.ts';
+import type { BrowserMatchOptions } from '../input/match-host.ts';
+import { translate } from '../ui/strings.ts';
+import { ENTRY_PATH } from './entry-path.ts';
 
 /**
  * The magnification the page opens at, and the viewport it opens in, are
@@ -167,18 +171,31 @@ export interface GameView extends ViewHooks, GameHooks {
  * both, the Match and its interface over everything, one frame drawn, and the
  * hooks Playwright and, later, an external agent drive it with.
  */
-export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
-  const map = generateMap(DEFAULT_SEED);
+export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserMatchOptions> & { readonly sessionControls?: boolean; readonly firstEntry?: boolean } = {}): Promise<GameView> {
+  const config: MatchConfiguration = { seed: options.seed ?? DEFAULT_SEED, faction: options.faction ?? 'rome', difficulty: options.difficulty ?? 'centurio' };
+  const map = generateMap(config.seed);
   const theatre = renderTerrain(map);
+  const desktop = options.sessionControls !== false;
+  const dimensions = () => desktop
+    ? { width: Math.max(window.innerWidth, 640), height: Math.max(window.innerHeight, 360) }
+    : { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT };
   const stage = await createStage(mount, {
-    width: VIEWPORT_WIDTH,
-    height: VIEWPORT_HEIGHT,
+    ...dimensions(),
     background: BASE.night,
   });
 
+  // The world sorts its children by `zIndex`, because more than one thing now
+  // stands on the theatre: the ground at 0, the settlements on it at 1
+  // (`render/settlement-layer.ts`), the fog at 2, and the dead and the living on
+  // top of all three. The order is a number rather than the order the layers
+  // happened to be built in, so a layer added later cannot land in the wrong place.
   const world = new Container();
+  world.sortableChildren = true;
   stage.root.addChild(world);
-  world.addChild(stage.spriteOf(theatre));
+
+  const ground = stage.spriteOf(theatre);
+  ground.zIndex = 0;
+  world.addChild(ground);
 
   // The fog the page draws, and the sprite it is drawn with. The sprite starts
   // with no texture: the first `paintFog` is what gives it one, so there is no
@@ -190,6 +207,7 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
   let texture: Texture | null = null;
 
   const fogSprite = new Sprite();
+  fogSprite.zIndex = 2;
   world.addChild(fogSprite);
 
   const bounds = {
@@ -197,9 +215,11 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
     stageHeight: THEATRE_PIXELS,
     width: stage.width,
     height: stage.height,
+    insetLeft: 0,
+    insetTop: 0,
   };
   let camera = clampTo(
-    lookingAt(createCamera({ zoom: DEFAULT_ZOOM }), stage, map.strongholds[0]),
+    lookingAt(createCamera({ zoom: DEFAULT_ZOOM }), stage, map.strongholds[config.faction === 'rome' ? 0 : 1]),
     bounds,
   );
   applyCamera(world, camera);
@@ -229,7 +249,21 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
   const size = { width: stage.width, height: stage.height };
   const game = createGame({
     stage,
-    seed: DEFAULT_SEED,
+    relayout,
+    centerOn,
+    ...config,
+    rules: options.rules,
+    opponent: options.opponent,
+    sessionControls: options.sessionControls,
+    firstEntry: options.firstEntry,
+    restart: () => leave(matchAddress(config, ENTRY_PATH)),
+    newMatch: () => leave(`${ENTRY_PATH}?previous=${String(config.seed)}`),
+    ended: () => {
+      watch = null;
+      inspection = false;
+      revealed = null;
+      refresher();
+    },
     size,
     world,
     camera: () => camera,
@@ -238,15 +272,22 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       eyes = next;
       refresher();
     },
-    viewport: (): ViewportRect => ({
-      x: camera.x,
-      y: camera.y,
-      width: Math.floor(stage.width / camera.zoom),
-      height: Math.floor(stage.height / camera.zoom),
-    }),
+    viewport: (layout): ViewportRect => {
+      const left = desktop ? layout?.list.width ?? 0 : 0;
+      const top = desktop ? layout?.bar.height ?? 0 : 0;
+      const bottom = desktop ? layout?.detail.y ?? stage.height : stage.height;
+      return { x: camera.x + Math.floor(left / camera.zoom), y: camera.y + Math.floor(top / camera.zoom),
+        width: Math.floor((stage.width - left) / camera.zoom), height: Math.floor((bottom - top) / camera.zoom) };
+    },
   });
 
   const moveTo = (next: Camera): void => {
+    if (desktop) {
+      const layout = game.hooks.hudLayout();
+      bounds.height = layout.detail.y;
+      bounds.insetLeft = layout.list.width;
+      bounds.insetTop = layout.bar.height;
+    }
     camera = clampTo(next, bounds);
     applyCamera(world, camera);
     // Only the minimap cares where the camera is: the panels are screen-space,
@@ -256,11 +297,16 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
     stage.render();
   };
 
-  /** The fog redrawn and the frame presented, for a debug hook that moved a watch. */
+  /**
+   * The fog redrawn and the frame presented, for a debug hook that moved a watch.
+   *
+   * The whole page is repainted and not only the veil, because what the fog knows
+   * decides what stands on the map: a place is drawn when its ground is in view or
+   * remembered, so moving a watch has to move the settlements with it (#57).
+   */
   const paintFog = (): void => {
     refresher();
-    game.syncMinimap();
-    stage.render();
+    game.sync();
   };
 
   const view: GameView = {
@@ -276,6 +322,7 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       moveTo(zoomAboutCamera(camera, zoom, screenX, screenY));
     },
     lookFrom: (x, y) => {
+      if (game.hooks.result() !== null) return;
       // The tile is checked before the watch is set, so a refused look leaves
       // the page looking where it was. The check is `sim/fog.ts`'s own, so the
       // page and the rules refuse the same coordinates with the same sentence.
@@ -284,6 +331,7 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       paintFog();
     },
     inspect: (shown) => {
+      if (game.hooks.result() !== null && shown) return;
       inspection = shown === true;
       // The omniscient view is built once, when it is asked for, rather than on
       // every frame: seeing everything is a debug mode, and a mode that copied
@@ -291,14 +339,15 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       // changed what it was measuring.
       revealed = inspection ? inspectionView(map, fog.contacts) : null;
       fogSprite.visible = !inspection;
-      game.syncMinimap();
-      stage.render();
+      // Revealing the theatre changes what the fog knows, and therefore what stands
+      // on it: the settlements follow the same call the fog does (#57).
+      game.sync();
     },
     describe: () => ({
       camera,
       width: stage.width,
       height: stage.height,
-      seed: DEFAULT_SEED,
+      seed: config.seed,
       mapWidth: MAP_WIDTH,
       mapHeight: MAP_HEIGHT,
       mapPixels: THEATRE_PIXELS,
@@ -311,6 +360,12 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
   // The pointer and the keyboard end at the very hooks a test calls, so what a
   // Player does and what a browser test does are the same code path (C2).
   bindControls(stage, {
+    hoverAt: (x, y) => view.hoverAt(x, y),
+    interfaceKey: (key, reverse) => view.interfaceKey(key, reverse),
+    navigateMinimap: (x, y) => view.navigateMinimap(x, y),
+    doubleClickAt: (x, y) => view.doubleClickAt(x, y),
+    centerSelection: () => view.centerSelection(),
+    toggleNavigator: () => view.toggleNavigator(),
     zoom: () => camera.zoom,
     panBy: (dx, dy) => {
       view.panBy(dx, dy);
@@ -325,8 +380,10 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       view.selectIn(fromX, fromY, toX, toY, additive);
     },
     orderAt: (kind, screenX, screenY) => view.orderAt(kind, screenX, screenY),
-    orderNow: (kind) => view.orderNow(kind),
-    setFormation: (shape) => view.setFormation(shape),
+    perform: (orderId) => view.perform(orderId),
+    targeting: () => view.targeting(),
+    targetAt: (screenX, screenY) => view.targetAt(screenX, screenY),
+    cancelTargeting: () => view.cancelTargeting(),
     bindGroup: (index) => view.bindGroup(index),
     recallGroup: (index) => view.recallGroup(index),
     clearSelection: () => view.select(null),
@@ -335,10 +392,67 @@ export async function bootRenderer(mount: HTMLElement): Promise<GameView> {
       else view.pause();
     },
     hudLayout: () => view.hudLayout(),
+    hudRects: () => view.hudRects(),
     scrollHud: (region, lines) => view.scrollHud(region, lines),
   });
 
+  function relayout(): void {
+    const next = dimensions();
+    stage.resize(next.width, next.height);
+    Object.assign(size, next);
+    bounds.width = next.width;
+    const layout = game.hooks.hudLayout();
+    bounds.height = desktop ? layout.detail.y : next.height;
+    bounds.insetLeft = desktop ? layout.list.width : 0;
+    bounds.insetTop = desktop ? layout.bar.height : 0;
+    camera = clampTo(camera, bounds);
+    applyCamera(world, camera);
+  }
+
+  function centerOn(x: number, y: number): void {
+    const layout = game.hooks.hudLayout();
+    const left = layout.list.width;
+    const top = layout.list.y;
+    const bottom = layout.detail.y;
+    moveTo({ zoom: camera.zoom,
+      x: Math.floor(x - (left + (stage.width - left) / 2) / camera.zoom),
+      y: Math.floor(y - (top + (bottom - top) / 2) / camera.zoom) });
+  }
+
+  if (desktop) {
+    const home = map.strongholds[config.faction === 'rome' ? 0 : 1];
+    const at = tilePixel(home.x, home.y);
+    centerOn(at.x, at.y);
+    window.addEventListener('resize', () => { relayout(); game.sync(); });
+  }
   game.start();
+  stage.canvas.tabIndex = 0;
+  stage.canvas.focus();
+  window.addEventListener('keydown', (event) => {
+    if (options.sessionControls === false) return;
+    if (!['F2', 'F3', 'F4'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === 'F2') game.hooks.restart();
+    else if (event.key === 'F3') game.hooks.newMatch();
+    else void game.hooks.copySeed();
+  });
+
+  let leaving = false;
+  function leave(address: string): void {
+    const paused = game.hooks.paused();
+    game.hooks.pause();
+    if (game.hooks.result() === null && !window.confirm(translate('match.leave'))) {
+      if (!paused) game.hooks.resume();
+      return;
+    }
+    leaving = true;
+    location.assign(address);
+  }
+  window.addEventListener('beforeunload', (event) => {
+    if (leaving || game.hooks.result() !== null) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
 
   return view;
 }

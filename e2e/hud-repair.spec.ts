@@ -1,14 +1,10 @@
-import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { expect, test } from './fixtures';
+import { capture } from './evidence';
 import { hudLayout, hudModel, type HudModel } from '../src/ui/hud';
 import { economyMatchRules, observeEconomy } from '../src/sim/economy-match';
 import { musterSquad } from '../src/sim/movement';
 import { buildingCode } from '../src/content';
 import type { Faction } from '../src/sim/faction';
-
-const EVIDENCE = join(tmpdir(), 'spqr-issue52');
 
 test('an overflowing live list keeps selection through wheel, page keys, buttons and hooks', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -23,6 +19,12 @@ test('an overflowing live list keeps selection through wheel, page keys, buttons
     const fogPath = '/src/sim/fog.ts';
     const { createStage, frameReport } = await import(stagePath);
     const { createGame } = await import(gamePath);
+    const siegePath = '/src/sim/siege.ts';
+    const openingPath = '/src/render/opening.ts';
+    const controllerPath = '/src/sim/controller.ts';
+    const { siegeMatchRules } = await import(siegePath);
+    const { musterOpeningArmy } = await import(openingPath);
+    const { idleController } = await import(controllerPath);
     const { bindControls } = await import(controlsPath);
     const { generateMap } = await import(mapPath);
     const { createFog, viewOf, refreshVision } = await import(fogPath);
@@ -31,6 +33,12 @@ test('an overflowing live list keeps selection through wheel, page keys, buttons
     const map = generateMap(7);
     const fog = createFog();
     const game = createGame({ stage, seed: 7, size, world: stage.root,
+      sessionControls: false, opponent: idleController(),
+      rules: { ...siegeMatchRules, createWorld(seed: number) {
+        const world = siegeMatchRules.createWorld(seed);
+        musterOpeningArmy(world, 'rome');
+        return world;
+      } },
       camera: () => ({ x: 0, y: 0, zoom: 2 }), viewport: () => ({ x: 0, y: 0, ...size }),
       fog: () => viewOf(fog), vision: (eyes: unknown) => refreshVision(fog, map, eyes),
     });
@@ -72,7 +80,7 @@ test('an overflowing live list keeps selection through wheel, page keys, buttons
 for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
   test(`pause and secondary scrolling share pointer, keyboard and hooks at ${viewport.width}`, async ({ page, spqr }) => {
     await page.setViewportSize(viewport);
-    await page.goto('/');
+    await page.goto('/e2e/game-fixture.html');
     await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
     await expect(page).toHaveTitle('SPQR — Annibale alle porte');
     await page.evaluate(() => window.__SPQR.game!.pause());
@@ -102,8 +110,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 108
     await page.mouse.click(box.x + initial.detail.x + 4, box.y + initial.detail.y + 2);
     expect(await page.evaluate(() => window.__SPQR.game!.selection().squads)).toEqual([1]);
     expect(await getHash()).toBe(pausedHash);
-    await mkdir(EVIDENCE, { recursive: true });
-    await page.screenshot({ path: join(EVIDENCE, `live-paused-${viewport.width}.png`) });
+    await capture(page, `live-paused-${viewport.width}`, 'issue52');
     const pause = initial.buttons.find((button) => button.action === 'pause')!;
     await page.keyboard.press('a');
     await page.mouse.click(box.x + pause.rect.x + 8, box.y + pause.rect.y + 8);
@@ -122,34 +129,35 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 108
   });
 
   for (const faction of ['rome', 'carthage'] as const) {
-    test(`rendered refused Order, active Work and overflowing list: ${faction} at ${viewport.width}`, async ({ page }) => {
+    for (const desktop of [false, true]) test(`${desktop ? 'desktop ' : ''}rendered refused Order, active Work and overflowing list: ${faction} at ${viewport.width}`, async ({ page }) => {
       await page.setViewportSize(viewport);
-      await page.goto('/');
+      await page.goto('/e2e/game-fixture.html');
       await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
       await page.evaluate(() => window.__SPQR.game!.pause());
       for (const kind of ['squad', 'settlement'] as const) {
-        const model = scene(faction, kind);
-        const layout = hudLayout(model, { width: 640, height: 480 });
+        const source = scene(faction, kind);
+        const model = { ...source, view: { ...source.view, desktop, uiScale: 2 } };
+        const size = desktop ? viewport : { width: 640, height: 480 };
+        const layout = hudLayout(model, size);
         expect(layout.listScroll.offset).toBeGreaterThan(0);
         expect(layout.rows.at(-1)!.selection).toEqual({ kind: 'squad', id: 80 });
         expect(layout.priority.map((line) => line.text).join(' ')).toContain(kind === 'squad'
-          ? 'Ordine: Acque profonde' : 'Cantieri: Villa - In costruzione 123456789 tick');
+          ? 'Ordine: Acque profonde' : 'Cantieri: Villa - In costruzione (123456789 tick)');
         // Fixture rendering uses exactly the production PixelBuffer/Pixi adapter.
         // It supplies a filtered model, never a hidden-world rendering hook.
-        await page.evaluate(async (model: HudModel) => {
+        await page.evaluate(async ({ model, size }: { model: HudModel; size: { width: number; height: number } }) => {
           const stagePath = '/src/render/stage.ts';
           const hudPath = '/src/render/hud.ts';
           const { createStage } = await import(stagePath);
           const { createHudLayer } = await import(hudPath);
           const mount = document.getElementById('app')!;
           mount.replaceChildren();
-          const stage = await createStage(mount, { width: 640, height: 480, background: [20, 17, 13, 255] });
+          const stage = await createStage(mount, { ...size, background: [20, 17, 13, 255] });
           const layer = createHudLayer(stage);
-          layer.panels(model, { width: 640, height: 480 });
+          layer.panels(model, size);
           stage.render();
-        }, model);
-        await mkdir(EVIDENCE, { recursive: true });
-        await page.screenshot({ path: join(EVIDENCE, `${faction}-${kind}-${viewport.width}.png`) });
+        }, { model, size });
+        await capture(page, `${desktop ? 'desktop-' : ''}${faction}-${kind}-${viewport.width}`, 'issue52');
       }
     });
   }

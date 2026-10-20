@@ -117,7 +117,7 @@ test('fingerprints the state: the same tick hashes the same, and the next one do
 });
 
 test('keeps the evidence a failing test would need, without a picture', async ({ page, spqr }) => {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
   await page.evaluate(() => {

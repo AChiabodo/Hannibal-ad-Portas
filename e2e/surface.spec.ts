@@ -63,18 +63,17 @@ type ArgumentsOf<Hook> = Hook extends (...args: infer Args) => unknown ? Args[nu
 /**
  * The Commands a hook's parameters would accept, if it accepted any.
  *
- * A single Command or a list of them: the two shapes an "issue this" hook would
- * have, and both are absent by design.
+ * Only `submit` accepts a whole Command; all other hooks remain gestures or reads.
  */
 type CommandParameters<Hook> = Extract<ArgumentsOf<Hook>, Command | readonly Command[]>;
 
-/** The hooks that would take a Command, which must be none of them. */
+/** The hooks that would take a Command, which must be exactly `submit`. */
 type HooksTakingACommand = {
   [Name in keyof GameHooks]: [CommandParameters<GameHooks[Name]>] extends [never] ? never : Name;
 }[keyof GameHooks];
 
-/** `true` when no hook hands in a Command, `false` when one does — and then nothing compiles. */
-type NoHookTakesACommand = [HooksTakingACommand] extends [never] ? true : false;
+/** `true` when only the shared human submission hook takes Commands — and then nothing compiles. */
+type OnlySubmitTakesCommands = [HooksTakingACommand] extends ['submit'] ? ['submit'] extends [HooksTakingACommand] ? true : false : false;
 
 test('publishes exactly the hooks the interfaces declare, and no others', () => {
   const view: Agrees<(typeof VIEW_HOOKS)[number], ViewHooks> = true;
@@ -96,15 +95,15 @@ test('publishes exactly the hooks the interfaces declare, and no others', () => 
   ]);
 });
 
-test('gives no hook a way to hand in a Command a Player could not issue', () => {
-  const none: NoHookTakesACommand = true;
+test('exposes the full Command vocabulary only through the shared human submission surface', () => {
+  const none: OnlySubmitTakesCommands = true;
 
   // The compile-time answer is the real one; this is only so that a run says so.
   expect(none).toBe(true);
 });
 
 test('the snapshot’s fields are the ones it is documented and listed as', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
   const fields = await page.evaluate(() => {
@@ -120,7 +119,7 @@ test('the snapshot’s fields are the ones it is documented and listed as', asyn
 });
 
 test('the running game page publishes its four fields, and the game page’s own hooks', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
   const published = await page.evaluate(() => ({
@@ -152,7 +151,7 @@ test('the Atelier publishes its own three hooks and no Match', async ({ page }) 
 });
 
 test('every hook on the page answers to its own name', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
   // `probe` is the one value; every other published name is a call, which is what

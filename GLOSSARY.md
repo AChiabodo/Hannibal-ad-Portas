@@ -33,6 +33,12 @@ One quarter of a Match's game year, and the Match's strategic clock: harvest in 
 _UI_: Stagione
 _Avoid_: Turn, phase, cycle
 
+**Tick**:
+The Match's smallest step: one tenth of a second at the pace the simulation runs, and the unit a timer, an order's queue and a Season's progress are counted in. It is the clock, never a turn — a Match steps ten thousandths of a second regardless of who is watching.
+_UI_: tick
+_UI note_: the interface's own word for a countdown keeps the code's short word because it is a number a Player reads beside a work or a ram, and no Italian term for it exists in the glossary.
+_Avoid_: Turn, frame, step (a frame is the renderer's, and a step is a Command)
+
 **Year**:
 Four Seasons of Match time, counted from one. A Match is bound to three of them — twenty-five thousand two hundred ticks, in a browser and headless alike — and a caller may hand over another bound, but not none.
 _UI_: Anno
@@ -291,7 +297,7 @@ _Avoid_: Body, casualty marker, corpse pile (a corpse is one mark on one tile, n
 ### Economy
 
 **Payroll**:
-The denarii a Faction owes each Season for the Squads it keeps. Unpaid Squads lose morale and eventually desert.
+The denarii a Faction owes each Season for the Squads it keeps; for infantry, the amount follows troop type and surviving men. Unpaid Squads lose morale and eventually desert.
 _UI_: Soldo
 _Avoid_: Upkeep, maintenance, cost, salary
 
@@ -332,13 +338,48 @@ The one place a player-facing word lives: a stable English key, and the word in 
 _UI_: —
 _Avoid_: Locale file, translations, i18n bundle
 
+**Guide**:
+The optional first-entry sequence that teaches the four acts a Match opens with — open a settlement, raise a Squad, select it, give it a destination — by naming the real controls and waiting for the Player to use them. It starts paused, can be skipped, dismissed and reopened, remembers only its dismissal as a presentation preference, issues no Command and reads no Observation; it is not a rule set, a scripted army or a second Match.
+_UI_: Guida
+_Avoid_: Tutorial, walkthrough, onboarding, help overlay
+
+**Tutorial**:
+A repeatable practical exercise that teaches economy, recruitment, movement, combat, territory and siege through objectives the human completes. Its chapters are distinct from the brief Guide available in a normal Match.
+_UI_: Tutorial
+_Avoid_: Guide, encyclopedia
+
+**Encyclopedia**:
+The reference a human can consult from the main menu or during a Match to understand resources, buildings, troops and rules. It complements practical teaching with explanations that can be revisited at any time.
+_UI_: Enciclopedia
+_Avoid_: Tutorial, Guide
+
 **Readout**:
 One labelled figure the interface always shows — the year, the Season, the treasury, a resource — as against a panel, which a selection opens.
 _UI_: —
 _Avoid_: Stat, indicator, counter
 
+**Standard**:
+The Faction's insignia carried above a Squad's block on the map: a rectangular banner for Rome and a swallow-tailed pennant for Carthage, in the same cloth as its soldiers. It marks the Faction where a mass of overlapping shields hides the cloth, and it is drawing and nothing else.
+_UI_: Insegna
+_Avoid_: Flag, banner (a banner is the shape a standard takes), icon
+
+**Condition**:
+What the theatre says about a Squad beyond its block: its Morale as the primary figure, and the shapes of the critical conditions it is in. A selected Squad wears a full plate; an unselected one in trouble wears a single shape; a healthy Squad nobody has chosen wears nothing.
+_UI_: Condizione
+_Avoid_: Status, state (state is the Match's), health
+
+**Notice**:
+A line the interface tells a Player about the Match: a condition that is true now (a low Morale, a rout, an unpaid Season, a ground the Squad is cut off from, the winter boundary close) or a brief event (an order refused, contact made, a Siege opened). Notices are deduplicated, kept in a compact history for the current Match, and carry only what the Faction's Observation holds; one that names a place can be clicked to centre it while that place is known.
+_UI_: Avviso
+_Avoid_: Alert, warning (a warning is the presentation threshold that raises a notice), message, toast
+
+**Forecast**:
+The interface's estimate of what the next Season boundary will do to the Treasury — production and tax first, then Payroll in the Squads' own order — shown only when the Faction's own knowledge makes it exact, and labelled as an estimate. It is presentation and decides nothing.
+_UI_: Stima
+_Avoid_: Prediction, projection, budget
+
 **Selection**:
-What the Player has picked — a settlement, or one or more Squads — and the panel that follows it. It is the Player's own memory rather than Match state: nothing else can see it and it decides nothing on its own. A box selects every Squad it touches; one order goes to all of them, while the panel shows the first one picked. There is one selection at a time, and nothing selected is a state rather than an error.
+What the Player has picked — a settlement, or one or more Squads — and the panel that follows it. The settlement may be one the Faction knows rather than one it holds: an enemy Stronghold in sight, a village it remembers, a village nobody holds, each opened by clicking the structure drawn on the map (ADR-0025). It is the Player's own memory rather than Match state: nothing else can see it and it decides nothing on its own. A box selects every Squad it touches; one order goes to all of them, while the panel shows the first one picked. There is one selection at a time, and nothing selected is a state rather than an error.
 _UI_: Selezione
 _Avoid_: Focus, target, highlight
 

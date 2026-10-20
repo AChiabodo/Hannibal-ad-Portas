@@ -51,6 +51,23 @@
  * maps all sixteen connection masks onto six canonical pieces (isolated, end,
  * straight, corner, tee, cross), and `roadTile` draws the path and turns it.
  *
+ * ## The terrain is quiet on purpose
+ *
+ * A tile is repeated nine thousand times, so whatever a material's texture does it
+ * does at every zoom and next to every soldier. A dither that steps a whole shade of
+ * a standard ramp — twenty percentage points of that ramp's spread — is a field of
+ * hard-edged pixels alternating between two visibly different colours, and on screen
+ * it competes with the men and the markers standing on it (ticket U5). So terrain is
+ * painted from the **detail** ramps (`palette.ts`): the same bases over the same
+ * travel at twice the granularity, ten points to a step, whose even indices are the
+ * standard shades. A texture therefore dithers between halves of a standard step
+ * instead of whole ones. `MATERIAL_TEXTURES` declares, per material, the shade most
+ * of its pixels take, the one step its dither alternates to, and the single *mark*
+ * that names the material — a furrow, a wave, a stepping stone, a blade of grass —
+ * with the share of the tile that mark is allowed to cover.
+ * `tests/art/terrain.test.ts` walks that table against the painted pixels, which is
+ * what keeps the declaration and the art from drifting apart.
+ *
  * ## Determinism
  *
  * Every texture here is a function of a pixel's coordinates and a per-material
@@ -60,7 +77,7 @@
  * memo is a cache of a pure function and nothing else.
  */
 
-import { RAMPS, shadeAt } from './palette.ts';
+import { RAMPS, detailAt, shadeAt, type DetailRampName } from './palette.ts';
 import {
   type PixelBuffer,
   type Rgba,
@@ -368,6 +385,132 @@ const BAND_SALT = { inner: 0x7a11, outer: 0x7b22 } as const;
 /** The salt the wheel ruts of a road are scattered with. */
 const RUT_SALT = 0x7c33;
 
+/** One shade of one detail ramp, which is what a material's texture is written in. */
+export interface MaterialShade {
+  /** The base whose detail ramp the shade comes from. */
+  readonly ramp: DetailRampName;
+  /** The shade's index in that ramp, darkest first. */
+  readonly index: number;
+}
+
+/**
+ * What one material's terrain is made of, as the shades it may be painted with.
+ *
+ * A terrain is three things and no more: the **body**, the shade most of its pixels
+ * take; the **dark**, the one detail step the dither alternates to, which is what
+ * gives a field a texture without giving it a pattern; and the **mark**, the single
+ * deliberate feature that names the material — farmland's furrows, a river's wave, a
+ * ford's stepping stones, a road's gravel, a plain's blade of grass.
+ *
+ * The mark is the one shade that carries its own `ramp`, because it is the one that
+ * may leave the material's base: a ford's stones are `stone` on water and a road's
+ * gravel is `stone` in bronze, while the body and the dither are always shades of the
+ * material's own base. It may cover no more than `markShare` of the tile, so it stays
+ * a feature and never becomes a second texture.
+ *
+ * Everything here is data rather than numbers inside the painter because the claim
+ * the ticket makes is about *contrast*, and contrast is a number somebody can check:
+ * a dither is one detail step, a mark of the terrain's own base is at most two, and
+ * the art may paint nothing that is not declared here (`tests/art/terrain.test.ts`).
+ */
+export interface MaterialTexture {
+  /** The base the terrain is shaded from: its body, its dither and, by default, its mark. */
+  readonly ramp: DetailRampName;
+  /** The detail shade most of the tile's pixels take. */
+  readonly body: number;
+  /** The dither's other shade, exactly one detail step from the body. */
+  readonly dark: number;
+  /** The one feature that names the material, and the only shade that may use another base. */
+  readonly mark: MaterialShade;
+  /** The most of a tile that feature may cover, as a share of its pixels. */
+  readonly markShare: number;
+}
+
+/**
+ * The seven terrains, as the shades each is painted from.
+ *
+ * The bodies are where each material already sat on the palette, so the theatre
+ * reads as itself: plain on olive, hill on stone, forest a dark olive canopy,
+ * farmland on parchment, water on its own blue, a ford two steps lighter than the
+ * river it crosses, and a road's verge on bronze. The *spread* is what changed with
+ * U5, not the colour: hill used to dither between stone shades five standard steps
+ * apart and farmland between parchment ones three apart, which is what a field of
+ * hard pixels was made of. `meanNeighbourJump` in the terrain test is that sentence
+ * as a number.
+ */
+export const MATERIAL_TEXTURES: Readonly<Record<TerrainMaterial, MaterialTexture>> = {
+  // A blade of grass, sparse and never on a grid: a regular motif is the one thing
+  // ordinary terrain may not have, because the eye finds it before it finds a man.
+  plain: { ramp: 'olive', body: 6, dark: 5, mark: { ramp: 'olive', index: 7 }, markShare: 1 / 8 },
+  // Rock, with a rare lit outcrop: no more contrast than a shadow on the grass.
+  hill: { ramp: 'stone', body: 6, dark: 5, mark: { ramp: 'stone', index: 7 }, markShare: 1 / 16 },
+  // A canopy is shade under leaves, so the blot is coarse (half-scale noise) and the
+  // brightest leaf is one step above the floor.
+  forest: { ramp: 'olive', body: 1, dark: 0, mark: { ramp: 'olive', index: 2 }, markShare: 1 / 16 },
+  // The one terrain with a direction: furrows are the dark shade, and the drill that
+  // sowed them the mark. A ploughed field should read as ploughed from a man.
+  farmland: { ramp: 'parchment', body: 4, dark: 3, mark: { ramp: 'parchment', index: 5 }, markShare: 1 / 8 },
+  // Water is drawn as water and not as wet stone: a wave line two detail steps above
+  // the body, and nothing else moving.
+  river: { ramp: 'water', body: 4, dark: 3, mark: { ramp: 'water', index: 6 }, markShare: 1 / 8 },
+  // A crossing is a river two steps lighter with stone slabs in it: the slabs are the
+  // material's own second base, and the reason a ford is found rather than stumbled on.
+  ford: { ramp: 'water', body: 8, dark: 7, mark: { ramp: 'stone', index: 9 }, markShare: 1 / 16 },
+  // The verge under a road's path: gravel, so the mark is stone in the bronze.
+  road: { ramp: 'bronze', body: 4, dark: 3, mark: { ramp: 'stone', index: 4 }, markShare: 1 / 4 },
+};
+
+/**
+ * The shades one material's terrain is painted from, deduplicated.
+ *
+ * What the painter may reach for, as a value a test can compare the pixels against:
+ * a texture that paints a shade it does not declare is a shade nobody chose.
+ */
+export function materialShades(material: TerrainMaterial): readonly MaterialShade[] {
+  const texture = MATERIAL_TEXTURES[material];
+  const shades: MaterialShade[] = [
+    { ramp: texture.ramp, index: texture.dark },
+    { ramp: texture.ramp, index: texture.body },
+    texture.mark,
+  ];
+
+  return shades.filter(
+    (shade, index) => shades.findIndex((other) => other.ramp === shade.ramp && other.index === shade.index) === index,
+  );
+}
+
+/** The three colours a material's declared terrain resolves to, once it has been asked for. */
+interface MaterialColours {
+  readonly body: Rgba;
+  readonly dark: Rgba;
+  readonly mark: Rgba;
+}
+
+/** The colours already resolved, one set per material: the painter asks per pixel. */
+const MATERIAL_COLOURS = new Map<TerrainMaterial, MaterialColours>();
+
+/**
+ * A material's declaration as three colours.
+ *
+ * Memoised rather than resolved at each pixel: `paintCell` asks for its material's
+ * colours sixteen times a cell and there are fifteen thousand cells, and reading a
+ * declaration is not what a texture should spend its time on.
+ */
+function coloursOf(material: TerrainMaterial): MaterialColours {
+  const cached = MATERIAL_COLOURS.get(material);
+  if (cached !== undefined) return cached;
+
+  const texture = MATERIAL_TEXTURES[material];
+  const colours: MaterialColours = {
+    body: detailAt(texture.ramp, texture.body),
+    dark: detailAt(texture.ramp, texture.dark),
+    mark: detailAt(texture.mark.ramp, texture.mark.index),
+  };
+
+  MATERIAL_COLOURS.set(material, colours);
+  return colours;
+}
+
 /**
  * The colour of one pixel of a material's texture.
  *
@@ -376,47 +519,51 @@ const RUT_SALT = 0x7c33;
  * column is the tile's own first column, and two tiles of the same material side
  * by side have no seam to hide. It is also why the dual grid can reassemble a
  * logical tile out of four different cells and get the map back exactly.
+ *
+ * The shades are the material's own declaration (`MATERIAL_TEXTURES`) and the
+ * structure is what makes each material tellable: farmland's rows run one way,
+ * a river's wave the other, a ford holds two pairs of stones. What none of them
+ * does is alternate between two shades of a standard ramp — that is the flicker
+ * U5 removed, and the reason these are *detail* shades.
  */
 function textureOf(material: TerrainMaterial, x: number, y: number): Rgba {
+  const { body, dark, mark } = coloursOf(material);
   const salt = SALT[material];
   const noise = noiseAt(x, y, salt);
 
   switch (material) {
     case 'plain': {
-      if (x % 5 === 1 && y % 4 === 2) return shadeAt(RAMPS.olive, 5);
-      if (noise % 11 === 0) return shadeAt(RAMPS.olive, 4);
-      return noise % 3 === 0 ? shadeAt(RAMPS.olive, 2) : shadeAt(RAMPS.olive, 3);
+      if (noise % 11 === 0) return mark;
+      return noise % 3 === 0 ? dark : body;
     }
     case 'hill': {
-      if (noise % 13 === 0) return shadeAt(RAMPS.stone, 5);
-      if (noise % 5 === 0) return shadeAt(RAMPS.stone, 1);
-      return noise % 3 === 0 ? shadeAt(RAMPS.stone, 4) : shadeAt(RAMPS.stone, 2);
+      if (noise % 31 === 0) return mark;
+      return noise % 3 === 0 ? dark : body;
     }
     case 'forest': {
-      if (noiseAt(x >> 1, y >> 1, salt) % 6 === 0) return shadeAt(RAMPS.olive, 0);
-      if (noise % 17 === 0) return shadeAt(RAMPS.olive, 3);
-      return noise % 3 === 0 ? shadeAt(RAMPS.olive, 0) : shadeAt(RAMPS.olive, 1);
+      // The blot is asked of a noise at half scale, so the shade gathers in clumps
+      // the size of a leaf rather than in single pixels.
+      if (noiseAt(x >> 1, y >> 1, salt) % 6 === 0) return dark;
+      if (noise % 17 === 0) return mark;
+      return noise % 3 === 0 ? dark : body;
     }
     case 'farmland': {
-      const furrow = y % 4 === 0;
-      if (furrow) return shadeAt(RAMPS.parchment, 1);
-      if (noiseAt(x >> 1, y, salt) % 7 === 0) return shadeAt(RAMPS.parchment, 4);
-      return shadeAt(RAMPS.parchment, 2);
+      if (y % 4 === 0) return dark;
+      if (noiseAt(x >> 1, y, salt) % 7 === 0) return mark;
+      return body;
     }
     case 'river': {
-      if (y % 5 === 2 && (x + y) % 7 < 4) return shadeAt(RAMPS.water, 4);
-      if (noise % 9 === 0) return shadeAt(RAMPS.water, 1);
-      return shadeAt(RAMPS.water, 2);
+      if (y % 5 === 2 && (x + y) % 7 < 4) return mark;
+      return noise % 9 === 0 ? dark : body;
     }
     case 'ford': {
       const stone = (x >= 3 && x <= 5 && y >= 9 && y <= 10) || (x >= 9 && x <= 11 && y >= 4 && y <= 5);
-      if (stone) return shadeAt(RAMPS.stone, 4);
-      if (noise % 6 === 0) return shadeAt(RAMPS.water, 6);
-      return shadeAt(RAMPS.water, 4);
+      if (stone) return mark;
+      return noise % 6 === 0 ? dark : body;
     }
     case 'road': {
-      if (noise % 7 === 0) return shadeAt(RAMPS.stone, 2);
-      return noise % 4 === 0 ? shadeAt(RAMPS.bronze, 3) : shadeAt(RAMPS.bronze, 2);
+      if (noise % 7 === 0) return mark;
+      return noise % 4 === 0 ? dark : body;
     }
   }
 }

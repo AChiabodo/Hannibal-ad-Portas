@@ -174,7 +174,12 @@ export function viewportRectOnMinimap(viewport: ViewportRect): PlateRect {
  *   size is a caller that has lost track of which map it is looking at, and
  *   answering it with a half-painted plate would hide that.
  */
-export function minimapPlate(map: MapGrid, fog: FogView, viewport: ViewportRect | null): PixelBuffer {
+export interface KnownMinimapSite extends Site {
+  readonly owner: number;
+}
+
+export function minimapPlate(map: MapGrid, fog: FogView, viewport: ViewportRect | null,
+  ownership: readonly KnownMinimapSite[] = []): PixelBuffer {
   requireTheatre(fog);
 
   const plate = createPixelBuffer(MINIMAP_PLATE_WIDTH, MINIMAP_PLATE_HEIGHT, BASE.night);
@@ -204,11 +209,13 @@ export function minimapPlate(map: MapGrid, fog: FogView, viewport: ViewportRect 
   // Landmarks after the ground, and only where the Faction knows the ground they
   // stand on: a settlement in the fog is the leak this module exists to prevent,
   // so the fog is consulted again rather than assumed.
-  for (const [owner, site] of map.strongholds.entries()) {
-    paintSite(plate, fog, site, settlementColour(owner));
-  }
-  for (const site of map.settlements) {
-    paintSite(plate, fog, site, settlementColour(UNOWNED));
+  for (const site of [...map.strongholds, ...map.settlements]) {
+    const knowledge = knows(fog, site.x, site.y);
+    const current = ownership.find((known) => known.x === site.x && known.y === site.y);
+    // Memory records a place, not its current holder. Never infer ownership
+    // from the generator's original Stronghold slots.
+    paintSite(plate, fog, site, knowledge === KNOWLEDGE.visible && current !== undefined
+      ? settlementColour(current.owner) : shadeAt(RAMPS.stone, 5));
   }
   for (const node of map.resources) {
     paintSite(plate, fog, node, MINIMAP_MARKER[node.kind]);
@@ -217,6 +224,7 @@ export function minimapPlate(map: MapGrid, fog: FogView, viewport: ViewportRect 
   // And the enemy last seen: a contact is remembered at the tile it stood on, so
   // it is drawn where the Faction believes it is rather than tracked live.
   for (const contact of fog.contacts) {
+    if (contact.id < 0) continue;
     paintSite(plate, fog, contact, MINIMAP_CONTACT);
   }
 

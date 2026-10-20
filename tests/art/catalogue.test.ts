@@ -23,8 +23,28 @@ import {
   variantQuadrants,
 } from '../../src/art/terrain';
 import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from '../../src/art/nodes';
+import { settlementEntries } from '../../src/art/settlements';
+import { interfaceEntries } from '../../src/art/interface';
+import { appearanceEntries } from '../../src/ui/appearance';
+import {
+  BADGE_NAMES,
+  BADGE_TILE,
+  COMMAND_ICON_NAMES,
+  ICON_TILE,
+  badgeIcon,
+  commandIcon,
+  iconEntries,
+} from '../../src/art/icons';
+import {
+  SEPARATION_FACTIONS,
+  SEPARATION_MATERIALS,
+  SEPARATION_SIZE,
+  separationEntries,
+  separationSpecimen,
+} from '../../src/art/separation';
 import {
   FIGURE_FACINGS,
+  FIGURE_FACTIONS,
   FIGURE_FRAMES,
   FIGURE_HEIGHT,
   FIGURE_NAMES,
@@ -32,7 +52,15 @@ import {
   figureEntries,
   frameName,
   soldier,
+  standardInsignia,
 } from '../../src/art/figures';
+import {
+  CONDITION_MARKS,
+  FACING_MARKS,
+  ORDER_MARK_KINDS,
+  markerEntries,
+  orderMarker,
+} from '../../src/art/markers';
 
 /** How many glyphs stand on one row of the plate, which the layout test mirrors. */
 const GLYPH_GRID_COLUMNS = 16;
@@ -57,6 +85,22 @@ const TERRAIN_LABEL_WIDTH = Math.max(
 );
 const TERRAIN_X = PLATE_PADDING + TERRAIN_LABEL_WIDTH + TERRAIN_LABEL_GAP;
 
+/** The separation section's own arithmetic: three tiles of ground a side, and a row per Faction. */
+const SEPARATION_CELL = SEPARATION_SIZE + 3;
+const SEPARATION_CAPTION_HEIGHT = LINE_HEIGHT + 3;
+const SEPARATION_LABEL_WIDTH = Math.max(...SEPARATION_FACTIONS.map((faction) => measureText(faction)));
+const SEPARATION_X = PLATE_PADDING + SEPARATION_LABEL_WIDTH + TERRAIN_LABEL_GAP;
+const NODES_TOP =
+  TERRAIN_TOP +
+  (1 + TERRAIN_MATERIALS.length) * TERRAIN_CELL +
+  SECTION_GAP +
+  HEADING_HEIGHT +
+  TERRAIN_CELL +
+  SECTION_GAP +
+  HEADING_HEIGHT;
+const SEPARATION_TOP = NODES_TOP + NODES_HEIGHT + SECTION_GAP + HEADING_HEIGHT;
+const SEPARATION_ROWS_TOP = SEPARATION_TOP + SEPARATION_CAPTION_HEIGHT;
+
 /** The figures section's own arithmetic, written out again so its cells are checked rather than trusted. */
 const FIGURE_CAPTIONS = FIGURE_FRAMES.map(frameName);
 const FIGURE_CELL_WIDTH = Math.max(
@@ -66,8 +110,10 @@ const FIGURE_CELL_WIDTH = Math.max(
 const FIGURE_CELL_HEIGHT = FIGURE_HEIGHT + 3;
 const FIGURE_LABEL_WIDTH = Math.max(
   ...FIGURE_NAMES.flatMap((name) => FIGURE_FACINGS.map((facing) => measureText(`${name} ${facing}`))),
+  ...FIGURE_FACTIONS.map((faction) => measureText(`insignia ${faction}`)),
 );
 const FIGURE_X = PLATE_PADDING + FIGURE_LABEL_WIDTH + TERRAIN_LABEL_GAP;
+const FIGURE_ROWS = FIGURE_NAMES.length * FIGURE_FACINGS.length + FIGURE_FACTIONS.length;
 const FIGURES_TOP =
   PLATE_PADDING +
   (HEADING_HEIGHT + GLYPH_GRID_HEIGHT + SECTION_GAP) +
@@ -75,8 +121,30 @@ const FIGURES_TOP =
   (HEADING_HEIGHT + (1 + TERRAIN_MATERIALS.length) * TERRAIN_CELL + SECTION_GAP) +
   (HEADING_HEIGHT + TERRAIN_CELL + SECTION_GAP) +
   (HEADING_HEIGHT + NODES_HEIGHT + SECTION_GAP) +
+  (HEADING_HEIGHT + SEPARATION_CAPTION_HEIGHT + SEPARATION_FACTIONS.length * SEPARATION_CELL + SECTION_GAP) +
   HEADING_HEIGHT;
 const FIGURE_ROWS_TOP = FIGURES_TOP + LINE_HEIGHT + 3;
+
+/** The icons section's own arithmetic, written out again so its cells are checked rather than trusted. */
+const ICON_CELL = ICON_TILE + 3;
+const BADGE_CELL = BADGE_TILE + 4;
+const ICON_LABEL_WIDTH = Math.max(...['commands', 'badges'].map((label) => measureText(label)));
+/** The marks section's own arithmetic: three rows of marks under their own heading (#58). */
+const MARK_CELL = 12;
+const MARK_ROW_LABELS = ['order', 'facing', 'condition'];
+const MARK_LABEL_WIDTH = Math.max(...MARK_ROW_LABELS.map((label) => measureText(label)));
+const MARKS_HEIGHT = MARK_ROW_LABELS.length * MARK_CELL;
+const ICONS_TOP =
+  FIGURE_ROWS_TOP + FIGURE_ROWS * FIGURE_CELL_HEIGHT + SECTION_GAP +
+  HEADING_HEIGHT + MARKS_HEIGHT + SECTION_GAP + HEADING_HEIGHT;
+
+/** One catalogue entry by name, for a test that wants the drawn buffer rather than the generator. */
+function catalogueEntry(name: string): ReturnType<typeof orderMarker> {
+  const found = catalogue().find((entry) => entry.name === name);
+  if (found === undefined) throw new Error(`the catalogue holds no ${name}`);
+
+  return found.buffer;
+}
 
 /** The name the catalogue gives a character. */
 function glyphName(character: string): string {
@@ -92,7 +160,11 @@ describe('the catalogue', () => {
         RAMP_NAMES.length +
         terrainEntries().length +
         nodeEntries().length +
-        figureEntries().length,
+        separationEntries().length +
+        figureEntries().length +
+        markerEntries().length +
+        iconEntries().length +
+        settlementEntries().length + interfaceEntries().length + appearanceEntries().length,
     );
     expect(new Set(names).size).toBe(names.length);
     for (const glyph of GLYPHS) {
@@ -107,7 +179,22 @@ describe('the catalogue', () => {
     for (const entry of nodeEntries()) {
       expect(names).toContain(entry.name);
     }
+    for (const entry of separationEntries()) {
+      expect(names).toContain(entry.name);
+    }
     for (const entry of figureEntries()) {
+      expect(names).toContain(entry.name);
+    }
+    for (const entry of markerEntries()) {
+      expect(names).toContain(entry.name);
+    }
+    for (const name of COMMAND_ICON_NAMES) {
+      expect(names).toContain(`icon:${name}`);
+    }
+    for (const name of BADGE_NAMES) {
+      expect(names).toContain(`badge:${name}`);
+    }
+    for (const entry of settlementEntries()) {
       expect(names).toContain(entry.name);
     }
   });
@@ -154,6 +241,72 @@ describe('the catalogue', () => {
 });
 
 describe('the catalogue plate', () => {
+  it('places every command icon and badge where its section says', () => {
+    const plate = cataloguePlate();
+    const iconX = PLATE_PADDING + ICON_LABEL_WIDTH + SECTION_GAP - SECTION_GAP + 3;
+
+    for (const [index, name] of COMMAND_ICON_NAMES.entries()) {
+      const icon = commandIcon(name);
+      for (let y = 0; y < icon.height; y += 1) {
+        for (let x = 0; x < icon.width; x += 1) {
+          const entryPixel = pixelAt(icon, x, y);
+          const expected = entryPixel[3] === 0 ? PLATE_BACKGROUND : entryPixel;
+          expect(pixelAt(plate, iconX + index * ICON_CELL + x, ICONS_TOP + y), `icon:${name}`).toEqual(expected);
+        }
+      }
+    }
+
+    for (const [index, name] of BADGE_NAMES.entries()) {
+      const badge = badgeIcon(name);
+      const top = ICONS_TOP + ICON_CELL + Math.floor((ICON_CELL - BADGE_TILE) / 2);
+      for (let y = 0; y < badge.height; y += 1) {
+        for (let x = 0; x < badge.width; x += 1) {
+          const entryPixel = pixelAt(badge, x, y);
+          const expected = entryPixel[3] === 0 ? PLATE_BACKGROUND : entryPixel;
+          expect(pixelAt(plate, iconX + index * BADGE_CELL + 2 + x, top + y), `badge:${name}`).toEqual(expected);
+        }
+      }
+    }
+  });
+
+  it('places the two standards and every mark where their sections say', () => {
+    const plate = cataloguePlate();
+
+    for (const [index, faction] of FIGURE_FACTIONS.entries()) {
+      const top = FIGURE_ROWS_TOP + (FIGURE_NAMES.length * FIGURE_FACINGS.length + index) * FIGURE_CELL_HEIGHT;
+      const standard = standardInsignia(faction);
+      for (let y = 0; y < standard.height; y += 1) {
+        for (let x = 0; x < standard.width; x += 1) {
+          const entryPixel = pixelAt(standard, x, y);
+          const expected = entryPixel[3] === 0 ? PLATE_BACKGROUND : entryPixel;
+          expect(pixelAt(plate, FIGURE_X + x, top + Math.floor((FIGURE_CELL_HEIGHT - standard.height) / 2) + y), `insignia:${faction}`).toEqual(expected);
+        }
+      }
+    }
+
+    const marksTop = FIGURE_ROWS_TOP + FIGURE_ROWS * FIGURE_CELL_HEIGHT + SECTION_GAP + HEADING_HEIGHT;
+    const rows: readonly (readonly { readonly name: string; readonly buffer: ReturnType<typeof orderMarker> }[])[] = [
+      ORDER_MARK_KINDS.map((kind) => ({ name: `order:${kind}`, buffer: orderMarker(kind) })),
+      FACING_MARKS.map((facing) => ({ name: `facing:${facing}`, buffer: catalogueEntry(`mark:facing:${facing}`) })),
+      CONDITION_MARKS.map((kind) => ({ name: `condition:${kind}`, buffer: catalogueEntry(`mark:condition:${kind}`) })),
+    ];
+
+    for (const [row, entries] of rows.entries()) {
+      for (const [index, entry] of entries.entries()) {
+        const x = PLATE_PADDING + MARK_LABEL_WIDTH + TERRAIN_LABEL_GAP + index * MARK_CELL
+          + Math.floor((MARK_CELL - entry.buffer.width) / 2);
+        const y = marksTop + row * MARK_CELL + Math.floor((MARK_CELL - entry.buffer.height) / 2);
+        for (let py = 0; py < entry.buffer.height; py += 1) {
+          for (let px = 0; px < entry.buffer.width; px += 1) {
+            const entryPixel = pixelAt(entry.buffer, px, py);
+            const expected = entryPixel[3] === 0 ? PLATE_BACKGROUND : entryPixel;
+            expect(pixelAt(plate, x + px, y + py), `mark:${entry.name}`).toEqual(expected);
+          }
+        }
+      }
+    }
+  });
+
   it('is the size its sections add up to, on the neutral background', () => {
     const plate = cataloguePlate();
 
@@ -258,10 +411,6 @@ describe('the catalogue plate', () => {
   it('stands the resource markers under the terrain, on the neutral plate and nothing else', () => {
     const plate = cataloguePlate();
 
-    // The nodes row comes after the road row, its own gap and heading.
-    const roadTop = TERRAIN_TOP + (1 + TERRAIN_MATERIALS.length) * TERRAIN_CELL + SECTION_GAP + HEADING_HEIGHT;
-    const nodesTop = roadTop + NODES_HEIGHT + SECTION_GAP + HEADING_HEIGHT;
-
     for (let index = 0; index < NODE_KINDS.length; index += 1) {
       const kind = NODE_KINDS[index];
       if (kind === undefined) continue;
@@ -272,8 +421,32 @@ describe('the catalogue plate', () => {
       for (let y = 0; y < marker.height; y += 1) {
         for (let x = 0; x < marker.width; x += 1) {
           const pixel = pixelAt(marker, x, y);
-          expect(pixelAt(plate, left + x, nodesTop + y), `${kind} at (${String(x)}, ${String(y)})`).toEqual(
+          expect(pixelAt(plate, left + x, NODES_TOP + y), `${kind} at (${String(x)}, ${String(y)})`).toEqual(
             pixel[3] === 0 ? PLATE_BACKGROUND : pixel,
+          );
+        }
+      }
+    }
+  });
+});
+
+describe('the separation section of the plate', () => {
+  it('stands each Faction on three tiles of every material, in its own cell', () => {
+    const plate = cataloguePlate();
+
+    for (const [row, faction] of SEPARATION_FACTIONS.entries()) {
+      for (const [column, material] of SEPARATION_MATERIALS.entries()) {
+        const specimen = separationSpecimen(material, faction);
+        const left = SEPARATION_X + column * SEPARATION_CELL;
+        const top = SEPARATION_ROWS_TOP + row * SEPARATION_CELL;
+
+        for (const [x, y] of [
+          [0, 0],
+          [SEPARATION_SIZE - 1, SEPARATION_SIZE - 1],
+          [Math.floor(SEPARATION_SIZE / 2), Math.floor(SEPARATION_SIZE / 2)],
+        ] as const) {
+          expect(pixelAt(plate, left + x, top + y), `${faction} on ${material} at (${String(x)}, ${String(y)})`).toEqual(
+            pixelAt(specimen, x, y),
           );
         }
       }

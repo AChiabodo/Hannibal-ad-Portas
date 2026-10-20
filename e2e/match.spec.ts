@@ -76,7 +76,7 @@ test('refuses an advance that would run past the bound, and names the fast-forwa
 });
 
 test('pauses and resumes the clock from outside the game', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
   await page.evaluate(() => window.__SPQR.game?.pause());

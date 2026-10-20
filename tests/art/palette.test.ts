@@ -6,7 +6,19 @@
  * would pass whatever it did.
  */
 import { describe, expect, it } from 'vitest';
-import { BASE, RAMP_NAMES, RAMP_SHADES, RAMPS, ramp, rgba, shade, withAlpha } from '../../src/art/palette';
+import {
+  BASE,
+  DETAIL_RAMPS,
+  DETAIL_SHADES,
+  RAMP_NAMES,
+  RAMP_SHADES,
+  RAMPS,
+  detailAt,
+  ramp,
+  rgba,
+  shade,
+  withAlpha,
+} from '../../src/art/palette';
 
 describe('a colour written down as a number', () => {
   it('splits the channels and defaults to opaque', () => {
@@ -85,6 +97,48 @@ describe('a ramp derived from a base', () => {
 
     for (const shades of [0, -1, 2.5]) {
       expect(() => ramp(BASE.olive, shades)).toThrow(RangeError);
+    }
+  });
+});
+
+describe('a ramp fine enough to dither a field with', () => {
+  it('is the same base and the same travel, at twice the granularity', () => {
+    expect(DETAIL_SHADES).toBe(13);
+    expect(Object.keys(DETAIL_RAMPS).sort()).toEqual([...RAMP_NAMES].sort());
+
+    for (const name of RAMP_NAMES) {
+      const detail = DETAIL_RAMPS[name];
+
+      expect(detail.length, name).toBe(DETAIL_SHADES);
+      // The two ramps of one base span the same colour: the ends are the same
+      // shades, and the middle is the base itself.
+      expect(detail[0], name).toEqual(RAMPS[name][0]);
+      expect(detail[DETAIL_SHADES - 1], name).toEqual(RAMPS[name][RAMP_SHADES - 1]);
+      expect(detail[6], name).toEqual(BASE[name]);
+    }
+  });
+
+  it('holds every shade of the standard ramp, one step in two', () => {
+    // The property that makes a detail ramp a subdivision of the palette rather than
+    // a second palette: every shade the rest of the art already uses is one of its
+    // shades, at twice the resolution. Its odd indices are colours nothing else
+    // paints — that is the point of a surface — but they sit *between* the standard
+    // shades of the same base, never outside them.
+    for (const name of RAMP_NAMES) {
+      for (let shadeIndex = 0; shadeIndex < RAMP_SHADES; shadeIndex += 1) {
+        expect(DETAIL_RAMPS[name][shadeIndex * 2], `${name} shade ${String(shadeIndex)}`).toEqual(
+          RAMPS[name][shadeIndex],
+        );
+      }
+    }
+  });
+
+  it('reads a shade by index, and refuses one it does not have', () => {
+    expect(detailAt('olive', 6)).toEqual(BASE.olive);
+    expect(detailAt('water', 8)).toEqual(DETAIL_RAMPS.water[8]);
+
+    for (const index of [-1, DETAIL_SHADES, 0.5]) {
+      expect(() => detailAt('olive', index)).toThrow(RangeError);
     }
   });
 });

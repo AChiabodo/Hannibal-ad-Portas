@@ -57,22 +57,44 @@ export const VIEW_HOOKS = [
 /**
  * The running Match — `GameHooks` in `render/game.ts`.
  *
- * The interface, the Player's hands, the clock and the inspection surface. Five
- * of these (`orderAt`, `orderNow`, `setFormation`, `bindGroup`, `recallGroup`)
- * issue Commands, and every one of them issues what a pointer or a keyboard
- * could: there is no hook that takes a Command, which is the property
- * `e2e/surface.spec.ts` proves at the type level.
+ * The interface, the Player's hands, pacing and inspection. `submit` is the
+ * one full-Command entry: it queues through the same human Controller as the
+ * pointer and keyboard, validates the vocabulary and refuses foreign Factions.
+ * `perform` is the one contextual-action entry the panels' buttons use: it arms
+ * an action that needs a target and submits one that does not, through that same
+ * seam, so a button is never a second way into the Match (#55).
  */
 export const GAME_HOOKS = [
+  'preferences', 'setUiScale', 'toggleNavigator', 'toggleGuide', 'resetPreferences', 'centerSelection', 'navigateMinimap', 'doubleClickAt',
+  'submit',
+  'configuration',
+  'matchLayout',
+  'restart',
+  'newMatch',
+  'copySeed',
   'hud',
   'selection',
   'select',
   'hudRects',
   'hudRows',
   'hudLayout',
+  'hoverAt',
+  'interfaceKey',
   'scrollHud',
+  'perform',
+  'cancelTargeting',
+  'targeting',
+  'targetAt',
+  'targetSettlement',
+  'setTab',
+  'groupBack',
   'squads',
   'corpses',
+  'notices',
+  'centerNotice',
+  'indicators',
+  'noticesOpen',
+  'toggleNotices',
   'selectAt',
   'selectIn',
   'orderAt',
@@ -96,6 +118,8 @@ export const GAME_HOOKS = [
   'minimapSamples',
   'knowledge',
   'showSquads',
+  'showSettlements',
+  'sites',
   'applied',
 ] as const;
 
@@ -145,7 +169,10 @@ export const SNAPSHOT_FIELDS = [
   'hud',
   'selection',
   'squads',
+  'sites',
   'corpses',
+  'notices',
+  'indicators',
   'knowledge',
   'applied',
 ] as const;

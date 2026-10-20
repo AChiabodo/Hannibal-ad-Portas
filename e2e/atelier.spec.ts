@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures';
 import { cataloguePlate } from '../src/art/catalogue';
-import { pixelAt, type PixelBuffer } from '../src/art/pixel-buffer';
+import { pixelAt, type PixelBuffer, type Rgba } from '../src/art/pixel-buffer';
 import { ATELIER_ZOOMS, atelierLayout } from '../src/render/atelier-layout';
 import { atelierReport, samples } from './hooks';
 
@@ -73,12 +73,23 @@ test('shows every column as the catalogue plate magnified by exactly its zoom', 
     }
 
     const drawn = await samples(page, 'atelier', points);
+
+    // Every point is compared and the *mismatches* are asserted, rather than one
+    // matcher per pixel: a plate this tall is tens of thousands of samples, and the
+    // question is "did any of them move", not "which line of the report names it".
+    const wrong: { readonly at: readonly [number, number]; readonly got: unknown; readonly wanted: Rgba }[] = [];
     for (let index = 0; index < points.length; index += 1) {
       const [plateX, plateY] = expected[index] ?? [0, 0];
-      expect(drawn[index], `zoom ${String(section.zoom)}: plate (${String(plateX)}, ${String(plateY)})`).toEqual(
-        pixelAt(PLATE, plateX, plateY),
-      );
+      const wanted = pixelAt(PLATE, plateX, plateY);
+      const got = drawn[index];
+      if (got === undefined || got.some((channel, at) => channel !== wanted[at])) {
+        wrong.push({ at: [plateX, plateY], got, wanted });
+        // A handful of examples is all a reader needs; the count is what matters.
+        if (wrong.length === 8) break;
+      }
     }
+
+    expect(wrong, `zoom ${String(section.zoom)}: pixels that are not the plate's`).toEqual([]);
   }
 });
 

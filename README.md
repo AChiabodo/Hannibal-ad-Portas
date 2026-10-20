@@ -35,11 +35,22 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | `npm run tournament`| The balance instrument: a batch of AI-vs-AI Matches on distinct seeds, and one JSON report of what they add up to |
 | `npm run bake`      | Writes the whole generated catalogue into `artifacts/` as PNGs, with the pixel hash of each, for inspection |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
+| `npm run test:unit` | Every non-browser test, through the profile entry point                |
+| `npm run test:focus`| The non-browser tests related to the working tree's changes            |
+| `npm run test:smoke`| The small real-browser smoke: boot, one ordinary Command, frame and console health |
+| `npm run test:feature -- <name>` | One browser responsibility: `orders`, `fog`, `hud`, `host`, …  |
+| `npm run test:accept`| Complete browser acceptance, with visual captures off                 |
+| `npm run test:visual`| Explicit visual-frame production into `SPQR_VISUAL_DIR`               |
+| `npm run test:profiles` | List the browser responsibilities and their owner specs            |
 | `npm run test:e2e`  | Browser tests (Playwright, headless Chromium, software WebGL)           |
 | `npm run verify`    | Lint, check, guard, unit tests and build in one go                      |
 
-The first `npm run test:e2e` installs Chromium if it is missing; CI installs it
-with `--with-deps` in its own step.
+The profiles and their selection rules are in [docs/VERIFICATION.md](docs/VERIFICATION.md).
+The first browser run installs Chromium if it is missing; CI installs it with
+`--with-deps` in its own step. In CI, a pull request into `main` and a push to
+`main` take the smoke and complete acceptance; a pull request into `develop` runs
+the fast checks and no Chromium unless it carries the `browser` label; a merge into
+`develop` runs the smoke as a post-merge net.
 
 ## The fences
 
@@ -516,8 +527,11 @@ differ, which five arms and nine types could not do.
 single beast weather a round or two of a Roman line instead of dying to the
 first blow. `figuresOf(type)` is the one place the two numbers are tied, and the
 Observation carries both, so a drawing code lays out a beast as one figure and a
-body of men as one figure per man; `render/squads.ts` uses the figures and the
-fight uses the strength. Everything else about an elephant is an ordinary Squad:
+body of men as a strength-backed figure count. The UI projects three representative
+soldiers per four men (rounded up), at the original 10x14 size with five-pixel
+spacing; a 120-man Squad draws 90, and the HUD still says 120. The elephant stays
+one figure. This presentation convention changes neither strength nor combat,
+pathfinding or formation rules. Everything else about an elephant is an ordinary Squad:
 it is recruited, paid, ordered, flanked and routed like any other (the ticket's
 own "an ordinary Squad type with an extraordinary figure").
 
@@ -734,6 +748,16 @@ base exactly. Generators pick from ramps, which is how a stone wall, a hill and 
 HUD frame cannot drift into three different greys (PLAN §8). `water` joined the
 bases with B3: a river painted out of the stone ramp reads as wet rock, and a map
 is not allowed to have that confusion.
+
+The same derivation runs at a second resolution. **`DETAIL_RAMPS`** are the six
+bases again at thirteen shades instead of seven — one between every two, the same
+dark and light ends, ten points of the spread to a step rather than twenty — and
+their even indices *are* the standard shades. They exist because a surface and a
+figure want different steps: a helmet has an edge and wants a visible one, while a
+tile of terrain is nine thousand tiles of dither, and a dither of whole standard
+shades reads as flicker competing with the men standing on it (U5,
+[#56](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/56)). Terrain paints
+from the detail ramps and nothing else in the library does.
 
 **The font is data** (`art/font.ts`). Seven rows of five pixels per letterform,
 written as 5-bit numbers — `0b01110` is `.###.` — for every printable ASCII
@@ -1492,6 +1516,8 @@ src/                application code
     terrain.ts      the seven materials, the five dual-grid shapes, the six road pieces
     nodes.ts        the four resource markers: a sheaf, two logs, a heap and a diamond
     figures.ts      the paper-doll soldiers: a body, and the helmet, shield and weapon hung on it
+    icons.ts        the command card's verbs and the badges a panel reads a figure with
+    separation.ts   a soldier of each Faction on three tiles of every material: the figure/ground specimens
     catalogue.ts    every artefact, named, and the one plate the Atelier renders
   cli/              the headless Match as a command
     arguments.ts    what the command line means, and what it refuses
@@ -1553,15 +1579,23 @@ src/                application code
   main.ts           the game page's entry
   atelier.ts        the Atelier page's entry
 scripts/guard.mjs   the fences
+scripts/profiles.mjs        the browser responsibilities, their owner specs and the coverage map
+scripts/verify.mjs          the profile entry point: focus, unit, smoke, feature, accept, visual
+scripts/selection.mjs       whether a change must take complete acceptance
+scripts/selection-rules.mjs the escalation rules, as data and pure functions
 tests/              Vitest unit tests
+  verify/           the profile inventory and the escalation rules, held to their owners
 e2e/                Playwright browser tests (a real browser, so `pixi.js` is allowed)
   hooks.ts          reading a page's hooks from a test, one datum at a time
   fixtures.ts       the `test` every spec runs on: a page watched for the evidence a failure needs
   diagnostics.ts    what that evidence is: the boot report, the snapshot, the console, the errors, the DOM
+  evidence.ts       the only writer of visual frames: off unless `SPQR_VISUAL=1`
+  smoke.spec.ts     the small real-browser smoke: boot, one Command, frame and console health
 docs/PLAN.md        the plan of record
 docs/COMMANDS.md    the Command vocabulary an external agent is written from
 docs/PROTOCOL.md    the protocol an external agent is written from, and a skeleton agent
 docs/BROWSER.md     the hooks an agent driving the page is written from, and what a failure leaves
+docs/VERIFICATION.md  the verification profiles, their owners, the CI gates and the budgets
 examples/agent.ts   an agent written from that document, importing nothing from this repository
 ```
 
@@ -1615,3 +1649,12 @@ a plan that includes Pages.
   — boot report, snapshot, state hash, console, errors, DOM — instead of a
   screenshot, and the surface itself is held to its document and to its interfaces
   by `e2e/surface.spec.ts` and `tests/render/browser-docs.test.ts`.
+
+The browser suite is selected by [responsibility](docs/VERIFICATION.md), not run
+whole for every change: `npm run test:smoke` boots the real page in under ninety
+seconds, `npm run test:feature -- orders` runs one owner, `npm run test:accept`
+runs every spec with captures off, and `npm run test:visual` is the explicit
+request for frames. In CI, `main` is the integration gate: a pull request into
+`main` and a push to `main` take the smoke and complete acceptance, while a
+`develop` pull request runs the fast checks and opts into Chromium with the
+`browser` label. A merge into `develop` runs the smoke as a post-merge net.

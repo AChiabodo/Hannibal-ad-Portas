@@ -45,6 +45,7 @@ import {
   hold,
   move,
   withdraw,
+  validateCommand,
   type Command,
   type Formation,
 } from '../sim/command.ts';
@@ -92,6 +93,8 @@ export type OrderKind = Order['kind'];
  * Match on the next tick.
  */
 export interface HumanController extends Controller<EconomyVisible> {
+  /** Queues any existing Command through the human Controller, including economy and Siege. */
+  submit(command: Command): boolean;
   /** What the Player has picked. */
   readonly selection: Selection;
 
@@ -127,6 +130,7 @@ export interface HumanController extends Controller<EconomyVisible> {
  * rather than with a list of Squads.
  */
 type Queued =
+  | { readonly kind: 'command'; readonly command: Command }
   | { readonly kind: 'order'; readonly given: Order; readonly squads: readonly number[] }
   | { readonly kind: 'binding'; readonly index: number; readonly squads: readonly number[] };
 
@@ -135,7 +139,7 @@ type Queued =
  *
  * @throws RangeError when the Faction is not one of the two the vocabulary names.
  */
-export function createHuman(faction: Faction): HumanController {
+export function createHuman(faction: Faction, canSubmit: () => boolean = () => true): HumanController {
   if (faction !== 'rome' && faction !== 'carthage') {
     throw new RangeError(`"${String(faction)}" is not one of the two Factions`);
   }
@@ -145,6 +149,13 @@ export function createHuman(faction: Faction): HumanController {
   const groups = new Map<number, readonly number[]>();
 
   return {
+    submit(emitted): boolean {
+      if (!canSubmit()) return false;
+      const command = validateCommand(emitted);
+      if (command.faction !== faction) return false;
+      queued.push({ kind: 'command', command });
+      return true;
+    },
     get selection(): Selection {
       return selection;
     },
@@ -158,6 +169,7 @@ export function createHuman(faction: Faction): HumanController {
     },
 
     order(given: Order): boolean {
+      if (!canSubmit()) return false;
       const squads = selection.squads;
 
       if (squads.length === 0) return false;
@@ -169,6 +181,7 @@ export function createHuman(faction: Faction): HumanController {
     },
 
     bindGroup(index: number): boolean {
+      if (!canSubmit()) return false;
       if (!CONTROL_GROUPS.includes(index)) return false;
 
       groups.set(index, [...selection.squads]);
@@ -197,11 +210,7 @@ export function createHuman(faction: Faction): HumanController {
       // The Player's memory against the world it may see: a Squad that has left
       // the field cannot be ordered, and a selection that still named it would
       // send a Command the rules would have to refuse.
-      selection = stillHeld(
-        selection,
-        observation.visible.squads.map((squad) => squad.id),
-        observation.visible.settlements.map((settlement) => settlement.id),
-      );
+      selection = stillHeld(selection, observation.visible.squads.map((squad) => squad.id));
       prune(groups, observation.visible.squads);
 
       const commands: Command[] = [];
@@ -214,6 +223,7 @@ export function createHuman(faction: Faction): HumanController {
 
 /** The Commands one queued order becomes: one per kind, all addressed to the Controller's Faction. */
 function commandsFor(faction: Faction, entry: Queued): readonly Command[] {
+  if (entry.kind === 'command') return [entry.command];
   // A group binding is the Player's memory of a selection, and commands
   // nobody: it is emitted as it stands, empty list and all, because an empty
   // group is how one is cleared.

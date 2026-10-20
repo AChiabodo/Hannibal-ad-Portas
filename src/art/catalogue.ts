@@ -24,23 +24,57 @@
  *   material of its sixteen dual-grid variants, and then the sixteen road
  *   connections. A row shows its material against the ground it crosses, which is
  * - **nodes**, the four resource markers B3 stands on that ground;
+ * - **separation**, a soldier standing on each terrain (U5): three tiles of every material
+ *   with one man of each Faction standing on the middle one, which is where a
+ *   judgement about figure and ground can be made;
  * - **figures**, the soldiers of C2: one row per soldier and direction, one
  *   column per animation frame — the whole Roman roster, in the four ways it can
- *   face and the four things it can do.
+ *   face and the four things it can do;
+ * - **icons**, the command card and the badges the panels read figures with
+ *   (#55): one row of verbs and one row of costs, so the pictures a Player
+ *   presses can be judged beside everything else the library draws;
+ * - **settlements**, the places on the theatre (#57): a village of each Faction,
+ *   an unclaimed one, the Stronghold whole, hurt and breached, the ram at its
+ *   gate, and the same places as they are *remembered* — which is the section a
+ *   reviewer judges "can I tell a town from a village, a wall from a breach, and
+ *   a place in sight from a place in memory" on.
  */
 
 import {
   FIGURE_FACINGS,
+  FIGURE_FACTIONS,
   FIGURE_FRAMES,
   FIGURE_HEIGHT,
   FIGURE_NAMES,
   FIGURE_WIDTH,
+  INSIGNIA_HEIGHT,
   figureEntries,
   frameName,
   soldier,
+  standardInsignia,
 } from './figures.ts';
 import { GLYPHS, GLYPH_WIDTH, LINE_HEIGHT, drawText, measureText, textPlate } from './font.ts';
+import {
+  BADGE_NAMES,
+  BADGE_TILE,
+  COMMAND_ICON_NAMES,
+  ICON_TILE,
+  badgeIcon,
+  commandIcon,
+  iconEntries,
+} from './icons.ts';
 import { NODE_KINDS, NODE_TILE, nodeEntries, nodeMarker } from './nodes.ts';
+import { CONDITION_MARKS, FACING_MARKS, ORDER_MARK_KINDS, markerEntries } from './markers.ts';
+import { SITE_SIZE, SITE_SPECIMENS, settlementEntries, siteSprite } from './settlements.ts';
+import { interfaceEntries } from './interface.ts';
+import { appearanceEntries } from '../ui/appearance.ts';
+import {
+  SEPARATION_FACTIONS,
+  SEPARATION_MATERIALS,
+  SEPARATION_SIZE,
+  separationEntries,
+  separationSpecimen,
+} from './separation.ts';
 import { BASE, RAMPS, RAMP_NAMES, RAMP_SHADES } from './palette.ts';
 import { type PixelBuffer, blit, createPixelBuffer, fillRect } from './pixel-buffer.ts';
 import {
@@ -138,8 +172,24 @@ const TERRAIN_HEIGHT = (1 + TERRAIN_ROWS + 1) * TERRAIN_CELL;
 /** The resource markers, which stand in a row of their own under the terrain. */
 const NODES_HEIGHT = NODE_TILE + 3;
 
-/** The figure rows: one per soldier of the roster, and per direction. */
-const FIGURE_ROWS = FIGURE_NAMES.length * FIGURE_FACINGS.length;
+/** One cell of the separation section: a terrain patch, plus the air that keeps two rows apart. */
+const SEPARATION_CELL = SEPARATION_SIZE + 3;
+
+/** The captions' own line, over the two rows of patches. */
+const SEPARATION_CAPTION_HEIGHT = LINE_HEIGHT + 3;
+
+/** The widest Faction label, which is what the patches clear. */
+const SEPARATION_LABEL_WIDTH = Math.max(...SEPARATION_FACTIONS.map((label) => measureText(label)));
+
+/** Width of the separation section: a label, and one patch per material. */
+const SEPARATION_WIDTH =
+  SEPARATION_LABEL_WIDTH + LABEL_GAP + SEPARATION_MATERIALS.length * SEPARATION_CELL;
+
+/** Height of the separation section: the captions, and a row per Faction. */
+const SEPARATION_HEIGHT = SEPARATION_CAPTION_HEIGHT + SEPARATION_FACTIONS.length * SEPARATION_CELL;
+
+/** The figure rows: one per soldier of the roster and per direction, then the standards. */
+const FIGURE_ROWS = FIGURE_NAMES.length * FIGURE_FACINGS.length + FIGURE_FACTIONS.length;
 
 /** What every figure column's caption says, so a column is as wide as its own name. */
 const FIGURE_CAPTIONS: readonly string[] = FIGURE_FRAMES.map(frameName);
@@ -159,23 +209,106 @@ const FIGURE_LABEL_WIDTH = Math.max(
 /** Width of the figures section: a label, and one column per frame. */
 const FIGURES_WIDTH = FIGURE_LABEL_WIDTH + LABEL_GAP + FIGURE_FRAMES.length * FIGURE_CELL_WIDTH;
 
+/**
+ * The widest figure-row label, including the two standards' names.
+ *
+ * Kept in the figure section because the standards are the insignia a block of
+ * those figures carries: a reviewer judges "can I tell the two armies apart at
+ * the lowest zoom" on the same plate as the soldiers themselves (#58).
+ */
+const FIGURE_ROW_LABEL_WIDTH = Math.max(
+  FIGURE_LABEL_WIDTH,
+  ...FIGURE_FACTIONS.map((faction) => measureText(`insignia ${faction}`)),
+);
+
 /** Height of the figures section: the frame captions, and a row per soldier and direction. */
 const FIGURES_HEIGHT = LINE_HEIGHT + 3 + FIGURE_ROWS * FIGURE_CELL_HEIGHT;
 
+/** One cell of the marks section: the largest mark, and the air around it. */
+const MARK_CELL = 12;
+
+/** The three kinds of mark, one row each. */
+const MARK_ROW_LABELS: readonly string[] = ['order', 'facing', 'condition'];
+
+/** The widest mark-row label, which is what the marks clear. */
+const MARK_LABEL_WIDTH = Math.max(...MARK_ROW_LABELS.map((label) => measureText(label)));
+
+/** Width of the marks section: a label, and the longest row of marks. */
+const MARKS_WIDTH = MARK_LABEL_WIDTH + LABEL_GAP + CONDITION_MARKS.length * MARK_CELL;
+
+/** Height of the marks section: a row for each kind. */
+const MARKS_HEIGHT = MARK_ROW_LABELS.length * MARK_CELL;
+
+/** The icons section: a label, and one cell per icon or badge. */
+const ICON_CELL = ICON_TILE + 3;
+const BADGE_CELL = BADGE_TILE + 4;
+
+/** The labels down the side of the icons section. */
+const ICON_ROW_LABELS: readonly string[] = ['commands', 'badges'];
+
+/** The widest of them, which is what the icons clear. */
+const ICON_LABEL_WIDTH = Math.max(...ICON_ROW_LABELS.map((label) => measureText(label)));
+
+/** Width of the icons section: the longer of its two rows. */
+const ICONS_WIDTH = ICON_LABEL_WIDTH + LABEL_GAP + Math.max(
+  COMMAND_ICON_NAMES.length * ICON_CELL,
+  BADGE_NAMES.length * BADGE_CELL,
+);
+
+/** Height of the icons section: a commands row and a badges row. */
+const ICONS_HEIGHT = 2 * ICON_CELL;
+
+/** The tallest place in the catalogue, which is what a settlement row is as tall as. */
+const SITE_CELL = Math.max(SITE_SIZE.settlement, SITE_SIZE.stronghold) + 4;
+
+/** Height of the settlements section: one row per specimen. */
+const SETTLEMENTS_HEIGHT = SITE_SPECIMENS.length * SITE_CELL;
+
+/** The widest specimen name, which is what the sprites clear. */
+const SITE_LABEL_WIDTH = Math.max(...SITE_SPECIMENS.map((specimen) => measureText(specimen.name)));
+
+/** Width of the settlements section: a specimen's name, and its drawing beside it. */
+const SETTLEMENTS_WIDTH = SITE_LABEL_WIDTH + LABEL_GAP + SITE_CELL;
+
+const INTERFACE_ENTRIES = [...interfaceEntries(), ...appearanceEntries()];
+const INTERFACE_HEIGHT = INTERFACE_ENTRIES.reduce((height, entry) => height + HEADING_HEIGHT + entry.buffer.height + SECTION_GAP, 0);
+const INTERFACE_WIDTH = Math.max(...INTERFACE_ENTRIES.map(({ buffer }) => buffer.width));
+
+
 /** The plate's width: the padding, and whichever section is wider. */
-export const PLATE_WIDTH =
-  PLATE_PADDING * 2 + Math.max(GLYPH_GRID_WIDTH, RAMPS_WIDTH, TERRAIN_WIDTH, FIGURES_WIDTH);
+const ART_WIDTH =
+  PLATE_PADDING * 2 +
+  Math.max(
+    GLYPH_GRID_WIDTH,
+    RAMPS_WIDTH,
+    TERRAIN_WIDTH,
+    SEPARATION_WIDTH,
+    FIGURES_WIDTH,
+    MARKS_WIDTH,
+    ICONS_WIDTH,
+    SETTLEMENTS_WIDTH,
+  );
+
+// UI plates stand beside the art: stacking them below it would exceed an
+// 8192-pixel framebuffer at 4x, making the Atelier's extraction transparent.
+export const PLATE_WIDTH = ART_WIDTH + SECTION_GAP + INTERFACE_WIDTH + PLATE_PADDING;
 
 /** The plate's height, which the sections above add up to. */
-export const PLATE_HEIGHT =
+const ART_HEIGHT =
   PLATE_PADDING * 2 +
-  HEADING_HEIGHT * 6 +
+  HEADING_HEIGHT * 10 +
   GLYPH_GRID_HEIGHT +
   RAMPS_HEIGHT +
   TERRAIN_HEIGHT +
   NODES_HEIGHT +
+  SEPARATION_HEIGHT +
   FIGURES_HEIGHT +
-  SECTION_GAP * 5;
+  MARKS_HEIGHT +
+  ICONS_HEIGHT +
+  SETTLEMENTS_HEIGHT +
+  SECTION_GAP * 9;
+
+export const PLATE_HEIGHT = Math.max(ART_HEIGHT, PLATE_PADDING * 2 + INTERFACE_HEIGHT);
 
 /**
  * Every artefact the art library generates, in a stable order: the glyphs in
@@ -196,7 +329,19 @@ export function catalogue(): readonly CatalogueEntry[] {
 
   const ramps = RAMP_NAMES.map((name) => ({ name: `ramp:${name}`, buffer: rampSwatches(name) }));
 
-  return [...glyphs, ...ramps, ...terrainEntries(), ...nodeEntries(), ...figureEntries()];
+  return [
+    ...glyphs,
+    ...ramps,
+    ...terrainEntries(),
+    ...nodeEntries(),
+    ...separationEntries(),
+    ...figureEntries(),
+    ...markerEntries(),
+    ...iconEntries(),
+    ...settlementEntries(),
+    ...interfaceEntries(),
+    ...appearanceEntries(),
+  ];
 }
 
 /** The glyph entries, which stand first in the catalogue and in the plate's grid. */
@@ -311,6 +456,43 @@ export function cataloguePlate(): PixelBuffer {
   }
   y += NODES_HEIGHT + SECTION_GAP;
 
+  blit(plate, textPlate('separation', PLATE_INK), PLATE_PADDING, y);
+  y += HEADING_HEIGHT;
+
+  // The material captions over the columns they name, then one row per Faction.
+  // Each patch is three tiles of that material with a man of that Faction standing
+  // on the middle one: the question the section answers is whether he is the thing
+  // the eye finds, and the repetition around him is half the question.
+  for (let index = 0; index < SEPARATION_MATERIALS.length; index += 1) {
+    blit(
+      plate,
+      textPlate(SEPARATION_MATERIALS[index] ?? '', PLATE_INK),
+      PLATE_PADDING + SEPARATION_LABEL_WIDTH + LABEL_GAP + index * SEPARATION_CELL,
+      y,
+    );
+  }
+  y += SEPARATION_CAPTION_HEIGHT;
+
+  for (let row = 0; row < SEPARATION_FACTIONS.length; row += 1) {
+    const faction = SEPARATION_FACTIONS[row];
+    if (faction === undefined) continue;
+
+    blit(plate, textPlate(faction, PLATE_INK), PLATE_PADDING, y + (SEPARATION_CELL - LINE_HEIGHT) / 2);
+    for (let column = 0; column < SEPARATION_MATERIALS.length; column += 1) {
+      const material = SEPARATION_MATERIALS[column];
+      if (material === undefined) continue;
+
+      blit(
+        plate,
+        separationSpecimen(material, faction),
+        PLATE_PADDING + SEPARATION_LABEL_WIDTH + LABEL_GAP + column * SEPARATION_CELL,
+        y,
+      );
+    }
+    y += SEPARATION_CELL;
+  }
+  y += SECTION_GAP;
+
   blit(plate, textPlate('figures', PLATE_INK), PLATE_PADDING, y);
   y += HEADING_HEIGHT;
 
@@ -322,7 +504,7 @@ export function cataloguePlate(): PixelBuffer {
     blit(
       plate,
       textPlate(FIGURE_CAPTIONS[index] ?? '', PLATE_INK),
-      PLATE_PADDING + FIGURE_LABEL_WIDTH + LABEL_GAP + index * FIGURE_CELL_WIDTH,
+      PLATE_PADDING + FIGURE_ROW_LABEL_WIDTH + LABEL_GAP + index * FIGURE_CELL_WIDTH,
       y,
     );
   }
@@ -345,13 +527,120 @@ export function cataloguePlate(): PixelBuffer {
         blit(
           plate,
           soldier(name, facing, frame),
-          PLATE_PADDING + FIGURE_LABEL_WIDTH + LABEL_GAP + index * FIGURE_CELL_WIDTH,
+          PLATE_PADDING + FIGURE_ROW_LABEL_WIDTH + LABEL_GAP + index * FIGURE_CELL_WIDTH,
           top,
         );
       }
 
       row += 1;
     }
+  }
+
+  // The two standards close the figure section: the insignia a block of those
+  // soldiers carries above it, in its own Faction's cloth (#58).
+  for (const faction of FIGURE_FACTIONS) {
+    const top = figuresTop + row * FIGURE_CELL_HEIGHT;
+    blit(
+      plate,
+      textPlate(`insignia ${faction}`, PLATE_INK),
+      PLATE_PADDING,
+      top + Math.floor((FIGURE_CELL_HEIGHT - LINE_HEIGHT) / 2),
+    );
+    blit(
+      plate,
+      standardInsignia(faction),
+      PLATE_PADDING + FIGURE_ROW_LABEL_WIDTH + LABEL_GAP,
+      top + Math.floor((FIGURE_CELL_HEIGHT - INSIGNIA_HEIGHT) / 2),
+    );
+    row += 1;
+  }
+
+  // The figure captions stand above the rows, so the marks section starts after
+  // the rows themselves and not after the captions' own line.
+  y = figuresTop + FIGURE_ROWS * FIGURE_CELL_HEIGHT + SECTION_GAP;
+
+  blit(plate, textPlate('marks', PLATE_INK), PLATE_PADDING, y);
+  y += HEADING_HEIGHT;
+
+  // The marks a Squad wears on the ground (#58): its destination, the way it
+  // faces, and the shapes its critical conditions take. They are drawn on the
+  // neutral plate with no ground under them, which is the question each has to
+  // answer first — a mark that only reads on grass is not a mark.
+  const markRows: readonly (readonly string[])[] = [
+    ORDER_MARK_KINDS.map((kind) => `order:${kind}`),
+    FACING_MARKS.map((facing) => `facing:${facing}`),
+    CONDITION_MARKS.map((kind) => `condition:${kind}`),
+  ];
+  for (const [rowIndex, labels] of markRows.entries()) {
+    blit(
+      plate,
+      textPlate(MARK_ROW_LABELS[rowIndex] ?? '', PLATE_INK),
+      PLATE_PADDING,
+      y + Math.floor((MARK_CELL - LINE_HEIGHT) / 2),
+    );
+    for (const [index, label] of labels.entries()) {
+      const entry = entries.find((candidate) => candidate.name === `mark:${label}`);
+      if (entry === undefined) continue;
+
+      blit(
+        plate,
+        entry.buffer,
+        PLATE_PADDING + MARK_LABEL_WIDTH + LABEL_GAP + index * MARK_CELL + Math.floor((MARK_CELL - entry.buffer.width) / 2),
+        y + Math.floor((MARK_CELL - entry.buffer.height) / 2),
+      );
+    }
+    y += MARK_CELL;
+  }
+  y += SECTION_GAP;
+
+  blit(plate, textPlate('icons', PLATE_INK), PLATE_PADDING, y);
+  y += HEADING_HEIGHT;
+
+  // A row of verbs and a row of costs, each under its own name: the command card
+  // is judged the way a marker is, on the neutral plate with no ground under it.
+  blit(plate, textPlate(ICON_ROW_LABELS[0] ?? '', PLATE_INK), PLATE_PADDING, y + (ICON_CELL - LINE_HEIGHT) / 2);
+  for (let index = 0; index < COMMAND_ICON_NAMES.length; index += 1) {
+    const name = COMMAND_ICON_NAMES[index];
+    if (name === undefined) continue;
+
+    blit(plate, commandIcon(name), PLATE_PADDING + ICON_LABEL_WIDTH + LABEL_GAP + index * ICON_CELL, y);
+  }
+  y += ICON_CELL;
+
+  blit(plate, textPlate(ICON_ROW_LABELS[1] ?? '', PLATE_INK), PLATE_PADDING, y + (ICON_CELL - LINE_HEIGHT) / 2);
+  for (let index = 0; index < BADGE_NAMES.length; index += 1) {
+    const name = BADGE_NAMES[index];
+    if (name === undefined) continue;
+
+    blit(plate, badgeIcon(name), PLATE_PADDING + ICON_LABEL_WIDTH + LABEL_GAP + index * BADGE_CELL + 2,
+      y + Math.floor((ICON_CELL - BADGE_TILE) / 2));
+  }
+  // The commands row has already been paid for; what is left of the section is the
+  // badges' own row.
+  y += ICON_CELL + SECTION_GAP;
+
+  blit(plate, textPlate('settlements', PLATE_INK), PLATE_PADDING, y);
+  y += HEADING_HEIGHT;
+
+  // One specimen per row: its name, then the drawing itself. A place is drawn on
+  // the plate with no ground under it — the question a settlement has to answer
+  // first is whether its silhouette reads on nothing, and the second is whether
+  // two of them can be told apart beside each other.
+  for (const specimen of SITE_SPECIMENS) {
+    const sprite = siteSprite(specimen.look);
+    const top = y + Math.floor((SITE_CELL - sprite.height) / 2);
+
+    blit(plate, textPlate(specimen.name, PLATE_INK), PLATE_PADDING, top + Math.floor((sprite.height - LINE_HEIGHT) / 2));
+    blit(plate, sprite, PLATE_PADDING + SITE_LABEL_WIDTH + LABEL_GAP, top);
+    y += SITE_CELL;
+  }
+
+  y = PLATE_PADDING;
+  for (const entry of INTERFACE_ENTRIES) {
+    blit(plate, textPlate(entry.name, PLATE_INK), ART_WIDTH + SECTION_GAP, y);
+    y += HEADING_HEIGHT;
+    blit(plate, entry.buffer, ART_WIDTH + SECTION_GAP, y);
+    y += entry.buffer.height + SECTION_GAP;
   }
 
   return plate;

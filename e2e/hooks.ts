@@ -2,13 +2,15 @@ import { expect, type Page } from '@playwright/test';
 import type { Rgba } from '../src/art/pixel-buffer';
 import type { AtelierLayout } from '../src/render/atelier-layout';
 import type { ViewState } from '../src/render/boot';
-import type { HudModel, Rect, RowRect, Selection } from '../src/ui/hud';
-import type { GameSnapshot, SquadReport } from '../src/render/game';
+import type { HudLayout, HudModel, Rect, RowRect, Selection } from '../src/ui/hud';
+import type { GameSnapshot, SiteReport, SquadIndicator, SquadReport } from '../src/render/game';
 import type { MatchResult } from '../src/sim/driver';
 import type { Selection as PlayerSelection } from '../src/input/selection';
 import type { Command } from '../src/sim/command';
 import type { LoggedCommand } from '../src/sim/replay';
 import type { Knowledge } from '../src/sim/fog';
+import type { Notice } from '../src/ui/conditions';
+import { DEFAULT_UI_PREFERENCES, UI_PREFERENCES_KEY } from '../src/ui/preferences';
 
 /**
  * Reading the page's debug hooks from a test.
@@ -28,6 +30,24 @@ import type { Knowledge } from '../src/sim/fog';
 export type HookName = 'view' | 'atelier';
 
 /**
+ * Marks the first-entry guide as already read, as a returning Player's browser has it.
+ *
+ * The guide opens paused on a fresh profile (U8, Q11), which is the right first
+ * entry and the wrong premise for a spec about terrain, a settlement or a mark.
+ * A spec that is not about the guide says so once, here, instead of dismissing it
+ * in every scene.
+ */
+export async function dismissFirstEntry(page: Page): Promise<void> {
+  await page.addInitScript(({ key, preferences }) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(preferences));
+    } catch {
+      // Storage is optional; a spec without it still plays.
+    }
+  }, { key: UI_PREFERENCES_KEY, preferences: { ...DEFAULT_UI_PREFERENCES, guideDismissed: true } });
+}
+
+/**
  * Opens the game page and waits for it, optionally with the clock stopped.
  *
  * A test that steps the Match wants the loop stopped first, so that one tick is
@@ -36,7 +56,7 @@ export type HookName = 'view' | 'atelier';
  * so no spec invents its own idea of what "booted" means.
  */
 export async function bootGame(page: Page, options: { paused?: boolean } = {}): Promise<void> {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
   if (options.paused === true) {
@@ -101,6 +121,16 @@ export async function hud(page: Page): Promise<HudModel> {
     if (game === null) throw new Error('the page published no game hooks');
 
     return game.hud();
+  });
+}
+
+/** The whole HUD, placed: every rectangle the renderer drew and the hit test reads (#58). */
+export async function hudLayout(page: Page): Promise<HudLayout> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.hudLayout();
   });
 }
 
@@ -199,6 +229,54 @@ export async function groupOf(page: Page, index: number): Promise<readonly numbe
   }, index);
 }
 
+/**
+ * Every place the Faction may see, with the rectangle each is drawn in (U6).
+ *
+ * The page's own list, not a recomputation: what a test reads here is what the
+ * settlement layer was handed, so a click the test makes at one of these rectangles
+ * is a click on what the page drew.
+ */
+export async function sites(page: Page): Promise<readonly SiteReport[]> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.sites();
+  });
+}
+
+/** The current-Match notice journal, as the page holds it (#58). */
+export async function notices(page: Page): Promise<readonly Notice[]> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.notices();
+  });
+}
+
+/** What the theatre annotates about each Squad (#58). */
+export async function indicators(page: Page): Promise<readonly SquadIndicator[]> {
+  return page.evaluate(() => {
+    const game = window.__SPQR.game;
+    if (game === null) throw new Error('the page published no game hooks');
+
+    return game.indicators();
+  });
+}
+
+/** Centres the place a notice names, as clicking its line does (#58). */
+export async function centerNotice(page: Page, id: string): Promise<boolean> {
+  return page.evaluate((notice) => window.__SPQR.game?.centerNotice(notice) ?? false, id);
+}
+
+/** Turns the settlements' lens on or off, as the theatre pixel comparisons need. */
+export async function showSettlements(page: Page, visible: boolean): Promise<void> {
+  await page.evaluate((show) => {
+    window.__SPQR.game?.showSettlements(show);
+  }, visible);
+}
+
 /** The Match's tick, which is what a pause or a fast-forward is measured in. */
 export async function tickOf(page: Page): Promise<number> {
   return page.evaluate(() => {
@@ -223,6 +301,35 @@ export async function state(page: Page): Promise<GameSnapshot> {
 
     return game.state();
   });
+}
+
+/**
+ * Whether a screen point falls on a rectangle the interface covers.
+ *
+ * Three specs ask it of `hudRects` — is this theatre pixel hidden behind a panel —
+ * and the answer has to be the same in all of them, so the predicate lives here
+ * rather than once per file.
+ */
+export function covers(rect: Rect, x: number, y: number): boolean {
+  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
+}
+
+/**
+ * Presses the middle of an interface rectangle, as a pointer does.
+ *
+ * The canvas is not at the page's origin, so a rectangle the HUD publishes in canvas
+ * pixels is offset by the canvas's own box before the click: this is the one place
+ * that offset is applied, which is what makes "press the button the page drew" the
+ * same sentence in every spec that does it.
+ */
+export async function press(page: Page, rect: Rect): Promise<void> {
+  const box = await page.locator('#app canvas').boundingBox();
+  if (box === null) throw new Error('the page has no canvas');
+
+  await page.mouse.click(
+    box.x + rect.x + Math.floor(rect.width / 2),
+    box.y + rect.y + Math.floor(rect.height / 2),
+  );
 }
 
 /** Plays the Match to its end without waiting for wall time, and says how it ended. */

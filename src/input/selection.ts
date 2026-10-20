@@ -45,26 +45,46 @@ export interface PickRect {
   readonly height: number;
 }
 
-/** A Squad, as far as picking is concerned: where it is drawn, and how near the front it is. */
+/**
+ * Something on the map a click can land on: a Squad, or a settlement (ticket U6).
+ *
+ * Both are handed to this module in the same shape, because a Player's click is one
+ * gesture whatever it lands on: the rectangle it is drawn in, how near the front of
+ * the picture it is, and what picking it means.
+ */
 export interface Pickable {
-  /** The Squad id an order would name. */
+  /** What a click selects: the men, or a settlement's panel. */
+  readonly kind: 'squad' | 'settlement';
+
+  /** The id an order or a panel would name. */
   readonly id: number;
 
   /** Where it is drawn, in theatre pixels. */
   readonly rect: PickRect;
 
   /**
-   * How far down the screen the Squad *stands* — the tile row its block is
-   * drawn at, which is the key the renderer sorts blocks by.
+   * How far down the screen it *stands* — the tile row it is drawn from, which is
+   * the key the renderer sorts it by.
    *
    * Not derived from `rect`: a block's rectangle is its whole drawn extent, and
    * which way that extent grows depends on where the Squad is facing (`render/
-   * squads.ts` anchors it by its front rank). The tile row is the thing both
-   * sides can agree on without one of them guessing at the other's arithmetic —
-   * the renderer draws the larger row in front, and the pick takes the larger
-   * row.
+   * squads.ts` anchors it by its front rank), and a place's rectangle is drawn
+   * round its tile rather than up from it. The tile row is the thing both sides can
+   * agree on without one of them guessing at the other's arithmetic — the renderer
+   * draws the larger row in front, and the pick takes the larger row.
    */
   readonly depth: number;
+
+  /**
+   * Which drawing the thing belongs to, where two drawings overlap.
+   *
+   * The map is drawn in layers — the theatre, the places on it, the fog, the dead,
+   * the men (`render/boot.ts` and the two layers) — and the layer a thing is drawn
+   * in decides which of two overlapping things a Player can see. A pick has to agree
+   * with that or it would select what nobody can see: the men stand over the places
+   * they are in, so a Squad sorts above a settlement whatever rows the two are on.
+   */
+  readonly layer: number;
 }
 
 /** A point in theatre pixels. */
@@ -113,7 +133,7 @@ export function selectAt(
   point: PickPoint,
   additive = false,
 ): Selection {
-  const hit = frontmost(pickables.filter((squad) => contains(squad.rect, point)));
+  const hit = pickableAt(pickables, point);
 
   if (hit === null) {
     // A click on bare ground clears the selection, unless it was additive: a
@@ -121,7 +141,22 @@ export function selectAt(
     return additive ? selection : NOTHING_SELECTED;
   }
 
+  // A place is one selection and not a set: picking a settlement opens its panel
+  // and puts the men down, and a shift adds nothing to a wall.
+  if (hit.kind === 'settlement') return selectSettlement(hit.id);
+
   return { squads: toggled(selection.squads, hit.id, additive), settlement: null };
+}
+
+/**
+ * The thing drawn in front at a point, or `null` where nothing is.
+ *
+ * One rule, used twice: by a click (`selectAt`) and by an armed action asking which
+ * place a Player has aimed at (`render/game.ts`). Two implementations of "which one
+ * did the Player mean" would be one more than a Player can see.
+ */
+export function pickableAt(pickables: readonly Pickable[], point: PickPoint): Pickable | null {
+  return frontmost(pickables.filter((pickable) => contains(pickable.rect, point)));
 }
 
 /**
@@ -139,7 +174,11 @@ export function selectIn(
   box: PickRect,
   additive = false,
 ): Selection {
-  const touched = pickables.filter((squad) => overlaps(squad.rect, box)).map((squad) => squad.id);
+  // A dragged box is a gesture about men: it picks every Squad it touches and
+  // leaves a settlement's panel to a click on the place itself.
+  const touched = pickables
+    .filter((squad) => squad.kind === 'squad' && overlaps(squad.rect, box))
+    .map((squad) => squad.id);
 
   if (touched.length === 0) return additive ? selection : NOTHING_SELECTED;
 
@@ -169,18 +208,22 @@ export function boxBetween(from: PickPoint, to: PickPoint): PickRect {
  *
  * A Squad can leave the field — a broken Squad deserts (B6), a destroyed one is
  * gone (C3) — and a selection that still named it would give an order to a man
- * who is not there. Pruning happens where an Observation is read, which is the
- * one moment the Player's memory can be checked against the world.
+ * who is not there. Pruning happens where an Observation is read, which is the one
+ * moment the Player's memory can be checked against the world.
+ *
+ * A **settlement is not pruned**. A place on the map does not leave the field the
+ * way a Squad does: it can change hands, and what the panel can say about it then is
+ * the interface's question (`ui/hud.ts` asks its own, against the places the Faction
+ * knows), not the Controller's. A Controller that dropped the place the moment it
+ * stopped being the Faction's own would close the panel of the enemy Stronghold a
+ * Player had just clicked (#57).
  */
-export function stillHeld(selection: Selection, held: readonly number[], settlements: readonly number[]): Selection {
+export function stillHeld(selection: Selection, held: readonly number[]): Selection {
   const squads = selection.squads.filter((id) => held.includes(id));
-  const settlement = selection.settlement !== null && settlements.includes(selection.settlement)
-    ? selection.settlement
-    : null;
 
-  if (squads.length === selection.squads.length && settlement === selection.settlement) return selection;
+  if (squads.length === selection.squads.length) return selection;
 
-  return { squads, settlement };
+  return { squads, settlement: selection.settlement };
 }
 
 /** Whether a rectangle holds a point. A zero-sized box holds nothing; a click is one pixel. */
@@ -208,9 +251,9 @@ function overlaps(left: PickRect, right: PickRect): boolean {
 }
 
 /**
- * The Squad drawn in front of the others: the one standing on the later tile
- * row, which is the one whose men are painted last, with the id breaking a tie
- * so the answer is stable.
+ * The thing drawn in front of the others: the one in the later-drawn layer, then
+ * the one standing on the later tile row, with the id breaking a tie so the answer
+ * never depends on the order a list happened to arrive in.
  */
 function frontmost(candidates: readonly Pickable[]): Pickable | null {
   let best: Pickable | null = null;
@@ -221,10 +264,17 @@ function frontmost(candidates: readonly Pickable[]): Pickable | null {
       continue;
     }
 
-    if (candidate.depth > best.depth || (candidate.depth === best.depth && candidate.id > best.id)) best = candidate;
+    if (inFrontOf(candidate, best)) best = candidate;
   }
 
   return best;
+}
+
+/** Whether one thing is drawn in front of another: layer first, then the row, then the id. */
+function inFrontOf(candidate: Pickable, best: Pickable): boolean {
+  if (candidate.layer !== best.layer) return candidate.layer > best.layer;
+
+  return candidate.depth > best.depth || (candidate.depth === best.depth && candidate.id > best.id);
 }
 
 /** A Squad added to a list, or taken out of it when it was already there. */

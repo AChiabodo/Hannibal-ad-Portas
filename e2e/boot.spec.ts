@@ -8,10 +8,11 @@ import type { ViewState } from '../src/render/boot';
 import { renderFog } from '../src/render/fog';
 import { VIEWED_FACTION, DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
 import { renderTerrain, THEATRE_PIXELS, tilePixel } from '../src/render/terrain';
+import { siteSprite } from '../src/art/settlements';
+import { siteLook } from '../src/render/settlements';
 import { openingEyes } from '../src/render/opening';
 import { screenToStage, stageToScreen } from '../src/render/camera';
-import type { Rect } from '../src/ui/hud';
-import { describeView, hudRects, samples } from './hooks';
+import { covers, describeView, hudRects, samples, sites } from './hooks';
 
 /**
  * The theatre on screen (ticket B3).
@@ -129,23 +130,22 @@ async function expectTheatrePixels(page: Page, view: ViewState, context: string)
   expect(wrong, `${context}: mismatched pixels`).toBe(0);
 }
 
-/** Whether a screen point falls on the interface rather than on the theatre. */
-function covers(rect: Rect, x: number, y: number): boolean {
-  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
-}
-
 /** Boots the page and waits for the hooks, answering with what the renderer reported. */
 async function boot(page: Page): Promise<SpqrDebugHooks['boot'] & { readonly booted: true }> {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
   const report: SpqrDebugHooks['boot'] = await page.evaluate(() => window.__SPQR.boot);
   if (!report.booted) throw new Error(`boot failed: ${report.error}`);
 
-  // C2 puts an army on the map, and these tests are about the map: the men are
-  // hidden with the page's own lens, so what is compared is the theatre and the
-  // fog the generators produced and not a hundred soldiers standing on it.
-  await page.evaluate(() => window.__SPQR.game?.showSquads(false));
+  // C2 puts an army on the map and U6 puts the settlements on it, and these tests
+  // are about the map: both are hidden with the page's own lenses, so what is
+  // compared is the theatre and the fog the generators produced and not the men
+  // standing on it or the towns drawn over it.
+  await page.evaluate(() => {
+    window.__SPQR.game?.showSquads(false);
+    window.__SPQR.game?.showSettlements(false);
+  });
 
   return report;
 }
@@ -208,10 +208,23 @@ test('boots in a real browser and draws the generated theatre through software W
   // inside the theatre's edges (B3's clamp), instead of the middle of the map.
   expect(view.camera).toEqual(openingCamera());
 
-  // The centre pixel of the frame is the theatre pixel the camera says is there.
+  // The centre pixel of the frame is the theatre pixel the camera says is there —
+  // or, where a settlement stands on that pixel, the settlement's own (#57: the
+  // camera opens on the Faction's Stronghold, which is a structure on the map).
   const centre = { x: Math.floor(VIEWPORT_WIDTH / 2), y: Math.floor(VIEWPORT_HEIGHT / 2) };
   const stageCentre = screenToStage(view.camera, centre.x, centre.y);
-  expect(report.render.pixel).toEqual(pixelAt(THEATRE, stageCentre.x, stageCentre.y));
+  const standing = await sites(page);
+  const under = standing.find((site) => stageCentre.x >= site.rect.x && stageCentre.x < site.rect.x + site.rect.width
+    && stageCentre.y >= site.rect.y && stageCentre.y < site.rect.y + site.rect.height);
+  const expected = under === undefined
+    ? pixelAt(THEATRE, stageCentre.x, stageCentre.y)
+    : pixelAt(
+      siteSprite(siteLook(under)),
+      stageCentre.x - under.rect.x,
+      stageCentre.y - under.rect.y,
+    );
+  expect(report.render.pixel).toEqual(expected);
+  expect(under?.kind, 'the boot camera opens on the Stronghold').toBe('stronghold');
 
   await expect(page.locator('#app canvas')).toHaveCount(1);
   expect(pageErrors).toEqual([]);

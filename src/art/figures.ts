@@ -434,7 +434,83 @@ export function figureEntries(): readonly { readonly name: string; readonly buff
     }
   }
 
+  // The Faction's standard travels with the figure section because it is the
+  // insignia a block of those figures carries, and because it is judged the same
+  // way: a shape first, and the cloth second (#58).
+  for (const faction of FIGURE_FACTIONS) {
+    entries.push({ name: `insignia:${faction}`, buffer: standardInsignia(faction) });
+  }
+
   return entries;
+}
+
+/** How wide a Faction's standard is drawn, in pixels. */
+export const INSIGNIA_WIDTH = 6;
+
+/** How tall it is drawn: a pole, and the cloth above the men's heads. */
+export const INSIGNIA_HEIGHT = 13;
+
+/** The standards already drawn: a block asks for its Faction's on every redraw. */
+const STANDARDS = new Map<FigureFaction, PixelBuffer>();
+
+/**
+ * The standard a Squad of a Faction carries, drawn from the Faction's own cloth.
+ *
+ * This is the ticket's **restrained insignia**: the cloth colour already says
+ * which Faction a block belongs to, but a mass of overlapping shields and
+ * helmets hides most of it. A standard stands above the block, so the colour it
+ * carries is never covered by the men it marks — and the two standards differ in
+ * **silhouette** as well as colour, because that is the rule every other mark in
+ * this library follows:
+ *
+ * - **Rome's** is a rectangle of cloth on a bronze pole, with the aquila
+ *   abstracted to a bronze bar under a raised centre;
+ * - **Carthage's** is a swallow-tailed pennant, with the Tanit sign abstracted to
+ *   a bar under a dot in the darker cloth.
+ *
+ * The standard is drawn *behind* the men (`render/squad-layer.ts` sorts it under
+ * every block), so it reads as a thing carried at the back of the formation
+ * rather than as a figure in it.
+ */
+export function standardInsignia(faction: FigureFaction): PixelBuffer {
+  const known = STANDARDS.get(faction);
+  if (known !== undefined) return known;
+
+  const palette = PALETTES[faction];
+  if (palette === undefined) throw new RangeError(`"${String(faction)}" is not a Faction's palette`);
+
+  const standard = createPixelBuffer(INSIGNIA_WIDTH, INSIGNIA_HEIGHT);
+
+  // The pole first, so the cloth is drawn over it: a finial above the cloth,
+  // and the shaft running down behind the men.
+  fillRect(standard, 1, 1, 1, 11, palette.shaft);
+  setPixel(standard, 1, 0, palette.metalLit);
+  setPixel(standard, 1, 12, palette.metal);
+
+  if (faction === 'rome') {
+    // A rectangle of cloth, trimmed in ink, with the aquila's bar across it.
+    fillRect(standard, 2, 1, 4, 6, palette.outline);
+    fillRect(standard, 2, 2, 4, 4, palette.cloth);
+    fillRect(standard, 2, 4, 4, 1, palette.metalLit);
+    setPixel(standard, 3, 3, palette.metalLit);
+    setPixel(standard, 4, 3, palette.metalLit);
+  } else {
+    // A pennant that tapers to a tail: the silhouette is not Rome's rectangle
+    // even in greyscale, which is what the two standards are recognised by at the
+    // lowest zoom.
+    fillRect(standard, 2, 1, 4, 4, palette.outline);
+    fillRect(standard, 2, 2, 4, 2, palette.cloth);
+    fillRect(standard, 3, 5, 2, 2, palette.outline);
+    fillRect(standard, 4, 7, 1, 2, palette.outline);
+    // The Tanit sign: a bar under a dot, in the darker cloth.
+    fillRect(standard, 3, 3, 2, 1, palette.clothDark);
+    setPixel(standard, 3, 2, palette.clothDark);
+    setPixel(standard, 4, 2, palette.clothDark);
+  }
+
+  STANDARDS.set(faction, standard);
+
+  return standard;
 }
 
 /** Draws one figure, mirroring the two views that are not authored. */

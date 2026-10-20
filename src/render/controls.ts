@@ -25,8 +25,16 @@
  * | `l` / `c` | hold a `line` / a `column` |
  * | ctrl (or ⌘) + digit | bind the picked Squads to that control group |
  * | digit | pick the Squads that group holds |
- * | escape | drop the picked set, or the order being armed |
+ * | escape | cancel the action being armed, or else drop the picked set |
  * | space | pause and resume |
+ *
+ * ## One armed action, whoever armed it
+ *
+ * The armed action is the **page's**, not this module's: a button, a shortcut and
+ * the classic `a` all call the same `perform`, and the page answers a click with
+ * whatever it has armed. That is what #55's "buttons and existing shortcuts use
+ * one submission/targeting path" means in practice — there is one piece of state
+ * and one place it is read, so no gesture can be the only way to do something.
  *
  * ## Why the marquee is a buffer
  *
@@ -43,7 +51,6 @@
  * leaves a camera move behind it; a box leaves a selection.
  */
 import { Container, Sprite } from 'pixi.js';
-import type { Formation } from '../sim/command.ts';
 import type { HudLayout, Rect } from '../ui/hud.ts';
 import { marquee } from '../ui/marquee.ts';
 import { textureOf, type Stage } from './stage.ts';
@@ -54,6 +61,12 @@ import { textureOf, type Stage } from './stage.ts';
  * the page can be read in either order.
  */
 export interface ControlTarget {
+  readonly hoverAt?: (x: number, y: number) => void;
+  readonly interfaceKey?: (key: string, reverse: boolean) => boolean;
+  readonly navigateMinimap: (x: number, y: number) => boolean;
+  readonly doubleClickAt: (x: number, y: number) => void;
+  readonly centerSelection: () => void;
+  readonly toggleNavigator: () => void;
   /** The camera's magnification, for turning screen pixels into stage pixels. */
   readonly zoom: () => number;
   /** Moves the camera by whole stage pixels. */
@@ -66,10 +79,14 @@ export interface ControlTarget {
   readonly selectIn: (fromX: number, fromY: number, toX: number, toY: number, additive: boolean) => void;
   /** Gives the picked Squads a move or an attack-move to a screen point. */
   readonly orderAt: (kind: 'move' | 'attackMove', screenX: number, screenY: number) => boolean;
-  /** Gives the picked Squads an order that needs no map point. */
-  readonly orderNow: (kind: 'hold' | 'withdraw') => boolean;
-  /** Sets the shape the picked Squads hold. */
-  readonly setFormation: (shape: Formation) => boolean;
+  /** Performs a contextual action by its stable id: arms it, or submits it. */
+  readonly perform: (orderId: string) => boolean;
+  /** Whether an action is waiting for a target. */
+  readonly targeting: () => string | null;
+  /** Completes the armed action at a screen point. */
+  readonly targetAt: (screenX: number, screenY: number) => boolean;
+  /** Cancels an armed action, and says whether there was one. */
+  readonly cancelTargeting: () => boolean;
   /** Binds the picked Squads to a control group. */
   readonly bindGroup: (index: number) => boolean;
   /** Picks the Squads a control group holds. */
@@ -80,7 +97,9 @@ export interface ControlTarget {
   readonly togglePause: () => void;
   /** The geometry used for HUD clicks, wheel and page keys. */
   readonly hudLayout: () => HudLayout;
-  readonly scrollHud: (region: 'list' | 'detail', lines: number) => void;
+  /** Includes session chrome, so an armed map order cannot swallow a menu click. */
+  readonly hudRects?: () => readonly Rect[];
+  readonly scrollHud: (region: 'list' | 'detail' | 'commands' | 'notices', lines: number) => void;
 }
 
 /** How far a press must travel, in screen pixels, before it is a drag and not a click. */
@@ -111,11 +130,13 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
   stage.root.addChild(overlay);
 
   let marqueeSprite: Sprite | null = null;
+  stage.canvas.addEventListener('pointerleave', () => target.hoverAt?.(-1, -1));
   let press: Press | null = null;
-  let armed: 'attackMove' | null = null;
+  let minimapPress = false;
+  let interfacePress = false;
 
   const canvas = stage.canvas;
-  const local = (event: PointerEvent | WheelEvent): { readonly x: number; readonly y: number } => {
+  const local = (event: MouseEvent): { readonly x: number; readonly y: number } => {
     const rect = canvas.getBoundingClientRect();
 
     return { x: Math.floor(event.clientX - rect.left), y: Math.floor(event.clientY - rect.top) };
@@ -126,13 +147,26 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
   canvas.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 && event.button !== 2) return;
 
+    const at = local(event);
+    const layout = target.hudLayout();
+    minimapPress = contains(layout.minimap, at.x, at.y);
+    interfacePress = (target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap]).some((rect) => contains(rect, at.x, at.y));
+    if (minimapPress) target.navigateMinimap(at.x, at.y);
     press = { pointerId: event.pointerId, button: event.button, fromX: event.clientX, fromY: event.clientY, appliedX: 0, appliedY: 0 };
     canvas.setPointerCapture(event.pointerId);
   });
 
   canvas.addEventListener('pointermove', (event) => {
+    if (press === null) { const at = local(event); target.hoverAt?.(at.x, at.y); }
     if (press === null || event.pointerId !== press.pointerId) return;
 
+    if (minimapPress) {
+      const at = local(event);
+      const rect = target.hudLayout().minimap;
+      target.navigateMinimap(Math.max(rect.x, Math.min(rect.x + rect.width - 1, at.x)), Math.max(rect.y, Math.min(rect.y + rect.height - 1, at.y)));
+      return;
+    }
+    if (interfacePress) return;
     if (press.button === 2) {
       pan(event, press, target);
       return;
@@ -151,6 +185,11 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
     const finished = press;
     press = null;
 
+    if (minimapPress) { minimapPress = false; return; }
+    if (interfacePress) {
+      if (finished.button === 0) { const at = local(event); target.selectAt(at.x, at.y, event.shiftKey); }
+      return;
+    }
     if (finished.button === 2) {
       // A right press that panned is a pan; one that did not is an order. The
       // shift makes it an attack-move, which is the same choice `a` arms — and
@@ -158,8 +197,8 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
       // what the next click means.
       if (finished.appliedX === 0 && finished.appliedY === 0) {
         const at = local(event);
-        target.orderAt(armed ?? (event.shiftKey ? 'attackMove' : 'move'), at.x, at.y);
-        armed = null;
+        if (target.targeting() !== null) target.targetAt(at.x, at.y);
+        else target.orderAt(event.shiftKey ? 'attackMove' : 'move', at.x, at.y);
       }
       return;
     }
@@ -181,15 +220,17 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
     }
 
     const layout = target.hudLayout();
-    const overHud = [layout.bar, layout.list, layout.detail, layout.minimap].some((rect) => contains(rect, to.x, to.y));
-    if (armed !== null && !overHud) {
-      target.orderAt(armed, to.x, to.y);
-      armed = null;
+    const overHud = (target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap])
+      .some((rect) => contains(rect, to.x, to.y));
+    if (target.targeting() !== null && !overHud) {
+      target.targetAt(to.x, to.y);
       return;
     }
 
     target.selectAt(to.x, to.y, additive);
   });
+
+  canvas.addEventListener('dblclick', (event) => { const at = local(event); target.doubleClickAt(at.x, at.y); });
 
   canvas.addEventListener('pointercancel', () => {
     clearMarquee(overlay, marqueeSprite);
@@ -205,12 +246,18 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
       const at = local(event);
       if (event.deltaY === 0) return;
       const layout = target.hudLayout();
+      const topmost = [...(target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap])].reverse()
+        .find((rect) => contains(rect, at.x, at.y));
       for (const region of ['list', 'detail'] as const) {
+        if (topmost && (topmost.x !== layout[region].x || topmost.y !== layout[region].y ||
+          topmost.width !== layout[region].width || topmost.height !== layout[region].height)) continue;
         if (contains(layout[region], at.x, at.y)) {
-          target.scrollHud(region, event.deltaY < 0 ? -3 : 3);
+          const cardX = Math.min(...layout.commands.map(({ rect }) => rect.x), ...layout.tabs.map(({ rect }) => rect.x));
+          target.scrollHud(region === 'detail' && at.x >= cardX ? 'commands' : region, event.deltaY < 0 ? -3 : 3);
           return;
         }
       }
+      if ((target.hudRects?.() ?? []).some((rect) => contains(rect, at.x, at.y))) return;
       const zoom = target.zoom() + (event.deltaY < 0 ? WHEEL_ZOOM : -WHEEL_ZOOM);
       target.zoomAbout(zoom, at.x, at.y);
     },
@@ -222,6 +269,10 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
     // the page has one today, and the day it does this is already right.
     const element = event.target;
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return;
+    if (target.interfaceKey?.(event.key, event.shiftKey)) {
+      event.preventDefault();
+      return;
+    }
 
     const digit = Number(event.key);
     if (Number.isInteger(digit) && digit >= 1 && digit <= 9) {
@@ -238,29 +289,38 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
           (event.key === 'PageUp' ? -1 : 1) * (event.shiftKey ? target.hudLayout().detailScroll.page : target.hudLayout().listScroll.page));
         event.preventDefault();
         break;
+      case 'f':
+      case 'F':
+        target.centerSelection();
+        break;
+      case 'Tab':
+        target.toggleNavigator();
+        event.preventDefault();
+        break;
       case 'a':
       case 'A':
-        armed = 'attackMove';
+        target.perform('attackMove');
         break;
       case 's':
       case 'S':
-        target.orderNow('hold');
+        target.perform('hold');
         break;
       case 'w':
       case 'W':
-        target.orderNow('withdraw');
+        target.perform('withdraw');
         break;
       case 'l':
       case 'L':
-        target.setFormation('line');
+        target.perform('formation.line');
         break;
       case 'c':
       case 'C':
-        target.setFormation('column');
+        target.perform('formation.column');
         break;
       case 'Escape':
-        if (armed !== null) armed = null;
-        else target.clearSelection();
+        // Escape cancels the action being aimed, and only then the selection: a
+        // Command already submitted is not a target and is never taken back.
+        if (!target.cancelTargeting()) target.clearSelection();
         break;
       case ' ':
         target.togglePause();

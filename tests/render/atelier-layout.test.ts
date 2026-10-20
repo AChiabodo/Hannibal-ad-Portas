@@ -9,10 +9,17 @@
 import { describe, expect, it } from 'vitest';
 import { ATELIER_ZOOMS, atelierLayout } from '../../src/render/atelier-layout';
 import { MAX_ZOOM } from '../../src/render/camera';
+import { cataloguePlate } from '../../src/art/catalogue';
 
 const PLATE = { width: 136, height: 191 };
 
 describe('the atelier layout', () => {
+  it('keeps the complete current catalogue inside an 8192-pixel framebuffer at every zoom', () => {
+    const layout = atelierLayout(cataloguePlate());
+    expect(layout.width).toBeLessThanOrEqual(8192);
+    expect(layout.height).toBeLessThanOrEqual(8192);
+  });
+
   it('gives every zoom level a column exactly that big, left to right', () => {
     const layout = atelierLayout(PLATE, [1, 2, 4]);
 

@@ -112,7 +112,7 @@ describe('the minimap plate', () => {
 
   it('stands a settlement in the colour of whoever holds it', () => {
     const [rome, carthage] = MAP.strongholds;
-    const plate = minimapPlate(MAP, ALL_SEEN, null);
+    const plate = minimapPlate(MAP, ALL_SEEN, null, [...MAP.strongholds.map((site, owner) => ({ ...site, owner })), ...MAP.settlements.map((site) => ({ ...site, owner: -1 }))]);
 
     const romeAt = minimapPointOf(rome.x, rome.y);
     const carthageAt = minimapPointOf(carthage.x, carthage.y);
@@ -160,7 +160,7 @@ describe('the minimap obeys the fog', () => {
     expect(pixelAt(minimapPlate(MAP, far, null), at.x, at.y)).toEqual(BASE.night);
 
     const looking = watching({ x: rome.x, y: rome.y, radius: 3 });
-    expect(pixelAt(minimapPlate(MAP, looking, null), at.x, at.y)).toEqual(settlementColour(0));
+    expect(pixelAt(minimapPlate(MAP, looking, null, [{ ...rome, owner: 0 }]), at.x, at.y)).toEqual(settlementColour(0));
   });
 
   it('dims what is remembered and shows what is in view, and never confuses the two', () => {
@@ -240,4 +240,15 @@ describe('the fog a plate is drawn through', () => {
     expect(left.terrain[tileIndex(10, 10)]).toBe(seen.terrain[tileIndex(10, 10)]);
     expect(left.visible[tileIndex(10, 10)]).toBe(0);
   });
+});
+
+it('uses current observed ownership after capture and drops ownership claims in memory', () => {
+  const site = MAP.strongholds[0];
+  const at = minimapPointOf(site.x, site.y);
+  const ownership = [{ ...site, owner: 1 }];
+  expect(pixelAt(minimapPlate(MAP, ALL_SEEN, null, ownership), at.x, at.y)).toEqual(settlementColour(1));
+  const remembered = watching({ ...site, radius: 2 }, { x: 48, y: 48, radius: 1 });
+  expect(pixelAt(minimapPlate(MAP, remembered, null, ownership), at.x, at.y))
+    .toEqual(pixelAt(minimapPlate(MAP, remembered, null, [{ ...site, owner: 0 }]), at.x, at.y));
+  expect(pixelAt(minimapPlate(MAP, createFog(), null, ownership), at.x, at.y)).toEqual(BASE.night);
 });
