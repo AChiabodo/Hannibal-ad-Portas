@@ -1,14 +1,10 @@
-import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { expect, test } from './fixtures';
+import { capture } from './evidence';
 import { hudLayout, hudModel, type HudModel } from '../src/ui/hud';
 import { economyMatchRules, observeEconomy } from '../src/sim/economy-match';
 import { musterSquad } from '../src/sim/movement';
 import { buildingCode } from '../src/content';
 import type { Faction } from '../src/sim/faction';
-
-const EVIDENCE = join(tmpdir(), 'spqr-issue52');
 
 test('an overflowing live list keeps selection through wheel, page keys, buttons and hooks', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -114,8 +110,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 108
     await page.mouse.click(box.x + initial.detail.x + 4, box.y + initial.detail.y + 2);
     expect(await page.evaluate(() => window.__SPQR.game!.selection().squads)).toEqual([1]);
     expect(await getHash()).toBe(pausedHash);
-    await mkdir(EVIDENCE, { recursive: true });
-    await page.screenshot({ path: join(EVIDENCE, `live-paused-${viewport.width}.png`) });
+    await capture(page, `live-paused-${viewport.width}`, 'issue52');
     const pause = initial.buttons.find((button) => button.action === 'pause')!;
     await page.keyboard.press('a');
     await page.mouse.click(box.x + pause.rect.x + 8, box.y + pause.rect.y + 8);
@@ -162,8 +157,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 108
           layer.panels(model, size);
           stage.render();
         }, { model, size });
-        await mkdir(EVIDENCE, { recursive: true });
-        await page.screenshot({ path: join(EVIDENCE, `${desktop ? 'desktop-' : ''}${faction}-${kind}-${viewport.width}.png`) });
+        await capture(page, `${desktop ? 'desktop-' : ''}${faction}-${kind}-${viewport.width}`, 'issue52');
       }
     });
   }

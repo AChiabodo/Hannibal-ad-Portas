@@ -3,6 +3,14 @@ name: CI
 on:
   push:
   pull_request:
+  # Visual-frame production is explicit (#64): a manual run asks for it, and the
+  # routine profiles never produce pictures.
+  workflow_dispatch:
+    inputs:
+      visual:
+        description: Produce visual frames (slow; not a gate)
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -160,8 +168,83 @@ jobs:
       - name: Guard the fences
         run: npm run guard
 
-  browser:
-    name: Headless Chromium, software WebGL
+  plan:
+    name: Which browser gate is required
+    runs-on: ubuntu-latest
+    outputs:
+      acceptance: ${{ steps.select.outputs.acceptance }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          # The selection compares the branch with its base, which needs history.
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      # The rules live in scripts/selection-rules.mjs and are unit-tested. A push
+      # and a manual run always take the complete gate; a pull request skips it
+      # only when every changed file is documentation. An empty or unreadable
+      # diff escalates, so the fail-safe direction is always more acceptance.
+      - name: Select the gate
+        id: select
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "acceptance=true" >> "$GITHUB_OUTPUT"
+            echo "${{ github.event_name }}: complete acceptance always" >&2
+          else
+            # A crashed selection escalates, exactly like an unreadable diff:
+            # an empty output would otherwise skip the gate.
+            if ! decided=$(node scripts/selection.mjs --base "${{ github.event.pull_request.base.sha }}" --github); then
+              decided="acceptance=true"
+              echo "selection failed: complete acceptance runs (fail-safe)" >&2
+            fi
+            echo "${decided:-acceptance=true}" >> "$GITHUB_OUTPUT"
+          fi
+
+  browser-smoke:
+    name: Real browser smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Chromium provisioning is separate from the 90-second smoke budget: it is
+      # an install, not a check (ticket #64).
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Boot the real entry, give one ordinary Command through a real gesture,
+      # and read the frame and the console back. No art or economy matrix.
+      - name: Smoke
+        run: npm run test:smoke
+
+      - name: Upload the Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-smoke
+          path: playwright-report/
+          retention-days: 7
+
+  browser-acceptance:
+    name: Headless Chromium, complete acceptance
+    needs: plan
+    # `false` is the only answer that skips the gate. A failed or skipped plan
+    # leaves the output empty, and an empty answer runs acceptance.
+    if: ${{ !cancelled() && needs.plan.outputs.acceptance != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out
@@ -180,14 +263,59 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       # Headless Chromium has no GPU here; --enable-unsafe-swiftshader in
-      # playwright.config.ts is what lets WebGL fall back to SwiftShader.
+      # playwright.config.ts is what lets WebGL fall back to SwiftShader. Every
+      # browser spec runs, with visual captures off: the frames are produced by
+      # the explicit visual profile, not by the gate.
       - name: End-to-end
-        run: npm run test:e2e
+        run: npm run test:accept
 
       - name: Upload the Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-acceptance
+          path: playwright-report/
+          retention-days: 7
+
+  visual-frames:
+    name: Visual frames (explicit, not a gate)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.visual }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Sequential by default: software WebGL at 1920x1080 is the slowest thing
+      # this repository runs. The same assertions as acceptance, with pictures.
+      - name: Produce the frames
+        env:
+          SPQR_VISUAL_DIR: ${{ runner.temp }}/spqr-visual
+        run: npm run test:visual
+
+      - name: Upload the frames
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: spqr-visual-frames
+          path: ${{ runner.temp }}/spqr-visual/
+          retention-days: 7
+
+      - name: Upload the Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-visual
           path: playwright-report/
           retention-days: 7

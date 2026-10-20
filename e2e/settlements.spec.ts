@@ -19,10 +19,9 @@
  * files) and are the evidence a human reviewer looks at; what the test itself
  * asserts is pixels, clicks and Commands.
  */
-import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import { capture } from './evidence';
 import { pixelAt, type Rgba } from '../src/art/pixel-buffer';
 import { siteSprite } from '../src/art/settlements';
 import { screenToStage, stageToScreen } from '../src/render/camera';
@@ -51,9 +50,6 @@ import {
   sites,
   squads,
 } from './hooks';
-
-/** Where the screenshots go: outside the repository, like the rest of the evidence. */
-const EVIDENCE = join(tmpdir(), 'spqr-issue57');
 
 /** The seed the scenes are played on: the setup page's own fixture seed. */
 const SEED = 7;
@@ -210,8 +206,6 @@ async function expectDrawn(
 test.describe('a settlement drawn on the map', () => {
   for (const faction of FACTIONS) {
     test(`${faction} draws its own Stronghold from the generator’s own pixels, at zooms 1, 2, 4 and 8`, async ({ page }) => {
-      await mkdir(EVIDENCE, { recursive: true });
-
       for (const size of RESOLUTIONS) {
         await openMatch(page, faction, size);
         await showSquads(page, false);
@@ -235,15 +229,12 @@ test.describe('a settlement drawn on the map', () => {
           expect(compared, `zoom ${String(zoom)}`).toBeGreaterThan(15);
         }
 
-        await page.screenshot({
-          path: join(EVIDENCE, `stronghold-${faction}-${String(size.width)}x${String(size.height)}.png`),
-        });
+        await capture(page, `stronghold-${faction}-${String(size.width)}x${String(size.height)}`, 'issue57');
       }
     });
   }
 
   test('picks the structure a pointer lands on, not the tile it stands on', async ({ page }) => {
-    await mkdir(EVIDENCE, { recursive: true });
     await openMatch(page, 'rome', RESOLUTIONS[0]);
     await showSquads(page, false);
     await page.evaluate(() => window.__SPQR.view?.zoomTo(1));
@@ -269,7 +260,7 @@ test.describe('a settlement drawn on the map', () => {
     // The panel and the drawing agree: the settlement clicked is the settlement described.
     expect(model.detail?.lines.length).toBeGreaterThan(3);
 
-    await page.screenshot({ path: join(EVIDENCE, 'selected-stronghold-rome.png') });
+    await capture(page, 'selected-stronghold-rome', 'issue57');
 
     // Bare ground beside the town clears the selection: the rectangle is the
     // structure's, and the ground is not part of it.
@@ -279,7 +270,6 @@ test.describe('a settlement drawn on the map', () => {
   });
 
   test('remembers a settlement it has stopped watching, and says so in words', async ({ page }) => {
-    await mkdir(EVIDENCE, { recursive: true });
     await openMatch(page, 'rome', RESOLUTIONS[0]);
     await showSquads(page, false);
 
@@ -325,7 +315,7 @@ test.describe('a settlement drawn on the map', () => {
     // photograph of the last frame (no banner, no gate, no damage — in stone).
     expect(siteSprite(siteLook(remembered!))).not.toEqual(siteSprite(siteLook({ ...remembered!, memory: 'seen' })));
 
-    await page.screenshot({ path: join(EVIDENCE, 'remembered-stronghold-rome.png') });
+    await capture(page, 'remembered-stronghold-rome', 'issue57');
 
     // Clicking it opens the settlement's panel, which says what kind of knowledge it is.
     const wall = stageToScreen(view.camera, remembered!.rect.x + 6, remembered!.rect.y + 6);
@@ -342,8 +332,6 @@ test.describe('a settlement drawn on the map', () => {
 });
 test.describe('a fortification under siege', () => {
   test('draws the damage the rules do: an assault breaks a gate on the map', async ({ page }) => {
-    await mkdir(EVIDENCE, { recursive: true });
-
     // The fortification scene (U6): the real Match, three Roman Squads at Carthage's
     // walls and nobody else on the field. Nothing about the walls is arranged — they
     // are `createSiege`'s, at their own hit points.
@@ -369,7 +357,7 @@ test.describe('a fortification under siege', () => {
       y: target!.rect.y + Math.floor(target!.rect.height / 2),
     });
 
-    await page.screenshot({ path: join(EVIDENCE, 'siege-before-rome.png') });
+    await capture(page, 'siege-before-rome', 'issue57');
 
     // The army, picked the way a Player picks it: a box drawn over the men.
     const army = await squads(page);
@@ -423,7 +411,7 @@ test.describe('a fortification under siege', () => {
     expect(art.ram === 'building' || art.ram === 'built').toBe(true);
     expect(art.gateSide).toBe('west');
 
-    await page.screenshot({ path: join(EVIDENCE, 'siege-under-the-ram-rome.png') });
+    await capture(page, 'siege-under-the-ram-rome', 'issue57');
 
     // The drawing is compared with the army out of the picture: the men are standing
     // at the walls, which is where the town is.
@@ -451,7 +439,7 @@ test.describe('a fortification under siege', () => {
     const brokenView = await describeView(page);
     const read = await expectDrawn(page, broken!, brokenView, 'a Stronghold with its gate broken');
     expect(read).toBeGreaterThan(15);
-    await page.screenshot({ path: join(EVIDENCE, 'siege-breached-rome.png') });
+    await capture(page, 'siege-breached-rome', 'issue57');
 
     // And the panel says the same thing in words, from the same front.
     await select(page, { kind: 'settlement', id: target!.id });

@@ -1,13 +1,9 @@
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
-import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { capture } from './evidence';
 import { KNOWLEDGE } from '../src/sim/fog';
 import { setupLayout } from '../src/ui/match-menu';
 import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
-
-const EVIDENCE = join(tmpdir(), 'spqr-issue53');
 
 /** Where setup puts its controls, read from the same layout the page draws. */
 const SETUP = setupLayout({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT }, {
@@ -146,10 +142,9 @@ for (const faction of ['rome', 'carthage'] as const) {
   for (const width of [1280, 1920]) {
     test(`real rules, human submission, final knowledge and bitmap controls: ${faction} at ${String(width)}`, async ({ page, spqr }) => {
       await page.setViewportSize({ width, height: width === 1280 ? 720 : 1080 });
-      await mkdir(EVIDENCE, { recursive: true });
       await page.goto('/');
       await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
-      await page.screenshot({ path: join(EVIDENCE, `setup-${String(width)}.png`) });
+      await capture(page, `setup-${String(width)}`, 'issue64');
       await openMatch(page, faction);
       expect(await page.title()).toContain('Annibale');
       const initial = await page.evaluate(() => window.__SPQR.game!.state());
@@ -166,7 +161,7 @@ for (const faction of ['rome', 'carthage'] as const) {
       const commanded = await page.evaluate(() => window.__SPQR.game!.state());
       expect(commanded.visible.squads).toHaveLength(1);
       expect(commanded.applied.every(({ command }) => command.faction === faction)).toBe(true);
-      await page.screenshot({ path: join(EVIDENCE, `${faction}-${String(width)}-construction.png`) });
+      await capture(page, `${faction}-${String(width)}-construction`, 'issue64');
       const scouted = await page.evaluate(() => {
         const game = window.__SPQR.game!;
         const snapshot = game.state();
@@ -191,7 +186,7 @@ for (const faction of ['rome', 'carthage'] as const) {
       expect(scouted.knowledge).toContain(KNOWLEDGE.unexplored);
       for (let zoom = 1; zoom <= 8; zoom += 1) {
         await page.evaluate((value) => window.__SPQR.view!.zoomTo(value), zoom);
-        await page.screenshot({ path: join(EVIDENCE, `${faction}-${String(width)}-zoom${String(zoom)}.png`) });
+        await capture(page, `${faction}-${String(width)}-zoom${String(zoom)}`, 'issue64');
       }
 
       // Compose a genuine Siege scenario through the public rules adapter, not an outcome hook.
@@ -242,7 +237,7 @@ for (const faction of ['rome', 'carthage'] as const) {
       expect(inspected.knowledge).toEqual(ended.knowledge);
       expect(await page.evaluate(() => window.__SPQR.view!.describe().inspection)).toBe(false);
       expect(inspected.knowledge).toContain(KNOWLEDGE.unexplored);
-      await page.screenshot({ path: join(EVIDENCE, `${faction}-${String(width)}-ended.png`) });
+      await capture(page, `${faction}-${String(width)}-ended`, 'issue64');
       let dialogs = 0;
       page.on('dialog', (dialog) => { dialogs += 1; void dialog.accept(); });
       await pressMenu(page, 'new');
@@ -271,8 +266,7 @@ test('the clock bound is announced persistently from the actual MatchResult', as
   const ended = await page.evaluate(() => window.__SPQR.game!.state());
   expect(ended.result).toEqual({ kind: 'clock', tick: 25200 });
   expect((await page.evaluate(() => window.__SPQR.game!.matchLayout())).lines).toContain('Conclusi i tre anni della partita');
-  await mkdir(EVIDENCE, { recursive: true });
-  await page.screenshot({ path: join(EVIDENCE, 'clock-ended.png') });
+  await capture(page, 'clock-ended', 'issue64');
   await page.keyboard.press('F2');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'match');
   expect(await page.evaluate(() => window.__SPQR.game!.configuration())).toEqual({ seed: 7, faction: 'rome', difficulty: 'centurio' });

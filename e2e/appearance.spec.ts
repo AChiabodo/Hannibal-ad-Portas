@@ -1,19 +1,22 @@
 /** U9: reproducible visual states, plus interaction checks through the public canvas. */
-import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import { capture } from './evidence';
 import { advance, hud, hudLayout, hudRects, covers, press, select, state, sites, squads, describeView, fastForward, dismissFirstEntry } from './hooks';
 import type { Rect } from '../src/ui/hud';
+import type { SiteReport } from '../src/render/game';
 
-const EVIDENCE = join(tmpdir(), 'spqr-issue62', process.env.SPQR_VISUAL_PHASE ?? 'after');
+/**
+ * Which revision the frames are of, when someone is comparing two of them.
+ * The default is the delivered revision; `SPQR_VISUAL_PHASE=before` reproduces
+ * the pre-change scenes (U9's own comparison), and every frame is then named
+ * for the revision it shows.
+ */
 const BEFORE = process.env.SPQR_VISUAL_PHASE === 'before';
 
-async function capture(page: Page, name: string): Promise<void> {
-  await mkdir(EVIDENCE, { recursive: true });
-  // Let the final Pixi render reach the browser's presented frame.
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
-  await page.screenshot({ path: join(EVIDENCE, `${name}.png`) });
+/** One frame of the visual scene. Frames are produced only by `test:visual`. */
+async function frame(page: Page, name: string): Promise<void> {
+  await capture(page, BEFORE ? `before-${name}` : name, 'issue62');
 }
 
 async function scene(page: Page, faction = 'rome'): Promise<void> {
@@ -58,6 +61,56 @@ async function revealOrder(page: Page, id: string) {
   throw new Error(`no visible economy order ${id}`);
 }
 
+/**
+ * Opens the reviewed revision at a reference resolution and lands on the
+ * command fixture, capturing the setup frame first.
+ *
+ * The two review scenes below share this opening because it is the part that is
+ * not the subject: a Player choosing a Faction and a seed, then a Match to look
+ * at. Splitting the scenes keeps each frame producer inside a test whose name
+ * says which failure a reader is looking at, which is what makes a slow visual
+ * run diagnosable (#64).
+ *
+ * The page errors it listens for are returned rather than handed in: a caller
+ * cannot forget to read them, and the two scenes do not share a mutable list.
+ */
+async function reviewScene(
+  page: Page,
+  faction: 'rome' | 'carthage',
+  width: number,
+  height: number,
+): Promise<{ readonly home: SiteReport; readonly errors: readonly string[] }> {
+  const suffix = `${faction}-${String(width)}x${String(height)}`;
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.setViewportSize({ width, height });
+  await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
+  if (faction === 'carthage') await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('62');
+  await frame(page, `setup-${suffix}`);
+
+  await scene(page, faction);
+  const home = (await sites(page)).find((site) => site.owner === faction && site.kind === 'stronghold');
+  expect(home, 'the Faction sees its Stronghold').toBeDefined();
+  if (home === undefined) throw new Error('no Stronghold');
+
+  return { home, errors };
+}
+
+/** The army ordered by distance from a settlement, which both review scenes want. */
+function armyFrom<T extends { readonly x: number; readonly y: number }>(
+  squads: readonly T[],
+  home: { readonly x: number; readonly y: number },
+): T[] {
+  return [...squads].sort(
+    (a, b) => Math.max(Math.abs(a.x - home.x), Math.abs(a.y - home.y)) - Math.max(Math.abs(b.x - home.x), Math.abs(b.y - home.y)),
+  );
+}
+
 for (const faction of ['rome', 'carthage'] as const) for (const [width, height] of [[1280, 720], [1920, 1080]] as const) {
   test(`all economy rows by pointer and keyboard ${faction} ${String(width)}`, async ({ page }) => {
     test.skip(BEFORE, 'additional functional gate for the changed economy layout');
@@ -79,7 +132,7 @@ for (const faction of ['rome', 'carthage'] as const) for (const [width, height] 
         await activateByKeyboard(page, drawn.rect);
         if (card.order.enabled) expect((await hud(page)).orders.pending, `${id} keyboard`).toBe(pending + 2);
         else expect((await hud(page)).orders.pending, `${id} stays unavailable`).toBe(pending);
-        await capture(page, `economy-${id.replace(':', '-')}-${faction}-${String(width)}x${String(height)}`);
+        await frame(page, `economy-${id.replace(':', '-')}-${faction}-${String(width)}x${String(height)}`);
         await leaveFocus(page);
       }
     }
@@ -108,31 +161,19 @@ for (const faction of ['rome', 'carthage'] as const) for (const [width, height] 
       if (stage === 'ram') expect(target.front?.ram?.built).toBe(true);
       if (stage === 'breach') expect(target.front?.breached).toBe(true);
       if (stage === 'blockade') expect(target.front?.siege).toBe('blockade');
-      await capture(page, `siege-${stage}-${faction}-${String(width)}x${String(height)}`);
+      await frame(page, `siege-${stage}-${faction}-${String(width)}x${String(height)}`);
       // The established public inspection lens lets the reviewer see the gate
       // and ram even when three field Squads overlap the walls. Same knowledge.
       await page.evaluate(() => window.__SPQR.game!.showSquads(false));
-      await capture(page, `siege-${stage}-structure-${faction}-${String(width)}x${String(height)}`);
+      await frame(page, `siege-${stage}-structure-${faction}-${String(width)}x${String(height)}`);
     }
   });
 
-  test(`review frames ${faction} ${String(width)}x${String(height)}`, async ({ page }) => {
+  test(`review frames: panels and commands ${faction} ${String(width)}x${String(height)}`, async ({ page }) => {
     test.setTimeout(120_000);
     const suffix = `${faction}-${String(width)}x${String(height)}`;
-    const errors: string[] = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.setViewportSize({ width, height });
-    await page.goto('/');
-    await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
-    if (faction === 'carthage') await page.keyboard.press('ArrowRight');
-    await page.keyboard.press('Tab');
-    await page.keyboard.press('Tab');
-    await page.keyboard.type('62');
-    await capture(page, `setup-${suffix}`);
+    const { home, errors } = await reviewScene(page, faction, width, height);
 
-    await scene(page, faction);
-    const home = (await sites(page)).find((site) => site.owner === faction && site.kind === 'stronghold')!;
     const row = (await hudLayout(page)).rows.find(({ selection }) => selection.kind === 'settlement' && selection.id === home.id)!;
     await press(page, row.rect);
     expect((await hud(page)).selected).toEqual(row.selection);
@@ -143,13 +184,13 @@ for (const faction of ['rome', 'carthage'] as const) for (const [width, height] 
       await activateByKeyboard(page, rect);
       expect((await hud(page)).tab).toBe(tab);
       await leaveFocus(page);
-      await capture(page, `${tab}-${suffix}`);
+      await frame(page, `${tab}-${suffix}`);
     }
 
-    const army = [...await squads(page)].sort((a, b) => Math.max(Math.abs(a.x - home.x), Math.abs(a.y - home.y)) - Math.max(Math.abs(b.x - home.x), Math.abs(b.y - home.y)));
+    const army = armyFrom(await squads(page), home);
     const squadRow = (await hudLayout(page)).rows.find(({ selection }) => selection.kind === 'squad' && selection.id === army[0]!.id)!;
     await press(page, squadRow.rect);
-    await capture(page, `idle-paused-${suffix}`);
+    await frame(page, `idle-paused-${suffix}`);
     const actionIds = (await hud(page)).commands.map(({ id }) => id);
     for (const id of actionIds) {
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -178,21 +219,35 @@ for (const faction of ['rome', 'carthage'] as const) for (const [width, height] 
       if (!card!.order.enabled) expect(model.orders.notice).toBeTruthy();
       else if (card!.order.target !== 'none') expect(model.orders.armed?.id).toBe(id);
       else expect(model.orders.pending).toBe(before + 2);
-      if (id === 'attackMove' || !card!.order.enabled) await capture(page, `${id === 'attackMove' ? 'armed' : 'disabled'}-${suffix}`);
+      if (id === 'attackMove' || !card!.order.enabled) await frame(page, `${id === 'attackMove' ? 'armed' : 'disabled'}-${suffix}`);
       await leaveFocus(page);
     }
-    await capture(page, `pending-${suffix}`);
+    await frame(page, `pending-${suffix}`);
     await advance(page, 1);
-    await capture(page, `applied-${suffix}`);
+    await frame(page, `applied-${suffix}`);
 
     await page.keyboard.press('Control+1');
     const chip = (await hudLayout(page)).groups.find(({ index }) => index === 1)!;
     await press(page, chip.rect);
     expect((await hud(page)).picked.map(({ id }) => id)).toEqual([army[0]!.id]);
     await activateByKeyboard(page, chip.rect);
-    await capture(page, `group-chip-${suffix}`);
+    await frame(page, `group-chip-${suffix}`);
     await leaveFocus(page);
 
+    expect((await state(page)).hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(errors).toEqual([]);
+    expect(await page.locator('vite-error-overlay').count()).toBe(0);
+  });
+
+  test(`review frames: theatre and options ${faction} ${String(width)}x${String(height)}`, async ({ page }) => {
+    test.setTimeout(120_000);
+    const suffix = `${faction}-${String(width)}x${String(height)}`;
+    const { home, errors } = await reviewScene(page, faction, width, height);
+    const army = armyFrom(await squads(page), home);
+
+    const squadRow = (await hudLayout(page)).rows.find(({ selection }) => selection.kind === 'squad' && selection.id === army[0]!.id)!;
+    await press(page, squadRow.rect);
+    expect((await hud(page)).selected).toEqual(squadRow.selection);
     await page.evaluate(() => window.__SPQR.game!.centerSelection());
     const view = await describeView(page);
     const currentArmy = await squads(page);
@@ -208,7 +263,7 @@ for (const faction of ['rome', 'carthage'] as const) for (const [width, height] 
     expect(corner, 'the selection starts in bare theatre').toBeDefined();
     await page.evaluate(([left, top, right, bottom]) => window.__SPQR.game!.selectIn(left!, top!, right!, bottom!, false), corner!);
     expect((await hud(page)).group?.squads).toBeGreaterThanOrEqual(2);
-    await capture(page, `mixed-${suffix}`);
+    await frame(page, `mixed-${suffix}`);
 
     const away = (await sites(page)).find((site) => site.owner !== faction && site.owner !== null && site.kind === 'stronghold')!;
     const besieger = [...army].sort((a, b) => Math.max(Math.abs(a.x - away.x), Math.abs(a.y - away.y)) - Math.max(Math.abs(b.x - away.x), Math.abs(b.y - away.y)))[0]!;
@@ -221,22 +276,22 @@ for (const faction of ['rome', 'carthage'] as const) for (const [width, height] 
     await select(page, { kind: 'settlement', id: away.id });
     await page.evaluate(() => window.__SPQR.game!.centerSelection());
     expect((await hud(page)).detail?.lines.some(({ label }) => label === 'Mura')).toBe(true);
-    await capture(page, `siege-${suffix}`);
+    await frame(page, `siege-${suffix}`);
     await press(page, (await hudLayout(page)).buttons.find(({ action }) => action === 'session')!.rect);
-    await capture(page, `options-${suffix}`);
+    await frame(page, `options-${suffix}`);
 
     // The requested 3x preference survives a smaller window; controls fit it.
     await page.evaluate(() => window.__SPQR.game!.setUiScale(3));
     const menu = await page.evaluate(() => window.__SPQR.game!.matchLayout());
     if (!BEFORE) for (const { rect } of menu.buttons) expect(rect.x + rect.width).toBeLessThanOrEqual(width);
-    await capture(page, `scale3-options-${suffix}`);
+    await frame(page, `scale3-options-${suffix}`);
     await page.evaluate(() => window.__SPQR.game!.setUiScale(2));
     await press(page, (await page.evaluate(() => window.__SPQR.game!.matchLayout())).buttons.find(({ action }) => action === 'close')!.rect);
     await select(page, { kind: 'squad', id: besieger.id });
     for (const zoom of [1, 2, 4, 8]) {
       await page.evaluate((zoom) => window.__SPQR.view!.zoomTo(zoom), zoom);
       await page.evaluate(() => window.__SPQR.game!.centerSelection());
-      await capture(page, `zoom${String(zoom)}-${suffix}`);
+      await frame(page, `zoom${String(zoom)}-${suffix}`);
     }
     expect((await state(page)).hash).toMatch(/^[0-9a-f]{16}$/);
     expect(errors).toEqual([]);
@@ -250,14 +305,14 @@ for (const faction of ['rome', 'carthage'] as const) for (const [width, height] 
     await page.goto(`/?play=1&seed=59&faction=${faction}&difficulty=tiro`);
     await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'match');
     expect((await hud(page)).guide?.stage).toBe('welcome');
-    await capture(page, `guide-${suffix}`);
+    await frame(page, `guide-${suffix}`);
     await page.evaluate(() => window.__SPQR.game!.setUiScale(3));
-    await capture(page, `scale3-guide-${suffix}`);
+    await frame(page, `scale3-guide-${suffix}`);
     await dismissFirstEntry(page);
     await page.reload();
     await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'match');
     await fastForward(page);
-    await capture(page, `result-${suffix}`);
+    await frame(page, `result-${suffix}`);
   });
 }
 
@@ -286,7 +341,7 @@ test('keyboard focus reaches the same settlement tab and command rectangles as t
   }
   await page.keyboard.press('Enter');
   expect((await hud(page)).orders.pending).toBe(before + 1);
-  await capture(page, 'keyboard-recruitment-rome-1280x720');
+  await frame(page, 'keyboard-recruitment-rome-1280x720');
   await page.keyboard.press('Escape');
   expect((await hud(page)).view.focus).toBeNull();
   expect((await hud(page)).selected).toEqual({ kind: 'settlement', id: 0 });

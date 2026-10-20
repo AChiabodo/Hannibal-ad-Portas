@@ -11,3 +11,12 @@ The five canonical triage roles, using default label strings (`needs-triage`, `n
 ### Domain docs
 
 Single-context: one root `GLOSSARY.md` plus `docs/adr/`. See `docs/agents/domain.md`.
+
+### Verification
+
+Use the smallest profile that covers the change, not the whole matrix:
+`npm run test:focus` (or `npm run test:focus -- <paths>`), `npm run test:smoke`,
+`npm run test:feature -- <name>`, and `npm run test:accept` before integration.
+`npm run test:visual` is explicit evidence production, not a gate. The profiles,
+their owners, the CI gates and the environment notes are in
+`docs/VERIFICATION.md`.

@@ -20,10 +20,9 @@
  * Scenes are written outside the repository (the guard forbids committed image
  * files); what the test asserts is data, clicks and pixels.
  */
-import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import { capture } from './evidence';
 import { orderMarker } from '../src/art/markers';
 import { pixelAt, type PixelBuffer, type Rgba } from '../src/art/pixel-buffer';
 import { stageToScreen } from '../src/render/camera';
@@ -55,9 +54,6 @@ const SEED = 58;
 
 /** The theatre the page generates for it: where the ground is, and where a river is. */
 const MAP = generateMap(SEED);
-
-/** Where the screenshots go: outside the repository, like the rest of the evidence. */
-const EVIDENCE = join(tmpdir(), 'spqr-issue58');
 
 /** The two reference resolutions the shared constraints ask for. */
 const RESOLUTIONS = [
@@ -253,7 +249,6 @@ test.describe('the theatre’s annotations', () => {
     // through the recruitment page and taking a screenshot: the default 30 s is
     // a frame budget's timeout, not a walkthrough's.
     test.setTimeout(120_000);
-    await mkdir(EVIDENCE, { recursive: true });
 
     for (const faction of FACTIONS) {
       for (const size of RESOLUTIONS) {
@@ -292,9 +287,7 @@ test.describe('the theatre’s annotations', () => {
         const rects = await hudRects(page);
         expect(hidden(rects, { x: up.x, y: up.y }), `${faction}: the plate is over the theatre`).toBe(false);
 
-        await page.screenshot({
-          path: join(EVIDENCE, `selected-${faction}-${String(size.width)}x${String(size.height)}.png`),
-        });
+        await capture(page, `selected-${faction}-${String(size.width)}x${String(size.height)}`, 'issue58');
       }
     }
   });
@@ -344,7 +337,7 @@ test.describe('the theatre’s annotations', () => {
       expect(drawn, `the attack-move mark at ${String(point[0])},${String(point[1])}`).toEqual(colour);
     }
 
-    await page.screenshot({ path: join(EVIDENCE, 'attack-move-rome.png') });
+    await capture(page, 'attack-move-rome', 'issue58');
   });
 
   test('a refused order becomes a notice, its line centres the place, and it never pauses the Match', async ({ page }) => {
@@ -418,12 +411,11 @@ test.describe('the theatre’s annotations', () => {
     expect((await notices(page)).find((notice) => notice.id === refusal?.id)?.lost, 'the place is still known').toBe(false);
     expect(await page.evaluate(() => window.__SPQR.game?.centerNotice('no-such-notice'))).toBe(false);
 
-    await page.screenshot({ path: join(EVIDENCE, 'notice-refusal-1920x1080.png') });
+    await capture(page, 'notice-refusal-1920x1080', 'issue58');
   });
 
   test('a tired Squad wears the condition shape, alone when unselected and with its plate when picked', async ({ page }) => {
     test.setTimeout(90_000);
-    await mkdir(EVIDENCE, { recursive: true });
     await openMatch(page, 'rome', RESOLUTIONS[0]);
 
     // Two lines, raised the way a Player raises them, so the scene also shows a
@@ -491,7 +483,12 @@ test.describe('the theatre’s annotations', () => {
 
     // March there and back until the men are tired. Arrival is not the point: a
     // Squad that stands still pays a point of Fatigue back every tick, so the
-    // order is renewed whenever the route runs out.
+    // order is renewed whenever the route runs out. The budget is ticks, not
+    // wall time: eighty was enough alone and not enough when the whole matrix ran
+    // beside it, because an order issued on one tick only starts moving on the
+    // next. The assertion below is unchanged — fifteen points of Fatigue, reached
+    // by the rules — and the extra runway keeps the scene about the rules rather
+    // than about how busy the machine was (#64).
     const home = {
       tile: { x: report.x, y: report.y },
       at: (() => {
@@ -503,7 +500,7 @@ test.describe('the theatre’s annotations', () => {
     const spots = [bound, home];
     let spot = 0;
     let marching: readonly { readonly id: number; readonly fatigue: number; readonly goal: unknown }[] = [];
-    for (let tick = 0; tick < 80; tick += 1) {
+    for (let tick = 0; tick < 160; tick += 1) {
       marching = (await squads(page)).filter((squad) => pickedIds.has(squad.id));
       if (marching.length > 0 && marching.every((squad) => squad.fatigue >= 15)) break;
       if (marching.every((squad) => squad.goal === null)) {
@@ -526,7 +523,7 @@ test.describe('the theatre’s annotations', () => {
     expect((await notices(page)).some((notice) => notice.kind === 'fatigue' && notice.persistent)).toBe(true);
     expect(await page.evaluate(() => window.__SPQR.game?.paused())).toBe(true);
 
-    await page.screenshot({ path: join(EVIDENCE, 'fatigue-plate-rome-1280x720.png') });
+    await capture(page, 'fatigue-plate-rome-1280x720', 'issue58');
 
     // Nothing picked: the troubled Squads keep one shape each and no bar.
     await select(page, null);
@@ -540,7 +537,7 @@ test.describe('the theatre’s annotations', () => {
     const still = await describeView(page);
     expect(still.camera).toEqual(view.camera);
     expect(await page.evaluate(() => window.__SPQR.game?.paused())).toBe(true);
-    await page.screenshot({ path: join(EVIDENCE, 'fatigue-pin-rome-1280x720.png') });
+    await capture(page, 'fatigue-pin-rome-1280x720', 'issue58');
   });
 
   test('the labelled estimate is on the strip, and pause and speed do not move a mark', async ({ page }) => {
@@ -585,7 +582,6 @@ test.describe('the theatre’s annotations', () => {
 
   test('the annotations survive every supported zoom, and a mark reads over remembered ground', async ({ page }) => {
     test.setTimeout(120_000);
-    await mkdir(EVIDENCE, { recursive: true });
     await openMatch(page, 'rome', RESOLUTIONS[1]);
     const id = await recruit(page, 'rome');
     const report = (await squads(page)).find((entry) => entry.id === id);
@@ -608,7 +604,7 @@ test.describe('the theatre’s annotations', () => {
       expect(block?.figures, `zoom ${String(zoom)}: still the individual soldiers`).toBe(figures);
       expect(block?.rect.width ?? 0).toBeGreaterThan(0);
       if (zoom === 1 || zoom === 8) {
-        await page.screenshot({ path: join(EVIDENCE, `zoom-${String(zoom)}-rome-1920x1080.png`) });
+        await capture(page, `zoom-${String(zoom)}-rome-1920x1080`, 'issue58');
       }
     }
 
@@ -687,7 +683,7 @@ test.describe('the theatre’s annotations', () => {
       expect(drawn, `the remembered mark at ${String(point[0])},${String(point[1])}`).toEqual(colour);
     }
 
-    await page.screenshot({ path: join(EVIDENCE, 'mark-over-remembered-ground-rome.png') });
+    await capture(page, 'mark-over-remembered-ground-rome', 'issue58');
   });
 
   test('notices name only what the Faction knows', async ({ page }) => {

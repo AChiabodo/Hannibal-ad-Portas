@@ -18,17 +18,15 @@
  *   materials through their own middles, and a screen whose ground had gone flat
  *   would fail the spread it is asked for.
  *
- * The pictures are written outside the repository (`%TEMP%\spqr-issue56`) because
- * the guard forbids committing image files: they are for a human to open beside the
- * same run's bake, which is what turns "the hashes changed" into a judgement. The
- * assertions beside them run on every pass, so the evidence and the verification are
- * the same run.
+ * The pictures are written outside the repository (`SPQR_VISUAL_DIR`, default
+ * `%TEMP%\spqr-visual`) because the guard forbids committing image files: they
+ * are for a human to open beside the same run's bake, which is what turns "the
+ * hashes changed" into a judgement. The assertions beside them run on every pass,
+ * so the evidence and the verification are the same run.
  */
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
-import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { capture } from './evidence';
 import { pixelAt, type PixelBuffer, type Rgba } from '../src/art/pixel-buffer';
 import { TERRAIN_TILE } from '../src/art/terrain';
 import { stageToScreen } from '../src/render/camera';
@@ -39,9 +37,6 @@ import { MAP_HEIGHT, MAP_WIDTH, generateMap, type MapGrid, type Site } from '../
 import type { ViewState } from '../src/render/boot';
 import type { Rect } from '../src/ui/hud';
 import { advance, covers, describeView, dismissFirstEntry, hudRects, knowledge, press, samples, select, squads } from './hooks';
-
-/** Where the screenshots go: outside the repository, like the rest of the evidence. */
-const EVIDENCE = join(tmpdir(), 'spqr-issue56');
 
 /** The seed every scene is played on: the fixtures' own, so a reader can reproduce it. */
 const SEED = 7;
@@ -215,7 +210,6 @@ function groundPoints(
 test.describe('the quietened terrain on screen', () => {
   for (const faction of FACTIONS) {
     test(`${faction} draws the generated terrain, visible and remembered, at zooms 1, 2, 4 and 8`, async ({ page }) => {
-      await mkdir(EVIDENCE, { recursive: true });
       const stronghold = MAP.strongholds[faction === 'rome' ? 0 : 1];
       if (stronghold === undefined) throw new Error('the map has no Stronghold for this Faction');
 
@@ -287,12 +281,7 @@ test.describe('the quietened terrain on screen', () => {
             description: `${faction} ${String(size.width)}x${String(size.height)} at zoom ${String(zoom)}: ${String(seen)} sampled points in view and ${String(remembered)} remembered, every one the generator's own pixel`,
           });
 
-          await page.screenshot({
-            path: join(
-              EVIDENCE,
-              `match-${faction}-${String(size.width)}x${String(size.height)}-zoom${String(zoom)}.png`,
-            ),
-          });
+          await capture(page, `match-${faction}-${String(size.width)}x${String(size.height)}-zoom${String(zoom)}`, 'issue56');
         }
       }
     });
@@ -379,8 +368,7 @@ test.describe('the quietened terrain on screen', () => {
       // U5 asks is whether the ground's repeated detail competes, so the ground's
       // number is one tile of it and not the whole neighbourhood.
       const withMen = range(await samples(page, 'view', block.map((entry) => entry.point)));
-      await mkdir(EVIDENCE, { recursive: true });
-      await page.screenshot({ path: join(EVIDENCE, `squad-${faction}-1280x720.png`) });
+      await capture(page, `squad-${faction}-1280x720`, 'issue56');
       await showSquads(page, false);
       const groundPixels = await samples(page, 'view', block.map((entry) => entry.point));
       await showSquads(page, true);
@@ -422,7 +410,6 @@ test.describe('the quietened terrain on screen', () => {
   });
 
   test('a scene keeps its terrains apart after the quietening', async ({ page }) => {
-    await mkdir(EVIDENCE, { recursive: true });
     await openMatch(page, 'rome', RESOLUTIONS[1]);
     await showSquads(page, false);
 
@@ -466,6 +453,6 @@ test.describe('the quietened terrain on screen', () => {
     // its own base, so a screen holding five of them still spans a wide brightness.
     expect(spread, 'the terrains still differ').toBeGreaterThan(40);
 
-    await page.screenshot({ path: join(EVIDENCE, 'match-rome-1920x1080-every-terrain.png') });
+    await capture(page, 'match-rome-1920x1080-every-terrain', 'issue56');
   });
 });

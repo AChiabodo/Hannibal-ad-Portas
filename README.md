@@ -35,11 +35,20 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | `npm run tournament`| The balance instrument: a batch of AI-vs-AI Matches on distinct seeds, and one JSON report of what they add up to |
 | `npm run bake`      | Writes the whole generated catalogue into `artifacts/` as PNGs, with the pixel hash of each, for inspection |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
+| `npm run test:unit` | Every non-browser test, through the profile entry point                |
+| `npm run test:focus`| The non-browser tests related to the working tree's changes            |
+| `npm run test:smoke`| The small real-browser smoke: boot, one ordinary Command, frame and console health |
+| `npm run test:feature -- <name>` | One browser responsibility: `orders`, `fog`, `hud`, `host`, …  |
+| `npm run test:accept`| Complete browser acceptance, with visual captures off                 |
+| `npm run test:visual`| Explicit visual-frame production into `SPQR_VISUAL_DIR`               |
+| `npm run test:profiles` | List the browser responsibilities and their owner specs            |
 | `npm run test:e2e`  | Browser tests (Playwright, headless Chromium, software WebGL)           |
 | `npm run verify`    | Lint, check, guard, unit tests and build in one go                      |
 
-The first `npm run test:e2e` installs Chromium if it is missing; CI installs it
-with `--with-deps` in its own step.
+The profiles and their selection rules are in [docs/VERIFICATION.md](docs/VERIFICATION.md).
+The first browser run installs Chromium if it is missing; CI installs it with
+`--with-deps` in its own step. A push always takes complete acceptance; a pull
+request skips it only when every changed file is documentation.
 
 ## The fences
 
@@ -1568,15 +1577,23 @@ src/                application code
   main.ts           the game page's entry
   atelier.ts        the Atelier page's entry
 scripts/guard.mjs   the fences
+scripts/profiles.mjs        the browser responsibilities, their owner specs and the coverage map
+scripts/verify.mjs          the profile entry point: focus, unit, smoke, feature, accept, visual
+scripts/selection.mjs       whether a change must take complete acceptance
+scripts/selection-rules.mjs the escalation rules, as data and pure functions
 tests/              Vitest unit tests
+  verify/           the profile inventory and the escalation rules, held to their owners
 e2e/                Playwright browser tests (a real browser, so `pixi.js` is allowed)
   hooks.ts          reading a page's hooks from a test, one datum at a time
   fixtures.ts       the `test` every spec runs on: a page watched for the evidence a failure needs
   diagnostics.ts    what that evidence is: the boot report, the snapshot, the console, the errors, the DOM
+  evidence.ts       the only writer of visual frames: off unless `SPQR_VISUAL=1`
+  smoke.spec.ts     the small real-browser smoke: boot, one Command, frame and console health
 docs/PLAN.md        the plan of record
 docs/COMMANDS.md    the Command vocabulary an external agent is written from
 docs/PROTOCOL.md    the protocol an external agent is written from, and a skeleton agent
 docs/BROWSER.md     the hooks an agent driving the page is written from, and what a failure leaves
+docs/VERIFICATION.md  the verification profiles, their owners, the CI gates and the budgets
 examples/agent.ts   an agent written from that document, importing nothing from this repository
 ```
 
@@ -1630,3 +1647,10 @@ a plan that includes Pages.
   — boot report, snapshot, state hash, console, errors, DOM — instead of a
   screenshot, and the surface itself is held to its document and to its interfaces
   by `e2e/surface.spec.ts` and `tests/render/browser-docs.test.ts`.
+
+The browser suite is selected by [responsibility](docs/VERIFICATION.md), not run
+whole for every change: `npm run test:smoke` boots the real page in under ninety
+seconds, `npm run test:feature -- orders` runs one owner, `npm run test:accept`
+runs every spec with captures off, and `npm run test:visual` is the explicit
+request for frames. A push always takes the complete gate; a pull request skips it
+only when every changed file is documentation.

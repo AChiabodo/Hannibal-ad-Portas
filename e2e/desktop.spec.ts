@@ -1,11 +1,8 @@
-import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
+import { capture } from './evidence';
 import type { HudAction } from '../src/ui/hud';
 
-const evidence = join(tmpdir(), 'spqr-issue54');
 async function ready(page: Page, faction = 'rome') {
   await page.goto(`/?play=1&seed=7&faction=${faction}&difficulty=centurio`);
   await page.waitForFunction(() => window.__SPQR?.game);
@@ -88,8 +85,7 @@ for (const width of [1280, 1920]) for (const faction of ['rome', 'carthage']) {
     }
     await page.evaluate(() => window.__SPQR.view!.zoomTo(2));
     await clickAction(page, 'center');
-    await mkdir(evidence, { recursive: true });
-    await page.screenshot({ path: join(evidence, `${faction}-${width}.png`) });
+    await capture(page, `${faction}-${width}`, 'issue54');
     const diagnosis = await spqr.diagnosis();
     expect(diagnosis.errors).toEqual([]);
   });
@@ -132,7 +128,7 @@ test('resize, scale and stored preferences preserve the Match and reset without 
   await expect.poll(() => page.evaluate(() => window.__SPQR.game!.hudLayout().text.map((line) => line.text).join(' '))).toContain('1280x720');
   expect(await page.evaluate(() => window.__SPQR.game!.hudLayout().list.width)).toBe(0);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.screenshot({ path: join(evidence, 'small-window.png') });
+  await capture(page, 'small-window', 'issue54');
   await page.evaluate(() => window.scrollTo(0, 0));
   await clickAction(page, 'navigator');
   expect(await page.evaluate(() => window.__SPQR.game!.hudRows().length)).toBeGreaterThan(0);
@@ -197,7 +193,7 @@ for (const faction of ['rome', 'carthage'] as const) {
     expect(known).toContain(2);
     for (let zoom = 1; zoom <= 8; zoom++) {
       await page.evaluate((zoom) => { window.__SPQR.view!.zoomTo(zoom); window.__SPQR.game!.centerSelection(); }, zoom);
-      await page.screenshot({ path: join(evidence, `${faction}-known-zoom${zoom}.png`) });
+      await capture(page, `${faction}-known-zoom${zoom}`, 'issue54');
     }
   });
 }

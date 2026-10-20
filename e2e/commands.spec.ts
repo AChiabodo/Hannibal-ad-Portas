@@ -19,11 +19,9 @@
  * That is the seam's own rule (a pause holds the queue, the next decide drains
  * it) and not a convenience of the test.
  */
-import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
+import { capture } from './evidence';
 import { advance, applied, press, select, selection, squads } from './hooks';
 import type { HudModel } from '../src/ui/hud';
 import type { Command } from '../src/sim/command';
@@ -470,9 +468,6 @@ test('orders given while paused are visibly pending, and land on the next tick',
  * every word fits the rectangle it was given.
  */
 test('renders the contextual panels at 1280x720 and 1920x1080, for both Factions', async ({ page }) => {
-  const evidence = join(tmpdir(), 'spqr-issue55');
-  await mkdir(evidence, { recursive: true });
-
   for (const [width, height] of [[1280, 720], [1920, 1080]] as const) {
     for (const faction of ['rome', 'carthage'] as const) {
       await bootScene(page, faction);
@@ -509,7 +504,7 @@ test('renders the contextual panels at 1280x720 and 1920x1080, for both Factions
       expect(shape.tabs).toEqual(['overview', 'construction', 'recruitment']);
       expect(shape.offers).toContain('build:farm');
 
-      await page.screenshot({ path: join(evidence, `construction-${faction}-${String(width)}x${String(height)}.png`) });
+      await capture(page, `construction-${faction}-${String(width)}x${String(height)}`, 'issue55');
 
       // The Squad page, with an action armed so the requirement line is drawn.
       const [nearest] = await squadsNear(page, home.x, home.y);
@@ -542,7 +537,7 @@ test('renders the contextual panels at 1280x720 and 1920x1080, for both Factions
         return seen.size;
       });
       expect(colours).toBeGreaterThanOrEqual(4);
-      await page.screenshot({ path: join(evidence, `commands-${faction}-${String(width)}x${String(height)}.png`) });
+      await capture(page, `commands-${faction}-${String(width)}x${String(height)}`, 'issue55');
 
       const status = await page.evaluate(() => window.__SPQR.game!.hudLayout().status.map((line) => line.text));
       expect(status.join(' ')).toContain('Mira');

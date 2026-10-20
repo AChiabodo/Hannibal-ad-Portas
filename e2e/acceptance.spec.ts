@@ -23,14 +23,13 @@
  * (`e2e/readability.spec.ts`), setup and the whole Match (`e2e/setup.spec.ts`,
  * `e2e/match.spec.ts`, and the full-Match test in `e2e/first-entry.spec.ts`).
  *
- * The screenshots are written under `%TEMP%\spqr-issue59`; nothing here claims
- * that a matching hash is a visual verdict (see the completion report's gate
- * section).
+ * The screenshots are written under `SPQR_VISUAL_DIR/issue59` when the visual
+ * profile asks for them; nothing here claims that a matching hash is a visual
+ * verdict (see the completion report's gate section).
  */
-import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import { capture } from './evidence';
 import { stageToScreen } from '../src/render/camera';
 import { MAP_HEIGHT, MAP_WIDTH, TERRAIN, generateMap } from '../src/sim/map';
 import { translate } from '../src/ui/strings';
@@ -49,7 +48,6 @@ import {
   state,
 } from './hooks';
 
-const EVIDENCE = join(tmpdir(), 'spqr-issue59');
 const SEED = 59;
 
 const RESOLUTIONS = [
@@ -158,7 +156,6 @@ test.describe('the delivered interface under a Player’s hands', () => {
   for (const faction of FACTIONS) for (const size of RESOLUTIONS) {
     test(`selection, orders, zooms and fog for ${faction} at ${String(size.width)}x${String(size.height)}`, async ({ page }) => {
       test.setTimeout(120_000);
-      await mkdir(EVIDENCE, { recursive: true });
       await openMatch(page, faction, size);
       const raised = await raiseTwo(page, faction);
 
@@ -168,7 +165,7 @@ test.describe('the delivered interface under a Player’s hands', () => {
       if (row === undefined) throw new Error('no squad row');
       await press(page, row.rect);
       expect((await selection(page)).squads).toHaveLength(1);
-      await page.screenshot({ path: join(EVIDENCE, `single-selection-${faction}-${String(size.width)}x${String(size.height)}.png`) });
+      await capture(page, `single-selection-${faction}-${String(size.width)}x${String(size.height)}`, 'issue59');
 
       // Multiple selection: a dragged box round both blocks.
       await boxSelect(page, raised);
@@ -182,7 +179,7 @@ test.describe('the delivered interface under a Player’s hands', () => {
       await clickCanvas(page, destination, 'right');
       expect((await hud(page)).orders.pending, 'the paused order is queued').toBe(1);
       expect((await hudLayout(page)).status.map((entry) => entry.text).join(' ')).toContain(translate('ui.pendingPaused').replace('{count}', '1'));
-      await page.screenshot({ path: join(EVIDENCE, `mixed-selection-pending-${faction}-${String(size.width)}x${String(size.height)}.png`) });
+      await capture(page, `mixed-selection-pending-${faction}-${String(size.width)}x${String(size.height)}`, 'issue59');
 
       // A refused order: the rules say deep water, and the interface says so in
       // the Squad's panel and as a notice. The river is a real tile of this seed.
@@ -201,13 +198,13 @@ test.describe('the delivered interface under a Player’s hands', () => {
       // answer, not the strip's second opinion.
       await page.evaluate((id) => window.__SPQR.game!.select({ kind: 'squad', id }), picked[0]!);
       expect((await hud(page)).detail?.lines.map((line) => line.value)).toContain(translate('refusal.water'));
-      await page.screenshot({ path: join(EVIDENCE, `refused-order-${faction}-${String(size.width)}x${String(size.height)}.png`) });
+      await capture(page, `refused-order-${faction}-${String(size.width)}x${String(size.height)}`, 'issue59');
 
       // The supported zooms, about a picked Squad.
       await page.evaluate(() => window.__SPQR.game!.select({ kind: 'squad', id: window.__SPQR.game!.squads()[0]!.id }));
       for (const zoom of [1, 8] as const) {
         await page.evaluate((value) => { window.__SPQR.view!.zoomTo(value); window.__SPQR.game!.centerSelection(); }, zoom);
-        await page.screenshot({ path: join(EVIDENCE, `zoom${String(zoom)}-${faction}-${String(size.width)}x${String(size.height)}.png`) });
+        await capture(page, `zoom${String(zoom)}-${faction}-${String(size.width)}x${String(size.height)}`, 'issue59');
       }
 
       // The three knowledge states in one frame: the first watch's ground is
@@ -224,7 +221,7 @@ test.describe('the delivered interface under a Player’s hands', () => {
       expect(states, 'remembered').toContain(1);
       expect(states, 'in view').toContain(2);
       await centreOn(page, { x: 20, y: 20 });
-      await page.screenshot({ path: join(EVIDENCE, `fog-states-${faction}-${String(size.width)}x${String(size.height)}.png`) });
+      await capture(page, `fog-states-${faction}-${String(size.width)}x${String(size.height)}`, 'issue59');
     });
   }
 });
@@ -233,7 +230,6 @@ test.describe('long lists, long text and critical conditions', () => {
   for (const faction of FACTIONS) for (const size of RESOLUTIONS) {
     test(`a crowded panel and a Squad in trouble for ${faction} at ${String(size.width)}x${String(size.height)}`, async ({ page }) => {
       test.setTimeout(120_000);
-      await mkdir(EVIDENCE, { recursive: true });
       await dismissFirstEntry(page);
       await page.setViewportSize({ width: size.width, height: size.height });
       await page.goto('/e2e/hud-fixture.html');
@@ -301,7 +297,7 @@ test.describe('long lists, long text and critical conditions', () => {
       expect(model.rows.length, 'the navigator holds more than one panel of Squads').toBeGreaterThanOrEqual(25);
       const layout = await hudLayout(page);
       expect(layout.listScroll.max, 'the navigator scrolls rather than hiding rows').toBeGreaterThan(0);
-      await page.screenshot({ path: join(EVIDENCE, `long-list-${faction}-${String(size.width)}x${String(size.height)}.png`) });
+      await capture(page, `long-list-${faction}-${String(size.width)}x${String(size.height)}`, 'issue59');
 
       // A settlement's detail is longer than its panel, and scrolls.
       const home = (await state(page)).visible.settlements[0]!;
@@ -309,7 +305,7 @@ test.describe('long lists, long text and critical conditions', () => {
       const detail = await hudLayout(page);
       expect((await hud(page)).detail?.lines.length, 'the settlement has a long panel').toBeGreaterThanOrEqual(8);
       expect(detail.detailScroll.max, 'the detail scrolls rather than clipping').toBeGreaterThan(0);
-      await page.screenshot({ path: join(EVIDENCE, `long-text-${faction}-${String(size.width)}x${String(size.height)}.png`) });
+      await capture(page, `long-text-${faction}-${String(size.width)}x${String(size.height)}`, 'issue59');
 
       // The critical Squad: its plate and the strip say the same three things.
       const critical = (await squads(page))[0]!;
@@ -321,7 +317,7 @@ test.describe('long lists, long text and critical conditions', () => {
       const indicator = await page.evaluate((id) => window.__SPQR.game!.indicators().find((entry) => entry.id === id), critical.id);
       expect(indicator?.annotation).toBe('plate');
       expect(indicator?.conditions.length, 'the plate carries the critical shapes').toBeGreaterThan(0);
-      await page.screenshot({ path: join(EVIDENCE, `critical-${faction}-${String(size.width)}x${String(size.height)}.png`) });
+      await capture(page, `critical-${faction}-${String(size.width)}x${String(size.height)}`, 'issue59');
     });
   }
 });

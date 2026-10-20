@@ -22,14 +22,13 @@
  *    closing it issues no Command and moves no clock it was not holding.
  *
  * The scenes are written outside the repository (the guard forbids committed
- * images), under `%TEMP%\spqr-issue59`. They are evidence a human reviews; what
- * this spec asserts is data, clicks and outcomes, and it does not treat a matching
- * hash as a visual verdict.
+ * images), under `SPQR_VISUAL_DIR/issue59`. They are evidence a human reviews;
+ * what this spec asserts is data, clicks and outcomes, and it does not treat a
+ * matching hash as a visual verdict.
  */
-import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import { capture } from './evidence';
 import { stageToScreen } from '../src/render/camera';
 import { TERRAIN } from '../src/sim/map';
 import { HUD_BACKGROUND } from '../src/ui/hud';
@@ -53,9 +52,6 @@ import {
   state,
   tickOf,
 } from './hooks';
-
-/** Where the first-entry evidence goes: outside the repository, like the rest. */
-const EVIDENCE = join(tmpdir(), 'spqr-issue59');
 
 /** The seed every scene is made on, so a screenshot can be reproduced. */
 const SEED = 59;
@@ -121,8 +117,7 @@ test.describe('setup explains the Match being configured', () => {
       expect(label).toContain(`${translate('match.faction')}: ${translate('faction.rome')}`);
       expect(label).toContain(`${translate('match.difficulty')}: ${translate('difficulty.centurio')}`);
 
-      await mkdir(EVIDENCE, { recursive: true });
-      await page.screenshot({ path: join(EVIDENCE, `setup-${String(size.width)}x${String(size.height)}.png`) });
+      await capture(page, `setup-${String(size.width)}x${String(size.height)}`, 'issue59');
     });
   }
 });
@@ -130,7 +125,6 @@ test.describe('setup explains the Match being configured', () => {
 test.describe('the guide waits, teaches and gets out of the way', () => {
   for (const faction of FACTIONS) for (const size of RESOLUTIONS) {
     test(`opens paused for ${faction} at ${String(size.width)}x${String(size.height)}`, async ({ page }) => {
-      await mkdir(EVIDENCE, { recursive: true });
       await openFirstEntry(page, faction, size);
 
       const opening = await guide(page);
@@ -141,7 +135,7 @@ test.describe('the guide waits, teaches and gets out of the way', () => {
       // Wall time does not move the clock the welcome line is holding.
       await page.waitForTimeout(250);
       expect(await tickOf(page)).toBe(0);
-      await page.screenshot({ path: join(EVIDENCE, `welcome-${faction}-${String(size.width)}x${String(size.height)}.png`) });
+      await capture(page, `welcome-${faction}-${String(size.width)}x${String(size.height)}`, 'issue59');
 
       // The settlement the guide will ask the Player to open is on screen, and the
       // guide is not sitting on top of it: one pointer click reaches both.
@@ -161,14 +155,13 @@ test.describe('the guide waits, teaches and gets out of the way', () => {
       expect((await selection(page)).settlement).toBe(home.id);
       expect((await guide(page))?.stage, 'opening a settlement moves the guide on').toBe('recruit');
 
-      await page.screenshot({ path: join(EVIDENCE, `settlement-open-${faction}-${String(size.width)}x${String(size.height)}.png`) });
+      await capture(page, `settlement-open-${faction}-${String(size.width)}x${String(size.height)}`, 'issue59');
     });
   }
 });
 
 test('the four acts are performed through the pointed-at interface, and their result is legible', async ({ page }) => {
   test.setTimeout(90_000);
-  await mkdir(EVIDENCE, { recursive: true });
   await openFirstEntry(page, 'rome', RESOLUTIONS[0]);
   await pressGuide(page, 'guideBegin');
   // One deterministic tick at a time from here: the walkthrough is about what a
@@ -204,7 +197,7 @@ test('the four acts are performed through the pointed-at interface, and their re
   expect((await guide(page))?.stage, 'a submitted recruit moves the guide to selection').toBe('select');
   expect((await hud(page)).orders.last?.status, 'a paused order is queued, not applied').toBe('pending');
   expect((await hudLayout(page)).status.map((entry) => entry.text).join(' ')).toContain(translate('ui.submitted').replace('{name}', 'Astati'));
-  await page.screenshot({ path: join(EVIDENCE, 'recruit-pending-1280x720.png') });
+  await capture(page, 'recruit-pending-1280x720', 'issue59');
 
   await advance(page, 1);
   const raised = await squads(page);
@@ -257,7 +250,7 @@ test('the four acts are performed through the pointed-at interface, and their re
   expect((await hud(page)).orders.last?.status, 'the queued order has now reached the Match').toBe('applied');
   expect((await hud(page)).detail?.lines.some((entry) => entry.value === translate('order.marching')),
     'the Squad panel says it is marching').toBe(true);
-  await page.screenshot({ path: join(EVIDENCE, 'order-result-1280x720.png') });
+  await capture(page, 'order-result-1280x720', 'issue59');
 
   await pressGuide(page, 'guideClose');
   expect(await guide(page), 'the completed guide closes').toBeNull();
@@ -377,7 +370,6 @@ test('the guide reads no enemy knowledge and issues no Command', async ({ page }
 
 test('plays a whole browser Match for both Factions to a real ending', async ({ page }) => {
   test.setTimeout(180_000);
-  await mkdir(EVIDENCE, { recursive: true });
 
   for (const faction of FACTIONS) {
     await dismissFirstEntry(page);
@@ -398,6 +390,6 @@ test('plays a whole browser Match for both Factions to a real ending', async ({ 
 
     const menu = await page.evaluate(() => window.__SPQR.game!.matchLayout());
     expect(menu.lines.length, 'the result and the final known situation are announced').toBeGreaterThan(1);
-    await page.screenshot({ path: join(EVIDENCE, `match-end-${faction}-${String(result.kind)}.png`) });
+    await capture(page, `match-end-${faction}-${String(result.kind)}`, 'issue59');
   }
 });

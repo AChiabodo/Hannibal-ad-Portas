@@ -257,6 +257,14 @@ that disagree about the hash are a rules question, and either way the tick is al
 narrowed before anyone reads code. No screenshot is taken, because a picture of a
 canvas cannot say which tick it was.
 
+Which specs run, and when, is [VERIFICATION.md](VERIFICATION.md): a browser spec
+belongs to one responsibility (`npm run test:feature -- orders`), the smoke boots
+the real page without a matrix, and complete acceptance runs every spec with
+captures off. `npm run test:visual` is the only profile that writes frames, and it
+writes them through `e2e/evidence.ts`. A new spec is included in complete
+acceptance by existing, but `tests/verify/profiles.test.ts` fails until it is
+also attributed to a responsibility.
+
 
 ## Setup and the complete browser host (#53)
 
