@@ -232,8 +232,10 @@ for (const faction of ['rome', 'carthage'] as const) for (const [width, height] 
     await capture(page, `scale3-options-${suffix}`);
     await page.evaluate(() => window.__SPQR.game!.setUiScale(2));
     await press(page, (await page.evaluate(() => window.__SPQR.game!.matchLayout())).buttons.find(({ action }) => action === 'close')!.rect);
+    await select(page, { kind: 'squad', id: besieger.id });
     for (const zoom of [1, 2, 4, 8]) {
       await page.evaluate((zoom) => window.__SPQR.view!.zoomTo(zoom), zoom);
+      await page.evaluate(() => window.__SPQR.game!.centerSelection());
       await capture(page, `zoom${String(zoom)}-${suffix}`);
     }
     expect((await state(page)).hash).toMatch(/^[0-9a-f]{16}$/);

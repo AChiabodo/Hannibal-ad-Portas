@@ -17,7 +17,7 @@
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
 import { pixelAt } from '../src/art/pixel-buffer';
-import { blockPlacement, squadBlock, squadFrameKey } from '../src/render/squads';
+import { blockPlacement, squadBlock, squadFrameKey, visualShape } from '../src/render/squads';
 import { tilePixel } from '../src/render/terrain';
 import { bootGame, describeView, hudRects, samples, squads } from './hooks';
 
@@ -38,7 +38,7 @@ test('draws a Squad as the soldiers the generator composes, where the Match says
   const now = await tick(page);
 
   const block = (await squads(page)).find((squad) => {
-    const shape = { men: squad.figures, formation: squad.formation, facing: squad.facing };
+    const shape = visualShape(squad);
     const at = blockPlacement(tilePixel(squad.x, squad.y), shape);
     const onScreen = {
       x: (at.x - view.camera.x) * view.camera.zoom,
@@ -65,7 +65,7 @@ test('draws a Squad as the soldiers the generator composes, where the Match says
   expect(block, 'a Squad is drawn on screen and clear of the interface').toBeDefined();
   if (block === undefined) return;
 
-  const shape = { men: block.figures, formation: block.formation, facing: block.facing };
+  const shape = visualShape(block);
   const drawn = squadBlock(block, { faction: 'rome', tick: now });
   const at = blockPlacement(tilePixel(block.x, block.y), shape);
 

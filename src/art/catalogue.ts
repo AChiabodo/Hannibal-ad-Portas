@@ -272,10 +272,11 @@ const SETTLEMENTS_WIDTH = SITE_LABEL_WIDTH + LABEL_GAP + SITE_CELL;
 
 const INTERFACE_ENTRIES = [...interfaceEntries(), ...appearanceEntries()];
 const INTERFACE_HEIGHT = INTERFACE_ENTRIES.reduce((height, entry) => height + HEADING_HEIGHT + entry.buffer.height + SECTION_GAP, 0);
+const INTERFACE_WIDTH = Math.max(...INTERFACE_ENTRIES.map(({ buffer }) => buffer.width));
 
 
 /** The plate's width: the padding, and whichever section is wider. */
-export const PLATE_WIDTH =
+const ART_WIDTH =
   PLATE_PADDING * 2 +
   Math.max(
     GLYPH_GRID_WIDTH,
@@ -286,11 +287,14 @@ export const PLATE_WIDTH =
     MARKS_WIDTH,
     ICONS_WIDTH,
     SETTLEMENTS_WIDTH,
-    ...INTERFACE_ENTRIES.map(({ buffer }) => buffer.width),
   );
 
+// UI plates stand beside the art: stacking them below it would exceed an
+// 8192-pixel framebuffer at 4x, making the Atelier's extraction transparent.
+export const PLATE_WIDTH = ART_WIDTH + SECTION_GAP + INTERFACE_WIDTH + PLATE_PADDING;
+
 /** The plate's height, which the sections above add up to. */
-export const PLATE_HEIGHT =
+const ART_HEIGHT =
   PLATE_PADDING * 2 +
   HEADING_HEIGHT * 10 +
   GLYPH_GRID_HEIGHT +
@@ -302,7 +306,9 @@ export const PLATE_HEIGHT =
   MARKS_HEIGHT +
   ICONS_HEIGHT +
   SETTLEMENTS_HEIGHT +
-  SECTION_GAP * 9 + SECTION_GAP + INTERFACE_HEIGHT;
+  SECTION_GAP * 9;
+
+export const PLATE_HEIGHT = Math.max(ART_HEIGHT, PLATE_PADDING * 2 + INTERFACE_HEIGHT);
 
 /**
  * Every artefact the art library generates, in a stable order: the glyphs in
@@ -629,11 +635,11 @@ export function cataloguePlate(): PixelBuffer {
     y += SITE_CELL;
   }
 
-  y += SECTION_GAP;
+  y = PLATE_PADDING;
   for (const entry of INTERFACE_ENTRIES) {
-    blit(plate, textPlate(entry.name, PLATE_INK), PLATE_PADDING, y);
+    blit(plate, textPlate(entry.name, PLATE_INK), ART_WIDTH + SECTION_GAP, y);
     y += HEADING_HEIGHT;
-    blit(plate, entry.buffer, PLATE_PADDING, y);
+    blit(plate, entry.buffer, ART_WIDTH + SECTION_GAP, y);
     y += entry.buffer.height + SECTION_GAP;
   }
 

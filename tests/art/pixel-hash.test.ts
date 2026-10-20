@@ -35,7 +35,7 @@ import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 
 /** The fingerprints recorded from the generators as accepted. */
 // U9: deliberately add the reviewed UI surfaces and real layout specimens.
-const PLATE_HASH = 'dc7f9ff9c7d18c58';
+const PLATE_HASH = 'e484917786b1c83b';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'ui:carthage-column': '4b56aa9f36f49c4a',

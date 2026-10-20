@@ -386,7 +386,9 @@ test.describe('the theatre’s annotations', () => {
     if (row === undefined) return;
 
     // Somewhere else first, so the camera has to move for the click to have done it.
-    await page.evaluate(() => window.__SPQR.view?.panBy(-400, -300));
+    // Move into the theatre: negative panning can already hit the home corner's
+    // clamp with the taller playable viewport, leaving nowhere for Centre to go.
+    await page.evaluate(() => window.__SPQR.view?.panBy(400, 300));
     const wandered = await describeView(page);
 
     await press(page, row.rect);
