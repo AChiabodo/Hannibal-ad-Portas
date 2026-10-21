@@ -1,6 +1,6 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
-import type { Behaviour, Candidate } from './registry.ts';
+import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
 import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
@@ -11,6 +11,8 @@ interface SiegeSquad extends Site {
   readonly id: number;
   readonly type: string;
   readonly men: number;
+  /** The men it was recruited with: what its survivors are read against. */
+  readonly capacity: number;
   readonly morale: number;
   readonly routing: boolean;
   readonly garrison: number | null;
@@ -94,7 +96,7 @@ export function createSiegeBehaviour(
   const power = (squad: SiegeSquad) => Math.max(0, squad.men * squad.morale);
   const spent = (squad: SiegeSquad) => {
     const type = types.get(squad.type);
-    return type !== undefined && (squad.men * 2 <= type.strength || squad.morale * 2 <= type.morale);
+    return type !== undefined && (atHalfStrength(squad) || squad.morale * 2 <= type.morale);
   };
   const margin = attackPercent(difficulty);
 

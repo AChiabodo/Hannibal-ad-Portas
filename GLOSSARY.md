@@ -182,6 +182,11 @@ One drawn soldier of a Squad's type — a man, a horse and rider, or a beast —
 _UI_: —
 _Avoid_: Sprite, model, unit (the drawing code's `soldier()` is the entry point for every figure, a beast included)
 
+**Capacity**:
+The men a Squad was raised with, fixed for its life. Survivors are read against it, so a 60-man Squad worn down to 30 reads as `30/60` and no loss can silently change the size that was bought. A Squad type offers real sizes (Rome's melee 24/60/120; Carthage's 24/48; one fixed size for a specialist); choosing one is part of the Recruit Command, and there is no split or merge.
+_UI_: Reclutati
+_Avoid_: Max strength, health, full strength (capacity is a purchase, not a condition)
+
 **Elephant**:
 A Squad of a single figure: one beast drawn in the same little box as a man, with the staying power of a body of men behind its strength. It is recruited, paid, ordered, flanked and routed like any other type; only its figure is extraordinary.
 _UI_: Elefante
@@ -297,7 +302,7 @@ _Avoid_: Body, casualty marker, corpse pile (a corpse is one mark on one tile, n
 ### Economy
 
 **Payroll**:
-The denarii a Faction owes each Season for the Squads it keeps; for infantry, the amount follows troop type and surviving men. Unpaid Squads lose morale and eventually desert.
+The denarii a Faction owes each Season for the Squads it keeps; for infantry, the amount follows troop type and surviving men. A type's rate is denarii per 24 men, and a Squad's bill is that rate times its survivors, rounded up, so equivalent men cost the same wherever they stand and splitting them can never lower the bill. Unpaid Squads lose morale and eventually desert.
 _UI_: Soldo
 _Avoid_: Upkeep, maintenance, cost, salary
 

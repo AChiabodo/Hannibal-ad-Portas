@@ -96,7 +96,7 @@ async function raiseTwo(page: Page, faction: Faction): Promise<readonly { id: nu
   await press(page, tab.rect);
 
   for (let raised = 0; raised < 2; raised += 1) {
-    const card = (await hudLayout(page)).commands.find((command) => command.order.id === `recruit:${FIRST_LINE[faction]}`);
+    const card = (await hudLayout(page)).commands.find((command) => command.order.id === `recruit:${FIRST_LINE[faction]}:24`);
     expect(card?.order.enabled, 'the opening stocks can raise a second line').toBe(true);
     if (card === undefined) throw new Error('no recruit card');
     await press(page, card.rect);

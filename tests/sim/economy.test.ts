@@ -26,6 +26,7 @@ import {
   type Settlement,
   type Squad,
 } from '../../src/sim/economy';
+import { SQUAD_TYPES, recruitCost, squadTypeCode, squadTypeOf } from '../../src/content';
 import { generateMap, RESOURCE, TERRAIN, tileIndex, type ResourceKind, type ResourceNode } from '../../src/sim/map';
 import { blockOf, buildingId, squadTypeId, testMap, testSettlement, work } from './economy-fixtures';
 
@@ -310,7 +311,7 @@ describe('a Recruit Command', () => {
   it('raises the Squads in the settlement, paying their cost out of its stock', () => {
     const economy = economyOf(testSettlement({ stocks: [20, 0, 0, 5] }));
 
-    expect(applyEconomyCommand(economy, recruit('rome', 0, 'hastati', 2))).toBe(true);
+    expect(applyEconomyCommand(economy, recruit('rome', 0, 'hastati', 24, 2))).toBe(true);
 
     // Two hastati at eight grain and two iron apiece.
     expect(economy.settlements[0]?.stocks[RESOURCE.grain]).toBe(4);
@@ -331,26 +332,125 @@ describe('a Recruit Command', () => {
   it('refuses a Squad type above the settlement’s tier, so the tiers gate recruitment', () => {
     const low = economyOf(testSettlement({ stocks: [100, 0, 0, 100] }));
 
-    expect(applyEconomyCommand(low, recruit('rome', 0, 'principes', 1))).toBe(false);
+    expect(applyEconomyCommand(low, recruit('rome', 0, 'principes', 24, 1))).toBe(false);
     expect(low.squads).toEqual([]);
 
     const high = economyOf(testSettlement({ tier: 2, stocks: [100, 0, 0, 100] }));
-    expect(applyEconomyCommand(high, recruit('rome', 0, 'principes', 1))).toBe(true);
+    expect(applyEconomyCommand(high, recruit('rome', 0, 'principes', 24, 1))).toBe(true);
     expect(high.squads).toHaveLength(1);
   });
 
   it('refuses the other Faction’s roster, a type nobody knows, and one it cannot pay for', () => {
     const economy = economyOf(testSettlement({ stocks: [100, 0, 0, 100] }));
 
-    expect(applyEconomyCommand(economy, recruit('rome', 0, 'libyan-spear', 1))).toBe(false);
-    expect(applyEconomyCommand(economy, recruit('rome', 0, 'no-such-type', 1))).toBe(false);
+    expect(applyEconomyCommand(economy, recruit('rome', 0, 'libyan-spear', 24, 1))).toBe(false);
+    expect(applyEconomyCommand(economy, recruit('rome', 0, 'no-such-type', 24, 1))).toBe(false);
 
     const poor = economyOf(testSettlement({ stocks: [0, 0, 0, 0] }));
-    expect(applyEconomyCommand(poor, recruit('rome', 0, 'hastati', 1))).toBe(false);
+    expect(applyEconomyCommand(poor, recruit('rome', 0, 'hastati', 24, 1))).toBe(false);
+  });
+
+  it('raises every real size for its exact proportional cost, with the capacity it was bought as', () => {
+    for (const men of [24, 60, 120]) {
+      const economy = economyOf(testSettlement({ tier: 3, stocks: [100, 0, 0, 100] }));
+      const type = squadTypeOf(squadTypeCode('hastati') ?? -1)!;
+
+      expect(applyEconomyCommand(economy, recruit('rome', 0, 'hastati', men, 1)), String(men)).toBe(true);
+
+      expect(economy.squads[0]).toMatchObject({ strength: men, capacity: men });
+      expect(economy.settlements[0]?.stocks[RESOURCE.grain]).toBe(100 - recruitCost(type, men).grain);
+      expect(economy.settlements[0]?.stocks[RESOURCE.iron]).toBe(100 - recruitCost(type, men).iron);
+    }
+  });
+
+  it('raises every type at every real size it offers, for its exact proportional price', () => {
+    for (const type of SQUAD_TYPES) {
+      for (const men of type.sizes) {
+        const owner = type.faction === 'rome' ? 0 : 1;
+        const economy = economyOf(testSettlement({ owner, tier: type.tier, stocks: [1000, 1000, 1000, 1000] }));
+
+        expect(applyEconomyCommand(economy, recruit(type.faction, 0, type.id, men, 1)),
+          `${type.id} ${String(men)}`).toBe(true);
+        expect(economy.squads[0], `${type.id} ${String(men)}`).toMatchObject({
+          owner, type: squadTypeCode(type.id), strength: men, capacity: men,
+        });
+        const cost = recruitCost(type, men);
+        expect(economy.settlements[0]?.stocks).toEqual([
+          1000 - cost.grain, 1000 - cost.timber, 1000 - cost.stone, 1000 - cost.iron,
+        ]);
+      }
+    }
+  });
+
+  it('raises the Carthaginian 48-man line and every fixed specialist size', () => {
+    for (const [squadType, tier] of [
+      ['libyan-spear', 1], ['iberian-sword', 2], ['balearic-slinger', 2],
+      ['numidian-horse', 3], ['elephant', 3],
+    ] as const) {
+      const economy = economyOf(testSettlement({ owner: 1, tier, stocks: [100, 0, 0, 100] }));
+      const type = squadTypeOf(squadTypeCode(squadType) ?? -1)!;
+      const men = type.sizes[0]!;
+
+      expect(applyEconomyCommand(economy, recruit('carthage', 0, squadType, men, 1)), squadType).toBe(true);
+      expect(economy.squads[0], squadType).toMatchObject({ strength: men, capacity: men });
+      expect(economy.settlements[0]?.stocks[RESOURCE.grain]).toBe(100 - recruitCost(type, men).grain);
+      expect(economy.settlements[0]?.stocks[RESOURCE.iron]).toBe(100 - recruitCost(type, men).iron);
+    }
+  });
+
+  it('buys count Squads of one size, each with that capacity, for the whole press', () => {
+    const economy = economyOf(testSettlement({ stocks: [100, 0, 0, 100] }));
+
+    expect(applyEconomyCommand(economy, recruit('rome', 0, 'hastati', 60, 2))).toBe(true);
+
+    expect(economy.squads.map((squad) => [squad.strength, squad.capacity])).toEqual([[60, 60], [60, 60]]);
+    expect(economy.settlements[0]?.stocks[RESOURCE.grain]).toBe(60);
+    expect(economy.settlements[0]?.stocks[RESOURCE.iron]).toBe(90);
+  });
+
+  it('refuses a size the type does not offer, rather than rounding it to one it does', () => {
+    for (const [squadType, men] of [
+      ['hastati', 36], ['hastati', 64], ['hastati', 48],
+      ['libyan-spear', 60], ['numidian-horse', 24],
+    ] as const) {
+      const economy = economyOf(testSettlement({ tier: 3, stocks: [100, 0, 0, 100] }));
+
+      expect(applyEconomyCommand(economy, recruit(squadType === 'hastati' ? 'rome' : 'carthage', 0, squadType, men, 1)),
+        `${squadType} ${String(men)}`).toBe(false);
+      expect(economy.squads).toEqual([]);
+      expect(economy.settlements[0]?.stocks).toEqual([100, 0, 0, 100]);
+    }
   });
 });
 
 describe('Payroll', () => {
+  it('follows surviving men, and leaves the recruited capacity alone', () => {
+    const hurt = squad({ strength: 17, capacity: 60 });
+    const economy = economyWith([hurt]);
+
+    chargePayroll(economy);
+
+    // A 60-man hastati owes ceil(60 * 3 / 24) = 8; at 17 survivors, 3.
+    expect(economy.treasuries[0]).toBe(7);
+    expect(hurt.capacity).toBe(60);
+    expect(hurt.strength).toBe(17);
+  });
+
+  it('does not give a free bill to an army split across more Squads', () => {
+    const whole = economyWith([squad({ strength: 120, capacity: 120 })], 100);
+    const split = economyWith([
+      squad({ id: 1, strength: 60, capacity: 60 }),
+      squad({ id: 2, strength: 60, capacity: 60 }),
+    ], 100);
+
+    chargePayroll(whole);
+    chargePayroll(split);
+
+    expect(100 - (whole.treasuries[0] ?? 0)).toBe(15);
+    expect(100 - (split.treasuries[0] ?? 0)).toBe(16);
+    expect(100 - (split.treasuries[0] ?? 0)).toBeGreaterThanOrEqual(100 - (whole.treasuries[0] ?? 0));
+  });
+
   it('pays the Squads it can and lets a paid one recover a point of morale, up to its type’s most', () => {
     const economy = economyWith([squad({ morale: 5 }), squad({ id: 2, morale: 10 })]);
 
@@ -447,6 +547,8 @@ function squad(overrides: Partial<Squad> = {}): Squad {
     id: 1,
     owner: 0,
     type: squadTypeId('hastati'),
+    strength: 24,
+    capacity: 24,
     home: 0,
     morale: 10,
     unpaid: 0,

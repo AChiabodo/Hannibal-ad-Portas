@@ -154,7 +154,7 @@ for (const faction of ['rome', 'carthage'] as const) {
     await page.evaluate((faction) => {
       const game = window.__SPQR.game!;
       game.submit({ kind: 'recruit', faction, settlement: faction === 'rome' ? 0 : 1,
-        squadType: faction === 'rome' ? 'hastati' : 'gaul', count: 1 });
+        squadType: faction === 'rome' ? 'hastati' : 'gaul', men: 24, count: 1 });
       game.advance(1);
       game.select({ kind: 'squad', id: game.squads()[0]!.id });
     }, faction);

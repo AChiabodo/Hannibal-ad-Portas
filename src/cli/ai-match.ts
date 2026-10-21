@@ -8,7 +8,7 @@ import { createBehaviourRegistry, type Behaviour, type BehaviourContext, type Be
 import { DIFFICULTY, type Difficulty, type DifficultyName } from '../ai/difficulty.ts';
 import { BUILDINGS } from '../content/buildings.ts';
 import { MATCHUP } from '../content/arms.ts';
-import { SQUAD_TYPES } from '../content/squads.ts';
+import { payrollBill, recruitCost, SQUAD_TYPES } from '../content/squads.ts';
 import { TICK_HZ } from '../sim/clock.ts';
 import { BASE_HOUSING, GRAIN_PER_HEAD, TAX_PER_DENARIUS } from '../sim/economy.ts';
 import type { Command } from '../sim/command.ts';
@@ -25,6 +25,7 @@ export interface AiMatchRun extends MatchRun {
 }
 
 const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
+  recruitCost, payrollBill,
   grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, taxPerDenarius: TAX_PER_DENARIUS };
 const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ };
 const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,

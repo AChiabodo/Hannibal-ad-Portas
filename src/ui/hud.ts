@@ -52,7 +52,9 @@ import { SEASON_TICKS } from '../sim/season.ts';
 import { RESOURCE_KINDS, type ResourceKind } from '../sim/map.ts';
 import type { VisibleFront } from '../sim/siege.ts';
 import {
+  MAX_RECRUIT_COUNT,
   SETTLEMENT_TABS,
+  recruitCountInRange,
   groupSummary,
   knownEnemyFronts,
   knownFront,
@@ -197,6 +199,8 @@ export interface HudSession {
   readonly forecast?: ForecastLine | null;
   /** The first-entry guide's panel, or `null` when it is closed (#59). */
   readonly guide?: GuidePanel | null;
+  /** How many Squads one recruitment press buys; the page's own memory, never state. */
+  readonly recruitCount?: number;
   /**
    * Every place the Faction may see, as `ui/sites.ts` reads its Observation (U6).
    *
@@ -243,7 +247,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose';
+export type HudAction = 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore';
 
 export interface HudButton {
   readonly action: HudAction;
@@ -276,6 +280,8 @@ export interface HudModel {
   readonly commands: readonly OrderOption[];
   /** Which page of a settlement's panel is open. */
   readonly tab: SettlementTab;
+  /** How many Squads one recruitment press buys. */
+  readonly recruitCount: number;
   /** The multi-selection summary, when more than one Squad is picked. */
   readonly group: GroupSummary | null;
   /** The numbered control groups, as visible controls. */
@@ -511,7 +517,7 @@ export function hudModel(
     : null;
   const group = selected?.kind === 'squad' && pickedSquadList.length > 1 ? groupSummary(pickedSquadList) : null;
   const commands = settlement !== null
-    ? settlementOrders(visible, faction, settlement, tab, ended)
+    ? settlementOrders(visible, faction, settlement, tab, ended, session.recruitCount ?? 1)
     : selected?.kind === 'settlement' ? [] : squadOrders(visible, faction, pickedSquadList, ended);
   const armed = session.armed == null ? null : commands.find((order) => order.id === session.armed) ?? null;
 
@@ -526,6 +532,7 @@ export function hudModel(
     picked: pickedRows,
     commands,
     tab,
+    recruitCount: recruitCountInRange(session.recruitCount ?? 1),
     group,
     groups: session.groups ?? [],
     orders: {
@@ -1274,7 +1281,8 @@ function squadLines(squad: VisibleSquad, visible: EconomyVisible): Pick<HudDetai
     { label: translate('ui.order'), value: orderLabel(squad) },
     { label: translate('ui.destination'), value: squad.goal === null ? translate('ui.none') : `${String(squad.goal.x)},${String(squad.goal.y)}` },
     { label: translate('ui.type'), value: squadLabel(squad.type) },
-    { label: translate('ui.men'), value: `${String(men.men)}/${String(men.max)}` },
+    { label: translate('ui.men'), value: `${String(men.men)}/${String(men.capacity)}` },
+    { label: translate('ui.capacity'), value: String(squad.capacity) },
     { label: translate('ui.morale'), value: `${String(morale.morale)}/${String(morale.max)}` },
     { label: translate('ui.fatigue'), value: String(squad.fatigue) },
     { label: translate('ui.ammunition'), value: String(squad.ammunition) },
@@ -1300,7 +1308,7 @@ function squadLines(squad: VisibleSquad, visible: EconomyVisible): Pick<HudDetai
 
   // The Order is pinned, and so is a supply problem: a Squad outside its own
   // country is losing morale every Season, which is not a figure to scroll for.
-  return { lines, priority: squad.inTerritory ? [0] : [0, 7] };
+  return { lines, priority: squad.inTerritory ? [0] : [0, 8] };
 }
 
 /**
@@ -1583,6 +1591,26 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
       tabs.push({ tab, rect: { x: commandX + index * (tabWidth + 2), y: commandY, width: tabWidth, height: LINE_STEP + 3 } });
     }
     commandY += LINE_STEP + 5;
+    // The recruitment page buys a number of Squads, not one: the count is one
+    // public control with two buttons, so a pointer and the F6/Tab focus reach
+    // the same choice (ADR-0026). It is presentation memory, never state.
+    if (model.tab === 'recruitment') {
+      const buttonWidth = Math.max(14, Math.floor(commandWidth / 6));
+      const countWidth = commandWidth - 2 * (buttonWidth + 2);
+      buttons.push({
+        action: 'recruitFewer', text: '-', enabled: model.recruitCount > 1,
+        rect: { x: commandX, y: commandY, width: buttonWidth, height: LINE_STEP + 3 },
+      });
+      text.push({
+        text: message('ui.countValue', { label: translate('ui.recruitCount'), count: model.recruitCount }),
+        rect: { x: commandX + buttonWidth + 2, y: commandY, width: countWidth, height: LINE_STEP },
+      });
+      buttons.push({
+        action: 'recruitMore', text: '+', enabled: model.recruitCount < MAX_RECRUIT_COUNT,
+        rect: { x: commandX + commandWidth - buttonWidth, y: commandY, width: buttonWidth, height: LINE_STEP + 3 },
+      });
+      commandY += LINE_STEP + 5;
+    }
   }
   if (model.orders.notice !== null) {
     for (const word of wrapText(model.orders.notice, commandWidth).slice(0, 2)) {

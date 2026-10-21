@@ -51,7 +51,7 @@
  * this Match can do without fog: ownership is the economy's own secret and it
  * keeps it.
  */
-import { buildingOf, figuresOf, namedStock, squadTypeOf, type ResourceAmounts } from '../content/index.ts';
+import { buildingOf, figuresOf, namedStock, payrollBill, squadTypeOf, type ResourceAmounts } from '../content/index.ts';
 import type { Command, Formation } from './command.ts';
 import {
   applyCombatCommands,
@@ -180,6 +180,15 @@ export interface VisibleSquad {
   readonly men: number;
 
   /**
+   * The men it was recruited with: its capacity, fixed for its life (ADR-0026).
+   *
+   * Survivors are read against this rather than against the type's largest
+   * possible size, so a 60-man Squad that has lost half its men reads as 30/60
+   * and never as 30/120. It is hashed state, so a replay preserves it.
+   */
+  readonly capacity: number;
+
+  /**
    * How many figures it is drawn as right now (C4).
    *
    * The men it has left, for a body of men, so a Squad thins on screen as it is
@@ -227,7 +236,13 @@ export interface VisibleSquad {
    */
   readonly engaged: boolean;
 
-  /** What it owes its Faction each Season: the term Payroll is charged on. */
+  /**
+   * What it owes its Faction at the next Season boundary: its Payroll bill,
+   * priced on the men still standing rather than on its recruited capacity.
+   *
+   * A quoted bill, the rules' own deduction and the Forecast all read this same
+   * number, which is what makes them agree (ADR-0027).
+   */
   readonly payroll: number;
 
   /** Seasons in a row it has gone unpaid. */
@@ -452,6 +467,7 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
     x: squad.x,
     y: squad.y,
     men: squad.strength,
+    capacity: squad.capacity,
     figures: type === undefined ? squad.strength : figuresOf(type, squad.strength),
     formation: formationOf(squad.formation),
     facing: facingOf(squad.facing),
@@ -462,7 +478,7 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
     ammunition: squad.ammunition,
     routing: isRouting(squad),
     engaged: engagedWith(economy, squad) !== undefined,
-    payroll: type?.payroll ?? 0,
+    payroll: type === undefined ? 0 : payrollBill(type, squad.strength),
     unpaid: squad.unpaid,
     garrison: squad.garrison === FIELD ? null : squad.garrison,
     home: squad.home,

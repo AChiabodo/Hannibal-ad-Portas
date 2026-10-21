@@ -4,6 +4,7 @@ import { economyRegistry } from '../../src/cli/ai-match.ts';
 import type { Command } from '../../src/sim/command.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
 import { observeSiege, siegeMatchRules, type SiegeVisible } from '../../src/sim/siege.ts';
+import { isLegalSize, squadTypeCode, squadTypeOf, type SquadType } from '../../src/content/index.ts';
 
 function economyAi() {
   return createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry: economyRegistry });
@@ -20,6 +21,31 @@ describe('the economy Controller', () => {
         { kind: 'build', faction, settlement, building },
       ]);
       expect(ai.readLog()[0]?.selected.behaviour).toBe('economy');
+    }
+  });
+
+  it('buys only a real size, for both Factions, out of the Observation it is given', () => {
+    const world = siegeMatchRules.createWorld(7);
+    for (const faction of ['rome', 'carthage'] as const) {
+      const base = observeSiege(world, faction);
+      const developed: SiegeVisible = { ...base, treasury: 30, squads: [], settlements: [{
+        ...base.settlements[0]!, tier: 2, population: 16,
+        stocks: { grain: 30, timber: 30, stone: 30, iron: 30 },
+        works: ['villa', 'farm', 'market', 'house'].map((building) => ({ building, standing: true, remaining: 0 })),
+      }] };
+
+      const recruits = economyAi().decide({ faction, tick: 0, visible: developed })
+        .filter((command) => command.kind === 'recruit');
+      expect(recruits.length, faction).toBeGreaterThan(0);
+      for (const command of recruits) {
+        if (command.kind !== 'recruit') continue;
+        const code = squadTypeCode(command.squadType);
+        const type: SquadType | undefined = code === undefined ? undefined : squadTypeOf(code);
+        expect(type, command.squadType).toBeDefined();
+        if (type === undefined) continue;
+        expect(isLegalSize(type, command.men), `${faction} ${command.squadType} ${String(command.men)}`).toBe(true);
+        expect(command.count).toBeGreaterThan(0);
+      }
     }
   });
 
@@ -56,7 +82,7 @@ describe('the economy Controller', () => {
       works: ['villa', 'farm', 'market', 'house'].map((building) => ({ building, standing: true, remaining: 0 })),
     }] };
     expect(economyAi().decide({ faction: 'rome', tick: 0, visible: developed }))
-      .toEqual([{ kind: 'recruit', faction: 'rome', settlement: 0, squadType: 'principes', count: 1 }]);
+      .toEqual([{ kind: 'recruit', faction: 'rome', settlement: 0, squadType: 'principes', men: 24, count: 1 }]);
     for (const change of [
       { treasury: 0 },
       { squads: [{ ...visible.squads[0]!, type: 'hastati', payroll: 7, unpaid: 0 }] },

@@ -117,10 +117,12 @@ uses, with no AI-only production rule.
 
 Every operational decision recomputes recurring tax and staffed, standing Market
 income. Unfinished or unstaffed works and blockaded settlements contribute no
-Market income; blockaded settlements contribute no tax either. Recruitment emits
-one Squad at a time, requires total Payroll no greater than recurring income,
-retains two Seasons of the proposed Payroll plus `WORKING_TREASURY` (six)
-denarii, and leaves three Seasons of population food in stock. Unpaid Squads
+Market income; blockaded settlements contribute no tax either. Recruitment prices
+every real size a type offers with the content table's own `recruitCost` and
+`payrollBill`, emits one Squad at a time, requires total Payroll no greater than
+recurring income, retains two Seasons of the proposed Payroll plus
+`WORKING_TREASURY` (six) denarii, and leaves three Seasons of population food in
+stock. It prefers the larger real size when the treasury and income can carry it. Unpaid Squads
 suspend recruitment and put
 the next strategic plan into recovery posture. Externally imposed bankruptcy
 still follows the ordinary morale and desertion rules; there is no rescue grant.

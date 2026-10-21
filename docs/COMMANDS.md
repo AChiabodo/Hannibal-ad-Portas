@@ -78,7 +78,7 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 | `garrison`    | `faction`, `squads`, `settlement`         | Take up garrison inside a settlement: man its walls instead of the field.                                |
 | `withdraw`    | `faction`, `squads`                       | Break off and fall back. Which ground is behind you is the rules' question, not the Command's.          |
 | `build`       | `faction`, `settlement`, `building`       | Start building `building` in a settlement: a labour allocation plus a timer, not a construction site.   |
-| `recruit`     | `faction`, `settlement`, `squadType`, `count` | Raise `count` Squads of `squadType` in a settlement.                                                |
+| `recruit`     | `faction`, `settlement`, `squadType`, `men`, `count` | Raise `count` Squads of `squadType`, each of `men` real soldiers, in a settlement.                  |
 | `assault`     | `faction`, `squads`, `settlement`         | Take a settlement by force. Fast, expensive, needs the ram, and Rome's alone (ADR-0008).                |
 | `blockade`    | `faction`, `squads`, `settlement`         | Starve a settlement into surrender. Slow, cheap in lives, breakable by a relieving army (ADR-0008).     |
 | `formation`   | `faction`, `squads`, `formation`          | Set the shape the Squads hold: `line` for frontage, `column` for depth (PLAN §4).                       |
@@ -88,6 +88,15 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 `building` and `squadType` are ids from the content table (`content/`, B6 and
 C4). The vocabulary fixes that a name goes there; the rules refuse names they do
 not know.
+
+`men` is one of the type's real sizes, not a free number: Rome raises its melee
+infantry at `24`, `60` or `120`, Carthage at `24` or `48`, and a specialist at
+its one starting size (24 Balearic slingers, 12 Numidian horse, one elephant
+whose abstract strength is 24). A size the type does not offer is a Command the
+rules refuse, not one rounded to another size. The purchase is quoted from the
+type's 24-man price and scales in exact proportion, and the Squads raised
+remember the men they were recruited with as their capacity even after combat
+reduces their survivors (ADR-0026, ADR-0027).
 
 `group` is a number from 1 to 9. A control group binds Squads to a key: it
 **commands nobody**. It is the Player's own memory of a selection, recorded so
@@ -111,13 +120,22 @@ code fails the build.
 { "kind": "garrison", "faction": "rome", "squads": [3], "settlement": 12 }
 { "kind": "withdraw", "faction": "carthage", "squads": [7] }
 { "kind": "build", "faction": "rome", "settlement": 12, "building": "castrum" }
-{ "kind": "recruit", "faction": "carthage", "settlement": 12, "squadType": "libyan-spear", "count": 3 }
+{ "kind": "recruit", "faction": "carthage", "settlement": 12, "squadType": "libyan-spear", "men": 48, "count": 3 }
 { "kind": "assault", "faction": "rome", "squads": [3], "settlement": 12 }
 { "kind": "blockade", "faction": "carthage", "squads": [7], "settlement": 12 }
 { "kind": "formation", "faction": "rome", "squads": [3, 5], "formation": "column" }
 { "kind": "group", "faction": "rome", "group": 2, "squads": [3, 5] }
 ```
 <!-- examples:end -->
+
+## Compatibility with earlier logs
+
+Before P2 a `recruit` had no `men` field. Such a log is **rejected explicitly**
+at the vocabulary (`the command at command.men is not a positive size: undefined`)
+rather than given a default: a deterministic default would silently reinterpret
+an old purchase at a different size and price. Re-record the log with the real
+size it meant. The rules' state hash also moved with P2's capacity and Payroll
+fields; that is a documented baseline change, not a presentation-neutral one.
 
 ## Malformed, and illegal
 

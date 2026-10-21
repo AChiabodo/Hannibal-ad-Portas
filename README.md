@@ -305,10 +305,20 @@ const produced = seasonYield(settlement, allocation, season); // + harvest in au
   second tier and `forum` to its third, and a Squad type states the tier it
   needs: a tier-2 Squad cannot be recruited in a tier-1 settlement. The
   progression is the tiers.
-- **Payroll every Season.** A Faction owes its Squads' Payroll each Season out of
-  its treasury; a Squad it cannot pay loses morale and, after enough Seasons
-  owed, **deserts**. A paid Squad recovers a little of what it lost, so a rough
-  patch is survivable and a permanent one is not.
+- **Payroll every Season, on the men still standing.** A Faction owes each Squad
+  its type's Payroll rate per 24 survivors, rounded up, out of its treasury; a
+  Squad it cannot pay loses morale and, after enough Seasons owed, **deserts**.
+  A paid Squad recovers a little of what it lost, so a rough patch is survivable
+  and a permanent one is not.
+- **Recruited capacity is not strength.** A Squad is raised at one of its type's
+  real sizes (`24`, `60` or `120` for Roman melee; `24` or `48` for Carthaginian;
+  one fixed size for a specialist) and remembers those men as its capacity. Loss
+  reduces its survivors and its Payroll bill, never the purchase it was.
+- **A price is a 24-man price.** The starting resource bill is the old price
+  applied to 24 men and scales exactly — `1`, `2.5`, `5` for Rome and `1`, `2`
+  for Carthage — with no bulk discount. A 120-man line therefore costs five
+  24-man lines and no more. Specialist prices and combat balance remain a later
+  calibration (ADR-0026, ADR-0027).
 - **The autumn harvest is a peak.** Ordinary production runs every Season
   (`onSeason`); the harvest arrives on top of it on the autumn boundary
   (`onAutumn`), so the grain it brings in is a number a reader can see apart from
@@ -318,7 +328,8 @@ const produced = seasonYield(settlement, allocation, season); // + harvest in au
 `MatchState` — the first Match whose hash covers the tiles it begins on — and
 `observeEconomy` is what a Faction reads of it: its settlements and where they
 stand, their tier, people, stocks, land and works, its treasury, and its Squads
-with the Payroll terms they are charged on. An enemy's settlement is not in the
+with their recruited capacity, surviving men and the Payroll bill those survivors
+owe. An enemy's settlement is not in the
 Observation, which is the one filtering B6 can do before fog (B4) arrives.
 
 The plan's own test of the thing is a Match left alone: over three game years an
@@ -387,7 +398,7 @@ npm run match -- --seed 1 --ticks 600 --rules march
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 2,
-  "hash": "dcc3c947981d98f7"
+  "hash": "22454ba666d71b92"
 }
 ```
 
@@ -416,7 +427,7 @@ npm run match -- --seed 1 --ticks 600 --rules roster
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 2,
-  "hash": "d77285a51c049c74"
+  "hash": "687d088f2f1e9395"
 }
 ```
 
@@ -481,25 +492,49 @@ The Observation carries the fight to the Faction that is in it: `morale`,
 is not being spent by it. The HUD prints the figures, and reads a routed Squad as
 *In rotta* rather than naming an order it is not obeying.
 
-## The Carthaginian roster
+## The two rosters, and their real sizes
 
-The other half of the game (C4). `content/squads.ts` now carries both rosters,
+The other half of the game (C4), and P2's real sizes on top of it. `content/squads.ts` now carries both rosters,
 and they are not two sets of numbers: Rome's three lines are disciplined,
 durable and slow to replace, and Carthage's six are a mercenary coalition —
 cheap to raise, brittle in morale, dearer to keep and, in the elephant, unlike
 anything Rome fields at all.
 
-| type | tier | men | arm | morale | volleys | pace | Payroll |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `hastati` | 1 | 120 | sword | 10 | 4 | 1 | 3 |
-| `principes` | 2 | 120 | sword | 12 | 4 | 1 | 4 |
-| `triarii` | 3 | 100 | spear | 14 | 0 | 1 | 6 |
-| `libyan-spear` | 1 | 120 | spear | 9 | 0 | 1 | 3 |
-| `gaul` | 1 | 140 | sword | 6 | 0 | 1 | 2 |
-| `iberian-sword` | 2 | 120 | sword | 11 | 2 | 1 | 5 |
-| `balearic-slinger` | 2 | 90 | archers | 8 | 8 | 1 | 4 |
-| `numidian-horse` | 3 | 60 | cavalry | 10 | 6 | 2 | 4 |
-| `elephant` | 3 | 24 | cavalry | 16 | 0 | 2 | 8 |
+| type | tier | sizes | arm | morale | volleys | pace | 24-man cost | Payroll / 24 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `hastati` | 1 | 24 / 60 / 120 | sword | 10 | 4 | 1 | grain 8, iron 2 | 3 |
+| `principes` | 2 | 24 / 60 / 120 | sword | 12 | 4 | 1 | grain 10, iron 4 | 4 |
+| `triarii` | 3 | 24 / 60 / 120 | spear | 14 | 0 | 1 | grain 10, iron 6 | 6 |
+| `libyan-spear` | 1 | 24 / 48 | spear | 9 | 0 | 1 | grain 6, iron 2 | 3 |
+| `gaul` | 1 | 24 / 48 | sword | 6 | 0 | 1 | grain 5, iron 1 | 2 |
+| `iberian-sword` | 2 | 24 / 48 | sword | 11 | 2 | 1 | grain 8, iron 4 | 5 |
+| `balearic-slinger` | 2 | 24 | archers | 8 | 8 | 1 | grain 8, iron 1 | 4 |
+| `numidian-horse` | 3 | 12 | cavalry | 10 | 6 | 2 | grain 8, iron 2 | 4 |
+| `elephant` | 3 | 24 (one figure) | cavalry | 16 | 0 | 2 | grain 12, iron 6 | 8 |
+
+**Sizes, prices and Payroll (P2).** The small Carthaginian numbers are the
+roster's distinct shape, not a discount: Carthage can field more, smaller
+contingents and keep them through a wider front, while Rome can concentrate a
+120-man line. A Recruit names one real size; `36`, `64` and every number between
+the roster's sizes are refused rather than rounded. The resource bill is
+`ceil(24-man cost × men / 24)` and the Payroll bill is
+`ceil(rate × survivors / 24)`, both integer arithmetic. Rounding *up* is
+deliberate: splitting the same men across more Squads can never lower the bill,
+so fragmentation buys no free Payroll. A 120-man `hastati` therefore costs grain
+40 and iron 10 to raise and 15 denarii a Season, while a 24-man one costs grain
+8, iron 2 and 3 denarii. `capacity` is hashed state, so a Replay remembers what
+each Squad was bought as even after casualties. Pre-P2 logs with no `men` are
+rejected at the Command seam rather than defaulted (ADR-0026, ADR-0027).
+
+**Before and after.** Before P2 a Recruit raised one full-strength block per type:
+Rome at 120/120/100 and Carthage at 120/140/120/90/60/24 men, with the resource
+cost above charged once per Squad and Payroll a flat 3/4/6 and 3/2/5/4/4/8. After
+P2 the sizes in the table above are real purchases, the same resource figures are
+the 24-man basis (so a 120-man `hastati` costs grain 40 and iron 10, five times
+the old bill), and Payroll is 15 denarii for those 120 survivors against the old
+flat 3. No combat calibration is claimed: the P2 checks measure the price,
+capacity, bill and Replay arithmetic and the AI's opening purchases, while #66
+owns whether the resulting armies fight each other fairly.
 
 **A pace is a type's own.** `pace` is a whole number of tiles' worth of ground
 per tile's cost: `1` is a man on foot and `2` is a horse. `route.ts`'s
@@ -523,15 +558,15 @@ C4's criterion is that every type *has* a matchup behaviour, not that all nine
 differ, which five arms and nine types could not do.
 
 **A Squad of a single figure.** An elephant is one figure — `figures: 1` — whose
-`strength` of 24 is the staying power that figure is worth, which is what lets a
-single beast weather a round or two of a Roman line instead of dying to the
-first blow. `figuresOf(type)` is the one place the two numbers are tied, and the
-Observation carries both, so a drawing code lays out a beast as one figure and a
-body of men as a strength-backed figure count. The UI projects three representative
-soldiers per four men (rounded up), at the original 10x14 size with five-pixel
-spacing; a 120-man Squad draws 90, and the HUD still says 120. The elephant stays
-one figure. This presentation convention changes neither strength nor combat,
-pathfinding or formation rules. Everything else about an elephant is an ordinary Squad:
+abstract `strength` of 24 is the staying power that figure is worth, which is
+what lets a single beast weather a round or two of a Roman line instead of dying
+to the first blow. `figuresOf(type)` is the one place the two numbers are tied,
+and the Observation carries both, so a drawing code lays out a beast as one
+figure and an infantry Squad as three representative figures per four survivors
+(rounded up): a 120-man Squad draws 90. The elephant stays one figure, and its
+`strength` is separate from the beast count. The 1:1 figure pass is P4's; P2
+deliberately keeps the existing procedural renderer. Everything else about an
+elephant is an ordinary Squad:
 it is recruited, paid, ordered, flanked and routed like any other (the ticket's
 own "an ordinary Squad type with an extraordinary figure").
 
@@ -626,7 +661,7 @@ npm run match -- --seed 1 --ticks 9000 --rules assault
   "winner": "rome",
   "reason": "rome won the Match: the carthage Stronghold fell to an assault",
   "commands": 2,
-  "hash": "36bbe60e3694f897"
+  "hash": "f5fef8a61ef4b00e"
 }
 ```
 
@@ -642,7 +677,7 @@ npm run match -- --seed 1 --ticks 9000 --rules blockade
   "winner": "rome",
   "reason": "rome won the Match: the carthage Stronghold fell to a blockade",
   "commands": 2,
-  "hash": "b83b7b0d7e917f0c"
+  "hash": "f3df38e2cf5012df"
 }
 ```
 
@@ -1212,23 +1247,28 @@ npm run agent -- --agent examples/agent.ts --seed 7 --opponent idle
 ```json
 {
   "seed": 7,
-  "ticks": 3401,
+  "ticks": 14700,
   "outcome": "victory",
   "winner": "rome",
-  "reason": "rome won the Match: the carthage Stronghold fell to an assault",
-  "commands": 61,
-  "hash": "a4ae5836bdba8e8d",
+  "reason": "rome won the Match: the carthage Stronghold fell to a blockade",
+  "commands": 63,
+  "hash": "29e12382a7559932",
   "agent": {
     "faction": "rome",
     "opponent": "idle",
     "status": "played",
     "stoppedBy": null,
     "detail": null,
-    "decisions": 341,
-    "commands": 61
+    "decisions": 1470,
+    "commands": 63
   }
 }
 ```
+
+The example now demonstrates the **Blockade** path. P2's smaller, dearer armies
+no longer carry the old script's storm of the walls, and final Siege/combat
+equivalence is #66's; what the example proves is the external-agent contract, not
+a balance claim about the Assault.
 
 A process that is not this codebase plays a whole Match: the harness starts the
 file `--agent` names, speaks [the protocol](docs/PROTOCOL.md) to it over that
@@ -1330,7 +1370,7 @@ npm run replay -- march.json
   "outcome": "clock",
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
-  "hash": "dcc3c947981d98f7",
+  "hash": "22454ba666d71b92",
   "verdict": "reproduced"
 }
 ```
@@ -1383,6 +1423,10 @@ where "is the game balanced?" stops being an opinion: the report states the win
 rate of each Faction, the median and the spread of how long a Match lasts, the
 share of Matches the clock decided, and the seed of every Match that was lopsided
 or stalled, so the Match behind an odd number can be played again and read.
+
+The report below was measured **before P2**. The smaller, dearer roster and the
+survivor-based Payroll move every number in it; #29 owns re-measuring the batch,
+and P2 records the baseline rather than pretending the old odds still hold.
 
 ```json
 {

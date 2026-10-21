@@ -134,7 +134,7 @@ test('picks a Squad and moves it with a real pointer gesture, and the Match appl
   expect(tab, 'the settlement has a recruitment page').toBeDefined();
   if (tab === undefined) throw new Error('no recruitment tab');
   await press(page, tab.rect);
-  const card = (await hudLayout(page)).commands.find((entry) => entry.order.id === 'recruit:hastati');
+  const card = (await hudLayout(page)).commands.find((entry) => entry.order.id === 'recruit:hastati:24');
   expect(card, 'a hastati line is on offer').toBeDefined();
   if (card === undefined) throw new Error('no hastati card');
   await press(page, card.rect);

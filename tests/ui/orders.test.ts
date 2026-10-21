@@ -45,6 +45,7 @@ const HASTATI: VisibleSquad = {
   x: 12,
   y: 8,
   men: 90,
+  capacity: 120,
   figures: 90,
   formation: 'line',
   facing: 'south',
@@ -226,26 +227,55 @@ describe('the offers a settlement has', () => {
     expect(farm).toMatchObject({ enabled: false, reason: translate('reason.maxWorks') });
   });
 
-  it('offers the Faction’s own roster to recruit, with its men and its Payroll', () => {
+  it('offers every real size of the Faction’s own roster, with its men and its Payroll', () => {
     const rome = settlementOrders(visible(), 'rome', SETTLEMENT, 'recruitment');
-    const hastati = rome.find((order) => order.id === 'recruit:hastati');
+    const hastati = rome.filter((order) => order.id.startsWith('recruit:hastati:'));
 
-    expect(hastati?.enabled).toBe(true);
-    expect(hastati?.note).toContain('120');
-    expect(hastati?.note).toContain(translate('ui.payroll'));
+    expect(hastati.map((order) => order.id)).toEqual([
+      'recruit:hastati:24', 'recruit:hastati:60', 'recruit:hastati:120',
+    ]);
+    const small = rome.find((order) => order.id === 'recruit:hastati:24');
+    expect(small).toMatchObject({ enabled: true, recruit: { men: 24, count: 1 }, subject: 'hastati' });
+    expect(small?.note).toContain('24');
+    expect(small?.note).toContain(`${translate('ui.payroll')} 3`);
+    expect(small?.note).toContain(translate('ui.perSeason'));
+    expect(small?.costs).toEqual([
+      { badge: 'grain', value: 8 }, { badge: 'iron', value: 2 },
+      { badge: 'men', value: 24 }, { badge: 'coin', value: 3 },
+    ]);
 
-    const triarii = rome.find((order) => order.id === 'recruit:triarii');
+    // The stock covers the 24-man bill exactly and nothing larger.
+    expect(rome.find((order) => order.id === 'recruit:hastati:60')).toMatchObject({
+      enabled: false, reason: translate('reason.cost'),
+    });
+
+    const triarii = rome.find((order) => order.id === 'recruit:triarii:24');
     expect(triarii).toMatchObject({ enabled: false, reason: 'Serve il livello 3' });
-    expect(rome.some((order) => order.id === 'recruit:gaul')).toBe(false);
+    expect(rome.some((order) => order.id.startsWith('recruit:gaul'))).toBe(false);
 
     const carthage = settlementOrders(visible(), 'carthage', SETTLEMENT, 'recruitment');
-    expect(carthage.some((order) => order.id === 'recruit:libyan-spear')).toBe(true);
-    expect(carthage.some((order) => order.id === 'recruit:hastati')).toBe(false);
+    expect(carthage.map((order) => order.id)).toContain('recruit:libyan-spear:24');
+    expect(carthage.map((order) => order.id)).toContain('recruit:libyan-spear:48');
+    expect(carthage.some((order) => order.id.startsWith('recruit:hastati'))).toBe(false);
+  });
+
+  it('quotes the whole press when the page buys several Squads', () => {
+    const rich: VisibleSettlement = { ...SETTLEMENT, stocks: { grain: 60, timber: 60, stone: 60, iron: 60 } };
+    const order = settlementOrders(visible(), 'rome', rich, 'recruitment', false, 3)
+      .find((candidate) => candidate.id === 'recruit:hastati:24');
+
+    expect(order).toMatchObject({ enabled: true, recruit: { men: 24, count: 3 } });
+    expect(order?.costs).toEqual([
+      { badge: 'grain', value: 24 }, { badge: 'iron', value: 6 },
+      { badge: 'men', value: 72 }, { badge: 'coin', value: 9 },
+    ]);
+    expect(order?.note).toContain('72');
+    expect(order?.note).toContain(`${translate('ui.payroll')} 9`);
   });
 
   it('says when the stock cannot pay for a Squad', () => {
     const poor: VisibleSettlement = { ...SETTLEMENT, stocks: { grain: 0, timber: 0, stone: 0, iron: 0 } };
-    const hastati = settlementOrders(visible(), 'rome', poor, 'recruitment').find((order) => order.id === 'recruit:hastati');
+    const hastati = settlementOrders(visible(), 'rome', poor, 'recruitment').find((order) => order.id === 'recruit:hastati:24');
 
     expect(hastati).toMatchObject({ enabled: false, reason: translate('reason.cost') });
   });
@@ -312,7 +342,7 @@ describe('a mixed selection', () => {
   });
 
   it('reads a Squad’s men and Morale against what its type is worth', () => {
-    expect(menOf(HASTATI)).toEqual({ men: 90, max: 120 });
+    expect(menOf(HASTATI)).toEqual({ men: 90, capacity: 120 });
     expect(moraleOf(HASTATI)).toEqual({ morale: 7, max: 10 });
   });
 

@@ -98,6 +98,7 @@ import {
   CONTROL_GROUPS,
 } from '../input/human.ts';
 import {
+  MAX_RECRUIT_COUNT,
   SETTLEMENT_TABS,
   controlGroupViews,
   enemyAt,
@@ -562,6 +563,8 @@ export function createGame(options: GameOptions): Game {
   const applied: LoggedCommand<Command>[] = [];
   /** Which page of a settlement's panel is open (#55): the Player's, never the Match's. */
   let tab: SettlementTab = 'overview';
+  /** How many Squads one recruitment press buys: the page's memory, never Match state. */
+  let recruitCount = 1;
   let focusId: string | null = null;
   let hoveredOrder: string | null = null;
   /** The action waiting for a click, by its stable id, or `null`. */
@@ -1173,10 +1176,12 @@ export function createGame(options: GameOptions): Game {
     readonly notices: readonly Notice[];
     readonly forecast: ReturnType<typeof forecastLine>;
     readonly guide: ReturnType<typeof guidePanel>;
+    readonly recruitCount: number;
   } {
     return {
       faction,
       tab,
+      recruitCount,
       armed,
       pending: human.pending,
       last: submission === null ? null : { ...submission, status: human.pending > 0 ? 'pending' : 'applied' },
@@ -1451,6 +1456,8 @@ export function createGame(options: GameOptions): Game {
     else if (action === 'groupBack') hooks.groupBack();
     else if (action === 'notices') hooks.toggleNotices();
     else if (action === 'guideBegin' || action === 'guideSkip' || action === 'guideClose') guideButton(action);
+    else if (action === 'recruitFewer') { recruitCount = Math.max(1, recruitCount - 1); repaint(); }
+    else if (action === 'recruitMore') { recruitCount = Math.min(MAX_RECRUIT_COUNT, recruitCount + 1); repaint(); }
     else {
       const region = action.startsWith('list') ? 'list' : action.startsWith('commands') ? 'commands'
         : action.startsWith('notices') ? 'notices' : 'detail';
@@ -1633,8 +1640,9 @@ export function createGame(options: GameOptions): Game {
         return offer.subject === null || human.selection.settlement === null
           ? null : build(faction, human.selection.settlement, offer.subject);
       case 'recruit':
-        return offer.subject === null || human.selection.settlement === null
-          ? null : recruit(faction, human.selection.settlement, offer.subject, 1);
+        return offer.subject === null || offer.recruit === undefined || human.selection.settlement === null
+          ? null
+          : recruit(faction, human.selection.settlement, offer.subject, offer.recruit.men, offer.recruit.count);
     }
   }
 

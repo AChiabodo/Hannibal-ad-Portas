@@ -163,6 +163,7 @@ export function musterSquad(economy: Economy, map: MapGrid, placement: Placement
     id: economy.nextSquadId,
     owner: factionCode(placement.faction),
     type: code as number,
+    capacity: type.strength,
     home: home.id,
     morale: type.morale,
     unpaid: 0,

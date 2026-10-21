@@ -3,9 +3,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   BUILDINGS,
+  COST_BASIS,
+  PAYROLL_BASIS,
   buildingCode,
   buildingOf,
   figuresOf,
+  isLegalSize,
+  payrollBill,
+  recruitCost,
   SQUAD_TYPES,
   squadTypeCode,
   squadTypeOf,
@@ -114,6 +119,83 @@ describe('the Squad types content ships', () => {
     expect(elephant?.strength).toBeGreaterThan(1);
     expect(elephant?.morale).toBeGreaterThan(Math.max(...squadTypesOf('rome').map((type) => type.morale)));
     expect(elephant?.payroll).toBe(Math.max(...SQUAD_TYPES.map((type) => type.payroll)));
+  });
+
+  it('gives every type only its real sizes, smallest first and its full strength last', () => {
+    for (const type of SQUAD_TYPES) {
+      expect(type.sizes.length, type.id).toBeGreaterThan(0);
+      expect(type.sizes, type.id).toEqual([...type.sizes].sort((a, b) => a - b));
+      expect(type.sizes.at(-1), type.id).toBe(type.strength);
+      expect(new Set(type.sizes).size, type.id).toBe(type.sizes.length);
+      expect(type.sizes.every((men) => Number.isInteger(men) && men > 0), type.id).toBe(true);
+    }
+  });
+
+  it('offers Rome 24/60/120 of melee foot and Carthage 24/48, with specialists fixed', () => {
+    for (const id of ['hastati', 'principes', 'triarii']) {
+      expect(squadTypeOf(squadTypeCode(id) ?? -1)?.sizes, id).toEqual([24, 60, 120]);
+    }
+    for (const id of ['libyan-spear', 'gaul', 'iberian-sword']) {
+      expect(squadTypeOf(squadTypeCode(id) ?? -1)?.sizes, id).toEqual([24, 48]);
+    }
+    expect(squadTypeOf(squadTypeCode('balearic-slinger') ?? -1)?.sizes).toEqual([24]);
+    expect(squadTypeOf(squadTypeCode('numidian-horse') ?? -1)?.sizes).toEqual([12]);
+    expect(squadTypeOf(squadTypeCode('elephant') ?? -1)?.sizes).toEqual([24]);
+  });
+
+  it('accepts only a size the type really offers', () => {
+    const hastati = squadTypeOf(squadTypeCode('hastati') ?? -1)!;
+    const libyan = squadTypeOf(squadTypeCode('libyan-spear') ?? -1)!;
+
+    for (const men of [24, 60, 120]) expect(isLegalSize(hastati, men), String(men)).toBe(true);
+    for (const men of [12, 23, 25, 36, 48, 64, 121]) expect(isLegalSize(hastati, men), String(men)).toBe(false);
+    expect(isLegalSize(libyan, 48)).toBe(true);
+    expect(isLegalSize(libyan, 60)).toBe(false);
+  });
+
+  it('quotes the current price for 24 men, and proportional bills without a bulk discount', () => {
+    const hastati = squadTypeOf(squadTypeCode('hastati') ?? -1)!;
+    const triarii = squadTypeOf(squadTypeCode('triarii') ?? -1)!;
+    const libyan = squadTypeOf(squadTypeCode('libyan-spear') ?? -1)!;
+    const gaul = squadTypeOf(squadTypeCode('gaul') ?? -1)!;
+    const horse = squadTypeOf(squadTypeCode('numidian-horse') ?? -1)!;
+
+    expect(COST_BASIS).toBe(24);
+    expect(recruitCost(hastati, 24)).toEqual({ grain: 8, timber: 0, stone: 0, iron: 2 });
+    expect(recruitCost(hastati, 60)).toEqual({ grain: 20, timber: 0, stone: 0, iron: 5 });
+    expect(recruitCost(hastati, 120)).toEqual({ grain: 40, timber: 0, stone: 0, iron: 10 });
+    expect(recruitCost(triarii, 60)).toEqual({ grain: 25, timber: 0, stone: 0, iron: 15 });
+    expect(recruitCost(libyan, 48)).toEqual({ grain: 12, timber: 0, stone: 0, iron: 4 });
+    expect(recruitCost(gaul, 48)).toEqual({ grain: 10, timber: 0, stone: 0, iron: 2 });
+    expect(recruitCost(horse, 12)).toEqual({ grain: 4, timber: 0, stone: 0, iron: 1 });
+
+    // Five 24-man Squads cost exactly what one 120-man Squad does: no discount.
+    expect(recruitCost(hastati, 24).grain * 5).toBe(recruitCost(hastati, 120).grain);
+  });
+
+  it('charges Payroll on the rate per 24 men, following surviving men and rounding up', () => {
+    const hastati = squadTypeOf(squadTypeCode('hastati') ?? -1)!;
+    const libyan = squadTypeOf(squadTypeCode('libyan-spear') ?? -1)!;
+    const horse = squadTypeOf(squadTypeCode('numidian-horse') ?? -1)!;
+
+    expect(PAYROLL_BASIS).toBe(24);
+    expect(payrollBill(hastati, 24)).toBe(3);
+    expect(payrollBill(hastati, 60)).toBe(8);
+    expect(payrollBill(hastati, 120)).toBe(15);
+    expect(payrollBill(libyan, 24)).toBe(3);
+    expect(payrollBill(libyan, 48)).toBe(6);
+    expect(payrollBill(horse, 12)).toBe(2);
+
+    // A surviving remnant still owes its share; the bill falls with the men.
+    expect(payrollBill(hastati, 17)).toBe(3);
+    expect(payrollBill(hastati, 1)).toBe(1);
+
+    // Splitting equal men cannot lower the total bill, which is the rule that
+    // closes the free-fragmentation exploit: two 60s cost at least one 120.
+    expect(payrollBill(hastati, 60) + payrollBill(hastati, 60)).toBeGreaterThanOrEqual(
+      payrollBill(hastati, 120),
+    );
+    expect(payrollBill(hastati, 24) * 5).toBe(payrollBill(hastati, 120));
   });
 });
 

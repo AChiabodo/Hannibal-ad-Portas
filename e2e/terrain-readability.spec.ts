@@ -307,7 +307,7 @@ test.describe('the quietened terrain on screen', () => {
 
       await press(page, recruitment);
       const offer = await page.evaluate((wanted) => window.__SPQR.game?.hud().commands
-        .find((order) => order.id === `recruit:${wanted}`)?.id, faction === 'rome' ? 'hastati' : 'libyan-spear');
+        .find((order) => order.id === `recruit:${wanted}:24`)?.id, faction === 'rome' ? 'hastati' : 'libyan-spear');
       expect(offer, `${faction} can raise its first line`).toBeDefined();
       if (offer === undefined) throw new Error('the recruitment page offers no first line');
       expect(

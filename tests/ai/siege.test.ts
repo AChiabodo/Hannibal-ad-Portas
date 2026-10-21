@@ -16,11 +16,11 @@ function controller(level: keyof typeof DIFFICULTY = 'centurio') {
     ]) });
 }
 
-interface Squad { x: number; y: number; id: number; type: string; men: number; morale: number;
+interface Squad { x: number; y: number; id: number; type: string; men: number; capacity: number; morale: number;
   routing: boolean; garrison: number | null; goal: { x: number; y: number } | null }
 
 function squad(id: number, x: number, y: number, overrides: Partial<Squad> = {}): Squad {
-  return { id, type: 'hastati', x, y, men: 120, morale: 10,
+  return { id, type: 'hastati', x, y, men: 120, capacity: 120, morale: 10,
     routing: false, garrison: null, goal: null, ...overrides };
 }
 

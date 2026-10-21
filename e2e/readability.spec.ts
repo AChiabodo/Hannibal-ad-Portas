@@ -113,7 +113,7 @@ async function recruit(page: Page, faction: Faction): Promise<number> {
   await press(page, tab);
 
   const offer = await page.evaluate((wanted) => window.__SPQR.game?.hud().commands
-    .find((order) => order.id === `recruit:${wanted}`)?.id, FIRST_LINE[faction]);
+    .find((order) => order.id === `recruit:${wanted}:24`)?.id, FIRST_LINE[faction]);
   expect(offer, `${faction} can raise its first line`).toBeDefined();
   if (offer === undefined) throw new Error('the recruitment page offers no first line');
   expect(await page.evaluate((id) => window.__SPQR.game?.perform(id), offer), `${faction}: the order was taken`).toBe(true);
@@ -427,7 +427,7 @@ test.describe('the theatre’s annotations', () => {
       if (!game || !home) return;
       game.select({ kind: 'settlement', id: home.id });
       game.setTab('recruitment');
-      game.perform('recruit:hastati');
+      game.perform('recruit:hastati:24');
       game.advance(1);
     });
     const raised = await squads(page);

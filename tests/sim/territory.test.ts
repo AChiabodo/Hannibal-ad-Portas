@@ -147,8 +147,8 @@ describe('the Attrition a Season outside the Territory costs', () => {
     // Carthage's army in nobody's country pays what Rome's does — the rule is
     // the map's and not a Faction's, and it is the quarters Rome can make of a
     // field that are Rome's alone.
-    expect(chargedOneSeason('winter', OPEN_FIELD, 'carthage').strength).toBe(113);
-    expect(chargedOneSeason('summer', OPEN_FIELD, 'carthage').strength).toBe(118);
+    expect(chargedOneSeason('winter', OPEN_FIELD, 'carthage').strength).toBe(46);
+    expect(chargedOneSeason('summer', OPEN_FIELD, 'carthage').strength).toBe(47);
   });
 
   it('is visibly worse in winter than in autumn, and worst of all in the open away', () => {

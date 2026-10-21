@@ -112,8 +112,11 @@ test('shows a Squad its morale and its Payroll when it is selected', async ({ pa
 
   expect(model.detail?.title).toBe('Reparto 1');
   expect(words).toContain(`${translate('ui.type')} Astati`);
+  expect(words).toContain(`${translate('ui.men')} 120/120`);
+  expect(words).toContain(`${translate('ui.capacity')} 120`);
   expect(words).toContain(`${translate('ui.morale')} 10/10`);
-  expect(words).toContain(`${translate('ui.payroll')} 3`);
+  // A 120-man hastati is five 24-man rates: 15 denarii a Season (ADR-0027).
+  expect(words).toContain(`${translate('ui.payroll')} 15`);
 });
 
 test('selects the row a Player clicks', async ({ page }) => {

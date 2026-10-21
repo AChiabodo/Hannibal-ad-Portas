@@ -92,9 +92,15 @@ export function typeOf(squad: VisibleSquad): SquadType | undefined {
   return code === undefined ? undefined : squadTypeOf(code);
 }
 
-/** The men a Squad has left, against what its type is counted as at full strength. */
-export function menOf(squad: VisibleSquad): { readonly men: number; readonly max: number } {
-  return { men: squad.men, max: typeOf(squad)?.strength ?? squad.men };
+/**
+ * The men a Squad has left, against the men it was recruited with.
+ *
+ * The maximum is the Squad's own capacity, not its type's largest size: a
+ * 60-man Squad worn down to 40 reads as `40/60`, which is the purchase the
+ * Player made and not a type-wide full strength they never had (ADR-0026).
+ */
+export function menOf(squad: VisibleSquad): { readonly men: number; readonly capacity: number } {
+  return { men: squad.men, capacity: squad.capacity };
 }
 
 /** The Morale a Squad has, against the most its type ever had. */

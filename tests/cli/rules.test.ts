@@ -435,14 +435,14 @@ describe('the Attrition Match, where the country an army stands in is the whole 
     }
 
     // Four Season boundaries: summer, autumn, winter and spring. The army in its
-    // own country behind a camp pays none of it; the one in the field loses two
-    // men in summer, two in autumn, six for the winter and two in spring — a
-    // hundred and twenty men down to a hundred and eight.
+    // own country behind a camp pays none of it; the one in the field is a
+    // forty-eight-man Carthaginian line after P2, and losses two percent, two
+    // percent, six percent and two percent take it down to forty-three.
     expect(world.winters).toBe(1);
     expect(world.autumns).toBe(1);
     expect(roman.strength).toBe(120);
     expect(inCamp(world.economy, roman)).toBe(true);
-    expect(carthaginian.strength).toBe(108);
+    expect(carthaginian.strength).toBe(43);
     expect(inCamp(world.economy, carthaginian)).toBe(false);
   });
 

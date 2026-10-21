@@ -45,11 +45,12 @@ import {
   BUILDINGS,
   amountOf,
   pay,
+  payrollBill,
+  recruitCost,
   squadTypesOf,
   times,
   stockOf,
   type ResourceAmounts,
-  type SquadType,
 } from '../content/index.ts';
 import type { EconomyVisible, VisibleSettlement, VisibleSquad } from '../sim/economy-match.ts';
 import type { Faction } from '../sim/faction.ts';
@@ -88,6 +89,14 @@ export type OrderKind =
 /** The three pages of a settlement's panel (#55). */
 export type SettlementTab = 'overview' | 'construction' | 'recruitment';
 
+/** The most Squads one recruitment press may buy: a queue, not a standing army at once. */
+export const MAX_RECRUIT_COUNT = 9;
+
+/** The count a recruitment press really uses, clamped to the control's range. */
+export function recruitCountInRange(count: number): number {
+  return Math.min(MAX_RECRUIT_COUNT, Math.max(1, Math.trunc(count)));
+}
+
 /** Every tab, in the order the panel shows them. */
 export const SETTLEMENT_TABS: readonly SettlementTab[] = ['overview', 'construction', 'recruitment'];
 
@@ -113,6 +122,8 @@ export interface OrderOption {
   readonly costs: readonly OrderCost[];
   /** The content id or formation it names, when it names one. */
   readonly subject: string | null;
+  /** For a Recruit: the real size and the number of Squads one press buys. */
+  readonly recruit?: { readonly men: number; readonly count: number };
   /** Cost, time or strength: what pressing it commits to, from the content tables. */
   readonly note: string | null;
   /** The key that does the same thing, when there is one. */
@@ -328,9 +339,10 @@ export function settlementOrders(
   settlement: VisibleSettlement,
   tab: SettlementTab,
   ended = false,
+  recruitCount = 1,
 ): readonly OrderOption[] {
   const offers = tab === 'construction' ? constructionOrders(faction, settlement)
-    : tab === 'recruitment' ? recruitmentOrders(faction, settlement) : [];
+    : tab === 'recruitment' ? recruitmentOrders(faction, settlement, recruitCount) : [];
 
   return ended ? offers.map((offer) => ({ ...offer, enabled: false, reason: translate('reason.ended') })) : offers;
 }
@@ -363,35 +375,58 @@ function constructionOrders(faction: Faction, settlement: VisibleSettlement): re
   });
 }
 
-/** Every Squad type this Faction could raise here, in content order. */
-function recruitmentOrders(faction: Faction, settlement: VisibleSettlement): readonly OrderOption[] {
-  return squadTypesOf(faction).map((type) => {
-    const affordable = pay(stockOf(settlement.stocks), times(type.cost, 1)).affordable;
+/**
+ * Every real size of every Squad type this Faction could raise here, in content
+ * order and smallest size first.
+ *
+ * One offer per *purchase*, not per type: a 24-man hastati and a 120-man one are
+ * different bills and different Payroll rates, so pressing one has to say which
+ * it is (ADR-0026). The count is the recruitment page's own number of Squads;
+ * every row quotes the whole press, so the cost a Player reads is what the tick
+ * will charge.
+ */
+function recruitmentOrders(
+  faction: Faction,
+  settlement: VisibleSettlement,
+  count: number,
+): readonly OrderOption[] {
+  const squads = recruitCountInRange(count);
+
+  return squadTypesOf(faction).flatMap((type) => type.sizes.map((men) => {
+    const total = times(recruitCost(type, men), squads);
+    const affordable = pay(stockOf(settlement.stocks), total).affordable;
+    const bill = payrollBill(type, men) * squads;
     const reason = type.tier > settlement.tier
       ? message('reason.tier', { tier: type.tier })
       : !affordable ? translate('reason.cost') : null;
+    const name = squadLabel(type.id);
 
     return {
-      id: `recruit:${type.id}`,
+      id: `recruit:${type.id}:${String(men)}`,
       kind: 'recruit' as const,
       group: 'recruitment' as const,
-      label: squadLabel(type.id),
-      short: squadLabel(type.id),
-      costs: [...resourceCosts(type.cost), { badge: 'men', value: type.strength }, { badge: 'coin', value: type.payroll }],
+      label: `${name} ${String(men)}`,
+      short: `${name} ${String(men)}`,
+      costs: [...resourceCosts(total), { badge: 'men', value: men * squads }, { badge: 'coin', value: bill }],
       subject: type.id,
-      note: `${costLabel(type.cost)} - ${typeNote(type)}`,
+      recruit: { men, count: squads },
+      note: message('ui.recruitNote', {
+        men,
+        count: squads,
+        total: men * squads,
+        menLabel: translate('ui.men'),
+        cost: costLabel(total),
+        payrollLabel: translate('ui.payroll'),
+        payroll: bill,
+        perSeason: translate('ui.perSeason'),
+      }),
       shortcut: null,
       target: 'none' as const,
       targetHint: null,
       enabled: reason === null,
       reason,
     };
-  });
-}
-
-/** What raising one of a type gets: its men and its Payroll, from the content tables. */
-function typeNote(type: SquadType): string {
-  return `${translate('ui.men')} ${String(type.strength)} - ${translate('ui.payroll')} ${String(type.payroll)}`;
+  }));
 }
 
 /** The badge that names each resource, beside the numeral it is drawn with. */

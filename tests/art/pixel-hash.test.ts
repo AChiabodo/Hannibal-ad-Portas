@@ -35,7 +35,9 @@ import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 
 /** The fingerprints recorded from the generators as accepted. */
 // U9: deliberately add the reviewed UI surfaces and real layout specimens.
-const PLATE_HASH = 'e484917786b1c83b';
+// P2 moved the squad specimens and the plate they sit on: the panel now shows a
+// Squad's recruited capacity beside its survivors, which is a reviewed change.
+const PLATE_HASH = '321c0452d9af3bbb';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'ui:carthage-column': '4b56aa9f36f49c4a',
@@ -48,8 +50,8 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'interface:disabled': '4612506f4557e9b7',
   'interface:focus': '74aad50e7b9be297',
   'ui:setup': '82906ab423edd8b4',
-  'ui:squad': '69db12c004c98aa7',
-  'ui:armed-pending': 'be5b1e5381012a2d',
+  'ui:squad': 'd712e4ca11d5ea9f',
+  'ui:armed-pending': 'e1c239bb356fce85',
   'ui:construction': '02bca410e02e4c6e',
   'ui:options': '1e03d0df52d0241e',
   'ui:result': 'e641e2c442783d44',

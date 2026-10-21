@@ -15,9 +15,9 @@ const VISIBLE: EconomyVisible = {
   settlements: [{ id: 0, x: 10, y: 10, tier: 1, population: 10,
     stocks: { grain: 60, timber: 60, stone: 60, iron: 60 },
     land: { grain: 4, timber: 2, stone: 1, iron: 1 }, works: [] }],
-  squads: [{ id: 1, type: 'hastati', x: 11, y: 10, men: 120, figures: 120,
+  squads: [{ id: 1, type: 'hastati', x: 11, y: 10, men: 120, capacity: 120, figures: 120,
     formation: 'line', facing: 'south', goal: null, refused: null, morale: 10,
-    fatigue: 0, ammunition: 4, routing: false, engaged: false, payroll: 3,
+    fatigue: 0, ammunition: 4, routing: false, engaged: false, payroll: 15,
     unpaid: 0, garrison: null, home: 0, inTerritory: true, inCamp: false }],
 };
 

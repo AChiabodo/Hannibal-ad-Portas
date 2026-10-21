@@ -1,6 +1,6 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
-import type { Behaviour } from './registry.ts';
+import { atHalfStrength, type Behaviour } from './registry.ts';
 import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
@@ -13,7 +13,7 @@ export interface ScoutingObservation {
   readonly settlements: readonly Site[];
   readonly enemies: readonly Site[];
   readonly squads: readonly (Site & {
-    readonly id: number; readonly type: string; readonly men: number; readonly morale: number;
+    readonly id: number; readonly type: string; readonly men: number; readonly capacity: number; readonly morale: number;
     readonly routing: boolean; readonly engaged: boolean; readonly garrison: number | null;
     readonly goal: Site | null; readonly refused: string | null;
   })[];
@@ -115,7 +115,7 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
       const type = types.get(squad.type);
       const light = type !== undefined && content.scoutTypes.includes(type.id);
       return light && !squad.routing && !squad.engaged && squad.garrison === null &&
-        squad.men * 2 > type.strength && squad.morale * 2 > type.morale &&
+        !atHalfStrength(squad) && squad.morale * 2 > type.morale &&
         !visible.enemies.some((enemy) => distance(squad, enemy) <= vision + 1) &&
         !(squad.goal !== null && visible.settlements.some((home) => distance(home, squad.goal!) === 0));
     }).sort((a, b) => (types.get(b.type)!.pace - types.get(a.type)!.pace) || a.id - b.id).slice(0, quota);

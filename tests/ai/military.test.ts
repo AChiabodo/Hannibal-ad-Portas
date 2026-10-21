@@ -110,10 +110,10 @@ describe('the military Controller', () => {
       visible: { ...developed, enemies: [{ id: 10, type, x: 25, y: 20 }], ...change },
     }).filter((command) => command.kind === 'recruit');
     expect(recruit('numidian-horse')).toEqual([
-      { kind: 'recruit', faction: 'rome', settlement: 0, squadType: 'triarii', count: 1 },
+      { kind: 'recruit', faction: 'rome', settlement: 0, squadType: 'triarii', men: 24, count: 1 },
     ]);
     expect(recruit('balearic-slinger')).toEqual([
-      { kind: 'recruit', faction: 'rome', settlement: 0, squadType: 'principes', count: 1 },
+      { kind: 'recruit', faction: 'rome', settlement: 0, squadType: 'principes', men: 60, count: 1 },
     ]);
     expect(recruit('numidian-horse', { treasury: 0 })).toEqual([]);
   });

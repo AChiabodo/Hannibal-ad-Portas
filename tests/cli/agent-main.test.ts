@@ -52,7 +52,7 @@ describe('the agent command', () => {
 
     const report = reportOf(ran);
     expect(report).toMatchObject({ seed: 7, outcome: 'victory', winner: 'rome' });
-    expect(report.reason).toContain('the carthage Stronghold fell to an assault');
+    expect(report.reason).toContain('the carthage Stronghold fell to a blockade');
     expect(report.hash).toMatch(/^[0-9a-f]{16}$/);
     expect(report.agent).toMatchObject({ faction: 'rome', opponent: 'idle', status: 'played' });
   }, 120_000);

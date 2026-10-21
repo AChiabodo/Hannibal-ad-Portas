@@ -20,7 +20,18 @@
 export { amountOf, namedStock, NOTHING, pay, stockAt, stockOf, times } from './resources.ts';
 export type { Payment, ResourceAmounts } from './resources.ts';
 
-export { figuresOf, SQUAD_TYPES, squadTypeCode, squadTypeOf, squadTypesOf } from './squads.ts';
+export {
+  COST_BASIS,
+  PAYROLL_BASIS,
+  figuresOf,
+  isLegalSize,
+  payrollBill,
+  recruitCost,
+  SQUAD_TYPES,
+  squadTypeCode,
+  squadTypeOf,
+  squadTypesOf,
+} from './squads.ts';
 export type { SquadType, SquadTypeCode, Tier } from './squads.ts';
 
 export { ARMS, ARM, armCode, armOf, MATCHUP, matchupOf } from './arms.ts';

@@ -46,6 +46,7 @@ function squadOf(options: {
     x: 10,
     y: 10,
     men: options.men ?? 120,
+    capacity: 120,
     figures: options.figures ?? options.men ?? 120,
     formation: options.formation ?? 'line',
     facing: options.facing ?? 'south',

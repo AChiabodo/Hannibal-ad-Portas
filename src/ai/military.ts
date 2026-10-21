@@ -1,6 +1,6 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
-import type { Behaviour, Candidate } from './registry.ts';
+import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
 import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
@@ -10,6 +10,8 @@ type Faction = Observation<unknown>['faction'];
 interface Enemy extends Site { readonly id: number; readonly type: string }
 interface Squad extends Enemy {
   readonly men: number;
+  /** The men it was recruited with: what its survivors and its power are read against. */
+  readonly capacity: number;
   readonly morale: number;
   readonly fatigue: number;
   readonly routing: boolean;
@@ -108,11 +110,11 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
   function power(squad: Squad): number {
     const type = types.get(squad.type);
     return type === undefined ? 0 : Math.floor(squad.men * squad.morale * PERCENT *
-      (FATIGUE_SCALE * content.fatigueMax - squad.fatigue) / (type.strength * FATIGUE_SCALE * content.fatigueMax));
+      (FATIGUE_SCALE * content.fatigueMax - squad.fatigue) / (squad.capacity * FATIGUE_SCALE * content.fatigueMax));
   }
   function spent(squad: Squad): boolean {
     const type = types.get(squad.type);
-    return type === undefined || squad.morale * SPENT_DIVISOR <= type.morale || squad.men * SPENT_DIVISOR <= type.strength;
+    return type === undefined || squad.morale * SPENT_DIVISOR <= type.morale || atHalfStrength(squad);
   }
 
   return {

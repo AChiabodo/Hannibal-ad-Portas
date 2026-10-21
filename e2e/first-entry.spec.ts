@@ -184,13 +184,13 @@ test('the four acts are performed through the pointed-at interface, and their re
   await press(page, recruitment.rect);
 
   const offers = (await hud(page)).commands;
-  const line = offers.find((order) => order.id === 'recruit:hastati');
+  const line = offers.find((order) => order.id === 'recruit:hastati:24');
   expect(line, 'the Recruitment page offers hastati').toBeDefined();
   expect(line?.enabled, 'the opening resources can raise the first line').toBe(true);
   if (line === undefined) throw new Error('no hastati offer');
 
   // 2. Recruiting: the card itself, one press.
-  const card = (await hudLayout(page)).commands.find((command) => command.order.id === 'recruit:hastati');
+  const card = (await hudLayout(page)).commands.find((command) => command.order.id === 'recruit:hastati:24');
   expect(card, 'the card is drawn where the panel says').toBeDefined();
   if (card === undefined) throw new Error('no card to press');
   await press(page, card.rect);

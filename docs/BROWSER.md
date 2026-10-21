@@ -336,7 +336,11 @@ state and tactical selection are excluded. Storage failure falls back to default
 
 The desktop HUD keeps calendar, Treasury, pause and speed above the theatre. The compact navigator
 ends after its contents when they fit. Selecting an entity opens two columns of contextual detail;
-with no selection only a short hint remains. The Minimap stays available beside this area. Use
+with no selection only a short hint remains. A settlement's Recruitment page lists every real size
+of every type its tier allows, quotes the exact resource bill and recurring Payroll, and carries a
+**Reparti** count control (`-` / `+`, 1 to 9) that both pointer and F6/Tab focus can use. A Squad
+panel reads survivors against its recruited capacity (`30/60`) and shows the Payroll bill those
+survivors owe next Season. The Minimap stays available beside this area. Use
 **Opzioni / UI** for seed/session actions, scale, reset and the first-entry guide's dismissal or
 reopen. This drawer can be closed without changing the Match. The camera centres inside the unobstructed theatre,
 including at map edges and zoom 1; the Minimap camera outline covers that theatre rather than the HUD.

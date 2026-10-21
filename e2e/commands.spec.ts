@@ -337,12 +337,58 @@ test('construction and recruitment are content-backed pages that submit real Com
 
   await press(page, (await page.evaluate(() => window.__SPQR.game!.hudLayout().tabs))
     .find((tab) => tab.tab === 'recruitment')!.rect);
-  const hastati = (await hud(page)).commands.find((order) => order.id === 'recruit:hastati');
+  const hastati = (await hud(page)).commands.find((order) => order.id === 'recruit:hastati:24');
   expect(hastati?.enabled).toBe(true);
-  await pressCommand(page, 'recruit:hastati');
+  await pressCommand(page, 'recruit:hastati:24');
   await advance(page, 1);
-  expect(await lastCommand(page)).toMatchObject({ kind: 'recruit', settlement: home.id, squadType: 'hastati', count: 1 });
+  expect(await lastCommand(page)).toMatchObject({ kind: 'recruit', settlement: home.id, squadType: 'hastati', men: 24, count: 1 });
 });
+
+test('recruitment quotes and buys a real size and count for both Factions, by pointer and keyboard', async ({ page }) => {
+  for (const faction of ['rome', 'carthage'] as const) {
+    await bootScene(page, faction);
+    const home = await homeSettlement(page);
+    const before = await page.evaluate(() => window.__SPQR.game!.state().visible.squads.length);
+    const firstLine = faction === 'rome' ? 'hastati' : 'libyan-spear';
+    await press(page, await rowRect(page, { kind: 'settlement', id: home.id }));
+    await press(page, (await page.evaluate(() => window.__SPQR.game!.hudLayout().tabs))
+      .find((tab) => tab.tab === 'recruitment')!.rect);
+
+    // The offer names the type and the real size, and quotes the whole press.
+    const offer = (await hud(page)).commands.find((order) => order.id === `recruit:${firstLine}:24`);
+    expect(offer, `${faction} offers its first line at 24 men`).toMatchObject({
+      enabled: true, recruit: { men: 24, count: 1 },
+    });
+    expect(offer?.note).toContain('24');
+
+    // Pointer: the page’s own count control buys two Squads per press.
+    await pressButton(page, 'recruitMore');
+    expect((await hud(page)).recruitCount).toBe(2);
+
+    // Keyboard: focus the same offered row and press Enter, exactly as a Player
+    // who never touches the pointer after opening the page would.
+    const rect = await commandRect(page, `recruit:${firstLine}:24`);
+    await focusRect(page, rect);
+    await page.keyboard.press('Enter');
+
+    await advance(page, 1);
+    expect(await lastCommand(page)).toMatchObject({
+      kind: 'recruit', settlement: home.id, squadType: firstLine, men: 24, count: 2,
+    });
+    expect(await page.evaluate(() => window.__SPQR.game!.state().visible.squads.length)).toBe(before + 2);
+  }
+});
+
+/** Moves the interface's keyboard focus onto a drawn rectangle, as F6 and Tab do. */
+async function focusRect(page: Page, rect: Rect): Promise<void> {
+  await page.keyboard.press('F6');
+  for (let step = 0; step < 200; step += 1) {
+    const focus = await page.evaluate(() => window.__SPQR.game!.hud().view.focus);
+    if (focus != null && focus.x === rect.x && focus.y === rect.y) return;
+    await page.keyboard.press('Tab');
+  }
+  throw new Error(`keyboard focus never reached ${String(rect.x)},${String(rect.y)}`);
+}
 
 test('Rome storms a known Stronghold, and the panel shows what it knows of the walls', async ({ page }) => {
   await bootScene(page, 'rome');

@@ -1,5 +1,22 @@
 import type { Observation } from '../sim/observation.ts';
 
+/** A Squad as the AI reads its survivors: the men left and the men it was raised with. */
+export interface MenLeft {
+  readonly men: number;
+  readonly capacity: number;
+}
+
+/**
+ * Whether a Squad has lost at least half the men it was recruited with.
+ *
+ * The comparison is against capacity, not the type's largest size: P2's real
+ * sizes mean a 24-man Squad is whole at 24, and reading it against a 120-man
+ * type maximum would call every small Squad spent (ADR-0027).
+ */
+export function atHalfStrength(squad: MenLeft): boolean {
+  return squad.men * 2 <= squad.capacity;
+}
+
 /**
  * Which behaviour authored which Commands, when more than one contributed to a
  * candidate. A contribution may be empty: the behaviour took part but every

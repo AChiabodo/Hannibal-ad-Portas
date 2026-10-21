@@ -77,6 +77,7 @@ const VISIBLE: EconomyVisible = {
       x: 12,
       y: 8,
       men: 120,
+      capacity: 120,
       figures: 120,
       formation: 'line',
       facing: 'south',
@@ -100,6 +101,7 @@ const VISIBLE: EconomyVisible = {
       x: 40,
       y: 41,
       men: 114,
+      capacity: 120,
       figures: 114,
       formation: 'column',
       facing: 'north',
@@ -187,6 +189,15 @@ describe('the HUD model', () => {
     expect(words).toContain(`${translate('ui.supply')} ${translate('supply.inTerritory')}`);
     expect(words).toContain(`${translate('ui.quarters')} ${translate('quarters.field')}`);
     expect(words).toContain(`${translate('ui.engaged')} ${translate('ui.yes')}`);
+  });
+
+  it('reads survivors against the capacity the Squad was recruited with', () => {
+    const hurt = { ...VISIBLE.squads[0]!, men: 30, capacity: 60, payroll: 4 };
+    const model = hudModel({ ...VISIBLE, squads: [hurt] }, STRONGHOLDS, { kind: 'squad', id: 1 });
+    const words = model.detail?.lines.map(lineText) ?? [];
+
+    expect(words).toContain(`${translate('ui.men')} 30/60`);
+    expect(words).toContain(`${translate('ui.capacity')} 60`);
   });
 
   it('reads a Squad’s destination and refusal as the answer to the click it gave', () => {
@@ -472,6 +483,7 @@ describe('the HUD on screen', () => {
         x: index,
         y: 40,
         men: 120,
+        capacity: 120,
         figures: 120,
         formation: 'line',
         facing: 'south',
@@ -626,6 +638,22 @@ describe('the contextual command panel', () => {
     expect(layout.tabs.map((tab) => tab.tab)).toEqual(['overview', 'construction', 'recruitment']);
     expect(model.commands.map((order) => order.id)).toContain('build:farm');
     expect(model.commands.every((order) => order.reason === null || order.enabled === false)).toBe(true);
+  });
+
+  it('offers every size on the recruitment page and a count the Player can change', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 0 }, [], DESKTOP_VIEW,
+      { faction: 'rome', tab: 'recruitment', recruitCount: 2 });
+    const layout = hudLayout(model, DESKTOP);
+    const ids = model.commands.map((order) => order.id);
+
+    expect(ids).toContain('recruit:hastati:24');
+    expect(ids).toContain('recruit:hastati:60');
+    expect(ids).toContain('recruit:hastati:120');
+    expect(model.recruitCount).toBe(2);
+    expect(model.commands.find((order) => order.id === 'recruit:hastati:24')).toMatchObject({ recruit: { men: 24, count: 2 } });
+    // Both ends of the count are real controls, reached by a pointer and by the
+    // F6/Tab focus that walks `layout.buttons`.
+    expect(layout.buttons.map((button) => button.action)).toEqual(expect.arrayContaining(['recruitFewer', 'recruitMore']));
   });
 
   it('shows numbered control groups as visible controls', () => {

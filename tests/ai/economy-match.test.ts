@@ -70,7 +70,7 @@ describe('an unopposed economy across three Years', () => {
         settlement.population = 1;
         settlement.stocks.fill(100);
         applyEconomyCommand(world.economy, { kind: 'recruit', faction: 'carthage', settlement: 1,
-          squadType: 'elephant', count: 3 });
+          squadType: 'elephant', men: 24, count: 3 });
         settlement.stocks.fill(30);
         world.economy.treasuries[1] = 0;
         return world;

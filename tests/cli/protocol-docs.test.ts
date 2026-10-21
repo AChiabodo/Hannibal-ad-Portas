@@ -95,6 +95,7 @@ function wireWithASquad() {
     faction: 'rome',
     settlement: home.id,
     squadType: 'hastati',
+    men: 24,
     count: 1,
   };
   match.step([recruit]);

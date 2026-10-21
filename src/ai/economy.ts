@@ -67,7 +67,7 @@ type EconomyCommand = {
   readonly kind: 'build'; readonly faction: Faction; readonly settlement: number; readonly building: string;
 } | {
   readonly kind: 'recruit'; readonly faction: Faction; readonly settlement: number;
-  readonly squadType: string; readonly count: number;
+  readonly squadType: string; readonly men: number; readonly count: number;
 };
 
 /** Content is supplied at composition; the AI has no path to simulation modules. */
@@ -81,8 +81,13 @@ export function createEconomyBehaviour(content: {
   readonly taxPerDenarius: number;
   readonly squadTypes: readonly {
     readonly id: string; readonly faction: Faction; readonly tier: number;
+    readonly strength: number; readonly sizes: readonly number[];
     readonly payroll: number; readonly cost: Resources;
   }[];
+  /** The content table's own price for a real size, so the AI quotes what the rules charge. */
+  readonly recruitCost: (type: { readonly cost: Resources }, men: number) => Resources;
+  /** The content table's own survivor-based bill, so affordability uses the paid number. */
+  readonly payrollBill: (type: { readonly payroll: number }, men: number) => number;
 }, difficulty: Difficulty = DIFFICULTY.centurio): Behaviour<EconomyObservation, EconomyCommand> {
   const buildings = new Map(content.buildings.map((building) => [building.id, building]));
   const horizon = difficulty.horizonSeasons;
@@ -123,19 +128,27 @@ export function createEconomyBehaviour(content: {
       for (const settlement of observation.visible.settlements) {
         if (!observation.visible.squads.some((squad) => squad.unpaid > 0)) {
           for (const type of content.squadTypes) {
-            const payroll = funds.payroll + type.payroll;
+            if (type.faction !== observation.faction || type.tier > settlement.tier) continue;
             const food = Math.max(1, Math.floor(settlement.population / content.grainPerHead));
-            if (type.faction !== observation.faction || type.tier > settlement.tier ||
-              payroll > funds.income || observation.visible.treasury < requiredReserve(payroll) ||
-              settlement.stocks.grain - type.cost.grain < grainFloor(food) ||
-              Object.entries(type.cost).some(([key, amount]) => settlement.stocks[key as keyof Resources] < amount)) continue;
             const count = observation.visible.squads.filter((squad) => squad.type === type.id).length;
             const preference = content.recruitmentPreference?.(observation, type.id);
-            candidates.push({ id: `recruit-${settlement.id}-${type.id}`,
-              utility: 45 + type.tier * 5 - count * 4 + (preference?.utility ?? 0),
-              reason: `Payroll ${payroll} is covered by income ${funds.income}; retain ${requiredReserve(payroll)} denarii.${preference === undefined ? '' : ` ${preference.reason}`}`,
-              commands: [{ kind: 'recruit', faction: observation.faction, settlement: settlement.id, squadType: type.id, count: 1 }],
-            });
+            // A type offers several real sizes; the AI prices each one with the
+            // content table's own arithmetic and keeps only the ones its
+            // Observation says it can afford now and keep each Season.
+            for (const men of type.sizes) {
+              const cost = content.recruitCost(type, men);
+              const payroll = funds.payroll + content.payrollBill(type, men);
+              if (payroll > funds.income || observation.visible.treasury < requiredReserve(payroll) ||
+                settlement.stocks.grain - cost.grain < grainFloor(food) ||
+                Object.entries(cost).some(([key, amount]) => settlement.stocks[key as keyof Resources] < amount)) continue;
+              candidates.push({ id: `recruit-${settlement.id}-${type.id}-${men}`,
+                utility: 45 + type.tier * 5 - count * 4 + Math.floor((10 * men) / type.strength) +
+                  (preference?.utility ?? 0),
+                reason: `Payroll ${payroll} is covered by income ${funds.income}; retain ${requiredReserve(payroll)} denarii.${preference === undefined ? '' : ` ${preference.reason}`}`,
+                commands: [{ kind: 'recruit', faction: observation.faction, settlement: settlement.id,
+                  squadType: type.id, men, count: 1 }],
+              });
+            }
           }
         }
         if (settlement.works.some((work) => !work.standing)) continue;

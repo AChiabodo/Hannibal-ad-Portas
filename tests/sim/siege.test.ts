@@ -452,6 +452,9 @@ describe('a minor settlement, and nothing razed', () => {
     const world = stage({ minor: { x: 40, y: 40 } });
     muster(world, 'rome', 'principes', { x: 40, y: 40 }, 2);
     const defenders = muster(world, 'carthage', 'libyan-spear', { x: 40, y: 40 }, 2);
+    // Equal-man combat is #66's calibration; this test is about the hold, so
+    // both sides stand at the same 120 men the fixture was written with.
+    for (const squad of defenders) Object.assign(squad, { strength: 120, capacity: 120 });
     const match = matchOn(world);
 
     // A check falls on tick 0, with both Factions standing on the centre: nobody

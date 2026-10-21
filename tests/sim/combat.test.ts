@@ -76,14 +76,24 @@ function muster(
 ): Squad {
   const faction = options.faction ?? 'rome';
 
-  return musterSquad(world.economy, world.map, {
+  const squad = musterSquad(world.economy, world.map, {
     faction,
     squadType: options.squadType ?? (faction === 'rome' ? 'hastati' : 'libyan-spear'),
     x: options.x ?? 20,
     y: options.y ?? 20,
     ...(options.facing === undefined ? {} : { facing: options.facing }),
   });
+  // C3's tests compare *equal* blocks. C4/P2 shrunk the rosters—Carthaginian
+  // melee fields 48 at most—so the fixture puts both sides at the 120 men the
+  // tests were written against. Equal-man balance is #66's subject, not a
+  // different starting strength silently changing these answers.
+  Object.assign(squad, { strength: EQUAL_BLOCK, capacity: EQUAL_BLOCK });
+
+  return squad;
 }
+
+/** The men both sides of a combat test stand with, independent of their roster size. */
+const EQUAL_BLOCK = 120;
 
 /**
  * Two equal blocks, front to front, differing only in their arms: what one blow
