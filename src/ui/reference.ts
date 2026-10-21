@@ -1,0 +1,171 @@
+/**
+ * The rule descriptions the Encyclopedia reads (#66; the panels are P6's).
+ *
+ * A Player asking "why is a 24-man Squad worth less than a 120-man one?" or "why
+ * could my five Reparti not hold that gate?" is asking a question about the
+ * *rules*, and the answer lives in `sim/combat.ts`, `sim/siege.ts` and
+ * `content/squads.ts`. This module is the one place that turns those rules into
+ * words, so an Encyclopedia panel is a list of entries and not a second
+ * hand-written copy of the rules that drifts the first time a constant moves.
+ *
+ * ## What is here, and what is not
+ *
+ * Each entry is a title, a body in the Player's language, and a list of **facts**
+ * — the whole numbers the body quotes, taken from the constants themselves. A
+ * panel prints the body; a test checks the body against the numbers, so a
+ * sentence that outlives the rule it describes fails where it is written rather
+ * than in front of a Player.
+ *
+ * Nothing here reads a Match. There is no Observation, no enemy and no world: the
+ * descriptions are the same for both Factions in every Match, which is what makes
+ * them safe to show and impossible to leak through.
+ *
+ * ## Why the words are the interface's and the numbers are the rules'
+ *
+ * A body may only say what a rule does, in the Italian the string table already
+ * uses for that idea. It may not promise an outcome — no "assault always works",
+ * no "a Blockade falls in three Seasons" — because the rules do not decide
+ * outcomes in advance and a reference that did would be the one place in the game
+ * telling a Player something untrue.
+ */
+import { SQUAD_TYPES } from '../content/index.ts';
+import {
+  ASPECT_SHOCK,
+  BASE_SHOCK,
+  EXCHANGE_TICKS,
+  FORMATION_STRIKE,
+  POINTS_PER_MAN,
+  VOLLEY_SHOCK,
+} from '../sim/combat.ts';
+import { TICK_HZ } from '../sim/clock.ts';
+import {
+  BLOCKADE_GRAIN_LOSS,
+  BLOCKADE_PRESSURE_CAP,
+  ESCALADE_BEARING,
+  ESCALADE_DAMAGE,
+  RAM_BEARING_PER_BLOW,
+  WALL_ASSAULT_LOSS,
+} from '../sim/siege.ts';
+import { message, translate } from './strings.ts';
+
+/** The subjects an entry can belong to, in the order an Encyclopedia lists them. */
+export type ReferenceSection = 'force' | 'combat' | 'missiles' | 'siege' | 'roster';
+
+/** Every section, in the order the reference reads. */
+export const REFERENCE_SECTIONS: readonly ReferenceSection[] = ['force', 'combat', 'missiles', 'siege', 'roster'];
+
+/** One whole number an entry quotes, so the sentence can be checked against the rule. */
+export interface ReferenceFact {
+  /** The Italian label the fact is shown under. */
+  readonly label: string;
+  /** The value the rule holds. */
+  readonly value: number;
+}
+
+/** One rule, as the Encyclopedia reads it. */
+export interface ReferenceEntry {
+  /** A stable id, so a panel can link to one rule. */
+  readonly id: string;
+  /** The subject it belongs to. */
+  readonly section: ReferenceSection;
+  /** Its heading, in the Player's language. */
+  readonly title: string;
+  /** What the rule does, in one paragraph. */
+  readonly body: string;
+  /** The numbers the body quotes, from the rules themselves. */
+  readonly facts: readonly ReferenceFact[];
+}
+
+/**
+ * The largest body the roster sells, and the smallest of *that type's* sizes.
+ *
+ * The entry that says "five 24-man Squads are worth one 120-man Squad" quotes
+ * both, and quoting them by hand would be the drift this module exists to
+ * prevent: they are read from the table, so a type added at a new size changes
+ * the sentence and the test that checks it. The small size is the division the
+ * sentence is about — the same type's smallest offer — and not the roster's
+ * smallest, which is the Numidian horse's twelve and would make the arithmetic
+ * wrong (five twelves are sixty).
+ */
+const LARGEST_TYPE = SQUAD_TYPES.reduce((largest, type) =>
+  type.strength > largest.strength ? type : largest);
+const LARGEST_SIZE = LARGEST_TYPE.strength;
+const SMALLEST_SIZE = Math.min(...LARGEST_TYPE.sizes);
+
+/** One entry per rule, in the order `REFERENCE_SECTIONS` lists their subjects. */
+export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
+  {
+    id: 'force',
+    section: 'force',
+    title: translate('ref.force.title'),
+    body: message('ref.force.body', {
+      points: String(POINTS_PER_MAN),
+      small: String(SMALLEST_SIZE),
+      large: String(LARGEST_SIZE),
+    }),
+    facts: [
+      { label: translate('ref.force.points'), value: POINTS_PER_MAN },
+      { label: translate('ref.force.column'), value: FORMATION_STRIKE.column.of },
+      { label: translate('ref.force.smallest'), value: SMALLEST_SIZE },
+      { label: translate('ref.force.largest'), value: LARGEST_SIZE },
+    ],
+  },
+  {
+    id: 'combat',
+    section: 'combat',
+    title: translate('ref.combat.title'),
+    body: message('ref.combat.body', {
+      rounds: String(TICK_HZ / EXCHANGE_TICKS),
+      base: String(BASE_SHOCK),
+      flank: String(ASPECT_SHOCK.flank),
+      rear: String(ASPECT_SHOCK.rear),
+    }),
+    facts: [
+      { label: translate('ref.combat.base'), value: BASE_SHOCK },
+      { label: translate('ref.combat.flank'), value: ASPECT_SHOCK.flank },
+      { label: translate('ref.combat.rear'), value: ASPECT_SHOCK.rear },
+    ],
+  },
+  {
+    id: 'missiles',
+    section: 'missiles',
+    title: translate('ref.missiles.title'),
+    body: message('ref.missiles.body', { shock: String(VOLLEY_SHOCK) }),
+    facts: [{ label: translate('ref.missiles.shock'), value: VOLLEY_SHOCK }],
+  },
+  {
+    id: 'siege',
+    section: 'siege',
+    title: translate('ref.siege.title'),
+    body: message('ref.siege.body', {
+      ram: String(RAM_BEARING_PER_BLOW),
+      escalade: String(ESCALADE_DAMAGE),
+      bearing: String(ESCALADE_BEARING),
+      loss: String(WALL_ASSAULT_LOSS),
+      grain: String(BLOCKADE_GRAIN_LOSS),
+      cap: String(BLOCKADE_PRESSURE_CAP),
+    }),
+    facts: [
+      { label: translate('ref.siege.ram'), value: RAM_BEARING_PER_BLOW },
+      { label: translate('ref.siege.escalade'), value: ESCALADE_DAMAGE },
+      { label: translate('ref.siege.loss'), value: WALL_ASSAULT_LOSS },
+      { label: translate('ref.siege.grain'), value: BLOCKADE_GRAIN_LOSS },
+      { label: translate('ref.siege.cap'), value: BLOCKADE_PRESSURE_CAP },
+    ],
+  },
+  {
+    id: 'roster',
+    section: 'roster',
+    title: translate('ref.roster.title'),
+    body: translate('ref.roster.body'),
+    // Read straight off the content table, so the entry cannot quote an `impact`
+    // the game no longer uses, and in the table's own order so a reader comparing
+    // Rome with Carthage sees them as the roster lists them.
+    facts: SQUAD_TYPES.map((type) => ({ label: type.id, value: type.impact })),
+  },
+];
+
+/** Every entry of one section, in `REFERENCE_ENTRIES` order. */
+export function referenceOf(section: ReferenceSection): readonly ReferenceEntry[] {
+  return REFERENCE_ENTRIES.filter((entry) => entry.section === section);
+}

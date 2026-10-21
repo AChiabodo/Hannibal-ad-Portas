@@ -77,7 +77,7 @@ describe('the military Controller', () => {
     const controller = ai();
     const base = battlefield();
     const commands = controller.decide({ faction: 'rome', tick: 0, visible: { ...base,
-      enemies: [10, 11, 12].map((id) => ({ id, type: 'libyan-spear', x: 25, y: 20 })),
+      enemies: [10, 11, 12, 13, 14, 15].map((id) => ({ id, type: 'libyan-spear', x: 25, y: 20 })),
     } });
     expect(commands).toContainEqual({ kind: 'attack', faction: 'rome', squads: [2], target: 10 });
     const tactical = controller.readLog().find((entry) => entry.layer === 'tactical')!;
@@ -91,7 +91,7 @@ describe('the military Controller', () => {
     const controller = ai();
     const commands = controller.decide({ faction: 'rome', tick: 0, visible: { ...base,
       squads: base.squads.map((squad) => squad.id === 0 ? { ...squad, x: 24, engaged: true } : squad),
-      enemies: [10, 11, 12, 13, 14, 15].map((id) => ({ id, type: 'libyan-spear', x: 25, y: 20 })),
+      enemies: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19].map((id) => ({ id, type: 'libyan-spear', x: 25, y: 20 })),
     } });
     expect(commands).toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [0] });
     expect(commands.filter((command) => command.kind === 'attack')).toEqual([]);
@@ -160,7 +160,10 @@ describe('the military Controller', () => {
     const controller = ai();
     const commands = controller.decide({ faction: 'rome', tick: 0, visible: { ...base,
       squads: base.squads.slice(0, 2).map((squad) => ({ ...squad, x: 40, y: 40, engaged: squad.id === 0 })),
-      enemies: [10, 11].map((id) => ({ id, type: 'gaul', x: 41, y: 40 })),
+      // Four Gauls are 192 men priced at their own nerve: more than one Roman
+      // line is comfortable with at Centurio's 125% margin, and not more than two
+      // (#66 recalibrated what a body of men is worth).
+      enemies: [10, 11, 12, 13].map((id) => ({ id, type: 'gaul', x: 41, y: 40 })),
     } });
     expect(commands).toContainEqual({ kind: 'attack', faction: 'rome', squads: [1], target: 10 });
     expect(controller.readLog().find((entry) => entry.layer === 'tactical')?.selected.id).toBe('commit-reserve');
@@ -171,7 +174,9 @@ describe('the military Controller', () => {
     const commands = ai().decide({ faction: 'rome', tick: 0, visible: { ...base,
       squads: base.squads.map((squad) => ({ ...squad, x: 22, engaged: squad.id === 0,
         men: squad.id === 0 ? 120 : 60, goal: squad.id === 0 ? null : { x: 20, y: 20 } })),
-      enemies: [10, 11].map((id) => ({ id, type: 'gaul', x: 23, y: 20 })),
+      // Five Gauls are 240 men to this one line's 120, and the two half-strength
+      // Squads that could have helped are going home.
+      enemies: [10, 11, 12, 13, 14].map((id) => ({ id, type: 'gaul', x: 23, y: 20 })),
     } });
     expect(commands).toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [0] });
     expect(commands.some((command) => command.kind === 'hold' && command.squads.includes(0))).toBe(false);

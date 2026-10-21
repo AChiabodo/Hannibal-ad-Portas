@@ -32,9 +32,11 @@ const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, 
   vision: SQUAD_VISION, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
   scoutTypes: ['hastati', 'gaul', 'numidian-horse'] };
 // One garrison is worth the strongest Tier-1 Squad a Faction can raise, since an
-// unseen front reports how many Squads man it and not which.
+// unseen front reports how many Squads man it and not which. Since #66 "strongest"
+// is men brought to bear (strength × impact) as well as nerve, so the estimate is
+// in the same units as the rest of a Controller's power.
 const garrisonEstimate = Math.max(...SQUAD_TYPES.filter((type) => type.tier === 1)
-  .map((type) => type.strength * type.morale));
+  .map((type) => type.strength * type.impact * type.morale));
 const siegeContent = { canAssault, ramCost: RAM_COST, siegeRadius: SIEGE_RADIUS, reliefRadius: RELIEF_RADIUS,
   garrisonEstimate, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES };
 

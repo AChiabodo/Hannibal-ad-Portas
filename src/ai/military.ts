@@ -32,6 +32,8 @@ export interface MilitaryObservation {
 interface MilitaryType {
   readonly id: string;
   readonly strength: number;
+  /** What one of its men is worth in a blow, against one man of the line (#66). */
+  readonly impact: number;
   readonly morale: number;
   readonly arm: string;
 }
@@ -98,20 +100,51 @@ const SPENT_DIVISOR = 2;
 /** The fatigue scale: a fresh Squad keeps its whole power, a spent one half. */
 const FATIGUE_SCALE = 2;
 
-/** The morale an unread enemy type is priced at when the roster cannot name it. */
-const UNKNOWN_MORALE = 10;
-
 /** Only public content and the looking Faction's Observation enter this policy. */
 export function createMilitaryBehaviour(content: MilitaryContent, difficulty: Difficulty = DIFFICULTY.centurio):
 Behaviour<MilitaryObservation, MilitaryCommand> {
   const types = new Map(content.squadTypes.map((type) => [type.id, type]));
   const margin = attackPercent(difficulty);
-  const enemyPower = (enemy: Enemy) => (types.get(enemy.type)?.morale ?? UNKNOWN_MORALE) * PERCENT;
+  const fresh = FATIGUE_SCALE * content.fatigueMax;
+  /**
+   * What an enemy the roster cannot name is priced at: the strongest body the
+   * public roster holds, at full nominal nerve, in the same units as a named one.
+   *
+   * A type is a compile-time id, so this is a raised code reaching a Controller
+   * and not an ordinary fight; pricing it at nothing would have a general march
+   * into a force he cannot read, and the roster's worst case is the conservative
+   * answer.
+   */
+  const unknown = content.squadTypes.reduce(
+    (worst, type) => Math.max(worst, type.strength * type.impact * type.morale * PERCENT),
+    0,
+  );
+  /**
+   * What one of its own Squads is worth: its bearing, its nerve and how fresh it
+   * is, all of them facts in its own Observation.
+   */
   function power(squad: Squad): number {
     const type = types.get(squad.type);
-    return type === undefined ? 0 : Math.floor(squad.men * squad.morale * PERCENT *
-      (FATIGUE_SCALE * content.fatigueMax - squad.fatigue) / (squad.capacity * FATIGUE_SCALE * content.fatigueMax));
+    if (type === undefined) return 0;
+
+    return Math.floor((squad.men * type.impact * squad.morale * PERCENT * (fresh - squad.fatigue)) / fresh);
   }
+  /**
+   * What an observed enemy Squad is worth: its **type's** nominal bearing and
+   * nerve, never its actual men.
+   *
+   * An enemy's headcount is not in this Faction's Observation (ADR-0020), and a
+   * Controller must not be handed it, so the estimate is the public roster's
+   * largest size at full nerve — the content table's fact, not the enemy's. It is
+   * the same estimate at every difficulty and to both Factions, which is what
+   * keeps this from being privileged vision; before #66 it read the type's morale
+   * alone and priced a 48-man body the same as a 120-man one.
+   */
+  const enemyPower = (enemy: Enemy) => {
+    const type = types.get(enemy.type);
+
+    return type === undefined ? unknown : type.strength * type.impact * type.morale * PERCENT;
+  };
   function spent(squad: Squad): boolean {
     const type = types.get(squad.type);
     return type === undefined || squad.morale * SPENT_DIVISOR <= type.morale || atHalfStrength(squad);

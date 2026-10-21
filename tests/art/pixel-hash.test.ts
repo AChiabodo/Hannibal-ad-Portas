@@ -37,7 +37,12 @@ import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 // U9: deliberately add the reviewed UI surfaces and real layout specimens.
 // P2 moved the squad specimens and the plate they sit on: the panel now shows a
 // Squad's recruited capacity beside its survivors, which is a reviewed change.
-const PLATE_HASH = 'f31e040be6fef1cf';
+// #66 moved them again, and only them: a Squad's panel now states its `Forza` —
+// the bearing the exchange, a wall's defence and the AI's estimate all read — so
+// the `ui:squad` and `ui:armed-pending` specimens (one panel, armed and idle) and
+// the plate they sit on are what differ, and every other artefact is
+// byte-identical.
+const PLATE_HASH = '2924b3ed32f46f67';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'ui:carthage-column': 'ab1340faad9c09ab',
@@ -50,8 +55,8 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'interface:disabled': '4612506f4557e9b7',
   'interface:focus': '74aad50e7b9be297',
   'ui:setup': '82906ab423edd8b4',
-  'ui:squad': 'd712e4ca11d5ea9f',
-  'ui:armed-pending': 'e1c239bb356fce85',
+  'ui:squad': '81e4974ec630d5ef',
+  'ui:armed-pending': '6817ec6aeea8726d',
   'ui:construction': '02bca410e02e4c6e',
   'ui:options': '1e03d0df52d0241e',
   'ui:result': 'e641e2c442783d44',

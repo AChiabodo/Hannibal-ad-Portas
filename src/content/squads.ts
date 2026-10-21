@@ -54,6 +54,17 @@
  * rounds *up*, so a Squad never pays less than its share and splitting the same
  * men into more Squads can never create free Payroll (`payrollBill`).
  *
+ * ## Bearing, and why `impact` is not `strength`
+ *
+ * A fight moves men and nerve in proportion to the men brought to bear, never in
+ * proportion to how many Squads those men are divided into — that is #66's rule,
+ * and `sim/combat.ts` is where it is written. The men a type brings are its
+ * surviving `strength`; the weight one of them carries is `impact`. `bearingOf`
+ * is the one reader that multiplies the two, so an observation, a Siege and a
+ * Controller all price a body of men the same way. Infantry carries `1`, the
+ * Numidian horse `2` and the elephant `4`; the numbers and the measurements
+ * behind them are in ADR-0028.
+ *
  * ## The pace a type marches at
  *
  * `pace` is a whole-number pace: how many tiles' worth of ground the type
@@ -127,6 +138,28 @@ export interface SquadType {
    * (`arms.ts`), and therefore who it has the better of a fight against.
    */
   readonly arm: Arm;
+
+  /**
+   * What one of its men is worth in a blow, against one man of the line.
+   *
+   * A fight moves men and nerve, and #66's rule is that it moves them in
+   * proportion to **men brought to bear** rather than to how many Squads those
+   * men are divided into (`sim/combat.ts`). The bearing a Squad brings is
+   * `strength × impact`, so the field is the one place a type says that its men
+   * are worth more than their count:
+   *
+   * - **1** — the infantry of both rosters, and the slingers: a man is a man.
+   * - **2** — the Numidian horse, whose twelve riders are a charge and not a
+   *   dozen skirmishers; their `strength` stays the twelve men that are drawn.
+   * - **4** — the elephant, where one beast's twenty-four points of staying
+   *   power are worth more than four-score men's blows.
+   *
+   * It is deliberately *not* `strength`: `strength` is how many men (or figures)
+   * a Squad has and how it is drawn, and doubling it to make a horse hit harder
+   * would draw twelve riders as twenty-four. The two numbers answer two
+   * questions, and #66 measured both against the new infantry sizes.
+   */
+  readonly impact: number;
 
   /**
    * The morale a newly raised Squad starts with, and the most it recovers to.
@@ -220,6 +253,7 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     tier: 1,
     strength: 120,
     sizes: [24, 60, 120],
+    impact: 1,
     arm: 'sword',
     morale: 10,
     ammunition: 4,
@@ -233,6 +267,7 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     tier: 2,
     strength: 120,
     sizes: [24, 60, 120],
+    impact: 1,
     arm: 'sword',
     morale: 12,
     ammunition: 4,
@@ -246,6 +281,7 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     tier: 3,
     strength: 120,
     sizes: [24, 60, 120],
+    impact: 1,
     arm: 'spear',
     morale: 14,
     ammunition: 0,
@@ -259,6 +295,7 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     tier: 1,
     strength: 48,
     sizes: [24, 48],
+    impact: 1,
     arm: 'spear',
     morale: 9,
     ammunition: 0,
@@ -272,6 +309,7 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     tier: 1,
     strength: 48,
     sizes: [24, 48],
+    impact: 1,
     arm: 'sword',
     morale: 6,
     ammunition: 0,
@@ -285,6 +323,7 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     tier: 2,
     strength: 48,
     sizes: [24, 48],
+    impact: 1,
     arm: 'sword',
     morale: 11,
     ammunition: 2,
@@ -298,6 +337,7 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     tier: 2,
     strength: 24,
     sizes: [24],
+    impact: 1,
     arm: 'archers',
     morale: 8,
     ammunition: 8,
@@ -311,6 +351,7 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     tier: 3,
     strength: 12,
     sizes: [12],
+    impact: 2,
     arm: 'cavalry',
     morale: 10,
     ammunition: 6,
@@ -324,6 +365,7 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     tier: 3,
     strength: 24,
     sizes: [24],
+    impact: 4,
     figures: 1,
     arm: 'cavalry',
     morale: 16,
@@ -364,6 +406,20 @@ const CODES: ReadonlyMap<string, SquadTypeCode> = new Map(
  */
 export function figuresOf(type: SquadType, strength: number): number {
   return type.figures === undefined ? strength : Math.min(type.figures, strength);
+}
+
+/**
+ * The bearing `men` of the type bring into a round of contact: how hard they
+ * strike and how heavily they press.
+ *
+ * Men times `impact`, and nothing else: a 120-man line of hastati brings 120,
+ * and five 24-man Squads of them bring 120 between them, which is the equivalence
+ * #66 asks for. The number is in *blow points* (`sim/combat.ts`: twelve of them
+ * make one man), and it is what a Siege's ram defence and a Controller's force
+ * estimate read as well as the exchange itself.
+ */
+export function bearingOf(type: Pick<SquadType, 'impact'>, men: number): number {
+  return Math.max(0, men) * Math.max(0, type.impact);
 }
 
 /**

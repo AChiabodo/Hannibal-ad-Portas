@@ -106,6 +106,17 @@ export interface Placement {
   /** The tile to stand it on, downwards. */
   readonly y: number;
 
+  /**
+   * The men it is raised with: its type's largest size unless a caller says
+   * otherwise.
+   *
+   * A scenario is not a purchase — it does not pay, and it is not held to the
+   * roster's offer — but it is held to the type's own ceiling, because a Squad
+   * of more men than its type can hold is a Squad no rule could have produced.
+   * The default is the full-strength body the type is counted as.
+   */
+  readonly men?: number;
+
   /** The shape it holds: a line unless a caller says otherwise. */
   readonly formation?: Formation;
 
@@ -129,9 +140,10 @@ export interface Placement {
  *
  * @returns the Squad, which is already in `economy.squads` and is the object the
  *   rules will move — a caller that keeps it can read where it has got to.
- * @throws RangeError when the tile is not on the map, is water, or the type is
- *   not one the Faction can raise. A Squad nobody asked for that cannot exist is
- *   better refused where it was asked for than discovered by a renderer.
+ * @throws RangeError when the tile is not on the map, is water, the type is not
+ *   one the Faction can raise, or `men` is not a size that type can hold. A Squad
+ *   nobody asked for that cannot exist is better refused where it was asked for
+ *   than discovered by a renderer.
  */
 export function musterSquad(economy: Economy, map: MapGrid, placement: Placement): Squad {
   const code = squadTypeCode(placement.squadType);
@@ -158,12 +170,19 @@ export function musterSquad(economy: Economy, map: MapGrid, placement: Placement
     throw new RangeError(`the ${placement.faction} Faction holds no settlement to raise a Squad from`);
   }
 
+  const men = placement.men ?? type.strength;
+  if (!Number.isInteger(men) || men < 1 || men > type.strength) {
+    throw new RangeError(
+      `a Squad of ${String(men)} is not a size a ${type.id} can be mustered at: 1 to ${String(type.strength)} men`,
+    );
+  }
+
   const squad: Squad = {
-    ...standingAt(placement.x, placement.y, type.strength, type.ammunition),
+    ...standingAt(placement.x, placement.y, men, type.ammunition),
     id: economy.nextSquadId,
     owner: factionCode(placement.faction),
     type: code as number,
-    capacity: type.strength,
+    capacity: men,
     home: home.id,
     morale: type.morale,
     unpaid: 0,

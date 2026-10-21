@@ -398,20 +398,27 @@ npm run match -- --seed 1 --ticks 600 --rules march
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 2,
-  "hash": "22454ba666d71b92"
+  "hash": "93c41650cae7c719"
 }
 ```
 
-Two Commands, twelve Squads, and a hash CI gates: it covers the map in state,
+Two Commands, seven Squads, and a hash CI gates: it covers the map in state,
 the routes worked out over it, the terrain costs walked, every turn taken and
 the economy's half of every Squad beside them, so a change to any of it is a
 decision in review rather than a silent one. `musterSquad` is a scenario's way
 in — recruitment is the economy's — and the `march` Match exists because a
-ticket that says "a dozen Squads moving at once" should be something the
+ticket that says "a body of Squads moving at once" should be something the
 repository runs rather than something it claims. Since C3 the two forces meet in
 the middle of that theatre, so the hash covers the fight as well as the march:
 the survivors are the men who got through, and every one of them still stands on
 the Stronghold it was sent to.
+
+Since #66 the two forces are **the same men and not the same number of Squads**:
+two Roman lines of 120 against five Carthaginian bodies of 48, two hundred and
+forty a side. The fight is decided by the men brought to bear
+(`docs/adr/0028-combat-reads-the-men-brought-to-bear.md`), so six 48-man bodies
+against six 120-man ones would have been a walkover and a golden hash that
+tested nothing. The new hash is a real engagement between two equal forces.
 
 C4 adds a second harness Match, `--rules roster`, which fields both Factions'
 whole rosters — the nine types of `content/squads.ts`, the elephant included —
@@ -427,7 +434,7 @@ npm run match -- --seed 1 --ticks 600 --rules roster
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 2,
-  "hash": "687d088f2f1e9395"
+  "hash": "a5e7bcf64fca8b7e"
 }
 ```
 
@@ -441,6 +448,8 @@ lists as a lever moves one of those two numbers and nothing else:
 
 | Lever | What it does |
 | --- | --- |
+| the men brought to bear | a blow is counted in **force points**, twelve to a man, and read from the men a Squad has left times its type's `impact`: a 120-man line lands 120 points a round, and five 24-man Squads land 120 between them |
+| the shape it holds | a line lands all of its points and a column a quarter of them |
 | the matchup matrix | `spear > cavalry > light > archers > spear`, the sword even against all; an advantage is ×3/2 and a disadvantage ×2/3 |
 | flank and rear | more men and more morale shock, and the flanked Squad strikes weakly back, because its front faces the wrong way |
 | terrain | a hill is harder to assault, a ford disorders whoever stands in it, cavalry in a forest cannot charge |
@@ -457,8 +466,20 @@ world, a replay reproduces it, and a balance change is a measurement. Every
 modifier is a ratio of whole numbers applied in a fixed order, which is why the
 test that predicts a number can work it out by hand.
 
+**The same men fight the same, however they are divided** (ADR-0028, #66). A
+Squad's blow is its `bearing` — men times `impact` — and a defender's casualties
+are floored **once per round, from the sum of every blow that landed on it**, so
+five 24-man Squads kill what one 120-man Squad kills and not five times as much.
+Two rules finish the job: a Squad's attention is **divided** among the enemies it
+is in contact with, so a body fighting on three sides inflicts its force once;
+and Morale shock is counted **once per defender**, so five bodies pressing one
+shake no more nerve than the one body they add up to. A volley is a weight of
+missiles per man and not per Squad, for the same reason. The measurements — the
+band they are held to, the scenes, and what they do not cover — are in
+[the P3 review](docs/reviews/issue-66-military-balance.md).
+
 **Breaking, running, rallying.** A Squad at no morale has *routed*: it runs for
-the nearest settlement its Faction holds, strikes at a third of its weight,
+the nearest settlement its Faction holds, strikes at a third of its force,
 gives no shock at all, and cannot be ordered anywhere — no manual rallying, no
 micro-recovery. It also cannot be annihilated while it still has a route to
 walk: its strength floors at one man for as long as there is somewhere to run,
@@ -607,7 +628,10 @@ asymmetry and the plan's largest balance risk (ADR-0008, ADR-0018).
 carries a **gate** and four stretches of **wall**, one to a side, each with its
 own hit points, and a **breach** is any one of them broken. The ram goes for the
 gate; the men under the walls work at a wall too, at about a third of the speed,
-and the walls cost them lives and nerve while they do it. That is the whole of
+and the walls cost them lives and nerve while they do it. Both of those are read
+off the besieging **force** and not off the number of Squads under the wall: three
+Roman bodies chip it no faster than one, and a body of 120 pays exactly what five
+bodies of 24 pay in blood (ADR-0028). That is the whole of
 "an assault without a breach is possible but punishing": an assault can be issued
 before anything is broken, waiting for the breach is the sane order of business,
 and a ram the garrison has wrecked pays for itself in blood. Walls do not repair,
@@ -616,11 +640,13 @@ so a failed assault leaves the place weaker for the next one.
 **The ram** is laid down on the spot, paid out of the Faction's one treasury,
 built over `RAM_BUILD_TICKS`, and it is the only thing that shields an assault —
 while it is still being built the walls cost men and morale every round, and once
-it is at work they cost nothing. It is also **vulnerable**: the garrison's files
-take it apart at `RAM_FILES_PER_BLOW`: one Squad's twelve files need twenty
-rounds to break a ram and the gate needs eight, but three Squads break it in
-seven and the gate stands — so a manned Stronghold turns an assault into an
-escalade that pays for itself in blood. `canAssault` is the whole of "Rome's
+it is at work they cost nothing. It is also **vulnerable**: the garrison takes it
+apart at `RAM_BEARING_PER_BLOW`, one point of ram for every sixteen of its force
+a round, so a 48-man body of spearmen needs twenty rounds to break a ram and the
+gate needs eight, while four such bodies break it in five and the gate stands —
+and five 24-man bodies defend the ram exactly as well as the 120-man body they add
+up to, because the wall counts men and not Squads (ADR-0028). A manned Stronghold
+turns an assault into an escalade that pays for itself in blood. `canAssault` is the whole of "Rome's
 alone", and ADR-0008's escape hatch — *give Carthage a ram* — is that one
 function.
 
@@ -638,7 +664,9 @@ predicate the economy already needed — `produceSeason` and `harvest` take a
 `Supplied`, and a blockaded settlement works no land, earns no tax and grows no
 people. What its granary holds is what it lives on, and every Season of blockade
 spoils `BLOCKADE_GRAIN_LOSS` of grain and takes `BLOCKADE_POPULATION_LOSS` of its
-people; a town with no grain and nobody left on its walls opens its gates. A
+people — at up to twice that rate when the ring outweighs the garrison, because a
+blockade is men against men and not Squads against Squads; a town with no grain
+and nobody left on its walls opens its gates. A
 *field* army of the besieged Faction within `RELIEF_RADIUS` lifts the ring — the
 garrison is the thing being starved, so only men outside it can threaten the
 besiegers — and the besieger has to close the ring again.
@@ -646,7 +674,9 @@ besiegers — and the besieger has to close the ring again.
 **A minor settlement is taken by holding its centre**, and nothing is razed. An
 open settlement has no wall to break and nothing to starve: a Squad that stands on
 its tile, uncontested, for `CAPTURE_HOLDS` checks takes it, and its people, its
-works and its stocks stay. An open settlement is still seen through the Faction's
+works and its stocks stay. "Uncontested" is a question about men: the larger body
+on the centre holds it, a tie holds nothing, and a single 24-man body is enough
+for a village nobody is defending. An open settlement is still seen through the Faction's
 own fog, though: no wall to keep a secret is not a licence to skip an eye, so an
 unseen village's front is absent from the Observation until a Squad or settlement
 of the Faction looks at it (ADR-0020). Only a Stronghold's fall ends the Match,
@@ -661,7 +691,7 @@ npm run match -- --seed 1 --ticks 9000 --rules assault
   "winner": "rome",
   "reason": "rome won the Match: the carthage Stronghold fell to an assault",
   "commands": 2,
-  "hash": "f5fef8a61ef4b00e"
+  "hash": "0f37cc5352591836"
 }
 ```
 
@@ -677,7 +707,7 @@ npm run match -- --seed 1 --ticks 9000 --rules blockade
   "winner": "rome",
   "reason": "rome won the Match: the carthage Stronghold fell to a blockade",
   "commands": 2,
-  "hash": "f3df38e2cf5012df"
+  "hash": "1f42040d1278803f"
 }
 ```
 
@@ -1370,7 +1400,7 @@ npm run replay -- march.json
   "outcome": "clock",
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
-  "hash": "22454ba666d71b92",
+  "hash": "93c41650cae7c719",
   "verdict": "reproduced"
 }
 ```

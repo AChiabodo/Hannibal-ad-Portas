@@ -450,10 +450,11 @@ describe('a minor settlement, and nothing razed', () => {
 
   it('is not held while an enemy stands on its centre too: the centre has to be won first', () => {
     const world = stage({ minor: { x: 40, y: 40 } });
-    muster(world, 'rome', 'principes', { x: 40, y: 40 }, 2);
+    // Two bodies of the same men and the same arm, with neither side carrying
+    // missiles: the hold is decided on men alone, and this test is about the
+    // hold being a contest and not about which arm wins it (#66).
+    muster(world, 'rome', 'triarii', { x: 40, y: 40 }, 2);
     const defenders = muster(world, 'carthage', 'libyan-spear', { x: 40, y: 40 }, 2);
-    // Equal-man combat is #66's calibration; this test is about the hold, so
-    // both sides stand at the same 120 men the fixture was written with.
     for (const squad of defenders) Object.assign(squad, { strength: 120, capacity: 120 });
     const match = matchOn(world);
 

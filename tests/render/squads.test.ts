@@ -47,6 +47,7 @@ function squadOf(options: {
     engaged: false,
     payroll: 3,
     unpaid: 0,
+    bearing: 0,
     garrison: null,
     home: 0,
     inTerritory: true,

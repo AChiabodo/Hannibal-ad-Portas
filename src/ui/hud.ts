@@ -1283,6 +1283,9 @@ function squadLines(squad: VisibleSquad, visible: EconomyVisible): Pick<HudDetai
     { label: translate('ui.type'), value: squadLabel(squad.type) },
     { label: translate('ui.men'), value: `${String(men.men)}/${String(men.capacity)}` },
     { label: translate('ui.capacity'), value: String(squad.capacity) },
+    // What the men are worth in a fight (#66): men times the type's impact, the
+    // same number the exchange, a wall's defence and the AI's estimate read.
+    { label: translate('ui.force'), value: String(squad.bearing) },
     { label: translate('ui.morale'), value: `${String(morale.morale)}/${String(morale.max)}` },
     { label: translate('ui.fatigue'), value: String(squad.fatigue) },
     { label: translate('ui.ammunition'), value: String(squad.ammunition) },

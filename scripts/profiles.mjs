@@ -51,6 +51,9 @@ export const FEATURES = {
   settlements: ['e2e/settlements.spec.ts'],
   // Drawn formations, standards, plates and the notice journal.
   squads: ['e2e/squads.spec.ts', 'e2e/readability.spec.ts', 'e2e/formation-art.spec.ts'],
+  // A battle and a Siege played on the real page, with the force rule in view
+  // (#66): what a Reparto is worth, how a wall is worked, what it costs the men.
+  battle: ['e2e/battle.spec.ts'],
   // The quietened terrain and the figures that must stay louder than it.
   terrain: ['e2e/terrain-readability.spec.ts'],
   // The browser host: setup, the first-entry guide, a whole Match, the debug
@@ -126,6 +129,7 @@ export const RESPONSIBILITIES = [
   { behavior: 'no committed binary assets', owners: ['tests/guards/asset-files.test.ts', 'scripts/guards/asset-files.mjs'] },
   { behavior: 'authoritative determinism', owners: ['tests/sim/hash.test.ts', 'tests/cli/run.test.ts'] },
   { behavior: 'a Match ends at its bound or by a rule', owners: ['e2e/match.spec.ts', 'tests/sim/outcome.test.ts'] },
+  { behavior: 'equal men fight equally across Squad sizes', owners: ['e2e/battle.spec.ts', 'tests/sim/balance.test.ts'] },
 ];
 
 /**

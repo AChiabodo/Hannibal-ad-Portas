@@ -133,6 +133,13 @@ export interface WireSquadType {
   readonly strength: number;
   /** Every real size a `recruit` may name for it, smallest first (ADR-0026). */
   readonly sizes: readonly number[];
+  /**
+   * What one of its men is worth in a blow, against one man of the line
+   * (ADR-0028): `1` for infantry and slingers, `2` for the Numidian horse, `4`
+   * for the elephant. An agent's own Squads also carry their `bearing`, which is
+   * `men × impact`; this is the roster fact it needs to price a purchase.
+   */
+  readonly impact: number;
   readonly arm: string;
   readonly morale: number;
   readonly ammunition: number;
@@ -274,6 +281,7 @@ function asWireSquadType(type: (typeof SQUAD_TYPES)[number]): WireSquadType {
     tier: type.tier,
     strength: type.strength,
     sizes: type.sizes,
+    impact: type.impact,
     arm: type.arm,
     morale: type.morale,
     ammunition: type.ammunition,

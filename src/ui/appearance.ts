@@ -18,7 +18,7 @@ const VISIBLE: EconomyVisible = {
   squads: [{ id: 1, type: 'hastati', x: 11, y: 10, men: 120, capacity: 120, figures: 120,
     formation: 'line', facing: 'south', goal: null, refused: null, morale: 10,
     fatigue: 0, ammunition: 4, routing: false, engaged: false, payroll: 15,
-    unpaid: 0, garrison: null, home: 0, inTerritory: true, inCamp: false }],
+    unpaid: 0, bearing: 120, garrison: null, home: 0, inTerritory: true, inCamp: false }],
 };
 
 function crop(source: PixelBuffer, rect: Rect): PixelBuffer {

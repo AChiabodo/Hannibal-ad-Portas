@@ -68,10 +68,10 @@
  * still blockaded. `siegeMatchOutcome` is where a Match first ends sooner than
  * its bound: the fall of a Stronghold, and the reason it fell.
  */
-import { stockAt, squadTypeOf } from '../content/index.ts';
+import { bearingOf, stockAt, squadTypeOf } from '../content/index.ts';
 import { TICK_HZ } from './clock.ts';
 import type { Command, SiegePath } from './command.ts';
-import { BREAKING_MORALE, woundsOf } from './combat.ts';
+import { bearing, BREAKING_MORALE, woundsOf } from './combat.ts';
 import type { MatchSetup, VictoryReason } from './driver.ts';
 import {
   economyMatchRules,
@@ -94,7 +94,6 @@ import {
   FACINGS,
   facingCode,
   FIELD,
-  frontage,
   isRouting,
   ROUTING,
   type Facing,
@@ -121,11 +120,32 @@ export const WALL_HP = 60;
 /** What a gate takes before it is broken: the strongest single piece of the wall. */
 export const GATE_HP = 120;
 
-/** How much damage the men at the walls do to them in one round of escalade. */
+/**
+ * How much damage the men at the walls do to them in one round of escalade, for
+ * a full body of `ESCALADE_BEARING`.
+ *
+ * Working a wall is a *body's* work and not a Squad's: `escaladeDamage` reads the
+ * whole besieging force, so splitting it into more Squads neither speeds the work
+ * up nor puts a second crew on a second stretch of it — and a lone Squad's
+ * handful of men no longer chips a wall as fast as an army.
+ */
 export const ESCALADE_DAMAGE = 3;
 
-/** How many men the walls cost each besieging Squad in a round it is under them. */
-export const WALL_ASSAULT_LOSS = 4;
+/** The bearing whose escalade is worth the whole of `ESCALADE_DAMAGE`: a full line. */
+export const ESCALADE_BEARING = 120;
+
+/**
+ * How many men the walls cost a besieging body of `ESCALADE_BEARING` in a round
+ * it is under them, without a ram: one man for every twenty-four brought.
+ *
+ * A rate and not a count: each Squad pays its own men's share (`wallLoss`), so
+ * five 24-man bodies pay exactly what one 120-man body pays — the walls are as
+ * dangerous to a body of men as they are to the body those men could have been.
+ * One man per twenty-four is what makes that exact: the smallest real size is
+ * twenty-four, so no legal body has its share floored away, and the largest pays
+ * five men a round for standing under a wall without a ram.
+ */
+export const WALL_ASSAULT_LOSS = 5;
 
 /** How much nerve the walls cost each besieging Squad in a round it is under them. */
 export const WALL_SHOCK = 1;
@@ -157,8 +177,19 @@ export const RAM_BUILD_TICKS = 60;
 /** What the ram takes off a gate in one round once it is built. */
 export const RAM_DAMAGE = 15;
 
-/** How many files of garrison it takes to break one point of the ram in a round. */
-export const RAM_FILES_PER_BLOW = 4;
+/**
+ * How much bearing it takes on the walls to take one point off the ram in a
+ * round: sixteen, so a 48-man body of spearmen works three points off it a round
+ * and a 120-man body seven.
+ *
+ * Bearing and not files, for #66's reason: the files a garrison stands in
+ * saturate at twelve, so counting them let a Player put four 24-man Squads behind
+ * a gate and defend it five times as well as the one 96-man body they add up to.
+ * Sixteen is chosen so the shipped numbers do not move: four Carthaginian 48-man
+ * bodies still break a ram in five rounds and one still takes twenty
+ * (ADR-0028).
+ */
+export const RAM_BEARING_PER_BLOW = 16;
 
 /**
  * How much grain a blockade costs a settlement each Season, on top of what it
@@ -173,6 +204,20 @@ export const BLOCKADE_GRAIN_LOSS = 6;
 
 /** How many of its people a settlement loses to a Season of blockade. */
 export const BLOCKADE_POPULATION_LOSS = 2;
+
+/**
+ * How much harder a ring that outweighs the garrison starves it, at most.
+ *
+ * A blockade is a body of men against a body of men, so the Season it costs is
+ * scaled by how many times the besiegers' bearing outweighs the garrison's
+ * (`blockadePressure`): a ring that is a match for the walls starves them at the
+ * rate `BLOCKADE_GRAIN_LOSS` and its neighbours state, and one that outweighs
+ * them starves them twice as fast. It is capped at two because a town eats at the
+ * rate of the people in it, however many men are camped outside the gate, and it
+ * never falls below one because a ring that is *thinner* than the garrison still
+ * cuts the roads.
+ */
+export const BLOCKADE_PRESSURE_CAP = 2;
 
 /**
  * How much nerve a Season of blockade costs the garrison inside.
@@ -476,12 +521,13 @@ export function starveBlockades(world: SiegeWorld): void {
     // And a ring nobody is standing in is not a ring: the besiegers may have been
     // broken or marched off since the last tick of the Siege. An army still on
     // the road starves nothing, but the order it was given stands.
-    if (besiegersOf(world, front).length === 0) {
+    const besiegers = besiegersOf(world, front);
+    if (besiegers.length === 0) {
       if (!onTheWay(world, front, settlement)) stand(front);
       continue;
     }
 
-    starve(world, front, settlement);
+    starve(world, front, settlement, besiegers);
   }
 }
 
@@ -818,7 +864,7 @@ function assaultRound(
 
     // The walls are worked at whether the ram is up or not; the men are worked
     // at until it is, because a ram is what shields an assault.
-    chipWall(front);
+    chipWall(front, besiegers);
     if (!rammed(front)) punish(world, besiegers, tick);
   }
 
@@ -873,19 +919,56 @@ function ramDefence(world: SiegeWorld, front: Front): number {
   const garrison = garrisonOf(world.economy, front.settlement).filter((squad) => !isRouting(squad));
   if (garrison.length === 0) return 0;
 
-  const files = garrison.reduce((total, squad) => total + frontage(squad), 0);
-
-  return Math.max(1, Math.floor(files / RAM_FILES_PER_BLOW));
+  return Math.max(1, Math.floor(forceOf(garrison) / RAM_BEARING_PER_BLOW));
 }
 
-/** The escalade's round: the first stretch of wall still standing is worked at. */
-function chipWall(front: Front): void {
+/**
+ * The escalade's round: the first stretch of wall still standing is worked at.
+ *
+ * The damage is the besieging force's, capped at what one full body of men can
+ * do to a wall in a round (`escaladeDamage`): ten thousand men do not bring a
+ * wall down ten times faster than a thousand, because only so many can stand at
+ * it, and one man does not bring it down at a line's speed.
+ */
+function chipWall(front: Front, besiegers: readonly Squad[]): void {
   const wall = front.structures.find(
     (structure) => structure.kind === STRUCTURE.wall && structure.hp > 0,
   );
   if (wall === undefined) return;
 
-  wall.hp = Math.max(0, wall.hp - ESCALADE_DAMAGE);
+  wall.hp = Math.max(0, wall.hp - escaladeDamage(besiegers));
+}
+
+/** What a body of men works off a wall in one round: its share of a full line's, capped at it. */
+export function escaladeDamage(besiegers: readonly Squad[]): number {
+  const force = forceOf(besiegers);
+
+  return Math.max(1, Math.min(ESCALADE_DAMAGE, Math.floor((force * ESCALADE_DAMAGE) / ESCALADE_BEARING)));
+}
+
+/**
+ * What the walls cost one besieging Squad in a round: its own men's share of a
+ * full line's.
+ *
+ * Counted on the men the body was **raised** with and not on the men still
+ * standing, which is the difference between the walls and a fight: a fight is
+ * two bodies wearing each other down, and a wall is a wall. A body that has been
+ * bled by the wall does not become safer to stand under, and counting survivors
+ * would have made a 120-man body pay five, four, four, four… while the five
+ * 24-man bodies that add up to it paid one each — the same men, paying different
+ * blood for the same wall.
+ */
+export function wallLoss(squad: Squad): number {
+  const type = squadTypeOf(squad.type);
+  // The men it was raised with, and not its survivors: see above.
+  const raised = type === undefined ? squad.capacity : bearingOf(type, squad.capacity);
+
+  return Math.max(1, Math.floor((raised * WALL_ASSAULT_LOSS) / ESCALADE_BEARING));
+}
+
+/** The whole force of a body of Squads: the one reading every Siege rule is counted from. */
+export function forceOf(squads: readonly Squad[]): number {
+  return squads.reduce((total, squad) => total + bearing(squad), 0);
 }
 
 /** What standing under a wall costs the men doing it: men, and nerve. */
@@ -895,7 +978,7 @@ function punish(world: SiegeWorld, besiegers: readonly Squad[], tick: number): v
   for (const squad of besiegers) {
     const before = squad.strength;
 
-    squad.strength = Math.max(0, squad.strength - WALL_ASSAULT_LOSS);
+    squad.strength = Math.max(0, squad.strength - wallLoss(squad));
     squad.morale = Math.max(BREAKING_MORALE, squad.morale - WALL_SHOCK);
     if (squad.morale <= BREAKING_MORALE) squad.routing = ROUTING.routed;
 
@@ -989,21 +1072,44 @@ function captureRound(world: SiegeWorld): void {
   }
 }
 
-/** The Faction whose field Squads alone hold a settlement's centre, or `UNOWNED`. */
+/**
+ * The Faction holding a settlement's centre, by force, or `UNOWNED`.
+ *
+ * Holding is a question about **men on the tile** and not about how they are
+ * divided: the bearing each Faction has standing there is added up, the larger
+ * body holds the place, and an even contest holds nothing. Two Factions on the
+ * centre with nothing to choose between them is a fight for it and nobody has
+ * it; a 120-man body against a 24-man one has it outright, which is what "the
+ * weaker contingent is brushed aside" means and what a count of Squads could not
+ * say. A body of nobody still takes an undefended centre — the one thing a small
+ * contingent is good for.
+ */
 function holderOf(economy: Economy, settlement: Settlement): number {
-  let holder = UNOWNED;
+  const force = new Map<number, number>();
+  let present = 0;
 
   for (const squad of economy.squads) {
     if (squad.garrison !== FIELD || isRouting(squad)) continue;
     if (squad.x !== settlement.x || squad.y !== settlement.y) continue;
 
-    // Two Factions on the centre is a fight for it, and nobody is holding it.
-    if (holder !== UNOWNED && holder !== squad.owner) return UNOWNED;
-    holder = squad.owner;
+    present += 1;
+    force.set(squad.owner, (force.get(squad.owner) ?? 0) + bearing(squad));
   }
 
-  // A Faction's own army standing in its own settlement is not taking it.
-  return holder === settlement.owner ? UNOWNED : holder;
+  if (present === 0) return UNOWNED;
+
+  // The larger body holds the ground; the economy's own order breaks a tie by id.
+  const ranked = [...force].sort(([one, left], [other, right]) => right - left || one - other);
+  const best = ranked[0];
+  if (best === undefined) return UNOWNED;
+
+  const [owner, strongest] = best;
+  // A tie is a contest: nobody holds the ground being fought over. And a
+  // Faction's own army standing in its own settlement is not taking it.
+  const shared = ranked.filter(([, other]) => other === strongest).length > 1;
+  if (shared || owner === settlement.owner) return UNOWNED;
+
+  return owner;
 }
 
 /** Whether a settlement can be taken by holding its centre at all. */
@@ -1034,14 +1140,18 @@ function take(
   front.takenPath = path;
 }
 
-/** One Season of a Blockade: the granary empties, the people go, and the garrison's nerve. */
-function starve(world: SiegeWorld, front: Front, settlement: Settlement): void {
-  const grain = Math.max(0, stockAt(settlement.stocks, RESOURCE.grain) - BLOCKADE_GRAIN_LOSS);
+/**
+ * One Season of a Blockade: the granary empties, the people go, and the garrison's
+ * nerve — all at the rate the ring's force buys (`blockadePressure`).
+ */
+function starve(world: SiegeWorld, front: Front, settlement: Settlement, besiegers: readonly Squad[]): void {
+  const pressure = blockadePressure(world.economy, settlement, besiegers);
+  const grain = Math.max(0, stockAt(settlement.stocks, RESOURCE.grain) - BLOCKADE_GRAIN_LOSS * pressure);
   settlement.stocks[RESOURCE.grain] = grain;
-  settlement.population = Math.max(1, settlement.population - BLOCKADE_POPULATION_LOSS);
+  settlement.population = Math.max(1, settlement.population - BLOCKADE_POPULATION_LOSS * pressure);
 
   for (const squad of garrisonOf(world.economy, settlement.id)) {
-    squad.morale = Math.max(BREAKING_MORALE, squad.morale - BLOCKADE_MORALE_LOSS);
+    squad.morale = Math.max(BREAKING_MORALE, squad.morale - BLOCKADE_MORALE_LOSS * pressure);
   }
 
   // A garrison whose nerve has gone is not a garrison: it slips away in the
@@ -1054,6 +1164,26 @@ function starve(world: SiegeWorld, front: Front, settlement: Settlement): void {
   if (empty && garrisonOf(world.economy, settlement.id).length === 0) {
     take(world, front, settlement, front.besieger, SIEGE.blockade);
   }
+}
+
+/**
+ * How hard a ring starves the place it is round: the besiegers' bearing against
+ * the garrison's, in whole multiples and inside `BLOCKADE_PRESSURE_CAP`.
+ *
+ * An empty wall has no garrison to outweigh, and a ring that outweighs nobody
+ * starves the town at the stated rate and no faster: the men inside are the ones
+ * who eat, and there is no faster way to empty a granary than the people who were
+ * going to empty it anyway.
+ */
+export function blockadePressure(
+  economy: Economy,
+  settlement: Settlement,
+  besiegers: readonly Squad[],
+): number {
+  const held = forceOf(garrisonOf(economy, settlement.id));
+  if (held <= 0) return 1;
+
+  return Math.min(BLOCKADE_PRESSURE_CAP, Math.max(1, Math.floor(forceOf(besiegers) / held)));
 }
 
 /** The front of a Stronghold that has fallen, or `undefined` while both stand. */

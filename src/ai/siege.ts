@@ -53,8 +53,16 @@ export interface SiegeContent {
   readonly garrisonEstimate: number;
   /** The tick rate the age limits are counted in, shared with the other planning policies. */
   readonly ticksPerSecond: number;
-  /** The public roster: nominal strength and morale, for pricing an observed enemy. */
-  readonly squadTypes: readonly { readonly id: string; readonly strength: number; readonly morale: number }[];
+  /**
+   * The public roster: nominal strength, what a man is worth in a blow, and
+   * nominal morale, for pricing an observed enemy (#66).
+   */
+  readonly squadTypes: readonly {
+    readonly id: string;
+    readonly strength: number;
+    readonly impact: number;
+    readonly morale: number;
+  }[];
 }
 
 /** The three Commands a siege policy emits; the driver validates them like any other. */
@@ -73,7 +81,12 @@ export type SiegeCommand =
  * how much power the observed garrison and any relieving army can put up. It is
  * never made on hidden state: the garrison is what the front reports, the relief
  * is what ordinary vision shows, and a Stronghold nobody
- * has seen is not a target at all. The target is drawn from the same
+ * has seen is not a target at all.
+ *
+ * Since #66 power is **men brought to bear** — `strength × impact`, priced with
+ * nominal figures for an enemy whose headcount is not in the Observation — so a
+ * ring of five 24-man Squads is worth the 120 men it is and not five times one of
+ * them (ADR-0028). The target is drawn from the same
  * age-limited contact memory the other planning policies read, not from the raw
  * fog list: a sighting that has aged out is history, and no longer grounds for a
  * march. Every decision states how old the sighting it acted on is.
@@ -91,9 +104,13 @@ export function createSiegeBehaviour(
   const types = new Map(content.squadTypes.map((type) => [type.id, type]));
   const nominal = (typeId: string) => {
     const type = types.get(typeId);
-    return type === undefined ? content.garrisonEstimate : type.strength * type.morale;
+    return type === undefined ? content.garrisonEstimate : type.strength * type.impact * type.morale;
   };
-  const power = (squad: SiegeSquad) => Math.max(0, squad.men * squad.morale);
+  const power = (squad: SiegeSquad) => {
+    const type = types.get(squad.type);
+
+    return Math.max(0, squad.men * (type?.impact ?? 1) * squad.morale);
+  };
   const spent = (squad: SiegeSquad) => {
     const type = types.get(squad.type);
     return type !== undefined && (atHalfStrength(squad) || squad.morale * 2 <= type.morale);

@@ -44,9 +44,10 @@ import type { MatchRules } from '../../src/sim/match';
 import { march, musterSquad, orderSquadTo, routeCacheFor, type Placement } from '../../src/sim/movement';
 import { createMatch } from '../../src/sim/match';
 import { SEASON_TICKS, startCalendar } from '../../src/sim/season';
-import { FATIGUE_MAX, ROUTING, type Facing } from '../../src/sim/squad';
+import { FATIGUE_MAX, facingCode, FORMATION, ROUTING, type Facing } from '../../src/sim/squad';
 import { TERRITORY_RADIUS } from '../../src/sim/territory';
 import { paintedMap } from './test-map';
+import { apart, BAND, body, lost } from './force-fixtures';
 
 /**
  * A world on a theatre a test painted.
@@ -83,16 +84,19 @@ function muster(
     y: options.y ?? 20,
     ...(options.facing === undefined ? {} : { facing: options.facing }),
   });
-  // C3's tests compare *equal* blocks. C4/P2 shrunk the rosters—Carthaginian
-  // melee fields 48 at most—so the fixture puts both sides at the 120 men the
-  // tests were written against. Equal-man balance is #66's subject, not a
-  // different starting strength silently changing these answers.
-  Object.assign(squad, { strength: EQUAL_BLOCK, capacity: EQUAL_BLOCK });
+  // C3's tests compare *equal* blocks, and since #66 a block is worth the men it
+  // brings to bear, which is `strength × impact` (`content/squads.ts`). C4/P2
+  // shrunk the rosters—Carthaginian melee fields 48 at most—so the fixture puts
+  // both sides at the same bearing. Equal-man balance is #66's own subject, and
+  // is measured in its own describe below rather than by silently moving these
+  // answers.
+  const impact = squadTypeOf(squad.type)?.impact ?? 1;
+  Object.assign(squad, { strength: Math.ceil(EQUAL_BLOCK / impact), capacity: Math.ceil(EQUAL_BLOCK / impact) });
 
   return squad;
 }
 
-/** The men both sides of a combat test stand with, independent of their roster size. */
+/** The bearing both sides of a combat test stand with, independent of their roster size. */
 const EQUAL_BLOCK = 120;
 
 /**
@@ -121,7 +125,6 @@ function duel(
   });
 
   for (const squad of [attacker, defender]) {
-    squad.strength = 120;
     squad.ammunition = 0;
   }
 
@@ -347,14 +350,10 @@ describe('terrain, fatigue and ammunition', () => {
     const plain = worldOf();
     const open = muster(plain, { faction: 'carthage', squadType: 'numidian-horse', x: 20, y: 21, facing: 'north' });
     const target = muster(plain, { x: 20, y: 20, facing: 'south' });
-    open.strength = 120;
-    target.strength = 120;
 
     const forest = worldOf(['f'], 20, 21);
     const tangled = muster(forest, { faction: 'carthage', squadType: 'numidian-horse', x: 20, y: 21, facing: 'north' });
     const victim = muster(forest, { x: 20, y: 20, facing: 'south' });
-    tangled.strength = 120;
-    victim.strength = 120;
 
     expect(exchangeOf(tangled, victim, forest.map).men).toBeLessThan(
       exchangeOf(open, target, plain.map).men,
@@ -456,10 +455,17 @@ describe('breaking, running and rallying', () => {
 
     // One round from breaking, pressed hard enough to be destroyed by the blow
     // that breaks it, and with an order it can run along. It gets away at one
-    // man rather than being cut down on the tick it loses its nerve.
+    // man rather than being cut down on the tick it loses its nerve. Ten men and
+    // not five, because a blow is counted in force points since #66: ten men land
+    // a man of their own and the line opposite them lands ten, which is the whole
+    // of this body — so it is destroyed by the blow that breaks it, and its route
+    // out is the only reason it does not die there.
     roman.morale = 1;
-    roman.strength = 5;
+    roman.strength = 10;
     orderSquadTo(world.map, roman, home(world), routeCacheFor(world.map));
+    // The route is what keeps it alive; it still faces the enemy it is pressed
+    // by, which is what a Squad that has not yet broken does.
+    roman.facing = facingCode('south');
 
     fight(world.economy, world.map, 0, routeCacheFor(world.map));
 
@@ -745,5 +751,189 @@ describe('the fight as a Command and as an Observation', () => {
 
     expect(first.hash).toBe(second.hash);
     expect(first.result.kind).toBe('clock');
+  });
+});
+
+/**
+ * The outcome metric #66 declared **before** any number was taken, and the band
+ * the measurements are held to.
+ *
+ * Two questions, and the same shape of answer for both: put 120 men on the
+ * field, once as a single Squad and once as five 24-man Squads, and ask what the
+ * enemy loses in one round of contact. The metric is *casualties dealt per
+ * round*, with the angle, the ground, the arms, fatigue and missiles held equal;
+ * the band is fifteen per cent either way, which is about twice the worst
+ * rounding a single step of the chain can cost on the sizes the roster sells.
+ *
+ * The limitations are stated with the metric, not after it: this measures a
+ * controlled frontal exchange, not a whole Match; it holds the angle equal by
+ * giving every body its own identical opponent rather than by pretending five
+ * Squads can all be on one tile's front; and it says nothing about the value of
+ * five bodies' *manoeuvre* — only that dividing men into more Squads buys no
+ * free blow, no free shock and no free volleys.
+ */
+/** Runs exactly one round of contact, from the state as it stands. */
+function oneRound(world: EconomyWorld): void {
+  fight(world.economy, world.map, 0, routeCacheFor(world.map));
+}
+
+/**
+ * A Squad of exactly `men` men of its type, with no missiles: these measurements
+ * are about the size of the bodies, so what a volley would add is held out of
+ * them (and `tests/sim/balance.test.ts` measures the volleys themselves).
+ */
+function unarmed(
+  world: EconomyWorld,
+  faction: Faction,
+  squadType: string,
+  x: number,
+  y: number,
+  men: number,
+  facing: Facing = 'south',
+): Squad {
+  const squad = body(world, faction, squadType, x, y, men, facing);
+  squad.ammunition = 0;
+
+  return squad;
+}
+
+describe('a force of men, however it is divided into Squads (#66)', () => {
+  /**
+   * Five 24-man Squads, each frontally engaged with its own 120-man enemy, each
+   * pair on a tile of its own.
+   *
+   * Every attacker has the same angle (front), the same ground and the same
+   * arms, and the pairs are far enough apart not to touch: what differs from the
+   * one-Squad case is only how the 120 men are divided. This is the
+   * **distributed** half of the comparison.
+   */
+  function fiveSmall(world: EconomyWorld): readonly Squad[] {
+    const enemies: Squad[] = [];
+
+    for (let index = 0; index < 5; index += 1) {
+      const column = 20 + index;
+      unarmed(world, 'rome', 'hastati', column, 21, 24, 'north');
+      enemies.push(unarmed(world, 'carthage', 'libyan-spear', column, 20, 120, 'south'));
+    }
+
+    return enemies;
+  }
+
+  /** One 120-man Squad, frontally engaged with one 120-man enemy. */
+  function oneLarge(world: EconomyWorld): readonly Squad[] {
+    unarmed(world, 'rome', 'hastati', 20, 21, 120, 'north');
+
+    return [unarmed(world, 'carthage', 'libyan-spear', 20, 20, 120, 'south')];
+  }
+
+  /**
+   * `count` Squads of `men` on one tile, with `enemy` on the same tile.
+   *
+   * Squads may share a tile, and `aspectOf` calls a blow from the same tile a
+   * frontal one, so this is the one arrangement in which five bodies can all
+   * have exactly the angle one body would have. It is the **focused** half of
+   * the comparison, and the only way to ask about it without smuggling a flank
+   * into the measurement.
+   */
+  function stacked(
+    world: EconomyWorld,
+    faction: Faction,
+    squadType: string,
+    count: number,
+    men: number,
+  ): readonly Squad[] {
+    const squads: Squad[] = [];
+    for (let index = 0; index < count; index += 1) {
+      squads.push(unarmed(world, faction, squadType, 20, 20, men, 'south'));
+    }
+
+    return squads;
+  }
+
+  it('deals what one Squad of the same men deals, focused or distributed', () => {
+    const divided = worldOf();
+    const enemies = fiveSmall(divided);
+    oneRound(divided);
+    const fromFive = lost(enemies);
+
+    const whole = worldOf();
+    const single = oneLarge(whole);
+    oneRound(whole);
+    const fromOne = lost(single);
+
+    // Both configurations are 120 Roman hastati against 120 Carthaginian spears
+    // a round, and only the number of bodies differs.
+    expect(fromFive).toBeGreaterThan(0);
+    expect(apart(fromFive, fromOne)).toBeLessThanOrEqual(BAND);
+  });
+
+  it('shakes the same nerve however many Squads the men are divided into', () => {
+    const divided = worldOf();
+    const [pressed] = stacked(divided, 'carthage', 'libyan-spear', 1, 120);
+    stacked(divided, 'rome', 'hastati', 5, 24);
+    if (pressed === undefined) throw new Error('the stage mustered no defender');
+    const before = pressed.morale;
+    oneRound(divided);
+    const fromFive = before - pressed.morale;
+
+    const whole = worldOf();
+    const [alone] = stacked(whole, 'carthage', 'libyan-spear', 1, 120);
+    stacked(whole, 'rome', 'hastati', 1, 120);
+    if (alone === undefined) throw new Error('the stage mustered no defender');
+    const morale = alone.morale;
+    oneRound(whole);
+    const fromOne = morale - alone.morale;
+
+    // Five bodies pressing one is not five times the shock of one body pressing
+    // one: 120 men shake the same nerve as 120 men.
+    expect(fromFive).toBeGreaterThan(0);
+    expect(apart(fromFive, fromOne)).toBeLessThanOrEqual(BAND);
+  });
+
+  it('inflicts its weight once across the enemies it fights, not once for each', () => {
+    // One 120-man Squad on a tile with five 24-man enemies, against the same 120
+    // men as five separate attackers each on a tile with one enemy. What the
+    // *side* of 120 men inflicts must not depend on how many bodies it is facing.
+    const surrounded = worldOf();
+    const [carrier] = stacked(surrounded, 'rome', 'hastati', 1, 120);
+    const ring = stacked(surrounded, 'carthage', 'libyan-spear', 5, 24);
+    if (carrier === undefined) throw new Error('the stage mustered no attacker');
+    oneRound(surrounded);
+    const fromOne = lost(ring);
+
+    const spread = worldOf();
+    const targets: Squad[] = [];
+    for (let index = 0; index < 5; index += 1) {
+      // A tile apart from its neighbours' pair, so each is its own engagement.
+      const column = 20 + index * 3;
+      unarmed(spread, 'rome', 'hastati', column, 20, 24, 'south');
+      targets.push(unarmed(spread, 'carthage', 'libyan-spear', column, 20, 24, 'north'));
+    }
+    oneRound(spread);
+    const fromFive = lost(targets);
+
+    expect(carrier.strength).toBeLessThan(120);
+    expect(fromOne).toBeGreaterThan(0);
+    expect(apart(fromOne, fromFive)).toBeLessThanOrEqual(BAND);
+  });
+
+  it('lands a quarter of a line’s blow from a column, at every size', () => {
+    // A formation is not a size: the same men in a column strike for a quarter
+    // of what they strike for in a line, whether they are 120 or 24. Missiles are
+    // held out, because a volley is a weight of stones and not part of the shape.
+    for (const men of [24, 120]) {
+      const world = worldOf();
+      const attacker = unarmed(world, 'rome', 'hastati', 20, 21, men, 'north');
+      const defender = unarmed(world, 'carthage', 'libyan-spear', 20, 20, 120, 'south');
+
+      attacker.formation = FORMATION.line;
+      const line = exchangeOf(attacker, defender, world.map).points;
+      attacker.formation = FORMATION.column;
+      const column = exchangeOf(attacker, defender, world.map).points;
+
+      expect(column).toBeLessThan(line);
+      // A quarter, to within the point the chain floors at these sizes.
+      expect(column * 4).toBeLessThanOrEqual(line + 4);
+    }
   });
 });

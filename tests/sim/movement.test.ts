@@ -816,6 +816,7 @@ describe('what a Faction is shown of its Squads', () => {
       engaged: false,
       payroll: 15,
       unpaid: 0,
+      bearing: 120,
       garrison: null,
       home: 0,
       inTerritory: true,

@@ -21,6 +21,7 @@ export { amountOf, namedStock, NOTHING, pay, stockAt, stockOf, times } from './r
 export type { Payment, ResourceAmounts } from './resources.ts';
 
 export {
+  bearingOf,
   COST_BASIS,
   PAYROLL_BASIS,
   figuresOf,

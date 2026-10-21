@@ -6,8 +6,9 @@ import { createBehaviourRegistry } from '../../src/ai/registry.ts';
 
 const CONTENT = { canAssault: (faction: string) => faction === 'rome',
   ramCost: 15, siegeRadius: 1, reliefRadius: 3, garrisonEstimate: 1200, ticksPerSecond: 10,
-  squadTypes: [{ id: 'hastati', strength: 120, morale: 10 },
-    { id: 'gaul', strength: 140, morale: 6 }, { id: 'triarii', strength: 100, morale: 14 }] };
+  squadTypes: [{ id: 'hastati', strength: 120, impact: 1, morale: 10 },
+    { id: 'gaul', strength: 140, impact: 1, morale: 6 },
+    { id: 'triarii', strength: 100, impact: 1, morale: 14 }] };
 
 function controller(level: keyof typeof DIFFICULTY = 'centurio') {
   return createAi<SiegeObservation, SiegeCommand>({ ticksPerSecond: 10,

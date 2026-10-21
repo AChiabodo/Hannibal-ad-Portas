@@ -198,9 +198,12 @@ export interface Shape {
  * its shape stands in.
  *
  * A line with five men has a frontage of five; with forty, twelve, because the
- * other twenty-eight are in the ranks behind. This is the number a fight is
- * decided by (C3) and the number a drawing code needs to know how wide the
- * block is.
+ * other twenty-eight are in the ranks behind. It is how wide the block is drawn
+ * and how wide it stands, and it is the number a drawing code needs; the number a
+ * fight is decided by is the **force** the men bring (`content/squads.ts`,
+ * `sim/combat.ts`), which is not read off the files — a full line saturates at
+ * twelve, and a blow read off the file count would let a Player buy five times the
+ * damage by splitting one body into five Squads (ADR-0028).
  *
  * @throws RangeError when the block has no men in it, or holds a formation no
  *   Squad can hold.

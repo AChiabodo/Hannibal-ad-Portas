@@ -51,10 +51,18 @@
  * this Match can do without fog: ownership is the economy's own secret and it
  * keeps it.
  */
-import { buildingOf, figuresOf, namedStock, payrollBill, squadTypeOf, type ResourceAmounts } from '../content/index.ts';
+import {
+  buildingOf,
+  figuresOf,
+  namedStock,
+  payrollBill,
+  squadTypeOf,
+  type ResourceAmounts,
+} from '../content/index.ts';
 import type { Command, Formation } from './command.ts';
 import {
   applyCombatCommands,
+  bearing,
   engagedWith,
   fight,
   resupply,
@@ -247,6 +255,18 @@ export interface VisibleSquad {
 
   /** Seasons in a row it has gone unpaid. */
   readonly unpaid: number;
+
+  /**
+   * The force it brings into a fight: its surviving men times its type's
+   * `impact` (#66, ADR-0028).
+   *
+   * This is the number `sim/combat.ts` moves men and nerve by, the number a
+   * Siege's ram defence and wall work are read from, and the number a Controller
+   * prices its own line with — so the interface, the AI and the rules quote one
+   * fact and cannot drift apart. It is a fact about **this Faction's own** Squad:
+   * an enemy's headcount is not in an Observation, and neither is its bearing.
+   */
+  readonly bearing: number;
 
   /** The settlement it is garrisoning, or `null` when it is in the field (C5). */
   readonly garrison: number | null;
@@ -480,6 +500,7 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
     engaged: engagedWith(economy, squad) !== undefined,
     payroll: type === undefined ? 0 : payrollBill(type, squad.strength),
     unpaid: squad.unpaid,
+    bearing: bearing(squad),
     garrison: squad.garrison === FIELD ? null : squad.garrison,
     home: squad.home,
     inTerritory: holdsTerritory(territory, squad.owner, squad),

@@ -121,6 +121,7 @@ Each entry of `squadTypes` — what a `recruit` may name, and what it will cost:
 | `tier`        | The settlement tier it needs: a tier-3 type is not raised in a villa.      |
 | `strength`    | The largest size it may be raised at: a full-strength Squad is counted as this many men. |
 | `sizes`       | Every real size a `recruit` may name for it, smallest first (ADR-0026).    |
+| `impact`      | What one of its men is worth in a blow, against one man of the line: `1` for infantry and slingers, `2` for the Numidian horse, `4` for the elephant (ADR-0028). |
 | `arm`         | What it fights with: `"sword"`, `"spear"`, `"lance"`, `"bow"`, `"sling"` or `"beast"`. |
 | `morale`      | The nerve it comes with.                                                   |
 | `ammunition`  | Volleys of missiles it carries.                                            |
@@ -211,6 +212,7 @@ Each entry of `squads`:
 | `engaged`     | Whether an enemy Squad is in contact with it right now.                             |
 | `payroll`     | What it owes at the next Season boundary, priced on the men still standing.        |
 | `unpaid`      | Seasons in a row it has gone unpaid.                                               |
+| `bearing`     | The force it brings into a fight: its men times its type's `impact`. It is the number the exchange, a wall's defence and a Controller's estimate all read, and it is a fact about **your own** Squad only — an enemy's men and bearing are not in an Observation (ADR-0028). |
 | `garrison`    | The settlement it is manning, or `null` when it is in the field.                    |
 | `home`        | The settlement that raised it.                                                     |
 | `inTerritory` | Whether it stands on ground of yours, where it draws supply.                        |

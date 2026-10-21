@@ -172,6 +172,7 @@ export const STRINGS = {
   'ui.ticksLeft': { it: '{ticks} tick', en: '{ticks} ticks' },
   'ui.men': { it: 'Uomini', en: 'Men' },
   'ui.capacity': { it: 'Reclutati', en: 'Recruited' },
+  'ui.force': { it: 'Forza', en: 'Force' },
   'ui.recruitCount': { it: 'Reparti', en: 'Squads' },
   'ui.countValue': { it: '{label}: {count}', en: '{label}: {count}' },
   'ui.perSeason': { it: 'per Stagione', en: 'per Season' },
@@ -195,6 +196,78 @@ export const STRINGS = {
   'ui.nothingSelected': { it: 'Nessuna selezione', en: 'Nothing selected' },
   'ui.none': { it: '-', en: '-' },
   'ui.listItem': { it: '{name} {id}', en: '{name} {id}' },
+
+  // The rules in words (#66): what the Encyclopedia says about force, the
+  // exchange, missiles, a Siege and the roster's own weights. The numbers in
+  // these sentences are placeholders filled from the rules themselves
+  // (`ui/reference.ts`), so a sentence cannot outlive the rule it describes.
+  'ref.force.title': { it: 'Forza di un Reparto', en: 'A Squad’s force' },
+  'ref.force.body': {
+    it: 'Un Reparto vale per gli uomini che porta in battaglia, non per il numero di Reparti in cui sono divisi. ' +
+      'Si contano in punti-forza, {points} punti per uomo ucciso: un Reparto da {large} uomini ne vale {large}, ' +
+      'e cinque Reparti da {small} uomini ne valgono insieme {large}. La colonna porta in battaglia un quarto ' +
+      'del suo valore: schierarsi in linea è una decisione, e una colonna sorpresa in mischia vale meno.',
+    en: 'A Squad is worth the men it brings to battle, not the number of Squads they are divided into. ' +
+      'These are counted in force points, {points} points to a man killed: a {large}-man Squad is worth {large}, ' +
+      'and five {small}-man Squads are worth {large} between them. A column brings a quarter of its force: ' +
+      'deploying in line is a decision, and a column caught in melee is worth less.',
+  },
+  'ref.force.points': { it: 'Punti-forza per uomo', en: 'Force points to a man' },
+  'ref.force.smallest': { it: 'Reparto più piccolo', en: 'Smallest Squad' },
+  'ref.force.largest': { it: 'Reparto più grande', en: 'Largest Squad' },
+  'ref.force.column': { it: 'Quarti di forza in colonna', en: 'Quarter of the force in column' },
+  'ref.combat.title': { it: 'Lo scontro', en: 'The exchange' },
+  'ref.combat.body': {
+    it: 'Ogni secondo di mischia contiene {rounds} scontri, e ogni scontro toglie uomini e Morale a entrambe le parti. ' +
+      'Il Morale cala di {base} per ogni Reparto attaccato, più {flank} se colpito al fianco e {rear} alle spalle: ' +
+      'chi è accerchiato perde il Morale una volta sola, però, non una volta per nemico. ' +
+      'Chi resta senza Morale si rompe e fugge verso un proprio insediamento invece di morire fino all’ultimo uomo.',
+    en: 'Every second of melee contains {rounds} exchanges, and every exchange takes men and Morale from both sides. ' +
+      'Morale falls by {base} for each Squad attacked, plus {flank} if struck in the flank and {rear} from behind: ' +
+      'a surrounded body loses Morale once, however, not once per enemy. ' +
+      'A Squad that reaches no Morale breaks and runs for one of its own settlements rather than dying to the last man.',
+  },
+  'ref.combat.base': { it: 'Morale per scontro', en: 'Morale an exchange' },
+  'ref.combat.flank': { it: 'Morale in più al fianco', en: 'Extra Morale in the flank' },
+  'ref.combat.rear': { it: 'Morale in più alle spalle', en: 'Extra Morale from behind' },
+  'ref.missiles.title': { it: 'Missili', en: 'Missiles' },
+  'ref.missiles.body': {
+    it: 'Un Reparto che porta missili ne lancia una salva per ogni scontro in cui è impegnato, e ogni salva ' +
+      'aggiunge uomini uccisi e {shock} Morale a chi la riceve. Le munizioni non tornano: si riforniscono solo ' +
+      'in una Stagione passata nel proprio territorio. Contano molto all’inizio e niente alla fine.',
+    en: 'A Squad carrying missiles throws one volley for every exchange it is engaged in, and every volley ' +
+      'adds men killed and {shock} Morale to whoever takes it. The missiles never come back: they are restocked ' +
+      'only by a Season spent inside its own territory. They matter at the start and not at all at the end.',
+  },
+  'ref.missiles.shock': { it: 'Morale per salva', en: 'Morale a volley' },
+  'ref.siege.title': { it: 'Assedio', en: 'Siege' },
+  'ref.siege.body': {
+    it: 'La guarnigione difende le mura con i suoi uomini: {ram} punti-forza di guarnigione tolgono un punto ' +
+      'all’ariete per scontro, e chi sta sotto le mura paga {loss} uomini per ogni {bearing} punti-forza portati. ' +
+      'Gli uomini sotto le mura aprono una breccia a {escalade} danni per scontro al massimo, e solo se sono in ' +
+      'tanti da poter lavorare. Un blocco affama la piazza di {grain} grano a Stagione, e fino a {cap} volte ' +
+      'tanto se chi assedia è più forte di chi difende. Il centro di un insediamento si prende con gli uomini: ' +
+      'chi ne ha di più lo tiene, e a parità nessuno lo tiene finché lo scontro non decide.',
+    en: 'A garrison holds the walls with its men: {ram} force points of garrison take a point off the ram an ' +
+      'exchange, and the men under the walls pay {loss} men for every {bearing} force points they bring. ' +
+      'The men at the wall open a breach for at most {escalade} damage an exchange, and only if there are enough ' +
+      'of them to work. A blockade starves the town of {grain} grain a Season, and up to {cap} times as much when ' +
+      'the besiegers outweigh the defenders. A settlement’s centre is taken with men: the larger body holds it, ' +
+      'and at equal strength nobody holds it until the fight decides.',
+  },
+  'ref.siege.ram': { it: 'Punti-forza per punto d’ariete', en: 'Force points to a point of ram' },
+  'ref.siege.escalade': { it: 'Danni alle mura per scontro', en: 'Wall damage an exchange' },
+  'ref.siege.loss': { it: 'Uomini persi sotto le mura', en: 'Men lost under the walls' },
+  'ref.siege.grain': { it: 'Grano perso per Stagione', en: 'Grain lost a Season' },
+  'ref.siege.cap': { it: 'Volte al massimo', en: 'Times at most' },
+  'ref.roster.title': { it: 'Il peso di ogni tipo', en: 'Each type’s weight' },
+  'ref.roster.body': {
+    it: 'La fanteria vale un uomo per uomo. I cavalieri numidi valgono il doppio dei loro uomini, e l’elefante ' +
+      'quattro volte i suoi: la sua forza è quella di un reparto molto più numeroso, e per questo è disegnato ' +
+      'come una sola figura.',
+    en: 'The infantry is worth a man for a man. The Numidian horse is worth twice its men, and the elephant four ' +
+      'times its own: its strength is that of a much larger body, which is why it is drawn as a single figure.',
+  },
 
   // The contextual actions (#55): the verbs a Player can give and, beside them,
   // the key that gives it. A label and a shortcut are separate so that a button

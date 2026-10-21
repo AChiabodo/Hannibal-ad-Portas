@@ -189,13 +189,17 @@ describe('the march Match, which is what CI gates movement and combat with', () 
     return world;
   }
 
-  it('musters a dozen Squads onto the theatre, six each, all of them on ground they can walk off', () => {
+  it('musters two equal forces of unequal Squads, all of them on ground they can walk off', () => {
     const world = marchWorld(1);
     const owners = world.economy.squads.map((squad) => squad.owner);
+    const men = (faction: 'rome' | 'carthage') => world.economy.squads
+      .filter((squad) => squad.owner === factionCode(faction))
+      .reduce((total, squad) => total + squad.strength, 0);
 
-    expect(world.economy.squads).toHaveLength(12);
-    expect(owners.filter((owner) => owner === factionCode('rome'))).toHaveLength(6);
-    expect(owners.filter((owner) => owner === factionCode('carthage'))).toHaveLength(6);
+    expect(world.economy.squads).toHaveLength(7);
+    expect(owners.filter((owner) => owner === factionCode('rome'))).toHaveLength(2);
+    expect(owners.filter((owner) => owner === factionCode('carthage'))).toHaveLength(5);
+    expect(men('rome')).toBe(men('carthage'));
 
     for (const squad of world.economy.squads) {
       expect(isWalkable(terrainAt(world.map, squad.x, squad.y))).toBe(true);
@@ -207,10 +211,13 @@ describe('the march Match, which is what CI gates movement and combat with', () 
     const [rome, carthage] = world.map.strongholds;
     const log = marchLog(world);
 
+    // Two Roman lines of 120 and five Carthaginian bodies of 48: the same two
+    // hundred and forty men a side, and not the same number of Squads (#66).
     expect(log).toEqual([
-      { tick: 0, command: { kind: 'move', faction: 'rome', squads: [1, 2, 3, 4, 5, 6], ...carthage } },
-      { tick: 0, command: { kind: 'move', faction: 'carthage', squads: [7, 8, 9, 10, 11, 12], ...rome } },
+      { tick: 0, command: { kind: 'move', faction: 'rome', squads: [1, 2], ...carthage } },
+      { tick: 0, command: { kind: 'move', faction: 'carthage', squads: [3, 4, 5, 6, 7], ...rome } },
     ]);
+    expect(world.economy.squads.reduce((men, squad) => men + squad.strength, 0)).toBe(480);
 
     const squares = world.economy.settlements.slice(0, 2).map((settlement) => ({ x: settlement.x, y: settlement.y }));
     expect(squares).toEqual([rome, carthage]);
@@ -238,9 +245,10 @@ describe('the march Match, which is what CI gates movement and combat with', () 
     }
 
     // The two armies met on the way: a march across a theatre with an enemy on
-    // it is a fight as well as a march (C3), so the survivors are the men who
-    // got through and not the twelve that set out.
-    expect(after.economy.squads.length).toBeLessThan(12);
+    // it is a fight as well as a march (C3), so the men who arrive are not the
+    // men who set out — and since #66 the two forces bring the same two hundred
+    // and forty men, so neither is wiped out on the road.
+    expect(after.economy.squads.length).toBeLessThanOrEqual(7);
     expect(new Set(after.economy.squads.map((squad) => squad.owner)).size).toBe(2);
     expect(
       after.economy.squads.some((squad) => squad.strength < (mustered.get(squad.id)?.men ?? 0)),
