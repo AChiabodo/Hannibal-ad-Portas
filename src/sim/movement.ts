@@ -10,8 +10,9 @@
  *
  * Four Commands are obeyed here, and they are the four that are about moving:
  *
- * - `move` and `attackMove` plan a route to the tile the Command names and walk
- *   it. An Attack-move is a move: what a Squad meets on the way and what it does
+ * - `move` and `attackMove` allocate nearby distinct arrivals for a group and
+ *   plan routes to them (docs/COMMANDS.md). A single Squad uses the named Tile.
+ *   An Attack-move is a move: what a Squad meets on the way and what it does
  *   about it is combat, which is C3's, and a march that stopped to fight would
  *   be C3's too.
  * - `hold` stops where the Squad stands and forgets the route.
@@ -60,6 +61,7 @@
  * Match, hash for hash.
  */
 import { squadTypeCode, squadTypeOf } from '../content/index.ts';
+import { formationShape } from '../content/formation.ts';
 import type { Command, Formation } from './command.ts';
 import type { Economy, Squad } from './economy.ts';
 import { factionCode, type Faction, type FactionCode } from './faction.ts';
@@ -86,6 +88,7 @@ import {
   facingCode,
   FIELD,
   formationCode,
+  formationOf,
   isRouting,
   standingAt,
   type Block,
@@ -219,9 +222,7 @@ export function applyMovementCommands(
     switch (command.kind) {
       case 'move':
       case 'attackMove':
-        for (const squad of orderedSquads(economy, owner, command.squads)) {
-          orderSquadTo(map, squad, { x: command.x, y: command.y }, routes);
-        }
+        orderGroupTo(map, orderedSquads(economy, owner, command.squads), command, routes);
         break;
 
       case 'hold':
@@ -242,6 +243,67 @@ export function applyMovementCommands(
         break;
     }
   }
+}
+
+/**
+ * Arrival only: routes can overlap in transit. IDs decide allocation, then
+ * distance to the click, north before south and west before east break ties.
+ * A bounded twelve-Tile neighbourhood keeps the click meaningful. Only its
+ * connected landmass is considered; no fallback sends a Squad across water.
+ */
+function orderGroupTo(map: MapGrid, squads: readonly Squad[], to: Site, routes: RouteCache): void {
+  if (squads.length <= 1 || !isTile(to.x, to.y) || !isWalkable(terrainAt(map, to.x, to.y))) {
+    for (const squad of squads) orderSquadTo(map, squad, to, routes);
+    return;
+  }
+
+  const connected = connectedTo(map, to);
+  const candidates: Site[] = [];
+  for (let y = Math.max(0, to.y - 12); y <= Math.min(MAP_HEIGHT - 1, to.y + 12); y += 1) {
+    for (let x = Math.max(0, to.x - 12); x <= Math.min(MAP_WIDTH - 1, to.x + 12); x += 1) {
+      if (connected.has(tileIndex(x, y))) candidates.push({ x, y });
+    }
+  }
+  const distance = (site: Site): number => (site.x - to.x) * (site.x - to.x) + (site.y - to.y) * (site.y - to.y);
+  candidates.sort((a, b) => distance(a) - distance(b) || a.y - b.y || a.x - b.x);
+  const assigned: { readonly site: Site; readonly radius: number }[] = [];
+  for (const squad of [...squads].sort((a, b) => a.id - b.id)) {
+    if (!connected.has(tileIndex(squad.x, squad.y))) {
+      squad.refused = refusalCode('unreachable');
+      continue;
+    }
+    const type = squadTypeOf(squad.type);
+    const shape = formationShape(type?.figures ?? squad.capacity, formationOf(squad.formation));
+    // One Tile per three files/ranks plus clearance. This is rule geometry,
+    // independent of Figure pixels, and conservative for every arrival facing.
+    const radius = Math.ceil(Math.max(shape.files, shape.ranks) / 6) + 1;
+    const site = candidates.find((candidate) => assigned.every((other) =>
+      Math.max(Math.abs(candidate.x - other.site.x), Math.abs(candidate.y - other.site.y)) >= radius + other.radius));
+    if (site === undefined) {
+      squad.refused = refusalCode('no-space');
+      continue;
+    }
+    orderSquadTo(map, squad, site, routes);
+    assigned.push({ site, radius });
+  }
+}
+
+/** Derived reachability, never state: the terrain is the only transit obstacle. */
+function connectedTo(map: MapGrid, site: Site): ReadonlySet<number> {
+  const reached = new Set([tileIndex(site.x, site.y)]);
+  const queue = [site];
+  for (let at = 0; at < queue.length; at += 1) {
+    const current = queue[at] as Site;
+    for (const next of [{ x: current.x, y: current.y - 1 }, { x: current.x + 1, y: current.y },
+      { x: current.x, y: current.y + 1 }, { x: current.x - 1, y: current.y }]) {
+      if (!isTile(next.x, next.y) || !isWalkable(terrainAt(map, next.x, next.y))) continue;
+      const tile = tileIndex(next.x, next.y);
+      if (reached.has(tile)) continue;
+      reached.add(tile);
+      queue.push(next);
+    }
+  }
+  return reached;
 }
 
 /**

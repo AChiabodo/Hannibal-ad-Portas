@@ -193,6 +193,7 @@ export const STRINGS = {
   'refusal.offMap': { it: 'Fuori mappa', en: 'Off the map' },
   'refusal.water': { it: 'Acque profonde', en: 'Deep water' },
   'refusal.unreachable': { it: 'Nessuna via', en: 'No way through' },
+  'refusal.noSpace': { it: 'Spazio insufficiente vicino alla destinazione', en: 'Insufficient space near the destination' },
   'ui.nothingSelected': { it: 'Nessuna selezione', en: 'Nothing selected' },
   'ui.none': { it: '-', en: '-' },
   'ui.listItem': { it: '{name} {id}', en: '{name} {id}' },
@@ -500,6 +501,7 @@ const REFUSAL_KEYS: Readonly<Record<RouteRefusal, StringKey>> = {
   'off-map': 'refusal.offMap',
   water: 'refusal.water',
   unreachable: 'refusal.unreachable',
+  'no-space': 'refusal.noSpace',
 };
 
 /**

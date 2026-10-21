@@ -360,10 +360,10 @@ function showMarquee(
   from: { readonly x: number; readonly y: number },
   to: { readonly x: number; readonly y: number },
 ): Sprite {
-  const x = Math.min(from.x, to.x);
-  const y = Math.min(from.y, to.y);
-  const width = Math.max(1, Math.abs(to.x - from.x));
-  const height = Math.max(1, Math.abs(to.y - from.y));
+  const x = Math.floor(Math.min(from.x, to.x));
+  const y = Math.floor(Math.min(from.y, to.y));
+  const width = Math.max(1, Math.ceil(Math.max(from.x, to.x)) - x);
+  const height = Math.max(1, Math.ceil(Math.max(from.y, to.y)) - y);
   const texture = textureOf(marquee(width, height));
 
   if (sprite === null) {

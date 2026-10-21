@@ -53,7 +53,8 @@ export type EvidenceFolder =
   | 'issue59'
   | 'issue62'
   | 'issue64'
-  | 'issue67';
+  | 'issue67'
+  | 'issue68';
 
 /**
  * Presents the frame the page has just drawn and, when the run is producing

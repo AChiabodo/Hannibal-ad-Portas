@@ -102,6 +102,9 @@ jobs:
       # a Siege reads force instead of file counts (ADR-0028). The four moved
       # hashes are that rule, and the measurements beside it are in
       # docs/reviews/issue-66-military-balance.md.
+      # #68 moves only march and roster: group Move/Attack-move now reserve
+      # distinct reachable arrivals near the click. The allocation is part of
+      # the rules and Replay; see docs/COMMANDS.md, Ground arrival allocation.
       #
       # C1's movement and C3's combat on the world the economy Match already
       # plays: two Roman lines of 120 and five Carthaginian bodies of 48 — the
@@ -113,7 +116,7 @@ jobs:
       # to a fight moves this line and has to be a decision in review
       # (ADR-0006, ADR-0015).
       - name: March two equal forces of unequal Squads across the theatre, and let them fight, headless
-        run: npm run match -- --seed 1 --ticks 600 --rules march --expect-hash 93c41650cae7c719
+        run: npm run match -- --seed 1 --ticks 600 --rules march --expect-hash b5d29129ff9d86e7
 
       # C4's Match: both Factions' whole rosters, the six Carthaginian types
       # including the elephant, mustered on their own ground and sent at each
@@ -121,7 +124,7 @@ jobs:
       # change to a roster's numbers moves this line and has to be a decision in
       # review (ADR-0006).
       - name: March both rosters across the theatre, headless
-        run: npm run match -- --seed 1 --ticks 600 --rules roster --expect-hash a5e7bcf64fca8b7e
+        run: npm run match -- --seed 1 --ticks 600 --rules roster --expect-hash 76b515304e285b62
 
       # C5's first whole Match: Rome storms Carthage's Stronghold with the ram.
       # The hash is the state the Match ended on, and the Match ended because a

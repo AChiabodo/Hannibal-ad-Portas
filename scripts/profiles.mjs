@@ -42,7 +42,7 @@ export const FEATURES = {
   // The shared human submission surface and the contextual panels.
   commands: ['e2e/commands.spec.ts'],
   // Pointer and keyboard gestures that become real Commands.
-  orders: ['e2e/orders.spec.ts'],
+  orders: ['e2e/orders.spec.ts', 'e2e/group-orders.spec.ts'],
   // The Italian interface: rows, scrolling, pause, minimap, repairs.
   hud: ['e2e/hud.spec.ts', 'e2e/hud-repair.spec.ts'],
   // Faction-filtered knowledge and the three states of the fog.
@@ -84,6 +84,7 @@ export const SMOKE = ['e2e/smoke.spec.ts'];
  * assertions with `SPQR_VISUAL=1`.
  */
 export const VISUAL_SPECS = [
+  'e2e/group-orders.spec.ts',
   'e2e/formation-art.spec.ts',
   'e2e/acceptance.spec.ts',
   'e2e/appearance.spec.ts',

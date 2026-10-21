@@ -71,8 +71,8 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 <!-- vocabulary:start -->
 | Command       | Fields                                    | What it orders                                                                                          |
 | ------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `move`        | `faction`, `squads`, `x`, `y`             | March the Squads to the tile `x, y` and hold there.                                                     |
-| `attackMove`  | `faction`, `squads`, `x`, `y`             | March to `x, y`, engaging whatever is met on the way.                                                   |
+| `move`        | `faction`, `squads`, `x`, `y`             | March to separate legal arrivals near `x, y` and hold there (see below).                               |
+| `attackMove`  | `faction`, `squads`, `x`, `y`             | Use the same arrival allocation, engaging whatever is met on the way.                                 |
 | `attack`      | `faction`, `squads`, `target`             | Attack one enemy Squad.                                                                                 |
 | `hold`        | `faction`, `squads`                       | Hold position: stand, face the enemy, do not pursue.                                                    |
 | `garrison`    | `faction`, `squads`, `settlement`         | Take up garrison inside a settlement: man its walls instead of the field.                                |
@@ -84,6 +84,44 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 | `formation`   | `faction`, `squads`, `formation`          | Set the shape the Squads hold: `line` for frontage, `column` for depth (PLAN §4).                       |
 | `group`       | `faction`, `group`, `squads`              | Bind Squads to a numbered control group, or clear it with an empty list.                                |
 <!-- vocabulary:end -->
+
+### Ground arrival allocation (#68)
+
+One eligible Squad still marches to the exact clicked Tile. For a group, owned
+Squads in good order are allocated in ascending ID order, independently of the
+Command's list order. The first reachable Squad claims the click; subsequent
+Squads take the nearest available walkable Tile within twelve Tiles on each
+axis. Squared distance to the click orders candidates, then y, then x. Each
+candidate must be on the click's connected landmass and reachable from the Squad.
+
+Separation uses the purchased files/ranks shared with the formation declaration,
+including column depth and a specialist's declared Figure count. Its conservative
+radius in Tiles is `ceil(max(files, ranks) / 6) + 1`; two arrival centres must be
+at least the sum of their radii apart on one axis, regardless of arrival facing.
+This reserves arrivals within this Command only. It introduces no occupancy or
+collision rules: routes may overlap, including through one-Tile fords.
+
+Off-map and water clicks refuse the whole ground order with `off-map` or `water`.
+Disconnected Squads receive `unreachable` and claim no slot. An eligible Squad
+with no separated reachable candidate in the neighbourhood receives `no-space`
+(**Spazio insufficiente vicino alla destinazione**). Allocation is greedy in ID
+order; it never relocates an earlier assignment to fit a later Squad. Refused
+Squads keep their previous route and step timer; accepted peers proceed. The
+Observation exposes each assigned goal and refusal; selection exceptions and
+notices explain partial execution. Rout/ownership eligibility remains unchanged.
+
+Repeating an unchanged group order yields the same arrivals and preserves step
+progress. A later accepted order replaces the route; paused Commands retain
+their submission order and are applied on resume. Explicit `attack`, `garrison`,
+`assault` and `blockade` retain their enemy/settlement target semantics.
+
+This intentionally changes rule hashes for Records containing multi-Squad ground
+Commands (including `march` and `roster`); old checkpoints can diverge. The seed
+and logged Commands still reproduce deterministically under these rules. No
+Command fields, random draws or state fields were added; `no-space` appends
+refusal code 3 without renumbering the existing codes.
+
+### Content and control groups
 
 `building` and `squadType` are ids from the content table (`content/`, B6 and
 C4). The vocabulary fixes that a name goes there; the rules refuse names they do

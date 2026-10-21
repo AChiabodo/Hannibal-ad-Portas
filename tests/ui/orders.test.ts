@@ -322,6 +322,12 @@ describe('what the panel knows of a settlement', () => {
 });
 
 describe('a mixed selection', () => {
+  it('explains partial movement without hiding the eligible peer', () => {
+    const summary = groupSummary([HASTATI, { ...PRINCIPES, refused: 'no-space' }]);
+    expect(summary.exceptions).toEqual([{ squad: 2, name: 'Principi 2',
+      reason: 'Spazio insufficiente vicino alla destinazione' }]);
+    expect(summary.squads).toBe(2);
+  });
   it('summarises composition, total men and the Morale it spans', () => {
     const summary = groupSummary([HASTATI, PRINCIPES]);
 

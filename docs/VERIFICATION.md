@@ -72,7 +72,7 @@ acceptance and still does not.
 | `smoke` | `e2e/smoke.spec.ts` | Real boot, one ordinary gesture, frame and console health | no |
 | `boot` | `e2e/boot.spec.ts` | The theatre, the camera, every integer zoom, panning and dragging | no |
 | `commands` | `e2e/commands.spec.ts` | The shared human submission surface, contextual panels, queued/applied Commands | yes |
-| `orders` | `e2e/orders.spec.ts` | Click and box selection, Move/Attack-move/Hold/Withdraw, control groups | no |
+| `orders` | `e2e/orders.spec.ts`, `e2e/group-orders.spec.ts` | Click and box selection, Move/Attack-move/Hold/Withdraw, control groups, normal-Match group arrivals for both Factions at both reference resolutions | yes (`group-orders`) |
 | `hud` | `e2e/hud.spec.ts`, `e2e/hud-repair.spec.ts` | Italian interface, rows, scrolling, pause, minimap, narrow rooms | yes (`hud-repair`) |
 | `fog` | `e2e/fog.spec.ts` | Three knowledge states, faction-filtered sight, no reveal | no |
 | `settlements` | `e2e/settlements.spec.ts` | Structures, picking, remembered settlements, gate damage | yes |

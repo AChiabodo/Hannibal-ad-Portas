@@ -619,7 +619,10 @@ describe('the routes a theatre does not work out twice', () => {
     const second = place(world, 'hastati', 3, 3);
     const cache = createRouteCache(world.map);
 
-    applyMovementCommands(world.economy, world.map, [move('rome', [first.id, second.id], 30, 40)], cache);
+    // Separate single-Squad Commands deliberately share a destination. A group
+    // Command now reserves distinct arrivals (#68).
+    applyMovementCommands(world.economy, world.map,
+      [move('rome', [first.id], 30, 40), move('rome', [second.id], 30, 40)], cache);
 
     expect(squadOf(world, second.id).steps).toEqual(squadOf(world, first.id).steps);
     expect(cache.searches).toBe(1);

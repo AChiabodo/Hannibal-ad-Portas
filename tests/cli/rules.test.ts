@@ -223,7 +223,7 @@ describe('the march Match, which is what CI gates movement and combat with', () 
     expect(squares).toEqual([rome, carthage]);
   });
 
-  it('marches the two armies across, and every survivor stands on the Stronghold it was sent to', () => {
+  it('marches the two armies across, and every survivor arrives near the Stronghold it was sent to', () => {
     const world = marchWorld(1);
     const [rome, carthage] = world.map.strongholds;
     const mustered = new Map(
@@ -238,8 +238,8 @@ describe('the march Match, which is what CI gates movement and combat with', () 
       const from = mustered.get(squad.id);
 
       // It crossed the theatre: the ground it mustered on is behind it, and the
-      // Stronghold it was ordered to is the tile it stands on.
-      expect({ x: squad.x, y: squad.y }).toEqual({ x: target.x, y: target.y });
+      // Stronghold it was ordered to anchors its distributed arrival (#68).
+      expect(Math.max(Math.abs(squad.x - target.x), Math.abs(squad.y - target.y))).toBeLessThanOrEqual(12);
       expect({ x: squad.x, y: squad.y }).not.toEqual({ x: from?.x, y: from?.y });
       expect(squad.steps).toEqual([]);
     }

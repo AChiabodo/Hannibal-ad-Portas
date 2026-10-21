@@ -134,13 +134,11 @@ function requirePace(pace: number): number {
 /**
  * Why a route was refused, in the words an Observation carries.
  *
- * Three reasons, because there are three ways an order can be impossible: the
- * tile is not on this theatre at all, the tile is water, or the tile is land
- * that nothing reaches. The last one is not reachable on a generated map —
- * B1's invariants make the land one landmass — and is the honest answer for a
- * theatre that is not generated, or for one a later system has walled off.
+ * A route can name an off-map Tile, water or land that nothing reaches. Group
+ * allocation can additionally exhaust separated arrival positions near its
+ * target: `no-space` is assigned by movement, never by the route search.
  */
-export type RouteRefusal = 'off-map' | 'water' | 'unreachable';
+export type RouteRefusal = 'off-map' | 'water' | 'unreachable' | 'no-space';
 
 /**
  * The refusals in code order: what state holds, spelled out.
@@ -150,7 +148,7 @@ export type RouteRefusal = 'off-map' | 'water' | 'unreachable';
  * the numbers are, the way `RESOURCE_KINDS` is for resources, so the words and
  * the codes cannot drift apart.
  */
-export const ROUTE_REFUSALS: readonly RouteRefusal[] = ['off-map', 'water', 'unreachable'];
+export const ROUTE_REFUSALS: readonly RouteRefusal[] = ['off-map', 'water', 'unreachable', 'no-space'];
 
 /** The code a Squad holds when its last order was taken: not a refusal at all. */
 export const NO_REFUSAL = -1;

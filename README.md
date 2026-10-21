@@ -385,8 +385,8 @@ is taken clears it. `observeEconomy` reports the reason in words, which is what
 an interface shows a Player (`refused`), beside the tile the Squad is still
 walking to and where it stands.
 
-The CLI can play a harness Match that is nothing but movement — a dozen Squads,
-six a Faction, mustered at their own Stronghold and ordered across the theatre to
+The CLI can play a harness Match that is nothing but movement — seven Squads,
+two Roman and five Carthaginian, mustered at their own Stronghold and ordered across the theatre to
 the other one:
 
 ```
@@ -398,7 +398,7 @@ npm run match -- --seed 1 --ticks 600 --rules march
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 2,
-  "hash": "93c41650cae7c719"
+  "hash": "b5d29129ff9d86e7"
 }
 ```
 
@@ -411,7 +411,16 @@ ticket that says "a body of Squads moving at once" should be something the
 repository runs rather than something it claims. Since C3 the two forces meet in
 the middle of that theatre, so the hash covers the fight as well as the march:
 the survivors are the men who got through, and every one of them still stands on
-the Stronghold it was sent to.
+separate legal arrival ground near the Stronghold it was sent to (#68).
+
+Group Move and Attack-move allocate arrivals in stable Squad-ID order, within
+twelve Tiles of the click, using purchased formation geometry for separation.
+Routes can overlap through fords. A Squad with no reachable separated arrival
+keeps its previous order and exposes an Italian refusal; peers still proceed.
+See [the ground movement contract](docs/COMMANDS.md#ground-arrival-allocation-68)
+for edge, water, insufficient-space and Replay behavior. This rule intentionally
+changes the `march` and `roster` golden hashes; the other recorded gates remain
+unchanged.
 
 Since #66 the two forces are **the same men and not the same number of Squads**:
 two Roman lines of 120 against five Carthaginian bodies of 48, two hundred and
@@ -434,7 +443,7 @@ npm run match -- --seed 1 --ticks 600 --rules roster
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 2,
-  "hash": "a5e7bcf64fca8b7e"
+  "hash": "76b515304e285b62"
 }
 ```
 
@@ -1400,7 +1409,7 @@ npm run replay -- march.json
   "outcome": "clock",
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
-  "hash": "93c41650cae7c719",
+  "hash": "b5d29129ff9d86e7",
   "verdict": "reproduced"
 }
 ```

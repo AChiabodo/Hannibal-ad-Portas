@@ -354,7 +354,7 @@ export function marchLog(world: EconomyWorld): CommandLog<Command> {
  * economy's half of every Squad beside it. Since C3 the two forces meet in the
  * middle of that theatre, so the same hash covers the fight as well: the
  * survivors are the men who got through, and each of them still ends the March
- * on the Stronghold it was ordered to.
+ * near the Stronghold it was ordered to, at its allocated arrival (#68).
  */
 function playMarch(seed: number, ticks: number): MatchRun {
   const log: CommandLog<Command> = marchLog(marchWorld(seed));

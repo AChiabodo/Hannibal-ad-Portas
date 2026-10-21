@@ -27,6 +27,7 @@ import type { VisibleSquad } from '../sim/economy-match.ts';
 import { TILE_SIZE } from '../sim/map.ts';
 import type { Formation } from '../sim/command.ts';
 import type { Facing } from '../sim/squad.ts';
+import { formationShape } from '../content/formation.ts';
 
 /**
  * Which figure each Squad type is drawn as: both rosters, named for their types.
@@ -154,10 +155,8 @@ function recruitedSlots(shape: BlockShape): readonly PlacedMan[] {
   if (!Number.isInteger(capacity) || !Number.isInteger(shape.men) || shape.men < 1 || shape.men > capacity) {
     throw new RangeError('a block needs surviving men within its purchased capacity');
   }
-  const lineFiles = capacity <= 1 ? 1 : capacity <= 12 ? 4 : capacity <= 24 ? 6
-    : capacity <= 48 || capacity === 64 ? 8 : capacity <= 60 ? 10 : 12;
   if (shape.formation !== 'line' && shape.formation !== 'column') throw new RangeError('unknown block formation');
-  const files = Math.min(capacity, shape.formation === 'column' ? Math.ceil(lineFiles / 2) : lineFiles);
+  const { files } = formationShape(capacity, shape.formation);
   return Array.from({ length: capacity }, (_unused, index) => {
     const file = index % files;
     const rank = Math.floor(index / files);
