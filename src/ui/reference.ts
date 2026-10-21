@@ -28,7 +28,7 @@
  * outcomes in advance and a reference that did would be the one place in the game
  * telling a Player something untrue.
  */
-import { SQUAD_TYPES } from '../content/index.ts';
+import { BUILDINGS, PAYROLL_BASIS, recruitCost, payrollBill, SQUAD_TYPES } from '../content/index.ts';
 import {
   ASPECT_SHOCK,
   BASE_SHOCK,
@@ -46,13 +46,18 @@ import {
   RAM_BEARING_PER_BLOW,
   WALL_ASSAULT_LOSS,
 } from '../sim/siege.ts';
-import { message, translate } from './strings.ts';
+import { RESOURCE_KINDS } from '../sim/map.ts';
+import { BASE_HOUSING, BASE_STORAGE, GRAIN_PER_HEAD, HARVEST_YIELD, LAND_RADIUS, LAND_YIELD, MORALE_LOSS_PER_UNPAID_SEASON, POPULATION_GROWTH, STARVATION_LOSS, TAX_PER_DENARIUS, TREASURY_CAP } from '../sim/economy.ts';
+import { SEASON_TICKS } from '../sim/season.ts';
+import { ATTRITION_PERCENT, ATTRITION_WINTER_PERCENT, ATTRITION_FIELD_WINTER_PERCENT, CAMP_RADIUS, TERRITORY_RADIUS } from '../sim/territory.ts';
+import { buildingDescription, resourceBill } from './construction.ts';
+import { message, resourceLabel, squadLabel, workLabel, translate } from './strings.ts';
 
 /** The subjects an entry can belong to, in the order an Encyclopedia lists them. */
-export type ReferenceSection = 'force' | 'combat' | 'missiles' | 'siege' | 'roster';
+export type ReferenceSection = 'force' | 'combat' | 'missiles' | 'siege' | 'roster' | 'economy' | 'buildings' | 'commands';
 
 /** Every section, in the order the reference reads. */
-export const REFERENCE_SECTIONS: readonly ReferenceSection[] = ['force', 'combat', 'missiles', 'siege', 'roster'];
+export const REFERENCE_SECTIONS: readonly ReferenceSection[] = ['economy', 'buildings', 'roster', 'commands', 'force', 'combat', 'missiles', 'siege'];
 
 /** One whole number an entry quotes, so the sentence can be checked against the rule. */
 export interface ReferenceFact {
@@ -94,6 +99,45 @@ const SMALLEST_SIZE = Math.min(...LARGEST_TYPE.sizes);
 
 /** One entry per rule, in the order `REFERENCE_SECTIONS` lists their subjects. */
 export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
+  ...RESOURCE_KINDS.map((kind): ReferenceEntry => ({
+    id: `resource:${kind}`, section: 'economy', title: resourceLabel(kind),
+    body: message('economy.scopeBody', { cap: TREASURY_CAP }),
+    facts: [{ label: translate('ui.treasury'), value: TREASURY_CAP }],
+  })),
+  { id: 'labour', section: 'economy', title: translate('economy.labourTitle'),
+    body: message('economy.labourBody', { radius: LAND_RADIUS }),
+    facts: [{ label: translate('economy.labourTitle'), value: LAND_RADIUS }] },
+  { id: 'seasons', section: 'economy', title: translate('economy.seasonTitle'),
+    body: message('economy.seasonBody', { seconds: SEASON_TICKS / TICK_HZ, yield: LAND_YIELD, harvest: HARVEST_YIELD }),
+    facts: [{ label: translate('ui.season'), value: SEASON_TICKS / TICK_HZ }] },
+  { id: 'population', section: 'economy', title: translate('economy.populationTitle'),
+    body: message('economy.populationBody', { housing: BASE_HOUSING, storage: BASE_STORAGE, heads: GRAIN_PER_HEAD,
+      growth: POPULATION_GROWTH, loss: STARVATION_LOSS, tax: TAX_PER_DENARIUS }),
+    facts: [{ label: translate('ui.population'), value: BASE_HOUSING }] },
+  ...BUILDINGS.map((building): ReferenceEntry => ({
+    id: `building:${building.id}`, section: 'buildings', title: workLabel(building.id),
+    body: buildingDescription(building),
+    facts: [{ label: translate('ui.tier'), value: building.tier },
+      { label: translate('ui.population'), value: building.labour }],
+  })),
+  ...SQUAD_TYPES.map((type): ReferenceEntry => ({
+    id: `squad:${type.id}`, section: 'roster', title: squadLabel(type.id),
+    body: message('ref.squadTerms', { faction: translate(`faction.${type.faction}`), tier: type.tier,
+      sizes: type.sizes.map((size) => `${size}: ${resourceBill(recruitCost(type, size))}; ${translate('ui.payroll')} ${payrollBill(type, size)}`).join(' / '),
+      rate: type.payroll, basis: PAYROLL_BASIS, impact: type.impact,
+      figures: translate(type.figures === 1 ? 'ref.beast' : 'ref.soldiers') }),
+    facts: type.sizes.map((size) => ({ label: translate('ui.men'), value: size })),
+  })),
+  { id: 'commands', section: 'commands', title: translate('ref.commandsTitle'),
+    body: message('ref.commandsBody', { groups: 9 }), facts: [{ label: translate('ui.groups'), value: 9 }] },
+  { id: 'conditions', section: 'commands', title: translate('ref.conditionsTitle'),
+    body: message('ref.conditionsBody', { loss: MORALE_LOSS_PER_UNPAID_SEASON }),
+    facts: [{ label: translate('ui.morale'), value: MORALE_LOSS_PER_UNPAID_SEASON }] },
+  { id: 'territory', section: 'commands', title: translate('ref.territoryTitle'),
+    body: message('ref.territoryBody', { radius: TERRITORY_RADIUS, outside: ATTRITION_PERCENT,
+      winter: ATTRITION_WINTER_PERCENT, field: ATTRITION_FIELD_WINTER_PERCENT, camp: CAMP_RADIUS }),
+    facts: [{ label: translate('ref.territoryTitle'), value: TERRITORY_RADIUS }] },
+
   {
     id: 'force',
     section: 'force',

@@ -74,6 +74,9 @@ import {
 } from './minimap.ts';
 import type { KnownSite } from './sites.ts';
 import type { Notice } from './conditions.ts';
+import { CONSTRUCTION_CATEGORIES, type ConstructionCategory } from './construction.ts';
+import { projectSettlement, settlementForecastLine } from './forecast.ts';
+import { TICK_HZ } from '../sim/clock.ts';
 import type { ForecastLine } from './forecast.ts';
 import type { GuidePanel } from './guide.ts';
 import { paintControl, paintFocus } from '../art/interface.ts';
@@ -179,6 +182,7 @@ export interface HudSession {
   readonly faction?: Faction;
   /** Which page of a settlement's panel is open. */
   readonly tab?: SettlementTab;
+  readonly category?: ConstructionCategory;
   /** The armed action's id, or `null`. */
   readonly armed?: string | null;
   /** How many orders are queued. */
@@ -247,7 +251,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore';
+export type HudAction = `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore';
 
 export interface HudButton {
   readonly action: HudAction;
@@ -280,6 +284,7 @@ export interface HudModel {
   readonly commands: readonly OrderOption[];
   /** Which page of a settlement's panel is open. */
   readonly tab: SettlementTab;
+  readonly category: ConstructionCategory;
   /** How many Squads one recruitment press buys. */
   readonly recruitCount: number;
   /** The multi-selection summary, when more than one Squad is picked. */
@@ -516,8 +521,9 @@ export function hudModel(
     ? visible.settlements.find((candidate) => candidate.id === selected.id) ?? null
     : null;
   const group = selected?.kind === 'squad' && pickedSquadList.length > 1 ? groupSummary(pickedSquadList) : null;
+  const category = session.category ?? 'production';
   const commands = settlement !== null
-    ? settlementOrders(visible, faction, settlement, tab, ended, session.recruitCount ?? 1)
+    ? settlementOrders(visible, faction, settlement, tab, ended, session.recruitCount ?? 1, category)
     : selected?.kind === 'settlement' ? [] : squadOrders(visible, faction, pickedSquadList, ended);
   const armed = session.armed == null ? null : commands.find((order) => order.id === session.armed) ?? null;
 
@@ -527,11 +533,12 @@ export function hudModel(
     rows: rows(visible, strongholds),
     detail: selected === null
       ? null
-      : group !== null ? groupDetail(group) : detail(visible, strongholds, selected, known),
+      : group !== null ? groupDetail(group) : detail(visible, strongholds, selected, known, view.tick ?? 0),
     selected,
     picked: pickedRows,
     commands,
     tab,
+    category,
     recruitCount: recruitCountInRange(session.recruitCount ?? 1),
     group,
     groups: session.groups ?? [],
@@ -866,8 +873,9 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
   }
 
   for (const button of layout.buttons) {
-    panel(buffer, button.rect);
-    drawText(buffer, button.text, button.rect.x + PADDING * scale, button.rect.y + 5 * scale, button.enabled ? HUD_VALUE : HUD_BORDER, scale);
+    if (button.action.startsWith('category:')) paintControl(buffer, button.rect, button.action === `category:${model.category}` ? 'selected' : 'idle');
+    else panel(buffer, button.rect);
+    drawText(buffer, fitText(button.text, button.rect.width - 2 * PADDING * scale, scale), button.rect.x + PADDING * scale, button.rect.y + 5 * scale, button.enabled ? HUD_VALUE : HUD_BORDER, scale);
   }
 
   if (model.view.focus) paintFocus(buffer, model.view.focus);
@@ -1110,6 +1118,7 @@ function detail(
   strongholds: readonly number[],
   selected: Selection,
   known: KnownSite | null,
+  tick: number,
 ): HudDetail | null {
   if (selected.kind === 'settlement') {
     const settlement = visible.settlements.find((candidate) => candidate.id === selected.id);
@@ -1122,7 +1131,7 @@ function detail(
 
     return {
       title: message('ui.listItem', { name: settlementName(settlement, strongholds), id: settlement.id }),
-      ...settlementLines(visible, settlement),
+      ...settlementLines(visible, settlement, tick),
     };
   }
 
@@ -1144,7 +1153,7 @@ function detail(
  * has an eye on (ADR-0020). A settlement remembered from a contact is not one of
  * those, so it gets no wall line at all rather than a remembered one.
  */
-function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement): Pick<HudDetail, 'lines' | 'priority'> {
+function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement, tick: number): Pick<HudDetail, 'lines' | 'priority'> {
   const lines: HudLine[] = [
     { label: translate('ui.tier'), value: String(settlement.tier) },
     { label: translate('ui.population'), value: String(settlement.population) },
@@ -1163,6 +1172,11 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement)
     value: RESOURCE_KINDS.map((kind) => String(landOf(settlement, kind))).join('/'),
   });
 
+  const economics = projectSettlement(settlement, visible.season);
+  lines.push({ label: translate('economy.scope'), value: message('economy.staffing', {
+    staffed: economics.staffed, needed: economics.needed, population: settlement.population,
+    housing: economics.housing, storage: economics.storage }) });
+  lines.push({ label: translate('economy.localForecast'), value: settlementForecastLine(visible, settlement, tick) });
   const workStart = lines.length;
   if (settlement.works.length === 0) {
     lines.push({ label: translate('ui.works'), value: translate('ui.none') });
@@ -1173,7 +1187,7 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement)
       value: `${workLabel(work.building)} - ${
         work.standing
           ? translate('ui.workStanding')
-          : message('ui.workProgress', { ticks: work.remaining })
+          : message('economy.workProgress', { seconds: Math.ceil(work.remaining / TICK_HZ) })
       }`,
     });
   }
@@ -1507,6 +1521,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     ['navigator', translate(showNavigator ? 'ui.hideNavigator' : 'ui.showNavigator'), 100],
     ['center', translate('ui.center'), 80],
     ['session', message('ui.options', { scale }), 110],
+    ['reference', translate('ref.open'), 102],
   ] as const;
   let x = 4;
   for (const [action, label, buttonWidth] of actions) {
@@ -1557,8 +1572,13 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
       priority.push({ text: word, rect: { x: textX, y: textY, width: textWidth, height: LINE_STEP } });
       textY += LINE_STEP;
     }
-    secondary = compactLines(model.detail.lines.filter((_line, index) => !model.detail?.priority.includes(index))
-      .map((line) => `${line.label}: ${line.value}`), textWidth);
+    const inspectedOffer = model.commands.find((order) => order.id === model.view.hoveredOrder);
+    if (inspectedOffer && (inspectedOffer.kind === 'build' || inspectedOffer.kind === 'recruit')) {
+      secondary = wrapText(`${inspectedOffer.label}. ${inspectedOffer.reason ?? ''} ${inspectedOffer.note ?? ''}`, textWidth);
+    } else {
+      secondary = compactLines(model.detail.lines.filter((_line, index) => !model.detail?.priority.includes(index))
+        .map((line) => `${line.label}: ${line.value}`), textWidth);
+    }
     if (model.group !== null && model.group.exceptions.length > 0) {
       text.push({ text: translate('ui.exceptions'), rect: { x: textX, y: textY, width: textWidth, height: LINE_STEP } });
       textY += LINE_STEP;
@@ -1594,6 +1614,15 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
       tabs.push({ tab, rect: { x: commandX + index * (tabWidth + 2), y: commandY, width: tabWidth, height: LINE_STEP + 3 } });
     }
     commandY += LINE_STEP + 5;
+    if (model.tab === 'construction') {
+      const categoryWidth = Math.floor((commandWidth - 2) / 2);
+      for (const [index, category] of CONSTRUCTION_CATEGORIES.entries()) {
+        buttons.push({ action: `category:${category.id}`, text: translate(category.label), enabled: true,
+          rect: { x: commandX + index % 2 * (categoryWidth + 2), y: commandY + Math.floor(index / 2) * 15,
+            width: categoryWidth, height: 14 } });
+      }
+      commandY += 32;
+    }
     // The recruitment page buys a number of Squads, not one: the count is one
     // public control with two buttons, so a pointer and the F6/Tab focus reach
     // the same choice (ADR-0026). It is presentation memory, never state.
@@ -1689,10 +1718,16 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
         rect: {
           x: commandX + column * cellWidth,
           y: gridTop + row * rowHeight,
-          width: cellWidth - COMMAND_GAP,
+          width: cellWidth - COMMAND_GAP - (settlementPage ? 20 : 0),
           height: rowHeight - COMMAND_GAP,
         },
       });
+    }
+    if (settlementPage) {
+      const order = items[0]!;
+      buttons.push({ action: `reference:${order.kind === 'build' ? 'building' : 'squad'}:${order.subject}`,
+        text: translate('ref.info'), enabled: true,
+        rect: { x: commandX + commandWidth - 19, y: gridTop + row * rowHeight, width: 18, height: rowHeight - COMMAND_GAP } });
     }
     // A rule above every row but the card's own first: the motion commands, the
     // orders and the Siege are different kinds of decision, and the rule says so.

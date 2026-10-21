@@ -341,7 +341,7 @@ describe('the HUD on screen', () => {
   it('pins an active Work and makes all wrapped secondary text reachable', () => {
     const selected = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 2 });
     expect(hudLayout(selected, SIZE).priority.map((line) => line.text).join(' '))
-      .toContain('Cantieri: Villa - In costruzione (120 tick)');
+      .toContain('Cantieri: Villa - In costruzione (12 s)');
     const long = { label: 'Una descrizione molto lunga del lavoro', value: '1234567890123456789012345678901234567890' };
     const model = { ...selected, detail: { ...selected.detail!, lines: [...selected.detail!.lines, long] } };
     const reached: string[] = [];

@@ -42,7 +42,9 @@ import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 // the `ui:squad` and `ui:armed-pending` specimens (one panel, armed and idle) and
 // the plate they sit on are what differ, and every other artefact is
 // byte-identical.
-const PLATE_HASH = '2924b3ed32f46f67';
+// #69 changes the construction specimen: categories, seconds and local economy details.
+// All other catalogue artefacts retain their accepted hashes.
+const PLATE_HASH = '32dc2c841ae71fb3';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'ui:carthage-column': 'ab1340faad9c09ab',
@@ -57,7 +59,7 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'ui:setup': '82906ab423edd8b4',
   'ui:squad': '81e4974ec630d5ef',
   'ui:armed-pending': '6817ec6aeea8726d',
-  'ui:construction': '02bca410e02e4c6e',
+  'ui:construction': 'd22810a853dc325a',
   'ui:options': '1e03d0df52d0241e',
   'ui:result': 'e641e2c442783d44',
   'glyph:U+0020': '19ce279ecc93e509',

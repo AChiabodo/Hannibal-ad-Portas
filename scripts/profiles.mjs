@@ -41,6 +41,7 @@ export const FEATURES = {
   boot: ['e2e/boot.spec.ts'],
   // The shared human submission surface and the contextual panels.
   commands: ['e2e/commands.spec.ts'],
+  economy: ['e2e/economy-reference.spec.ts'],
   // Pointer and keyboard gestures that become real Commands.
   orders: ['e2e/orders.spec.ts', 'e2e/group-orders.spec.ts'],
   // The Italian interface: rows, scrolling, pause, minimap, repairs.
@@ -84,6 +85,7 @@ export const SMOKE = ['e2e/smoke.spec.ts'];
  * assertions with `SPQR_VISUAL=1`.
  */
 export const VISUAL_SPECS = [
+  'e2e/economy-reference.spec.ts',
   'e2e/group-orders.spec.ts',
   'e2e/formation-art.spec.ts',
   'e2e/acceptance.spec.ts',

@@ -12,8 +12,28 @@ import { REFERENCE_ENTRIES, REFERENCE_SECTIONS, referenceOf } from '../../src/ui
 import { POINTS_PER_MAN } from '../../src/sim/combat';
 import { RAM_BEARING_PER_BLOW, WALL_ASSAULT_LOSS } from '../../src/sim/siege';
 import { SQUAD_TYPES } from '../../src/content/squads';
+import { BUILDINGS } from '../../src/content/buildings';
+import { RESOURCE_KINDS } from '../../src/sim/map';
+import { squadLabel, workLabel } from '../../src/ui/strings';
 
 describe('the rule reference', () => {
+  it('answers every content item with canonical bills, sizes and faction names', () => {
+    for (const building of BUILDINGS) {
+      const entry = REFERENCE_ENTRIES.find((candidate) => candidate.id === `building:${building.id}`);
+      expect(entry?.title).toBe(workLabel(building.id));
+      expect(entry?.body).toContain(`${building.buildTicks / 10} s`);
+    }
+    for (const type of SQUAD_TYPES) {
+      const entry = REFERENCE_ENTRIES.find((candidate) => candidate.id === `squad:${type.id}`);
+      expect(entry?.title).toBe(squadLabel(type.id));
+      for (const size of type.sizes) expect(entry?.body).toContain(String(size));
+      expect(entry?.body).toContain(type.faction === 'rome' ? 'Roma' : 'Cartagine');
+    }
+    for (const kind of RESOURCE_KINDS) expect(REFERENCE_ENTRIES.some((entry) => entry.id === `resource:${kind}`)).toBe(true);
+    for (const id of ['labour', 'seasons', 'population', 'commands', 'conditions', 'territory']) {
+      expect(REFERENCE_ENTRIES.some((entry) => entry.id === id), id).toBe(true);
+    }
+  });
   it('answers every section with at least one entry, and every entry has words and numbers', () => {
     for (const section of REFERENCE_SECTIONS) {
       const entries = referenceOf(section);

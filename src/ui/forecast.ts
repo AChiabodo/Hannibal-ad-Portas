@@ -31,11 +31,14 @@
  * This is presentation. It issues nothing, changes no rule and is never hashed;
  * it re-reads the same content and the same Observation a panel does.
  */
+import { TICK_HZ } from '../sim/clock.ts';
+import { resourceBill } from './construction.ts';
 import { amountOf, buildingCode, buildingOf } from '../content/index.ts';
 import {
   BASE_HOUSING,
   BASE_STORAGE,
   GRAIN_PER_HEAD,
+  HARVEST_YIELD,
   LAND_YIELD,
   MORALE_LOSS_PER_UNPAID_SEASON,
   POPULATION_GROWTH,
@@ -43,12 +46,12 @@ import {
   TAX_PER_DENARIUS,
   TREASURY_CAP,
 } from '../sim/economy.ts';
-import { RESOURCE } from '../sim/map.ts';
+import { RESOURCE, RESOURCE_KINDS } from '../sim/map.ts';
 import type { EconomyVisible, VisibleSettlement } from '../sim/economy-match.ts';
 import type { SiegeVisible } from '../sim/siege.ts';
 import type { Season } from '../sim/season.ts';
 import { nextBoundary } from './conditions.ts';
-import { message, seasonLabel, translate } from './strings.ts';
+import { message, translate } from './strings.ts';
 
 /** What the next boundary will do, when it can be worked out from what is known. */
 export interface TreasuryForecast {
@@ -149,17 +152,10 @@ export function forecastLine(visible: EconomyVisible | SiegeVisible, tick: numbe
   const value = forecast.value;
   if (visible.squads.length === 0 && value.income === 0) return null;
 
-  const unpaid = value.unpaid === 0
-    ? translate('forecast.none')
-    : message('forecast.unpaid', { count: value.unpaid });
-
   return {
     label: translate('forecast.title'),
-    value: message('forecast.value', {
-      net: message('forecast.net', { amount: value.resulting }),
-      unpaid,
-      season: message('forecast.season', { season: seasonLabel(value.season) }),
-    }),
+    value: message('economy.boundary', { seconds: Math.ceil(value.ticks / TICK_HZ), income: value.income,
+      payroll: value.payroll, resulting: value.resulting, unpaid: value.unpaid, assumption: translate('economy.assumption') }),
     estimate: true,
   };
 }
@@ -191,10 +187,29 @@ function blockaded(visible: EconomyVisible | SiegeVisible, settlement: VisibleSe
  * arithmetic over the same numbers, which is what the ticket means by
  * "derivable correctly from known data".
  */
+export interface SettlementProjection {
+  readonly income: number;
+  readonly stocks: VisibleSettlement['stocks'];
+  readonly population: number;
+  readonly housing: number;
+  readonly storage: number;
+  readonly staffed: number;
+  readonly needed: number;
+  /** Autumn reallocation after growth cannot be derived from worked land alone. */
+  readonly harvestUncertain: boolean;
+}
+
 function settlementIncome(settlement: VisibleSettlement, season: Season): number {
+  return projectSettlement(settlement, season).income;
+}
+
+/** Boundary projection with today's works and staff; no future orders or hidden nodes. */
+export function projectSettlement(settlement: VisibleSettlement, season: Season): SettlementProjection {
   let available = settlement.population;
   let denarii = 0;
-  let grainFromWorks = 0;
+  const produced = { grain: 0, timber: 0, stone: 0, iron: 0 };
+  let staffed = 0;
+  let needed = 0;
   let housing = BASE_HOUSING;
   let storage = BASE_STORAGE;
 
@@ -203,6 +218,7 @@ function settlementIncome(settlement: VisibleSettlement, season: Season): number
     const building = code === undefined ? undefined : buildingOf(code);
     if (building === undefined) continue;
 
+    needed += building.labour;
     // A work's housing and storage count once it stands; its labour is claimed
     // in build order whether it stands or is still going up.
     if (work.standing) {
@@ -214,17 +230,24 @@ function settlementIncome(settlement: VisibleSettlement, season: Season): number
     if (available < building.labour) continue;
 
     available -= building.labour;
+    staffed += building.labour;
     if (!work.standing) continue;
 
     denarii += building.denarii;
-    grainFromWorks += amountOf(building.yields, RESOURCE.grain);
+    for (const kind of RESOURCE_KINDS) {
+      const key = (['grain', 'timber', 'stone', 'iron'] as const)[kind]!;
+      produced[key] += amountOf(building.yields, kind);
+    }
   }
 
-  const land = amountOf(settlement.land, RESOURCE.grain) * LAND_YIELD;
-  const grain = Math.min(
-    storage,
-    amountOf(settlement.stocks, RESOURCE.grain) + grainFromWorks + (season === 'winter' ? Math.floor(land / 2) : land),
-  );
+  const keys = ['grain', 'timber', 'stone', 'iron'] as const;
+  const stocks = { ...settlement.stocks };
+  for (const kind of RESOURCE_KINDS) {
+    const key = keys[kind]!;
+    const land = amountOf(settlement.land, kind) * LAND_YIELD;
+    stocks[key] = Math.min(storage, stocks[key] + produced[key] + (season === 'winter' ? Math.floor(land / 2) : land));
+  }
+  const grain = stocks.grain;
 
   const eaten = Math.max(1, Math.floor(settlement.population / GRAIN_PER_HEAD));
   const population = grain < eaten
@@ -233,5 +256,20 @@ function settlementIncome(settlement: VisibleSettlement, season: Season): number
       ? settlement.population + POPULATION_GROWTH
       : settlement.population;
 
-  return Math.floor(population / TAX_PER_DENARIUS) + denarii;
+  stocks.grain = Math.max(0, grain - eaten);
+  const harvestUncertain = season === 'autumn' && population !== settlement.population;
+  if (season === 'autumn' && !harvestUncertain) {
+    stocks.grain = Math.min(storage, stocks.grain + amountOf(settlement.land, RESOURCE.grain) * HARVEST_YIELD);
+  }
+  return { income: Math.floor(population / TAX_PER_DENARIUS) + denarii,
+    stocks, population, housing, storage, staffed, needed, harvestUncertain };
+}
+
+/** The selected settlement's stock estimate; uncertain autumn land is explicitly refused. */
+export function settlementForecastLine(visible: EconomyVisible | SiegeVisible, settlement: VisibleSettlement, tick: number): string {
+  if (blockaded(visible, settlement)) return translate('forecast.blockaded');
+  const boundary = nextBoundary(visible.season, tick);
+  const projected = projectSettlement(settlement, boundary.season);
+  if (projected.harvestUncertain) return translate('forecast.harvestUnknown');
+  return `${resourceBill(projected.stocks)}. ${translate('economy.assumption')}`;
 }

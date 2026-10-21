@@ -47,7 +47,7 @@
  * their Commands. The interface reads only its chosen Faction's Observation.
  */
 import { type Container } from 'pixi.js';
-import { pixelAt, type Rgba } from '../art/pixel-buffer.ts';
+import { createPixelBuffer, pixelAt, type Rgba } from '../art/pixel-buffer.ts';
 import {
   attack,
   attackMove,
@@ -126,6 +126,9 @@ import {
 import { minimapPlate, type ViewportRect, type KnownMinimapSite } from '../ui/minimap.ts';
 import { knownSites, siteIdentities, type KnownSite } from '../ui/sites.ts';
 import { createNoticeBook, markedConditions, moraleOf, squadConditions, type Notice, type SquadCondition } from '../ui/conditions.ts';
+import { encyclopediaLayout, encyclopediaPlate, openReference, referenceAction, type EncyclopediaLayout, type ReferenceState } from '../ui/encyclopedia.ts';
+import { REFERENCE_ENTRIES } from '../ui/reference.ts';
+import { CONSTRUCTION_CATEGORIES, type ConstructionCategory } from '../ui/construction.ts';
 import { forecastLine } from '../ui/forecast.ts';
 import type { OrderMarkKind } from '../art/markers.ts';
 import { createHudLayer, type HudLayer } from './hud.ts';
@@ -328,6 +331,12 @@ export interface GameHooks {
   targetSettlement(settlement: number): boolean;
   /** Opens one page of a settlement's panel. */
   setTab(tab: SettlementTab): void;
+  setCategory(category: ConstructionCategory): void;
+  reference(): ReferenceState | null;
+  referenceLayout(): EncyclopediaLayout | null;
+  openReference(entry?: string): void;
+  closeReference(): void;
+  scrollReference(lines: number): boolean;
   /** Picks the group an individual exception was opened from. */
   groupBack(): boolean;
   /** The Faction's own Squads, with the rectangle each is drawn in. */
@@ -567,6 +576,15 @@ export function createGame(options: GameOptions): Game {
   const applied: LoggedCommand<Command>[] = [];
   /** Which page of a settlement's panel is open (#55): the Player's, never the Match's. */
   let tab: SettlementTab = 'overview';
+  let category: ConstructionCategory = 'production';
+  let reference: ReferenceState | null = null;
+  let referencePaused = false;
+  let referenceReturnFocus: string | null = null;
+  let referenceReturnSession = false;
+  let referenceFocus = 'close';
+  const referenceSprite = options.stage.spriteOf(createPixelBuffer(options.size.width, options.size.height));
+  options.stage.root.addChild(referenceSprite);
+  referenceSprite.visible = false;
   /** How many Squads one recruitment press buys: the page's memory, never Match state. */
   let recruitCount = 1;
   let focusId: string | null = null;
@@ -651,6 +669,7 @@ export function createGame(options: GameOptions): Game {
       if (site) { const at = tilePixel(site.x, site.y); options.centerOn?.(at.x, at.y); }
     },
     navigateMinimap: (x, y) => {
+      if (reference !== null) return false;
       const rect = hudLayout(model, options.size).minimap;
       if (!contains(rect, x, y)) return false;
       const scale = desktop ? model.view.uiScale ?? 2 : 1;
@@ -661,6 +680,7 @@ export function createGame(options: GameOptions): Game {
       return true;
     },
     doubleClickAt: (x, y) => {
+      if (reference !== null) return;
       if (menu.visible && contains(readMenu().rect, x, y)) return;
       if (hudHit(model, options.size, x, y)?.kind === 'selection') hooks.centerSelection();
     },
@@ -682,6 +702,25 @@ export function createGame(options: GameOptions): Game {
       }
     },
     hud: () => model,
+    reference: () => reference,
+    referenceLayout: () => reference === null ? null : readReference(),
+    openReference: (entry) => showReference(entry),
+    closeReference: () => closeReference(),
+    scrollReference: (lines) => {
+      if (reference === null) return false;
+      const layout = readReference();
+      reference = { ...reference, offset: Math.max(0, Math.min(layout.max, layout.offset + lines)) };
+      repaint();
+      return true;
+    },
+    setCategory: (next) => {
+      if (!CONSTRUCTION_CATEGORIES.some((item) => item.id === next)) throw new RangeError(`Unknown category: ${next}`);
+      category = next;
+      commandOffset = 0;
+      hoveredOrder = null;
+      commandNotice = null;
+      repaint();
+    },
     selection: () => human.selection,
     select: (next) => {
       human.select(asPicked(next));
@@ -690,12 +729,15 @@ export function createGame(options: GameOptions): Game {
     },
     hudRects: () => {
       const layout = hudLayout(model, options.size);
-      return [...interfaceRects(layout), ...(menu.visible ? [readMenu().rect] : [])];
+      return [...interfaceRects(layout), ...(menu.visible ? [readMenu().rect] : []), ...(reference !== null ? [{ x: 0, y: 0, width: options.size.width, height: options.size.height }] : [])];
     },
     hudRows: () => hudLayout(model, options.size).rows,
     hudLayout: () => hudLayout(model, options.size),
     hoverAt: (x, y) => {
+      if (reference !== null) return;
       const hit = hudHit(model, options.size, x, y);
+      if (hit?.kind !== 'order' && contains(hudLayout(model, options.size).detail, x, y)
+        && model.commands.some((order) => order.id === hoveredOrder && (order.kind === 'build' || order.kind === 'recruit'))) return;
       const next = hit?.kind === 'order' && !(menu.visible && contains(readMenu().rect, x, y)) ? hit.order.id : null;
       if (next === hoveredOrder) return;
       hoveredOrder = next;
@@ -783,6 +825,7 @@ export function createGame(options: GameOptions): Game {
       repaint();
     },
     resume: () => {
+      if (reference !== null) return;
       if (result !== null) return;
       // A Player who resumes the clock has begun the Match, which is what the
       // welcome line was waiting for; the guide moves on rather than sitting on a
@@ -1150,7 +1193,7 @@ export function createGame(options: GameOptions): Game {
   function readModel(known: readonly KnownSite[], observation: SiegeVisible): HudModel {
     const next = hudModel(observation, strongholdIds(observation), panelSelection(), human.selection.squads,
       { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
-        noticesOpen, noticeOffset },
+        tick: match.state.tick, noticesOpen, noticeOffset },
       session(observation, known));
     if (next.selected?.id !== detailSelection?.id || next.selected?.kind !== detailSelection?.kind) {
       detailOffset = 0;
@@ -1181,10 +1224,12 @@ export function createGame(options: GameOptions): Game {
     readonly forecast: ReturnType<typeof forecastLine>;
     readonly guide: ReturnType<typeof guidePanel>;
     readonly recruitCount: number;
+    readonly category: ConstructionCategory;
   } {
     return {
       faction,
       tab,
+      category,
       recruitCount,
       armed,
       pending: human.pending,
@@ -1299,6 +1344,16 @@ export function createGame(options: GameOptions): Game {
     const oldMenu = menu.texture;
     menu.texture = textureOf(menuPlate(options.size, readMenu(), desktop ? model.view.uiScale ?? 2 : 1, model.view.focus ?? null));
     oldMenu.destroy(true);
+    referenceSprite.visible = reference !== null;
+    if (reference !== null) {
+      const oldReference = referenceSprite.texture;
+      referenceSprite.texture = textureOf(encyclopediaPlate(options.size, readReference(), model.view.uiScale ?? 2, referenceFocus));
+      oldReference.destroy(true);
+      options.stage.canvas.setAttribute('aria-label', [translate('ref.open'), ...readReference().text.map((line) => line.text),
+        ...readReference().controls.map((control) => control.text), translate('ref.help')].join('. '));
+      options.stage.render();
+      return;
+    }
     options.stage.canvas.setAttribute('aria-label', [translate('ui.keyboard'), focused?.label ?? '', ...layout.readouts.map(({ line }) => `${line.label} ${line.value}`), ...layout.buttons.map(({ text }) => text), ...(guide.open ? [...layout.guideText.map(({ text }) => text), ...layout.guideButtons.map(({ text }) => text)] : []), ...(menu.visible ? [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)] : [])].join('. '));
     options.stage.render();
   }
@@ -1331,6 +1386,48 @@ export function createGame(options: GameOptions): Game {
     options.vision(eyes);
   }
 
+  function readReference(): EncyclopediaLayout {
+    return encyclopediaLayout(options.size, reference!, model.view.uiScale ?? 2);
+  }
+
+  function contextReference(): string {
+    const offer = model.commands.find((order) => order.id === (focusId?.startsWith('order:') ? focusId.slice(6) : hoveredOrder)) ?? model.commands[0];
+    if (offer?.kind === 'build') return `building:${offer.subject}`;
+    if (offer?.kind === 'recruit') return `squad:${offer.subject}`;
+    return model.selected?.kind === 'squad' ? 'commands' : 'seasons';
+  }
+
+  function showReference(entry = 'seasons'): void {
+    const next = openReference(entry);
+    if (reference === null) {
+      referencePaused = !pacing.paused && result === null;
+      referenceReturnFocus = focusId;
+      referenceReturnSession = sessionOpen;
+      pacing.pause();
+    }
+    reference = next;
+    referenceFocus = 'close';
+    repaint();
+  }
+
+  function closeReference(): void {
+    if (reference === null) return;
+    reference = null;
+    focusId = referenceReturnFocus;
+    sessionOpen = referenceReturnSession;
+    if (referencePaused && result === null) { pacing.resume(); lastFrame = performance.now(); }
+    referencePaused = false;
+    repaint();
+  }
+
+  function activateReference(action: string): void {
+    if (reference === null) return;
+    if (action === 'close') { closeReference(); return; }
+    reference = referenceAction(reference, action, readReference());
+    referenceFocus = action;
+    repaint();
+  }
+
   /** The selection as the interface names one, which is what a click on a row knows. */
   function asPicked(selection: Selection | null): PlayerSelection {
     if (selection === null) return NOTHING_SELECTED;
@@ -1341,9 +1438,11 @@ export function createGame(options: GameOptions): Game {
 
   /** A click at a screen point: the interface's rows first, then the men on the map. */
   function pickAt(screenX: number, screenY: number, additive: boolean): void {
-    const wasFocused = focusId !== null;
-    focusId = null;
-    if (wasFocused) repaint();
+    if (reference !== null) {
+      const control = readReference().controls.find(({ rect }) => contains(rect, screenX, screenY));
+      if (control?.enabled) activateReference(control.id);
+      return;
+    }
     if (hooks.navigateMinimap(screenX, screenY)) return;
     const menuButton = menu.visible ? readMenu().buttons.find(({ rect }) => contains(rect, screenX, screenY)) : undefined;
     if (menuButton !== undefined) {
@@ -1382,6 +1481,7 @@ export function createGame(options: GameOptions): Game {
       return;
     }
 
+    focusId = null;
     const at = screenToStage(options.camera(), screenX, screenY);
     human.select(selectAt(human.selection, pickables(), at, additive));
     groupMemory = null;
@@ -1391,6 +1491,7 @@ export function createGame(options: GameOptions): Game {
 
   /** Only visible controls participate; an options drawer owns its own focus. */
   function interfaceControls(): readonly { id: string; label: string; rect: Rect }[] {
+    if (reference !== null) return readReference().controls.map((control) => ({ id: control.id, label: control.text, rect: control.rect }));
     if (desktop && (sessionOpen || (result !== null && !resultDismissed))) {
       return readMenu().buttons.map((button) => ({ id: `menu:${button.action}`, label: button.text, rect: button.rect }));
     }
@@ -1417,6 +1518,29 @@ export function createGame(options: GameOptions): Game {
   }
 
   function interfaceKey(key: string, reverse: boolean): boolean {
+    if (key === 'F1') {
+      if (reference === null) showReference(contextReference());
+      else closeReference();
+      return true;
+    }
+    if (reference !== null) {
+      const controls = readReference().controls;
+      if (!controls.some((control) => control.id === referenceFocus)) referenceFocus = 'close';
+      if (key === 'Escape') closeReference();
+      else if (key === 'Tab' || key === 'F6') {
+        const index = controls.findIndex((control) => control.id === referenceFocus);
+        referenceFocus = controls[(index + (reverse ? -1 : 1) + controls.length) % controls.length]!.id;
+        repaint();
+      } else if (key === 'Enter' || key === ' ') activateReference(referenceFocus);
+      else if (key === 'PageUp' || key === 'PageDown') activateReference(key === 'PageDown' ? 'next' : 'previous');
+      else if (key === 'ArrowDown' || key === 'ArrowUp') {
+        const index = REFERENCE_ENTRIES.findIndex((entry) => entry.id === reference!.entry);
+        reference = openReference(REFERENCE_ENTRIES[(index + (key === 'ArrowDown' ? 1 : -1) + REFERENCE_ENTRIES.length) % REFERENCE_ENTRIES.length]!.id);
+        referenceFocus = `entry:${reference.entry}`;
+        repaint();
+      }
+      return true;
+    }
     if (!desktop || (key !== 'F6' && focusId === null)) return false;
     const controls = interfaceControls();
     if (controls.length === 0) return false;
@@ -1448,7 +1572,11 @@ export function createGame(options: GameOptions): Game {
   /** One of the bar's own buttons, pressed. */
   function hudButton(action: HudAction): void {
     const layout = hudLayout(model, options.size);
-    if (action === 'pause') {
+    if (action.startsWith('category:')) {
+      hooks.setCategory(action.slice(9) as ConstructionCategory);
+    } else if (action === 'reference') showReference(contextReference());
+    else if (action.startsWith('reference:')) showReference(action.slice(10));
+    else if (action === 'pause') {
       if (pacing.paused) hooks.resume();
       else hooks.pause();
     } else if (action === 'session') { sessionOpen = !sessionOpen; repaint(); }
@@ -1495,6 +1623,7 @@ export function createGame(options: GameOptions): Game {
    * a button and a hook from disagreeing about the rules.
    */
   function perform(orderId: string): boolean {
+    if (reference !== null) return false;
     const offer = model.commands.find((order) => order.id === orderId);
     if (offer === undefined) return false;
     if (!offer.enabled) {
@@ -1675,6 +1804,7 @@ export function createGame(options: GameOptions): Game {
 
   /** Whether a screen point falls on one of the interface's panels rather than on the theatre. */
   function underInterface(x: number, y: number): boolean {
+    if (reference !== null) return true;
     const layout = hudLayout(model, options.size);
 
     return [...interfaceRects(layout), ...(menu.visible ? [readMenu().rect] : [])].some(

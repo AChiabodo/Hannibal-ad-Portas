@@ -190,7 +190,7 @@ describe('the offers a settlement has', () => {
 
     expect(farm).toMatchObject({ enabled: true, reason: null, subject: 'farm' });
     expect(farm?.note).toContain(translate('resource.timber'));
-    expect(farm?.note).toContain(translate('ui.ticksLeft').replace('{ticks}', '400'));
+    expect(farm?.note).toContain('40 s');
   });
 
   it('says which requirement a building fails rather than hiding it', () => {

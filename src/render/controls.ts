@@ -99,6 +99,7 @@ export interface ControlTarget {
   readonly hudLayout: () => HudLayout;
   /** Includes session chrome, so an armed map order cannot swallow a menu click. */
   readonly hudRects?: () => readonly Rect[];
+  readonly scrollReference?: (lines: number) => boolean;
   readonly scrollHud: (region: 'list' | 'detail' | 'commands' | 'notices', lines: number) => void;
 }
 
@@ -149,7 +150,10 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
 
     const at = local(event);
     const layout = target.hudLayout();
-    minimapPress = contains(layout.minimap, at.x, at.y);
+    const topmost = [...(target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap])].reverse()
+      .find((rect) => contains(rect, at.x, at.y));
+    minimapPress = contains(layout.minimap, at.x, at.y) && topmost?.x === layout.minimap.x && topmost.y === layout.minimap.y
+      && topmost.width === layout.minimap.width && topmost.height === layout.minimap.height;
     interfacePress = (target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap]).some((rect) => contains(rect, at.x, at.y));
     if (minimapPress) target.navigateMinimap(at.x, at.y);
     press = { pointerId: event.pointerId, button: event.button, fromX: event.clientX, fromY: event.clientY, appliedX: 0, appliedY: 0 };
@@ -245,6 +249,7 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
 
       const at = local(event);
       if (event.deltaY === 0) return;
+      if (target.scrollReference?.(event.deltaY < 0 ? -3 : 3)) return;
       const layout = target.hudLayout();
       const topmost = [...(target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap])].reverse()
         .find((rect) => contains(rect, at.x, at.y));

@@ -393,6 +393,7 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     },
     hudLayout: () => view.hudLayout(),
     hudRects: () => view.hudRects(),
+    scrollReference: (lines) => view.scrollReference(lines),
     scrollHud: (region, lines) => view.scrollHud(region, lines),
   });
 

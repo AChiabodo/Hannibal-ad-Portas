@@ -86,6 +86,12 @@ the camera's hooks and the Match's hooks, and nothing else:
 | `targetAt` | `(screenX, screenY) → boolean` | game | Completes the armed action on the tile, enemy or settlement under a screen point |
 | `targetSettlement` | `(settlement) → boolean` | game | Completes the armed action on a settlement a list row named |
 | `setTab` | `(tab) → void` | game | Opens one page of a settlement's panel: `overview`, `construction` or `recruitment` |
+| `setCategory` | `(category)` | game | Selects `production`, `economy`, `development` or `military`; preserves the settlement and resets command scrolling |
+| `reference` | `()` | game | Current Encyclopedia entry and text/navigation offsets, or null |
+| `referenceLayout` | `()` | game | Exact rendered reference text, controls and scroll windows, or null |
+| `openReference` | `(entry?)` | game | Opens a canonical entry (default `seasons`), suspends time and remembers return focus and pause state; F1 and contextual links use this path |
+| `closeReference` | `()` | game | Restores selection, focus and previous pause state; Escape and the return control use this path |
+| `scrollReference` | `(lines)` | game | Scrolls reference text while open and returns whether it consumed the gesture |
 | `groupBack` | `() → boolean` | game | Picks the control group an individual exception was opened from |
 | `squads` | `() → SquadReport[]` | game | The Faction's Squads, each with the theatre rectangle its men are drawn in |
 | `corpses` | `() → Corpse[]` | game | The men who fell lately where this Faction can see them, as residue |

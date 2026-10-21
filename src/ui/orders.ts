@@ -40,6 +40,8 @@
  * interface does not invent an all-or-nothing group rule, because the rules do
  * not have one.
  */
+import { buildingDescription, categoryOf, type ConstructionCategory } from './construction.ts';
+import { TICK_HZ } from '../sim/clock.ts';
 import type { BadgeName } from '../art/icons.ts';
 import {
   BUILDINGS,
@@ -340,8 +342,9 @@ export function settlementOrders(
   tab: SettlementTab,
   ended = false,
   recruitCount = 1,
+  category?: ConstructionCategory,
 ): readonly OrderOption[] {
-  const offers = tab === 'construction' ? constructionOrders(faction, settlement)
+  const offers = tab === 'construction' ? constructionOrders(faction, settlement).filter((offer) => category === undefined || categoryOf(offer.subject ?? '') === category)
     : tab === 'recruitment' ? recruitmentOrders(faction, settlement, recruitCount) : [];
 
   return ended ? offers.map((offer) => ({ ...offer, enabled: false, reason: translate('reason.ended') })) : offers;
@@ -363,9 +366,9 @@ function constructionOrders(faction: Faction, settlement: VisibleSettlement): re
       group: 'construction' as const,
       label: workLabel(building.id),
       short: workLabel(building.id),
-      costs: [...resourceCosts(building.cost), { badge: 'clock', value: building.buildTicks }],
+      costs: [...resourceCosts(building.cost), { badge: 'clock', value: building.buildTicks / TICK_HZ }],
       subject: building.id,
-      note: `${costLabel(building.cost)} - ${message('ui.ticksLeft', { ticks: building.buildTicks })}`,
+      note: buildingDescription(building),
       shortcut: null,
       target: 'none' as const,
       targetHint: null,

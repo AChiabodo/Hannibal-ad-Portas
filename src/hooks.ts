@@ -87,6 +87,7 @@ export const GAME_HOOKS = [
   'targetAt',
   'targetSettlement',
   'setTab',
+  'setCategory', 'reference', 'referenceLayout', 'openReference', 'closeReference', 'scrollReference',
   'groupBack',
   'squads',
   'corpses',
