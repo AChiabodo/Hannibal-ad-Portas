@@ -262,13 +262,13 @@ const ICONS_HEIGHT = 2 * ICON_CELL;
 const SITE_CELL = Math.max(SITE_SIZE.settlement, SITE_SIZE.stronghold) + 4;
 
 /** Height of the settlements section: one row per specimen. */
-const SETTLEMENTS_HEIGHT = SITE_SPECIMENS.length * SITE_CELL;
+const SETTLEMENTS_HEIGHT = Math.ceil(SITE_SPECIMENS.length / 2) * SITE_CELL;
 
 /** The widest specimen name, which is what the sprites clear. */
-const SITE_LABEL_WIDTH = Math.max(...SITE_SPECIMENS.map((specimen) => measureText(specimen.name)));
+const SITE_LABEL_WIDTH = Math.max(...SITE_SPECIMENS.map((specimen) => measureText(specimen.name.replace(/^site:(stronghold|settlement):/, ''))));
 
 /** Width of the settlements section: a specimen's name, and its drawing beside it. */
-const SETTLEMENTS_WIDTH = SITE_LABEL_WIDTH + LABEL_GAP + SITE_CELL;
+const SETTLEMENTS_WIDTH = 2 * (SITE_LABEL_WIDTH + LABEL_GAP + SITE_CELL);
 
 const INTERFACE_ENTRIES = [...interfaceEntries(), ...appearanceEntries()];
 const INTERFACE_HEIGHT = INTERFACE_ENTRIES.reduce((height, entry) => height + HEADING_HEIGHT + entry.buffer.height + SECTION_GAP, 0);
@@ -622,17 +622,13 @@ export function cataloguePlate(): PixelBuffer {
   blit(plate, textPlate('settlements', PLATE_INK), PLATE_PADDING, y);
   y += HEADING_HEIGHT;
 
-  // One specimen per row: its name, then the drawing itself. A place is drawn on
-  // the plate with no ground under it — the question a settlement has to answer
-  // first is whether its silhouette reads on nothing, and the second is whether
-  // two of them can be told apart beside each other.
-  for (const specimen of SITE_SPECIMENS) {
+  // Two columns keep enlarged structures below the 8192-pixel GPU limit at 4x.
+  for (const [index, specimen] of SITE_SPECIMENS.entries()) {
     const sprite = siteSprite(specimen.look);
-    const top = y + Math.floor((SITE_CELL - sprite.height) / 2);
-
-    blit(plate, textPlate(specimen.name, PLATE_INK), PLATE_PADDING, top + Math.floor((sprite.height - LINE_HEIGHT) / 2));
-    blit(plate, sprite, PLATE_PADDING + SITE_LABEL_WIDTH + LABEL_GAP, top);
-    y += SITE_CELL;
+    const top = y + Math.floor(index / 2) * SITE_CELL + Math.floor((SITE_CELL - sprite.height) / 2);
+    const left = PLATE_PADDING + (index % 2) * (SITE_LABEL_WIDTH + LABEL_GAP + SITE_CELL);
+    blit(plate, textPlate(specimen.name.replace(/^site:(stronghold|settlement):/, ''), PLATE_INK), left, top + Math.floor((sprite.height - LINE_HEIGHT) / 2));
+    blit(plate, sprite, left + SITE_LABEL_WIDTH + LABEL_GAP, top);
   }
 
   y = PLATE_PADDING;

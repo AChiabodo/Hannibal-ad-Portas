@@ -66,6 +66,8 @@ export interface SiteIdentity {
 
 /** One settlement the Faction may see, and everything it knows of it. */
 export interface KnownSite extends SiteIdentity {
+  /** Only completed works explicitly present in the own Observation. */
+  readonly camp?: boolean;
   /** The Faction known to hold it, or `null` for a settlement nobody — or nobody known — holds. */
   readonly owner: Faction | null;
 
@@ -137,7 +139,8 @@ export function knownSites(
     if (!mine && contact === undefined && knowledge === KNOWLEDGE.unexplored) continue;
 
     if (mine) {
-      sites.push({ ...identity, owner: faction, memory: 'seen', front: fronts.get(identity.id) ?? null });
+      sites.push({ ...identity, owner: faction, memory: 'seen', front: fronts.get(identity.id) ?? null,
+        ...(own.get(identity.id)?.works.some((work) => work.building === 'castrum' && work.standing) === true ? { camp: true } : {}) });
       continue;
     }
 

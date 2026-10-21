@@ -1,22 +1,10 @@
-/**
- * A Squad drawn as its soldiers (ticket C2).
- *
- * This is the claim the ticket's acceptance criteria are made of — "a Squad is
- * rendered as its soldiers in formation, and that formation matches the one the
- * simulation holds" and "individual soldiers visibly thin out as the Squad loses
- * strength" — so the tests are about the *derivation*, not about how a block
- * looks: the men drawn are the men `sim/squad.ts` derives, in the same order, so
- * losing a man loses the last one and moves nobody.
- */
+/** Presentation slots and composed Figures (#67); independent of combat frontage. */
 import { describe, expect, it } from 'vitest';
 import { SQUAD_TYPES } from '../../src/content/squads';
 import type { VisibleSquad } from '../../src/sim/economy-match';
 import { FORMATIONS } from '../../src/sim/command';
-import { menOf } from '../../src/sim/squad';
 import {
   FIGURE_OF_SQUAD,
-  FILE_STEP,
-  RANK_STEP,
   SELECTION_INK,
   blockAnchor,
   blockMen,
@@ -75,37 +63,20 @@ function ink(buffer: PixelBuffer): number {
 }
 
 describe('the places a block’s men stand in', () => {
-  it('is exactly the list the simulation derives: same men, same files, same ranks', () => {
-    for (const formation of FORMATIONS) {
-      for (const men of [1, 3, 12, 13, 120]) {
-        const places = blockMen({ men, formation, facing: 'south' });
-        const derived = menOf({ strength: men, formation: FORMATIONS.indexOf(formation) });
-
-        expect(places.length).toBe(men);
-        expect(places.map((man) => ({ file: man.file, rank: man.rank }))).toEqual(
-          derived.map((man) => ({ file: man.file, rank: man.rank })),
-        );
-      }
+  it('has one unique whole-pixel slot per Figure in either formation', () => {
+    for (const formation of FORMATIONS) for (const men of [1, 12, 24, 48, 60, 120]) {
+      const slots = blockMen({ men, formation, facing: 'south' });
+      expect(slots).toHaveLength(men);
+      expect(new Set(slots.map((slot) => `${slot.x}:${slot.y}`)).size).toBe(men);
+      expect(slots.every((slot) => Number.isInteger(slot.x) && Number.isInteger(slot.y))).toBe(true);
     }
   });
 
-  it('thins out from the back: a Squad that has lost men stands exactly where it did', () => {
-    const full = blockMen({ men: 120, formation: 'line', facing: 'south' });
-
-    for (const men of [119, 100, 60, 12]) {
-      const fewer = blockMen({ men, formation: 'line', facing: 'south' });
-
-      // Whole places, not only whole men: a rank that is gone takes nobody's
-      // place with it. This holds while the frontage is full, which is every
-      // rank but the block's last.
-      expect(fewer).toEqual(full.slice(0, men));
-    }
-
-    // The last men left stand in one thin rank, at the front, where the block
-    // was: the simulation's own derivation says so and the drawing follows it.
-    const last = blockMen({ men: 1, formation: 'line', facing: 'south' });
-    expect(last.map((man) => man.rank)).toEqual([0]);
-    expect(last[0]?.x).toBe(0);
+  it('keeps the last survivor in a purchased slot rather than recentering him', () => {
+    const full = blockMen({ men: 120, capacity: 120, formation: 'line', facing: 'south' });
+    const last = blockMen({ men: 1, capacity: 120, formation: 'line', facing: 'south' });
+    expect(last).toHaveLength(1);
+    expect(full).toContainEqual(last[0]);
   });
 
   it('turns the whole layout for each way a Squad faces', () => {
@@ -131,23 +102,18 @@ describe('the places a block’s men stand in', () => {
     expect(layouts.size).toBe(4);
   });
 
-  it('is as wide as its frontage and as deep as its ranks, in whole steps', () => {
-    const line = blockSize({ men: 12, formation: 'line', facing: 'south' });
-    const deeper = blockSize({ men: 24, formation: 'line', facing: 'south' });
-
-    // Twelve files abreast and one rank: the width is the files, the height one
-    // figure. Two ranks are one rank step taller and no wider.
-    expect(line).toEqual({ width: 11 * FILE_STEP + FIGURE_WIDTH, height: FIGURE_HEIGHT });
-    expect(deeper).toEqual({ width: line.width, height: line.height + RANK_STEP });
+  it('bounds a large line and a distinct column at their purchased extent', () => {
+    expect(blockSize({ men: 120, formation: 'line', facing: 'south' })).toEqual({ width: 54, height: 59 });
+    expect(blockSize({ men: 120, formation: 'column', facing: 'south' })).toEqual({ width: 30, height: 109 });
   });
 });
 
 describe('a block of men, drawn', () => {
-  it('uses 90 representative figures for 120 men without shrinking a soldier', () => {
+  it('uses one Figure per infantryman without shrinking a soldier', () => {
     const squad = squadOf({ men: 120 });
-    expect(visualShape(squad)).toEqual({ men: 90, formation: 'line', facing: 'south' });
+    expect(visualShape(squad)).toEqual({ men: 120, capacity: 120, seed: 1, formation: 'line', facing: 'south' });
     const block = squadBlock(squad);
-    expect({ width: block.width, height: block.height }).toEqual({ width: 65, height: 49 });
+    expect({ width: block.width, height: block.height }).toEqual({ width: 54, height: 59 });
     expect(squad.men).toBe(120);
     expect(squad.figures).toBe(120);
   });
@@ -156,7 +122,7 @@ describe('a block of men, drawn', () => {
     const thin = squadBlock(squadOf({ men: 60 }));
 
     expect(ink(thin)).toBeLessThan(ink(full));
-    expect(thin.height).toBeLessThan(full.height);
+    expect(thin.height).toBe(full.height);
   });
 
   it('wears its Faction’s cloth, and rings itself when it is picked', () => {
@@ -251,13 +217,12 @@ describe('where a block stands', () => {
   it('does not move the men still standing when a rank is lost', () => {
     const at = { x: 100, y: 200 };
     const full: BlockShape = { men: 120, formation: 'line', facing: 'south' };
-    const thin: BlockShape = { men: 108, formation: 'line', facing: 'south' };
+    const thin: BlockShape = { men: 108, capacity: 120, formation: 'line', facing: 'south' };
 
     const fullTop = blockPlacement(at, full).y;
     const thinTop = blockPlacement(at, thin).y;
 
-    // The block got a rank shorter and its top edge moved down by exactly that,
-    // so the men in the ranks that are left are drawn where they were.
-    expect(thinTop - fullTop).toBe(5);
+    // Vacant slots remain inside the original extent; the sprite does not shift.
+    expect(thinTop).toBe(fullTop);
   });
 });

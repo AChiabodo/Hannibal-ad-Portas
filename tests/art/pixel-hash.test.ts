@@ -37,13 +37,13 @@ import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 // U9: deliberately add the reviewed UI surfaces and real layout specimens.
 // P2 moved the squad specimens and the plate they sit on: the panel now shows a
 // Squad's recruited capacity beside its survivors, which is a reviewed change.
-const PLATE_HASH = '321c0452d9af3bbb';
+const PLATE_HASH = 'f31e040be6fef1cf';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
-  'ui:carthage-column': '4b56aa9f36f49c4a',
-  'ui:carthage-line': '73b1d1b02cffe05a',
-  'ui:rome-column': 'a08469a1781f8143',
-  'ui:rome-line': 'fde3a2c084513c3a',
+  'ui:carthage-column': 'ab1340faad9c09ab',
+  'ui:carthage-line': 'd86ca6e857fa2dc9',
+  'ui:rome-column': '2e0424cbc5e9b70c',
+  'ui:rome-line': '834358201fe88f22',
   'interface:idle': '949bdad4ac7c1977',
   'interface:selected': '441968d0f235a997',
   'interface:armed': '7ccadea48dd904b7',
@@ -76,25 +76,25 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'node:iron': 'b7b8ef7b02238245',
   // C2's soldiers: one hash per figure, direction and frame, so a change to a
   // helmet, a shield or a stride names itself.
-  'figure:hastati:south:idle': 'f0efdd16ff33d615',
-  'figure:hastati:south:walk:0': 'fbfcbd329e1c5b56',
-  'figure:hastati:south:walk:1': 'f066906df8ef1777',
-  'figure:hastati:south:attack:1': '9ba58ddc8139ec6c',
+  'figure:hastati:south:idle': '5f425298fbbdcaf9',
+  'figure:hastati:south:walk:0': '1aec5aa0bd5661e2',
+  'figure:hastati:south:walk:1': '833b81f548d937eb',
+  'figure:hastati:south:attack:1': '6292f4236dfd06a4',
   'figure:hastati:south:death': 'da59746b7721e844',
-  'figure:hastati:north:idle': '24bdb2b2bc8df020',
-  'figure:hastati:east:idle': 'e4156d4064e24cb3',
-  'figure:hastati:west:idle': '86d3ae1c38343c17',
-  'figure:principes:south:idle': '13763da87015a35e',
-  'figure:triarii:south:idle': '9247c68e448e0b34',
+  'figure:hastati:north:idle': '7594a1c1fff0d694',
+  'figure:hastati:east:idle': 'e1151c72ce416f21',
+  'figure:hastati:west:idle': '414a38b1a40b01bd',
+  'figure:principes:south:idle': '470188abada6578d',
+  'figure:triarii:south:idle': 'ac3eeea399cf5840',
   // C4's Carthaginian roster: one hash per type's standing figure, so a shield,
   // a weapon or a head that changes names itself — plus the elephant's charge
   // and the horseman's march, which are the two drawings the roster exists for.
-  'figure:libyan-spear:south:idle': 'dbcff7db994d33a4',
-  'figure:gaul:south:idle': '8e9767edc980893c',
-  'figure:iberian-sword:south:idle': '33709a5cd986f259',
-  'figure:balearic-slinger:south:idle': '4b8ab0f882951281',
-  'figure:numidian-horse:south:idle': '000f94dab4dfd8ec',
-  'figure:numidian-horse:east:walk:0': '9923090e82ac63e7',
+  'figure:libyan-spear:south:idle': 'a6e9ec6f1e2c3c5e',
+  'figure:gaul:south:idle': 'bf50786ec4a03256',
+  'figure:iberian-sword:south:idle': 'acde20593facce2b',
+  'figure:balearic-slinger:south:idle': 'f3f3b17ad453307b',
+  'figure:numidian-horse:south:idle': '93bf4c8e53714592',
+  'figure:numidian-horse:east:walk:0': '35c1d3daec923555',
   'figure:elephant:south:idle': 'e7ecfa834be92b5d',
   'figure:elephant:south:attack:1': '480d980f6dc7b225',
   // #55's command card: one hash per verb, so an icon that is redrawn names
@@ -116,33 +116,34 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   // Faction on the middle one, which is the picture the quietened terrain is judged
   // in. All fourteen, because each is a different material under a different cloth
   // and a hedge that moved in one of them is a hedge somebody has to look at.
-  'separation:rome:plain': '83fe728217f3eaff',
-  'separation:rome:hill': '9247c82ee8dc1095',
-  'separation:rome:forest': 'e5c24ca102580feb',
-  'separation:rome:farmland': '8bd52bafa2e89454',
-  'separation:rome:river': '745161bdd3b3ec35',
-  'separation:rome:ford': '5d8c929f199091f5',
-  'separation:rome:road': '0b256ceac290a94c',
-  'separation:carthage:plain': '76808fb7790ed23c',
-  'separation:carthage:hill': '7d777f56babd487e',
-  'separation:carthage:forest': '6a392e89171d6bb0',
-  'separation:carthage:farmland': '763c93861c592be6',
-  'separation:carthage:river': 'b712216999d83b80',
-  'separation:carthage:ford': '1b249e7404e701ab',
-  'separation:carthage:road': '4433626c7b132ec0',
+  'separation:rome:plain': '79a41f36c96fe0e3',
+  'separation:rome:hill': 'c49f46eec5984021',
+  'separation:rome:forest': '8937f1614c4789e3',
+  'separation:rome:farmland': '38e32302b0235830',
+  'separation:rome:river': 'b6902e2d099e98f5',
+  'separation:rome:ford': '43ab50a8dbcd01cd',
+  'separation:rome:road': '950d77ce9f2a8228',
+  'separation:carthage:plain': 'f8a046df85ad74da',
+  'separation:carthage:hill': '37c952cb43838d98',
+  'separation:carthage:forest': '84edbb807675c5b6',
+  'separation:carthage:farmland': 'f96d7bd8ae91d5b0',
+  'separation:carthage:river': '63e850058b5c3842',
+  'separation:carthage:ford': '45a0aaed24abc30d',
+  'separation:carthage:road': '89fbae7610a42cea',
   // U6's settlements and fortifications: every specimen the plate shows — both
   // Factions' villages, the Stronghold whole, hurt and breached, the ram at the
   // gate, and the two remembered places. A wall that moves a pixel names itself.
-  'site:settlement:rome:seen': 'c7b555092feaf0e2',
-  'site:settlement:carthage:seen': '16d868332ca91372',
-  'site:settlement:none:seen': 'bb2d39411b17668b',
-  'site:stronghold:rome:intact': 'a650634053d52c2f',
-  'site:stronghold:carthage:intact': '11df68855b2d1f4f',
-  'site:stronghold:rome:damaged': '159ffa5a964fd8a3',
-  'site:stronghold:rome:breached': '5117cc405309552d',
-  'site:stronghold:rome:ram': '007bcdd1e7429921',
-  'site:stronghold:carthage:remembered': '36df808b07115242',
-  'site:settlement:rome:remembered': 'e81000f94b859fe8',
+  'site:settlement:rome:seen': 'c42e4a3b11ec2c19',
+  'site:settlement:rome:castrum': '062565e8254c5066',
+  'site:settlement:carthage:seen': '271fec07c2c96d11',
+  'site:settlement:none:seen': '82095318862fba48',
+  'site:stronghold:rome:intact': '60a521811cb80247',
+  'site:stronghold:carthage:intact': '93b32afe44a4e0a7',
+  'site:stronghold:rome:damaged': 'da414269bcb655d7',
+  'site:stronghold:rome:breached': '67bed99fdc69ffa0',
+  'site:stronghold:rome:ram': '03ccce5867107abd',
+  'site:stronghold:carthage:remembered': 'db5b23158dcfd749',
+  'site:settlement:rome:remembered': '63bf6c2c6aa583d7',
   // #58's insignia and ground marks: the two Factions' standards, the two
   // destination marks, the four facing chevrons and the five condition shapes.
   // The marks are drawn over both Factions' ground, so a pixel that moves in one

@@ -134,7 +134,9 @@ import { textureOf } from './stage.ts';
 import { SETTLEMENT_LAYER, createSettlementLayer, type SettlementLayer } from './settlement-layer.ts';
 import { siteDepth, siteRect } from './settlements.ts';
 import { SQUAD_LAYER, createSquadLayer, type SquadLayer } from './squad-layer.ts';
-import { blockPlacement, blockSize, visualShape } from './squads.ts';
+import { siteSprite } from '../art/settlements.ts';
+import { siteLook } from './settlements.ts';
+import { blockPlacement, blockSize, squadBlock, squadFrameKey, visualShape } from './squads.ts';
 import { tileAt, tilePixel } from './terrain.ts';
 import { VIEWED_FACTION } from './view.ts';
 import type { PixelPoint, Stage } from './stage.ts';
@@ -540,6 +542,8 @@ export function createGame(options: GameOptions): Game {
   const layer: HudLayer = createHudLayer(options.stage);
   const ground: SettlementLayer = createSettlementLayer(options.world);
   const field: SquadLayer = createSquadLayer(options.world);
+  const pickInk = new Map<number, { key: string; buffer: ReturnType<typeof squadBlock> }>();
+
   /** Every settlement on the theatre, by id: the map's own list, and what the minimap walks. */
   const identities = siteIdentities(match.state.world.map);
   const menu = options.stage.spriteOf(menuPlate(options.size, matchMenu(options.size, 0, config, 1, null)));
@@ -1713,12 +1717,25 @@ export function createGame(options: GameOptions): Game {
    * standing in a Stronghold is what a Player can see under the pointer, and so it
    * is the thing the click takes.
    */
+  function squadInk(squad: VisibleSquad): ReturnType<typeof squadBlock> {
+    const options = { tick: match.state.tick };
+    const key = squadFrameKey(squad, options);
+    const known = pickInk.get(squad.id);
+    if (known?.key === key) return known.buffer;
+    const buffer = squadBlock(squad, options);
+    pickInk.set(squad.id, { key, buffer });
+    return buffer;
+  }
+
   function pickables(): readonly Pickable[] {
+    const squads = squadReports();
+    const present = new Set(squads.map((squad) => squad.id));
+    for (const id of pickInk.keys()) if (!present.has(id)) pickInk.delete(id);
     return [
       ...siteReports().map((site) => ({ kind: 'settlement' as const, id: site.id, rect: site.rect,
-        depth: siteDepth(site), layer: SETTLEMENT_LAYER })),
-      ...squadReports().map((squad) => ({ kind: 'squad' as const, id: squad.id, rect: squad.rect,
-        depth: squad.y, layer: SQUAD_LAYER })),
+        ink: siteSprite(siteLook(site)), depth: siteDepth(site), layer: SETTLEMENT_LAYER })),
+      ...squads.map((squad) => ({ kind: 'squad' as const, id: squad.id, rect: squad.rect,
+        ink: squadInk(squad), depth: squad.y, layer: SQUAD_LAYER })),
     ];
   }
 

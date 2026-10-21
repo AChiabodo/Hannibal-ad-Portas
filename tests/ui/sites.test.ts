@@ -17,6 +17,7 @@
  * village within Rome's own watch, and one nobody has ever looked at.
  */
 import { describe, expect, it } from 'vitest';
+import { buildingCode } from '../../src/content/index';
 import { createEconomy } from '../../src/sim/economy';
 import { createFogs, eyeOf, refreshVision, SETTLEMENT_VISION, type FogView } from '../../src/sim/fog';
 import { generateMap, type MapGrid, type Site } from '../../src/sim/map';
@@ -204,5 +205,19 @@ describe('the world a Match opens', () => {
 
     expect(known.filter((site) => site.kind === 'stronghold')).toHaveLength(1);
     expect(known.every((site) => site.owner === 'rome' || site.owner === null)).toBe(true);
+  });
+});
+
+
+describe('Castrum knowledge for procedural art', () => {
+  it('shows completed own works and drops the camp after the holding is lost', () => {
+    const world = stage();
+    const home = world.economy.settlements[0]!;
+    home.works.push({ building: buildingCode('castrum')!, remaining: 1 });
+    expect(seenBy(world).find((site) => site.id === home.id)?.camp).toBeUndefined();
+    home.works[home.works.length - 1]!.remaining = 0;
+    expect(seenBy(world).find((site) => site.id === home.id)?.camp).toBe(true);
+    home.owner = 1;
+    expect(seenBy(world).find((site) => site.id === home.id)?.camp).toBeUndefined();
   });
 });

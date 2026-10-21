@@ -50,7 +50,7 @@ export const FEATURES = {
   // Structures, picking, remembered settlements and Siege damage.
   settlements: ['e2e/settlements.spec.ts'],
   // Drawn formations, standards, plates and the notice journal.
-  squads: ['e2e/squads.spec.ts', 'e2e/readability.spec.ts'],
+  squads: ['e2e/squads.spec.ts', 'e2e/readability.spec.ts', 'e2e/formation-art.spec.ts'],
   // The quietened terrain and the figures that must stay louder than it.
   terrain: ['e2e/terrain-readability.spec.ts'],
   // The browser host: setup, the first-entry guide, a whole Match, the debug
@@ -81,6 +81,7 @@ export const SMOKE = ['e2e/smoke.spec.ts'];
  * assertions with `SPQR_VISUAL=1`.
  */
 export const VISUAL_SPECS = [
+  'e2e/formation-art.spec.ts',
   'e2e/acceptance.spec.ts',
   'e2e/appearance.spec.ts',
   'e2e/commands.spec.ts',

@@ -185,7 +185,7 @@ describe('a condition, drawn where it is', () => {
   const middle = centre(size);
 
   /** How much of a north wall's walk, one row under its merlons, is painted. */
-  const walk = (sprite: PixelBuffer): number => inkIn(sprite, 8, 4, 40, 1);
+  const walk = (sprite: PixelBuffer): number => inkIn(sprite, 8, 4, size - 16, 1);
 
   it('leaves a hole in the wall it names, and in no other', () => {
     const whole = siteSprite(walled());
@@ -215,13 +215,13 @@ describe('a condition, drawn where it is', () => {
 
     // What is left lies at the foot of each gap, so a breach reads as rubble and
     // not as a wall that was never drawn.
-    expect(inkIn(breached, middle - 15, 5, 8, 5), 'rubble at one gap').toBeGreaterThan(0);
-    expect(inkIn(breached, middle + 8, 5, 8, 5), 'rubble at the other').toBeGreaterThan(0);
+    expect(inkIn(breached, 11, 5, 8, 5), 'rubble at one gap').toBeGreaterThan(0);
+    expect(inkIn(breached, size - 20, 5, 8, 5), 'rubble at the other').toBeGreaterThan(0);
 
     // And on the gate's own side the gatehouse is untouched: a wall breaks beside
     // its gate, so a Player is never told of a breach the gate is hiding.
     const south = differences(whole, siteSprite(walled({ walls: { ...INTACT, south: 'breached' } })));
-    expect(south.some((pixel) => pixel.x > middle - 7 && pixel.x < middle + 7 && pixel.y > 43)).toBe(false);
+    expect(south.some((pixel) => pixel.x > middle - 7 && pixel.x < middle + 7 && pixel.y > size - 13)).toBe(false);
   });
 
   it('keeps a damaged wall a wall: a notch and a crack, and no gap through it', () => {
@@ -251,8 +251,8 @@ describe('a condition, drawn where it is', () => {
     const whole = siteSprite(walled({ gate: 'intact' }));
     const broken = siteSprite(walled({ gate: 'breached' }));
 
-    expect(painted(whole, middle, 48), 'the gate is a thing').toBe(true);
-    expect(painted(broken, middle, 48), 'and a broken gate is a hole').toBe(true);
+    expect(painted(whole, middle, SITE_SIZE.stronghold - 8), 'the gate is a thing').toBe(true);
+    expect(painted(broken, middle, SITE_SIZE.stronghold - 8), 'and a broken gate is a hole').toBe(true);
     expect(differences(whole, broken).length).toBeGreaterThan(6);
     // An open settlement has no gatehouse at all, so its drawing has no timber
     // doors where a Stronghold's are.

@@ -754,12 +754,18 @@ function torso(
     fillRect(figure, 3, 7, 3, 3, palette.cloth);
     fillRect(figure, 3, 7, 3, 1, palette.metal);
     fillRect(figure, 3, 9, 3, 1, palette.clothDark);
+    setPixel(figure, 3, 8, palette.metalLit);
+    setPixel(figure, 4, 9, palette.boss);
     return;
   }
 
   fillRect(figure, 3, 7, 4, 3, palette.cloth);
   fillRect(figure, 3, 7, 4, 1, palette.metal);
   fillRect(figure, 3, 9, 4, 1, palette.clothDark);
+  // Shoulder clasp, breastplate and belt buckle, readable at native size.
+  setPixel(figure, 3, 7, palette.metalLit);
+  fillRect(figure, 4, 8, 2, 1, palette.metal);
+  setPixel(figure, 4, 9, palette.boss);
 
   // Arms. From behind they are the same arms: a soldier's back is a soldier's
   // back, and the mirror is what puts the shield on the correct side.
@@ -868,6 +874,8 @@ function shield(
     // The boss, horizontal: the scutum's one piece of metal, and at this size
     // the thing that tells a rectangle from a rectangle.
     fillRect(figure, x + 1, 7, 2, 2, palette.boss);
+    setPixel(figure, x + 1, 6, palette.metalLit);
+    setPixel(figure, x + 2, 10, palette.metal);
     return;
   }
   if (kind === 'parma') {
