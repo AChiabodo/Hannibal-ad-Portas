@@ -76,7 +76,7 @@ acceptance and still does not.
 | `hud` | `e2e/hud.spec.ts`, `e2e/hud-repair.spec.ts` | Italian interface, rows, scrolling, pause, minimap, narrow rooms | yes (`hud-repair`) |
 | `fog` | `e2e/fog.spec.ts` | Three knowledge states, faction-filtered sight, no reveal | no |
 | `settlements` | `e2e/settlements.spec.ts` | Structures, picking, remembered settlements, gate damage | yes |
-| `squads` | `e2e/squads.spec.ts`, `e2e/readability.spec.ts` | Drawn formations, plates, standards, notices, Fatigue scene | yes (`readability`) |
+| `squads` | `e2e/squads.spec.ts`, `e2e/readability.spec.ts`, `e2e/formation-art.spec.ts` | Drawn formations, purchased slots, alpha picking, comparative art, plates, standards, notices, Fatigue scene | yes (`readability`, `formation-art`) |
 | `terrain` | `e2e/terrain-readability.spec.ts` | The quietened ground and the figures above it | yes |
 | `host` | `e2e/setup.spec.ts`, `e2e/first-entry.spec.ts`, `e2e/match.spec.ts`, `e2e/inspect.spec.ts`, `e2e/surface.spec.ts`, `e2e/desktop.spec.ts` | Setup, the first-entry guide, a whole Match, the debug surface, desktop presentation | yes (`setup`, `first-entry`, `desktop`) |
 | `atelier` | `e2e/atelier.spec.ts` | The generated catalogue and its magnifications | no |

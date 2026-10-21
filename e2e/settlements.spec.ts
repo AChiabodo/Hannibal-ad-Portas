@@ -27,6 +27,7 @@ import { siteSprite } from '../src/art/settlements';
 import { screenToStage, stageToScreen } from '../src/render/camera';
 import { REMEMBERED } from '../src/render/fog';
 import { siteLook } from '../src/render/settlements';
+import { tileAt } from '../src/render/terrain';
 import type { ViewState } from '../src/render/boot';
 import type { SiteReport } from '../src/render/game';
 import { KNOWLEDGE, type Knowledge } from '../src/sim/fog';
@@ -134,9 +135,9 @@ function same(got: Rgba | undefined, wanted: readonly number[], tolerance: numbe
 
 /** The knowledge state of the tile a stage pixel stands on. */
 function knowledgeAt(states: readonly Knowledge[], x: number, y: number): Knowledge {
-  const tile = Math.floor(y / 16) * MAP_WIDTH + Math.floor(x / 16);
+  const tile = tileAt(x, y);
 
-  return states[tile] ?? KNOWLEDGE.unexplored;
+  return states[tile.y * MAP_WIDTH + tile.x] ?? KNOWLEDGE.unexplored;
 }
 
 /**

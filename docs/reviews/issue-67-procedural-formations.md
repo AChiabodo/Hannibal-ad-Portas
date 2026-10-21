@@ -88,12 +88,22 @@ hardware full-density 60 fps target.
   Before: 3/4 representative counts, shrinking/repacked damaged formations,
   armies visually larger than the old Stronghold. After: exact Figure counts,
   stable thinning, clearer structure/army mass and less lateral obstruction.
+  The local producer is `C:/Users/aless/AppData/Local/Temp/spqr67-before-after.cjs`.
 - Directly inspected native formations at zooms 1/2/3/4 across both Factions and
   reference sizes; representative compact/fine frames include zooms 1/2/3/4,
   especially fine at odd zoom 3. Inspected before/after field pairs for both
   Factions, selected field at zoom 4, and `catalogue-figures-browser.png` with all
   nine types, four facings and idle/walk/attack/death. The generated matrix is
   broader than these individual inspection samples; hashes are not an art verdict.
+- Existing producers were also run with
+  `node scripts/verify.mjs visual --grep "critical Siege frames|remembers a settlement"`:
+  all five cases passed. Inspected `../issue62/siege-breach-structure-rome-1280x720.png`,
+  `../issue62/siege-building-carthage-1920x1080.png`,
+  `../issue62/siege-blockade-rome-1920x1080.png` and
+  `../issue57/remembered-stronghold-rome.png`, relative to the issue67 image directory.
+  Dense maximum-size armies can cover part of a fortification at Siege contact;
+  the remaining walls/gate retain their picking and knowledge rules. This does
+  not claim collision-free group spacing, which belongs to the group-order work.
 - Rejected intermediate/manual captures (`study-*`, `revised-native-*`) remain
   outside Git. The first field producer could drift to empty fog after repeated
   zooming; final field captures press F at every zoom to keep the subject visible.
@@ -110,3 +120,27 @@ The final command results are recorded in the delivery commit and review.
 `npm run verify` passed: 115 test files / 1349 tests, lint, TypeScript, all fences
 and the production build. The four focused browser cases passed, and the explicit
 visual producer passed all four viewport/Faction cases (112 final matrix frames).
+
+The first complete browser run passed 151 cases and found two stale pixel
+oracles. The boot camera centre is now covered by a Figure, so its expected
+pixel includes the public Squad composition above the structure instead of
+assuming an uncovered Stronghold. The Siege oracle omitted the theatre's
+eight-pixel margin when looking up fog at an enlarged corner; it now uses
+the public `tileAt` conversion. Exact GPU comparison and existing thresholds
+remain intact. Both focused regressions passed before rerunning acceptance.
+
+Standards review found one conflict with ADR-0025's original sizes/rectangle
+picking. Its explicit #67 amendment resolves that conflict and retains the old
+decision as history. Standards has zero remaining findings; Spec has zero
+findings. The verification profile table now includes the new browser owner.
+
+Environment: local Windows, Node 22.22.2, Playwright 1.64.1, headless Chromium
+through software WebGL. Page identity, nonblank canvas, console health, exact
+generator/GPU pixels, screenshot inspection and a real pointer selection passed
+in the focused flow. Viewport coverage is desktop only, as requested.
+
+Final `npm run test:accept`: **153/153 passed**, 8.8 minutes, captures off,
+including smoke and generator/GPU checks at the retained zoom 8. Lint and
+TypeScript passed again after the two oracle corrections. No timeout, retry,
+assertion-count or pixel-tolerance budget was relaxed. Spec also reviewed the
+oracle addendum and confirmed zero remaining findings.

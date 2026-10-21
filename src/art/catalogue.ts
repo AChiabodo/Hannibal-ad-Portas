@@ -261,7 +261,7 @@ const ICONS_HEIGHT = 2 * ICON_CELL;
 /** The tallest place in the catalogue, which is what a settlement row is as tall as. */
 const SITE_CELL = Math.max(SITE_SIZE.settlement, SITE_SIZE.stronghold) + 4;
 
-/** Height of the settlements section: one row per specimen. */
+/** Height of the settlements section: two specimens per row. */
 const SETTLEMENTS_HEIGHT = Math.ceil(SITE_SPECIMENS.length / 2) * SITE_CELL;
 
 /** The widest specimen name, which is what the sprites clear. */

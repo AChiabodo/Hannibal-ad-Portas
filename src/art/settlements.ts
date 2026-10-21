@@ -22,7 +22,7 @@
  * ## One wall section, four ways
  *
  * A Stronghold is a square enceinte, and the four sides are not four drawings:
- * the wall section is **one 40×7 buffer** — crenellations along its outer edge,
+ * the wall section is **one 56×7 buffer** — crenellations along its outer edge,
  * a wall walk, a face and a shadow — and `rotateQuarterTurns` is what puts it on
  * the four sides, exactly as B3's terrain turns one transition tile four ways.
  * Corner towers are one 8×8 buffer placed four times. The gate is one gatehouse

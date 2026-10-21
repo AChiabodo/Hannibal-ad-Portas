@@ -122,10 +122,10 @@ export interface PlacedMan {
   /** Which rank he stands in, 0 is the front rank. */
   readonly rank: number;
 
-  /** The x his figure is drawn at, before the block is cropped to its men. */
+  /** The x his figure is drawn at, before translation into the purchased buffer. */
   readonly x: number;
 
-  /** The y his figure is drawn at, before the block is cropped to its men. */
+  /** The y his figure is drawn at, before translation into the purchased buffer. */
   readonly y: number;
 }
 
@@ -338,17 +338,8 @@ function ring(block: PixelBuffer, x: number, y: number, width: number, height: n
 }
 
 /**
- * Where the block's sprite goes, in theatre pixels, when its Squad stands on the
- * tile whose top-left corner is `at`.
- *
- * A Squad stands on one tile (ADR-0004) and its block is anchored by the one
- * point on it that does not move: **the middle of the front rank's ground
- * line**. The front rank's men therefore stand on the tile the simulation says
- * they are on, the ranks behind them are drawn behind, and a Squad that has lost
- * a rank loses men at the back of the block rather than having every survivor
- * shift half a step. That is what "a Squad that has lost men stands exactly
- * where it did" means on screen, and it is what lets a Player watch a Squad thin
- * out over a fight instead of watching it shudder.
+ * Places the front rank's foot centre on the Tile. Bounds include every
+ * purchased slot, so further casualties never shift the buffer or survivors.
  */
 export function blockPlacement(
   at: { readonly x: number; readonly y: number },
