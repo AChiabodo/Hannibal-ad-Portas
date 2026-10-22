@@ -670,3 +670,14 @@ function walledOf(visible: EconomyVisible | SiegeVisible, settlement: number): b
 function walled(front: VisibleFront): boolean {
   return front.structures.length > 0;
 }
+
+/** A visible neutral structure is a movement target at its canonical centre, not its roof's terrain tile. */
+export function neutralMoveDestination(
+  sites: readonly (Pick<import('./sites.ts').KnownSite, 'x' | 'y' | 'kind' | 'owner' | 'memory'> & { readonly rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number } })[],
+  point: { readonly x: number; readonly y: number },
+  ground: { readonly x: number; readonly y: number },
+): { readonly x: number; readonly y: number } {
+  const site = sites.find((site) => site.kind === 'settlement' && site.owner === null && site.memory === 'seen'
+    && point.x >= site.rect.x && point.x < site.rect.x + site.rect.width && point.y >= site.rect.y && point.y < site.rect.y + site.rect.height);
+  return site ? { x: site.x, y: site.y } : ground;
+}

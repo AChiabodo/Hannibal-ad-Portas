@@ -321,6 +321,7 @@ test('a skipped guide stays dismissed across Matches and reopens from the option
   expect(options, 'the bar has an options control').toBeDefined();
   if (options === undefined) return;
   await press(page, options.rect);
+  await press(page, await page.evaluate(() => window.__SPQR.game!.matchLayout().buttons.find((button) => button.action === 'settings')!.rect));
   const reopen = (await page.evaluate(() => window.__SPQR.game!.matchLayout().buttons
     .find((button) => button.action === 'guide')?.text));
   expect(reopen).toBe(translate('ui.openGuide'));

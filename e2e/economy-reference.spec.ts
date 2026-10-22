@@ -38,6 +38,8 @@ for (const faction of ['rome', 'carthage'] as const) {
       expect(forum.order.enabled).toBe(false);
       await page.mouse.move(forum.rect.x + forum.rect.width / 2, forum.rect.y + forum.rect.height / 2);
       await press(page, forum.rect);
+      expect((await hud(page)).view.inspectedOrder).toBe('build:forum');
+      await button('purchase:build:forum');
       expect((await hud(page)).orders.notice).toContain(forum.order.reason);
       expect((await hud(page)).orders.notice).toContain(forum.order.label);
       expect((await hud(page)).orders.pending).toBe(0);
@@ -65,6 +67,7 @@ for (const faction of ['rome', 'carthage'] as const) {
       const farm = await offer('build:farm');
       expect(farm.order.enabled).toBe(true);
       await press(page, farm.rect);
+      await button('purchase:build:farm');
       expect((await hud(page)).orders.pending).toBe(1);
       await advance(page, 1);
       expect((await applied(page)).some(({ command }) => command.kind === 'build' && command.building === 'farm')).toBe(true);

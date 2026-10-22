@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createFogs } from '../../src/sim/fog.ts';
-import { assault, blockade, garrison, hold, type Command } from '../../src/sim/command';
+import { assault, blockade, garrison, hold, move, type Command } from '../../src/sim/command';
 import { engagedPairs } from '../../src/sim/combat';
 import { idleController } from '../../src/sim/controller';
 import { runMatch, type MatchSetup } from '../../src/sim/driver';
@@ -570,4 +570,16 @@ describe('the Siege a seed opens', () => {
     expect(again.hash).toBe(once.hash);
     expect(siegeMatchOutcome(once.world)).toBeNull();
   });
+});
+
+it('captures a neutral settlement after a group actually marches to its centre, for either Faction', () => {
+  for (const faction of ['rome', 'carthage'] as const) {
+    const world = stage({ minor: { x: 40, y: 40 } });
+    const squads = muster(world, faction, faction === 'rome' ? 'hastati' : 'libyan-spear', { x: 35, y: 40 }, 2);
+    const match = matchOn(world);
+    match.step([move(faction, squads.map((squad) => squad.id), 40, 40)]);
+    run(match, 600);
+    expect(world.economy.settlements[2]?.owner).toBe(faction === 'rome' ? 0 : 1);
+    expect(squads.some((squad) => squad.x === 40 && squad.y === 40)).toBe(true);
+  }
 });

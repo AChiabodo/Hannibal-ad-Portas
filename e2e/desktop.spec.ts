@@ -9,8 +9,17 @@ async function ready(page: Page, faction = 'rome') {
   await page.evaluate(() => window.__SPQR.game!.pause());
 }
 async function clickAction(page: Page, action: HudAction | 'scale' | 'reset' | 'guide') {
-  if (['scale', 'reset', 'guide'].includes(action)) {
+  if (action === 'center') { await page.keyboard.press('f'); return; }
+  if (action === 'session' && await page.evaluate(() => window.__SPQR.game!.hud().view.sessionOpen)) {
+    await page.keyboard.press('Escape');
+    if (await page.evaluate(() => window.__SPQR.game!.hud().view.sessionOpen)) await page.keyboard.press('Escape');
+    return;
+  }
+  const settings = ['scale', 'reset', 'guide', 'navigator'].includes(action);
+  if (settings) {
     if (!await page.evaluate(() => window.__SPQR.game!.hud().view.sessionOpen)) await clickAction(page, 'session');
+    const entry = await page.evaluate(() => window.__SPQR.game!.matchLayout().buttons.find((b) => b.action === 'settings')?.rect);
+    if (entry) await page.mouse.click(entry.x + 8, entry.y + 8);
   }
   const rect = await page.evaluate((action) => {
     const game = window.__SPQR.game!;
@@ -19,7 +28,7 @@ async function clickAction(page: Page, action: HudAction | 'scale' | 'reset' | '
   }, action);
   const canvas = (await page.locator('canvas').boundingBox())!;
   await page.mouse.click(canvas.x + rect.x + 8, canvas.y + rect.y + 8);
-  if (['scale', 'reset', 'guide'].includes(action)) await clickAction(page, 'session');
+  if (settings && await page.evaluate(() => window.__SPQR.game!.hud().view.sessionOpen)) await clickAction(page, 'session');
 }
 
 for (const width of [1280, 1920]) for (const faction of ['rome', 'carthage']) {
@@ -49,7 +58,7 @@ for (const width of [1280, 1920]) for (const faction of ['rome', 'carthage']) {
     });
     expect(focused.x).toBeGreaterThanOrEqual(focused.layout.list.width);
     expect(focused.y).toBeGreaterThanOrEqual(focused.layout.list.y);
-    expect(focused.y).toBeLessThan(focused.layout.detail.y);
+    expect(focused.y).toBeLessThan(focused.layout.theatre!.y + focused.layout.theatre!.height);
 
     await page.evaluate((faction) => window.__SPQR.view!.panBy(faction === 'rome' ? 200 : -200, faction === 'rome' ? 100 : -100), faction);
     await clickAction(page, 'center');
@@ -170,7 +179,7 @@ for (const faction of ['rome', 'carthage'] as const) {
     await page.evaluate(() => window.__SPQR.game!.advance(1));
     expect(await page.evaluate(() => window.__SPQR.game!.selection())).toEqual(selection);
     expect(await page.evaluate(() => window.__SPQR.game!.applied().map(({ command }) => command.kind))).toEqual(['recruit']);
-    await page.keyboard.press('Escape');
+    await page.evaluate(() => window.__SPQR.game!.cancelTargeting());
     const known = await page.evaluate(() => {
       const game = window.__SPQR.game!;
       const snapshot = game.state();

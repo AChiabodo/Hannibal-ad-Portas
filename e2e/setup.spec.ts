@@ -55,6 +55,10 @@ async function pressMenu(page: Page, action: string): Promise<void> {
     const canvas = (await page.locator('canvas').boundingBox())!;
     await page.mouse.click(canvas.x + open.x + 8, canvas.y + open.y + 8);
   }
+  if (!await page.evaluate((action) => window.__SPQR.game!.matchLayout().buttons.some((b) => b.action === action), action)) {
+    const route = await page.evaluate(() => window.__SPQR.game!.matchLayout().buttons.find((b) => b.action === 'back' || b.action === 'settings')!.action);
+    await pressMenu(page, route);
+  }
   const rect = await page.evaluate((wanted) => window.__SPQR.game!.matchLayout().buttons.find((button) => button.action === wanted)!.rect, action);
   const box = (await page.locator('canvas').boundingBox())!;
   await page.mouse.click(box.x + rect.x + 8, box.y + rect.y + 8);
@@ -220,7 +224,7 @@ for (const faction of ['rome', 'carthage'] as const) {
         reason: { kind: 'stronghold', stronghold: 1, path: 'assault' } });
       expect((await page.evaluate(() => window.__SPQR.game!.matchLayout())).lines).toContain(faction === 'rome' ? 'VITTORIA' : 'SCONFITTA');
       expect((await page.evaluate(() => window.__SPQR.game!.matchLayout())).buttons.filter(({ action }) => action.startsWith('speed')).every(({ enabled }) => !enabled)).toBe(true);
-      expect((await page.evaluate(() => window.__SPQR.game!.hudLayout())).buttons.find(({ action }) => action === 'pause')!.enabled).toBe(false);
+      expect((await page.evaluate(() => window.__SPQR.game!.hudLayout())).text.some(({ text }) => text.startsWith('CONCLUSA'))).toBe(true);
       await page.keyboard.press('Space');
       await pressMenu(page, 'speed3');
       await page.evaluate(() => {

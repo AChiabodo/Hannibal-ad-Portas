@@ -105,6 +105,7 @@ import {
   enemyTargets,
   garrisonReach,
   settlementAt,
+  neutralMoveDestination,
   settlementTargets,
   type ControlGroupView,
   type OrderOption,
@@ -307,7 +308,7 @@ export interface GameHooks {
   hudLayout(): HudLayout;
   /** Highlights the command under the pointer and exposes its full name/help. */
   hoverAt(x: number, y: number): void;
-  /** F6 enters UI focus; Tab traverses, Enter/Space activate, Escape leaves. */
+  /** F6 enters UI focus; Tab traverses, Enter/Space activate; Escape opens or leaves the pause menu. */
   interfaceKey(key: string, reverse?: boolean): boolean;
   /** Scrolls a HUD region by bitmap text lines; presentation only. */
   scrollHud(region: 'list' | 'detail' | 'commands' | 'notices', lines: number): void;
@@ -559,6 +560,8 @@ export function createGame(options: GameOptions): Game {
   options.stage.root.addChild(menu);
   menu.visible = options.sessionControls !== false;
   let sessionOpen = false;
+  let pausePage: 'main' | 'settings' = 'main';
+  let menuWasRunning = false;
   let resultDismissed = false;
   let navigatorExpanded = false;
   let notice = '';
@@ -677,7 +680,7 @@ export function createGame(options: GameOptions): Game {
       if (site) { const at = tilePixel(site.x, site.y); options.centerOn?.(at.x, at.y); }
     },
     navigateMinimap: (x, y) => {
-      if (reference !== null) return false;
+      if (reference !== null || menu.visible) return false;
       const rect = hudLayout(model, options.size).minimap;
       if (!contains(rect, x, y)) return false;
       const scale = desktop ? model.view.uiScale ?? 2 : 1;
@@ -689,7 +692,7 @@ export function createGame(options: GameOptions): Game {
     },
     doubleClickAt: (x, y) => {
       if (reference !== null) return;
-      if (menu.visible && contains(readMenu().rect, x, y)) return;
+      if (menu.visible) return;
       if (hudHit(model, options.size, x, y)?.kind === 'selection') hooks.centerSelection();
     },
     submit: (command) => human.submit(command),
@@ -737,12 +740,18 @@ export function createGame(options: GameOptions): Game {
     },
     hudRects: () => {
       const layout = hudLayout(model, options.size);
-      return [...interfaceRects(layout), ...(menu.visible ? [readMenu().rect] : []), ...(reference !== null ? [{ x: 0, y: 0, width: options.size.width, height: options.size.height }] : [])];
+      return [...interfaceRects(layout), ...(menu.visible ? [{ x: 0, y: 0, width: options.size.width, height: options.size.height }] : []), ...(reference !== null ? [{ x: 0, y: 0, width: options.size.width, height: options.size.height }] : [])];
     },
     hudRows: () => hudLayout(model, options.size).rows,
     hudLayout: () => hudLayout(model, options.size),
     hoverAt: (x, y) => {
       if (reference !== null) return;
+      if (menu.visible) {
+        const button = readMenu().buttons.find(({ rect }) => contains(rect, x, y));
+        const next = button ? `menu:${button.action}` : null;
+        if (focusId !== next) { focusId = next; repaint(); }
+        return;
+      }
       const hit = hudHit(model, options.size, x, y);
       if (hit?.kind !== 'order' && contains(hudLayout(model, options.size).detail, x, y)
         && model.commands.some((order) => order.id === hoveredOrder && (order.kind === 'build' || order.kind === 'recruit'))) return;
@@ -910,6 +919,7 @@ export function createGame(options: GameOptions): Game {
     if (result !== null) return;
     guide = guideNext(guide, { kind: 'reopen' });
     sessionOpen = false;
+    if (menuWasRunning) { guidePaused = true; menuWasRunning = false; }
     if (!pacing.paused) {
       pacing.pause();
       guidePaused = true;
@@ -919,8 +929,8 @@ export function createGame(options: GameOptions): Game {
   /** Releases the pause the Guide took, and never one a Player took. */
   function releaseGuidePause(): void {
     if (!guidePaused || result !== null) return;
-    pacing.resume();
-    lastFrame = performance.now();
+    if (sessionOpen) menuWasRunning = true;
+    else { pacing.resume(); lastFrame = performance.now(); }
     guidePaused = false;
   }
 
@@ -1368,13 +1378,13 @@ export function createGame(options: GameOptions): Game {
       options.stage.render();
       return;
     }
-    options.stage.canvas.setAttribute('aria-label', [translate('ui.keyboard'), focused?.label ?? '', ...layout.readouts.map(({ line }) => `${line.label} ${line.value}`), ...layout.buttons.map(({ text }) => text), ...(guide.open ? [...layout.guideText.map(({ text }) => text), ...layout.guideButtons.map(({ text }) => text)] : []), ...(menu.visible ? [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)] : [])].join('. '));
+    options.stage.canvas.setAttribute('aria-label', [translate('ui.keyboard'), focused?.label ?? '', ...layout.readouts.map(({ line }) => `${line.label} ${line.value}`), ...layout.text.filter(({ rect }) => rect.y < layout.bar.height).map(({ text }) => text), ...layout.buttons.map(({ text }) => text), ...(guide.open ? [...layout.guideText.map(({ text }) => text), ...layout.guideButtons.map(({ text }) => text)] : []), ...(menu.visible ? [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)] : [])].join('. '));
     options.stage.render();
   }
 
   function readMenu(): MatchMenu {
     return desktop
-      ? desktopMatchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice, preferences)
+      ? desktopMatchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice, preferences, pausePage)
       : matchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice);
   }
 
@@ -1408,6 +1418,7 @@ export function createGame(options: GameOptions): Game {
     const offer = model.commands.find((order) => order.id === (focusId?.startsWith('order:') ? focusId.slice(6) : inspectedOrder ?? hoveredOrder)) ?? model.commands[0];
     if (offer?.kind === 'build') return `building:${offer.subject}`;
     if (offer?.kind === 'recruit') return `squad:${offer.subject}`;
+    if (model.selected?.kind === 'settlement' && model.detail?.summary === undefined) return 'capture';
     if (model.selected?.kind === 'settlement' && settlementPage !== 'summary') return settlementPage === 'balance' ? 'treasury' : 'labour';
     return model.selected?.kind === 'squad' ? 'commands' : 'first-steps';
   }
@@ -1469,11 +1480,15 @@ export function createGame(options: GameOptions): Game {
       else if (menuButton.action === 'panelLayout') hooks.setPanelLayout(PANEL_LAYOUTS[(PANEL_LAYOUTS.indexOf(preferences.panelLayout) + 1) % PANEL_LAYOUTS.length]!);
       else if (menuButton.action === 'reset') hooks.resetPreferences();
       else if (menuButton.action === 'guide') hooks.toggleGuide();
-      else if (menuButton.action === 'close') { sessionOpen = false; resultDismissed = true; repaint(); }
+      else if (menuButton.action === 'settings') { pausePage = 'settings'; focusId = 'menu:back'; repaint(); }
+      else if (menuButton.action === 'back') { pausePage = 'main'; focusId = 'menu:settings'; repaint(); }
+      else if (menuButton.action === 'reference') showReference('first-steps');
+      else if (menuButton.action === 'navigator') hooks.toggleNavigator();
+      else if (menuButton.action === 'close') closePauseMenu(result === null);
       else if (menuButton.speed !== undefined) hooks.setSpeed(menuButton.speed);
       return;
     }
-    if (menu.visible && contains(readMenu().rect, screenX, screenY)) return;
+    if (menu.visible) return;
     const layout = hudLayout(model, options.size);
     const hit = hudHit(model, options.size, screenX, screenY);
     if (hit !== null) {
@@ -1537,6 +1552,27 @@ export function createGame(options: GameOptions): Game {
     });
   }
 
+  function openPauseMenu(): void {
+    if (menu.visible) { closePauseMenu(menuWasRunning); return; }
+    menuWasRunning = !pacing.paused && result === null;
+    pacing.pause();
+    armed = null;
+    sessionOpen = true;
+    pausePage = 'main';
+    focusId = 'menu:close';
+    repaint();
+  }
+
+  function closePauseMenu(resume: boolean): void {
+    sessionOpen = false;
+    pausePage = 'main';
+    resultDismissed = true;
+    focusId = null;
+    if (resume && result === null && !guide.open) { pacing.resume(); lastFrame = performance.now(); }
+    menuWasRunning = false;
+    repaint();
+  }
+
   function interfaceKey(key: string, reverse: boolean): boolean {
     if (key === 'F1') {
       if (reference === null) showReference(contextReference());
@@ -1560,19 +1596,19 @@ export function createGame(options: GameOptions): Game {
       }
       return true;
     }
-    if (!desktop || (key !== 'F6' && focusId === null)) return false;
+    if (desktop && key === 'Escape') {
+      if (menu.visible && pausePage === 'settings') { pausePage = 'main'; focusId = 'menu:settings'; repaint(); }
+      else if (menu.visible) closePauseMenu(menuWasRunning);
+      else openPauseMenu();
+      return true;
+    }
+    if (!desktop || (key !== 'F6' && focusId === null && !menu.visible)) return false;
     const controls = interfaceControls();
     if (controls.length === 0) return false;
     if (key === 'F6' || key === 'Tab') {
       const found = controls.findIndex(({ id }) => id === focusId);
       const index = found < 0 && reverse ? 0 : found;
       focusId = controls[(index + (reverse ? -1 : 1) + controls.length) % controls.length]!.id;
-      repaint();
-      return true;
-    }
-    if (key === 'Escape') {
-      focusId = null;
-      cancelTargeting();
       repaint();
       return true;
     }
@@ -1585,7 +1621,7 @@ export function createGame(options: GameOptions): Game {
       }
       return true;
     }
-    return false;
+    return menu.visible;
   }
 
   /** One of the bar's own buttons, pressed. */
@@ -1604,7 +1640,7 @@ export function createGame(options: GameOptions): Game {
     else if (action === 'pause') {
       if (pacing.paused) hooks.resume();
       else hooks.pause();
-    } else if (action === 'session') { sessionOpen = !sessionOpen; repaint(); }
+    } else if (action === 'session') openPauseMenu();
     else if (action === 'speed1') hooks.setSpeed(1);
     else if (action === 'speed2') hooks.setSpeed(2);
     else if (action === 'speed3') hooks.setSpeed(3);
@@ -1687,7 +1723,10 @@ export function createGame(options: GameOptions): Game {
     const tile = tileAt(at.x, at.y);
     if (tile.x < 0 || tile.y < 0 || tile.x >= MAP_WIDTH || tile.y >= MAP_HEIGHT) return false;
 
-    if (offer.target === 'ground') return submitOrder(offer, { kind: 'ground', x: tile.x, y: tile.y });
+    if (offer.target === 'ground') {
+      const destination = neutralMoveDestination(siteReports(), at, tile);
+      return submitOrder(offer, { kind: 'ground', ...destination });
+    }
     if (offer.target === 'enemy') {
       const enemy = enemyAt(enemyTargets(visible()), tile.x, tile.y);
       return enemy === null ? false : submitOrder(offer, { kind: 'enemy', squad: enemy.id });
@@ -1832,7 +1871,7 @@ export function createGame(options: GameOptions): Game {
     if (reference !== null) return true;
     const layout = hudLayout(model, options.size);
 
-    return [...interfaceRects(layout), ...(menu.visible ? [readMenu().rect] : [])].some(
+    return [...interfaceRects(layout), ...(menu.visible ? [{ x: 0, y: 0, width: options.size.width, height: options.size.height }] : [])].some(
       (rect) => x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height,
     );
   }

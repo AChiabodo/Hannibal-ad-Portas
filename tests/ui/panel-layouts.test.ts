@@ -69,7 +69,7 @@ const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.width && a.x + a.width > b.
 it('keeps every purchase and catalogue page clear of paging controls in all saved layouts', () => {
   for (const panelLayout of ['sidebar', 'dock', 'compact'] as const) {
     const menu = desktopMatchMenu({ width: 1280, height: 720 }, 80,
-      { faction: 'rome', difficulty: 'centurio', seed: 7 }, 1, null, '', { ...DEFAULT_UI_PREFERENCES, panelLayout });
+      { faction: 'rome', difficulty: 'centurio', seed: 7 }, 1, null, '', { ...DEFAULT_UI_PREFERENCES, panelLayout }, 'settings');
     expect(menu.buttons.find((b) => b.action === 'panelLayout')?.text).toContain(panelLayout === 'sidebar' ? 'B -' : panelLayout === 'dock' ? 'A -' : 'C -');
     for (const button of menu.buttons) expect(button.rect.x + button.rect.width).toBeLessThanOrEqual(1280);
     for (const faction of ['rome', 'carthage'] as const) for (const tab of ['construction', 'recruitment'] as const) {
@@ -125,7 +125,7 @@ it('does not let the compact inspector intercept control-group clicks', () => {
     const layout = hudLayout(model, size);
     for (const group of layout.groups) expect(hudHit(model, size, group.rect.x + group.rect.width / 2, group.rect.y + group.rect.height / 2))
       .toMatchObject({ kind: 'group', index: group.index });
-    expect(layout.text.some((line) => line.text === 'IN CORSO')).toBe(true);
+    expect(layout.text.some((line) => line.text.startsWith('IN CORSO'))).toBe(true);
   }
 });
 
@@ -155,4 +155,40 @@ it('keeps expanded notices clear of purchases, groups and the minimap', () => {
       expect(overlaps(row.rect, layout.minimap)).toBe(false);
     }
   }
+});
+
+it('releases the whole right side when B has no selection', () => {
+  const size = { width: 1280, height: 720 };
+  const model = hudModel(visible, [0], null, [], { desktop: true, uiScale: 2, panelLayout: 'sidebar' });
+  const layout = hudLayout(model, size);
+  expect(layout.detail.width * layout.detail.height).toBe(0);
+  expect(layout.theatre!.x + layout.theatre!.width).toBe(size.width);
+  expect([...layout.text, ...layout.priority].some((line) => line.text.includes('Seleziona un insediamento'))).toBe(false);
+});
+
+it('makes the resource bar explain local stocks and moves session controls out of the theatre', () => {
+  const model = hudModel(visible, [0], { kind: 'settlement', id: 0 }, [], { desktop: true, uiScale: 2, panelLayout: 'sidebar' });
+  const layout = hudLayout(model, { width: 1280, height: 720 });
+  const actions = layout.buttons.filter((b) => b.rect.y < layout.bar.height).map((b) => b.action);
+  expect(actions).toEqual(['session', 'reference', 'notices']);
+  for (const name of ['Grano', 'Legname', 'Pietra', 'Ferro']) expect(layout.readouts.some((r) => r.line.label.includes(name))).toBe(true);
+  expect(layout.text.some((line) => line.text.includes('Scorte di Roccaforte 0'))).toBe(true);
+  const menu = desktopMatchMenu({ width: 1280, height: 720 }, layout.bar.height,
+    { faction: 'rome', difficulty: 'centurio', seed: 7 }, 1, null, '', DEFAULT_UI_PREFERENCES);
+  expect(menu.rect.x).toBeGreaterThan(0);
+  expect(menu.buttons.find((b) => b.action === 'close')?.text).toContain('Riprendi');
+  expect(menu.buttons.some((b) => b.action === 'settings')).toBe(true);
+});
+
+it('explains capture and shows observed centre control directly on a neutral site', () => {
+  const site = { id: 2, kind: 'settlement' as const, x: 40, y: 40, owner: null, memory: 'seen' as const,
+    front: { settlement: 2, structures: [], breached: false, siege: null, besieger: null, ram: null, hold: 1, garrison: 0 } };
+  const model = hudModel(visible, [0], { kind: 'settlement', id: 2 }, [], { desktop: true, uiScale: 2, panelLayout: 'sidebar' },
+    { faction: 'rome', sites: [site], tab: 'recruitment' });
+  expect(model.detail?.lines.some((line) => line.value.includes('1/3'))).toBe(true);
+  const layout = hudLayout(model, { width: 1280, height: 720 });
+  for (const { line, rect } of layout.readouts) expect(measureText(line.label, 2) + measureText(line.value, 2) + 4).toBeLessThanOrEqual(rect.width);
+  expect(layout.tabs).toEqual([]);
+  expect(layout.buttons.some((b) => b.action === 'reference:capture')).toBe(true);
+  expect(layout.text.some((line) => line.text.includes('Muovi'))).toBe(true);
 });

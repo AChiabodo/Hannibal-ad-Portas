@@ -25,7 +25,7 @@ export interface SetupMenu {
 }
 
 export interface MenuButton {
-  readonly action: '0' | '1' | '2' | '3' | 'speed1' | 'speed2' | 'speed3' | 'restart' | 'new' | 'copy' | 'scale' | 'panelLayout' | 'reset' | 'guide' | 'close';
+  readonly action: '0' | '1' | '2' | '3' | 'speed1' | 'speed2' | 'speed3' | 'restart' | 'new' | 'copy' | 'scale' | 'settings' | 'back' | 'reference' | 'navigator' | 'panelLayout' | 'reset' | 'guide' | 'close';
   readonly speed?: Speed;
   readonly text: string;
   readonly rect: Rect;
@@ -95,6 +95,7 @@ export function setupLayout(size: HudSize, model: SetupModel): SetupMenu {
 /** The setup page's plate: the title, the brief explanation and the four controls. */
 export function setupPlate(size: HudSize, menu: SetupMenu, focus: number | null = null): PixelBuffer {
   const plate = createPixelBuffer(size.width, size.height);
+  if (menu.rect.x > 0 && menu.rect.width < size.width) fillRect(plate, 0, 0, size.width, size.height, [BASE.night[0], BASE.night[1], BASE.night[2], 180]);
   fillRect(plate, menu.rect.x, menu.rect.y, menu.rect.width, menu.rect.height, BASE.night);
   strokeRect(plate, menu.rect.x, menu.rect.y, menu.rect.width, menu.rect.height, BASE.bronze);
   for (const { text, rect, scale } of menu.texts) drawText(plate, text, rect.x, rect.y, BASE.parchment, scale);
@@ -132,6 +133,7 @@ export function matchMenu(size: HudSize, top: number, config: MatchConfiguration
 
 export function menuPlate(size: HudSize, menu: MatchMenu, scale = 1, focus: Rect | null = null): PixelBuffer {
   const plate = createPixelBuffer(size.width, size.height);
+  if (menu.rect.x > 0 && menu.rect.width < size.width) fillRect(plate, 0, 0, size.width, size.height, [BASE.night[0], BASE.night[1], BASE.night[2], 180]);
   fillRect(plate, menu.rect.x, menu.rect.y, menu.rect.width, menu.rect.height, BASE.night);
   strokeRect(plate, menu.rect.x, menu.rect.y, menu.rect.width, menu.rect.height, BASE.bronze);
   let lineY = menu.rect.y + 8 * scale;
@@ -154,24 +156,33 @@ export function contains(rect: Rect, x: number, y: number): boolean {
 }
 
 
-/** The same announcement plate, compacted into the desktop top area. */
+/** Centered pause/result menu; settings are a separate, extensible page. */
 export function desktopMatchMenu(size: HudSize, top: number, config: MatchConfiguration,
-  speed: Speed, result: MatchResult | null, notice: string, preferences: UiPreferences): MatchMenu {
+  speed: Speed, result: MatchResult | null, notice: string, preferences: UiPreferences, page: 'main' | 'settings' = 'main'): MatchMenu {
   const scale = fittedUiScale(preferences.uiScale, size);
-  const logicalSize = { width: Math.floor(size.width / scale), height: Math.floor(size.height / scale) };
-  const baseMenu = matchMenu(logicalSize, top / scale, config, speed, result, notice);
-  const menu = { ...baseMenu, lines: result === null ? [...baseMenu.lines, translate('ui.keyboard')] : baseMenu.lines };
-  const lineHeight = 8 + menu.lines.length * 15 + (result === null ? 0 : 12);
-  const rect = { x: 0, y: top / scale, width: logicalSize.width, height: lineHeight + 56 };
-  const buttons: MenuButton[] = menu.buttons.map((button) => ({ ...button,
-    rect: { ...button.rect, x: button.rect.x - 166, y: rect.y + lineHeight } }));
-  const preferencesButtons = [
-    ['scale', preferences.uiScale === scale ? message('ui.scale', { scale }) : message('ui.scaleFitted', { requested: preferences.uiScale, scale }), 104], ['reset', translate('ui.reset'), 104],
-    ['guide', translate(preferences.guideDismissed ? 'ui.openGuide' : 'ui.hideGuide'), 104], ['close', translate('ui.closeOptions'), 104],
-    ['panelLayout', message('ui.panelLayout', { layout: translate(`layout.${preferences.panelLayout}`) }), 180],
-  ] as const;
-  for (const [index, [action, text, width]] of preferencesButtons.entries()) buttons.push({ action, text, enabled: true,
-    rect: { x: 8 + index * 110, y: rect.y + lineHeight + 28, width, height: 22 } });
-  const scaleRect = (r: Rect): Rect => ({ x: r.x * scale, y: r.y * scale, width: r.width * scale, height: r.height * scale });
-  return { ...menu, rect: scaleRect(rect), buttons: buttons.map((button) => ({ ...button, rect: scaleRect(button.rect) })) };
+  const logical = { width: Math.floor(size.width / scale), height: Math.floor(size.height / scale) };
+  const base = matchMenu(logical, top / scale, config, speed, result, notice);
+  const lines = page === 'settings' ? [translate('pause.settings'), base.lines[0]!]
+    : result === null ? [translate('pause.title'), ...base.lines] : base.lines;
+  const headline = page === 'settings' || result === null ? 0 : base.headline;
+  const items: { action: MenuButton['action']; text: string; speed?: Speed; enabled?: boolean }[] = page === 'main' ? [
+    { action: 'close', text: translate(result === null ? 'pause.resume' : 'ui.closeOptions') },
+    { action: 'settings', text: translate('pause.settings') },
+    { action: 'reference', text: translate('ref.open') },
+    ...(['restart', 'new', 'copy'] as const).map((action) => ({ action, text: translate(`pause.${action}`) })),
+  ] : [
+    { action: 'back', text: translate('pause.back') },
+    { action: 'panelLayout', text: message('ui.panelLayout', { layout: translate(`layout.${preferences.panelLayout}`) }) },
+    { action: 'scale', text: preferences.uiScale === scale ? message('ui.scale', { scale }) : message('ui.scaleFitted', { requested: preferences.uiScale, scale }) },
+    { action: 'navigator', text: message('pause.navigator', { state: translate(preferences.navigator ? 'pause.on' : 'pause.off') }) },
+    { action: 'guide', text: translate(preferences.guideDismissed ? 'ui.openGuide' : 'ui.hideGuide') },
+    { action: 'reset', text: translate('ui.reset') },
+    ...base.buttons.filter((b) => b.speed !== undefined).map((b) => ({ ...b, text: message('pause.speed', { speed: b.speed!, selected: b.speed === speed ? ' *' : '' }) })),
+  ];
+  const lineHeight = 12 + lines.reduce((height, _line, i) => height + (i === headline ? 27 : 15), 0);
+  const rect: Rect = { x: Math.floor((logical.width - 360) / 2), y: Math.floor((logical.height - lineHeight - items.length * 24 - 12) / 2), width: 360, height: lineHeight + items.length * 24 + 12 };
+  const screen = (r: Rect): Rect => ({ x: r.x * scale, y: r.y * scale, width: r.width * scale, height: r.height * scale });
+  return { rect: screen(rect), lines, ...(headline === undefined ? {} : { headline }), buttons: items.map((item, i) => ({
+    ...item, enabled: item.enabled ?? true, rect: screen({ x: rect.x + 12, y: rect.y + lineHeight + i * 24, width: rect.width - 24, height: 20 }),
+  })) };
 }

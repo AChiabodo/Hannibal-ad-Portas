@@ -1,4 +1,5 @@
 /** Selectable desktop arrangements. Geometry and text are shared by painting and input. */
+import { resourceBar } from './resource-bar.ts';
 import { BUILDINGS } from '../content/index.ts';
 import { TICK_HZ } from '../sim/clock.ts';
 import { RESOURCE_KINDS } from '../sim/map.ts';
@@ -38,6 +39,8 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
   const screen = (r: Rect): Rect => ({ x: r.x * scale, y: r.y * scale, width: r.width * scale, height: r.height * scale });
   const bar = logical(base.bar), list = logical(base.list);
   const sidebar = model.view.panelLayout === 'sidebar', dock = model.view.panelLayout === 'dock';
+  const hidden = sidebar && model.selected === null;
+  const right = hidden ? w : w - Math.min(260, Math.max(216, Math.floor(w * .27)));
   const sw = Math.min(260, Math.max(216, Math.floor(w * .27)));
   const detail: Rect = sidebar ? { x: w - sw, y: bar.height + 2, width: sw, height: h - bar.height - 2 }
     : { x: 0, y: h - (dock ? 104 : 92), width: dock ? w : w - MINIMAP_PLATE_WIDTH - 2, height: dock ? 104 : 92 };
@@ -96,16 +99,17 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
   }
 
   const settlement = model.selected?.kind === 'settlement';
-  const economic = settlement && model.tab !== 'overview';
+  const ownSettlement = settlement && model.detail?.summary !== undefined;
+  const economic = ownSettlement && model.tab !== 'overview';
   const inspected = model.commands.find((offer) => offer.id === model.view.inspectedOrder);
   let catalogue: Rect = { ...detail, x: detail.x + 4, y: detail.y + 4, width: detail.width - 8, height: detail.height - 8 };
   let inspector: Rect | null = null;
 
-  if (sidebar) {
+  if (sidebar && !hidden) {
     addText(model.detail?.title ?? translate('ui.selectEntity'), detail.x + 4, detail.y + 4, detail.width - 8, true);
     if (settlement) {
-      prose([model.detail?.lines[0]?.value ?? ''], { x: detail.x + 4, y: detail.y + 18, width: detail.width - 8, height: 12 }, 0, false);
-      catalogue = { x: detail.x + 4, y: detail.y + 32, width: detail.width - 8, height: detail.height - 36 };
+      if (ownSettlement) prose([model.detail?.lines[0]?.value ?? ''], { x: detail.x + 4, y: detail.y + 18, width: detail.width - 8, height: 12 }, 0, false);
+      catalogue = { x: detail.x + 4, y: detail.y + (ownSettlement ? 32 : 20), width: detail.width - 8, height: detail.height - (ownSettlement ? 36 : 24) };
       if (economic) {
         const ih = Math.min(160, Math.max(108, detail.height - 210));
         inspector = { x: detail.x + 4, y: h - ih - 4, width: detail.width - 8, height: ih };
@@ -116,6 +120,8 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
       catalogue = { x: MINIMAP_PLATE_WIDTH + 6, y: h - 40, width: Math.max(140, detail.x - MINIMAP_PLATE_WIDTH - 10), height: 36 };
       if (model.selected) extraPanels.push({ x: catalogue.x - 4, y: catalogue.y - 4, width: catalogue.width + 8, height: catalogue.height + 8 });
     }
+  } else if (hidden) {
+    // No selected entity: the sidebar has no surface or input mask.
   } else if (dock) {
     const summaryWidth = 140;
     addText(model.detail?.title ?? translate('ui.selectEntity'), 4, detail.y + 4, summaryWidth - 8, true);
@@ -144,7 +150,7 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
   }
 
   let y = catalogue.y;
-  if (settlement) {
+  if (ownSettlement) {
     const tw = Math.floor((catalogue.width - 4) / 3);
     SETTLEMENT_TABS.forEach((tab, i) => tabs.push({ tab, text: translate(`tab.short.${tab}`),
       rect: { x: catalogue.x + i * (tw + 2), y, width: tw, height: 16 } }));
@@ -170,6 +176,11 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
         translate(page === 'summary' ? 'tab.short.overview' : page === 'balance' ? 'panel.balance' : 'panel.works'),
         { x: catalogue.x + i * (bw + 2), y: by, width: bw, height: 18 });
     }
+  }
+  if (settlement && !ownSettlement) {
+    detailScroll = prose((model.detail?.lines ?? []).map((line) => `${line.label}: ${line.value}`),
+      { ...catalogue, height: catalogue.height - 24 }, model.view.detailOffset ?? 0, true);
+    button('reference:capture', translate('capture.help'), { x: catalogue.x, y: catalogue.y + catalogue.height - 20, width: catalogue.width, height: 18 });
   }
   if ((model.selected && !settlement) || economic) {
     const offers = model.commands;
@@ -214,19 +225,17 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
     const groupArea = inspectorGroups && inspector
       ? { x: inspector.x + 4, y: inspector.y + inspector.height - 16, width: inspector.width - 8, height: 14 }
       : { x: MINIMAP_PLATE_WIDTH + 4, y: sidebar ? h - 60 : detail.y - 16,
-        width: (sidebar ? detail.x : detail.width) - MINIMAP_PLATE_WIDTH - 8, height: 14 };
+        width: (sidebar ? right : detail.width) - MINIMAP_PLATE_WIDTH - 8, height: 14 };
     const gw = Math.min(44, Math.floor(groupArea.width / model.groups.length));
     model.groups.forEach((group, i) => groups.push({ index: group.index,
       rect: { x: groupArea.x + i * gw, y: groupArea.y, width: gw - 2, height: 14 } }));
     extraPanels.push(groupArea);
   }
-  const keep = (r: Rect) => !overlaps(r, base.detail);
-  const chromeText = base.text.filter((line) => keep(line.rect)).map((line) => line.role === 'pace'
-    ? { ...line, rect: { ...line.rect, width: 70 * scale } } : line);
+  const keep = (r: Rect) => !overlaps(r, base.detail) && !overlaps(r, base.bar);
+  const chrome = resourceBar(model, size);
+  const chromeText = base.text.filter((line) => keep(line.rect));
   const chromePriority = base.priority.filter((line) => keep(line.rect));
-  const chromeButtons = base.buttons.filter((button) => keep(button.rect)).map((button) =>
-    ({ ...button, rect: { ...button.rect, width: Math.min(button.rect.width, size.width - button.rect.x) } }));
-  button('notices', message('ui.noticesCount', { count: model.notices.length }), { x: 558, y: 1, width: 80, height: 15 }, model.notices.length > 0);
+  const chromeButtons = base.buttons.filter((button) => keep(button.rect));
   let notices: Rect = { x: 0, y: 0, width: 0, height: 0 };
   let noticeScroll = emptyScroll;
   const noticeRows: NoticeRect[] = [];
@@ -239,7 +248,7 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
     const max = Math.max(0, lines.length - page), offset = Math.min(max, Math.max(0, model.view.noticeOffset ?? 0));
     noticeScroll = { offset, max, page };
     const shown = lines.slice(offset, offset + page);
-    notices = { x: sidebar ? detail.x - width - 4 : dock ? minimap.x - width - 4 : w - width - 4,
+    notices = { x: sidebar ? right - width - 4 : dock ? minimap.x - width - 4 : w - width - 4,
       y: top, width, height: 24 + shown.length * STEP + (max ? 20 : 0) };
     button('notices', translate('ui.noticeClose'), { x: notices.x + 4, y: top + 4, width: width - 8, height: 16 });
     shown.forEach(({ text: value, notice }, i) => {
@@ -255,11 +264,11 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
   }
   const placed = <T extends { readonly rect: Rect }>(items: readonly T[]): T[] => items.map((item) => ({ ...item, rect: screen(item.rect) }));
   const bottom = sidebar ? (settlement || !model.selected ? h : catalogue.y - 4) : detail.y;
-  return { ...base, detail: screen(detail), minimap: screen(minimap),
-    theatre: screen({ x: list.width, y: bar.height, width: (sidebar ? detail.x : w) - list.width, height: bottom - bar.height }),
+  return { ...base, detail: screen(hidden ? { x: w, y: bar.height, width: 0, height: 0 } : detail), minimap: screen(minimap),
+    theatre: screen({ x: list.width, y: bar.height, width: (sidebar ? right : w) - list.width, height: bottom - bar.height }),
     extraPanels: [...extraPanels.map(screen), ...(dock && inspector ? [screen(inspector)] : [])],
-    text: [...chromeText, ...placed(text)], priority: [...chromePriority, ...placed(priority)], status: placed(status),
-    buttons: [...chromeButtons, ...placed(buttons)], commands: placed(commands), tabs: placed(tabs), groups: placed(groups),
+    readouts: chrome.readouts, text: [...chrome.text, ...chromeText, ...placed(text)], priority: [...chromePriority, ...placed(priority)], status: placed(status),
+    buttons: [...chrome.buttons, ...chromeButtons, ...placed(buttons)], commands: placed(commands), tabs: placed(tabs), groups: placed(groups),
     commandRules: [], exceptions: placed(exceptions), detailScroll, commandScroll,
     scrollRegions: scrollRegions.map((region) => ({ ...region, rect: screen(region.rect) })),
     notices: screen(notices), noticeRows: placed(noticeRows), noticeScroll };

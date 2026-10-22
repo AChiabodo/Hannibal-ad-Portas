@@ -14,6 +14,7 @@ import { TILE_COUNT } from '../../src/sim/map.ts';
 import type { VisibleSettlement, VisibleSquad } from '../../src/sim/economy-match.ts';
 import type { SiegeVisible, VisibleFront } from '../../src/sim/siege.ts';
 import {
+  neutralMoveDestination,
   controlGroupViews,
   enemyAt,
   garrisonReach,
@@ -360,4 +361,12 @@ describe('a mixed selection', () => {
     expect(views[0]).toEqual({ index: 1, count: 1, composition: 'Principi 1' });
     expect(views[1]).toEqual({ index: 2, count: 2, composition: 'Astati 1, Principi 1' });
   });
+});
+
+it('targets the centre of a sighted neutral structure, not the tile under its roof', () => {
+  const site = { id: 2, x: 40, y: 40, kind: 'settlement' as const, owner: null, memory: 'seen' as const,
+    front: null, rect: { x: 100, y: 100, width: 192, height: 160 } };
+  expect(neutralMoveDestination([site], { x: 150, y: 120 }, { x: 41, y: 38 })).toEqual({ x: 40, y: 40 });
+  expect(neutralMoveDestination([{ ...site, memory: 'remembered' }], { x: 150, y: 120 }, { x: 41, y: 38 })).toEqual({ x: 41, y: 38 });
+  expect(neutralMoveDestination([site], { x: 500, y: 300 }, { x: 45, y: 48 })).toEqual({ x: 45, y: 48 });
 });

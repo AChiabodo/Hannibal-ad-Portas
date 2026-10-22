@@ -72,6 +72,7 @@ import {
   MINIMAP_PLATE_HEIGHT,
   MINIMAP_PLATE_WIDTH,
 } from './minimap.ts';
+import { CAPTURE_HOLDS, CAPTURE_TICKS } from '../sim/siege.ts';
 import type { KnownSite } from './sites.ts';
 import type { Notice } from './conditions.ts';
 import { CONSTRUCTION_CATEGORIES, type ConstructionCategory } from './construction.ts';
@@ -1277,6 +1278,11 @@ function knownSiteLines(site: KnownSite): Pick<HudDetail, 'lines' | 'priority'> 
     },
   ];
 
+  if (site.kind === 'settlement' && site.owner === null) {
+    lines.push({ label: translate('capture.label'), value: site.memory === 'seen'
+      ? message('capture.control', { hold: site.front?.hold ?? 0, total: CAPTURE_HOLDS }) : translate('capture.rediscover') });
+    lines.push({ label: translate('capture.instructions'), value: message('capture.quick', { holds: CAPTURE_HOLDS, seconds: CAPTURE_TICKS / TICK_HZ }) });
+  }
   if (site.front !== null) {
     lines.push(...frontLines(site.front));
   } else if (site.kind === 'stronghold') {
@@ -1304,10 +1310,10 @@ function siteName(site: KnownSite): string {
 function frontLines(front: VisibleFront): readonly HudLine[] {
   const standing = front.structures.filter((structure) => structure.standing).length;
   const gate = front.structures.find((structure) => structure.kind === 'gate');
-  const lines: HudLine[] = [
+  const lines: HudLine[] = front.structures.length ? [
     { label: translate('ui.walls'), value: message('ui.wallsStanding', { standing, total: front.structures.length }) },
     { label: translate('ui.breach'), value: translate(front.breached ? 'ui.breached' : 'ui.no') },
-  ];
+  ] : [{ label: translate('ui.walls'), value: translate('ui.none') }];
   if (gate !== undefined) {
     lines.push({
       label: translate('ui.gate'),
