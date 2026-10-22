@@ -40,6 +40,10 @@ import {
 import { TICK_HZ } from '../sim/clock.ts';
 import {
   BLOCKADE_GRAIN_LOSS,
+  BLOCKADE_POPULATION_LOSS,
+  BLOCKADE_MORALE_LOSS,
+  CAPTURE_HOLDS,
+  CAPTURE_TICKS,
   BLOCKADE_PRESSURE_CAP,
   ESCALADE_BEARING,
   ESCALADE_DAMAGE,
@@ -111,6 +115,8 @@ export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
     body: translate('ref.start.body'), facts: [{ label: translate('ui.groups'), value: 9 }] },
   { id: 'economic-choices', section: 'start', title: translate('ref.choices.title'),
     body: translate('ref.choices.body'), facts: [{ label: translate('ui.tier'), value: 3 }] },
+  { id: 'interface', section: 'start', title: translate('ref.interface.title'),
+    body: translate('ref.interface.body'), facts: [{ label: translate('ui.groups'), value: 9 }] },
   { id: 'treasury', section: 'economy', title: translate('ref.treasury.title'),
     body: message('ref.treasury.body', { cap: TREASURY_CAP, tax: TAX_PER_DENARIUS, loss: MORALE_LOSS_PER_UNPAID_SEASON }),
     facts: [{ label: translate('ui.treasury'), value: TREASURY_CAP }] },
@@ -147,6 +153,7 @@ export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
       sizes: type.sizes.map((size) => message(type.figures === 1 ? 'ref.beastBill' : 'ref.sizeBill', {
         size, cost: resourceBill(recruitCost(type, size)), payroll: payrollBill(type, size) })).join('\n'),
       rate: type.payroll, basis: PAYROLL_BASIS, impact: type.impact,
+      morale: type.morale, missiles: type.ammunition, pace: type.pace,
       figures: translate(type.figures === 1 ? 'ref.beast' : 'ref.soldiers') })}`,
     facts: type.sizes.map((size) => ({ label: translate('ui.men'), value: size })),
   })),
@@ -159,6 +166,8 @@ export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
     body: message('ref.territoryBody', { radius: TERRITORY_RADIUS, outside: ATTRITION_PERCENT,
       winter: ATTRITION_WINTER_PERCENT, field: ATTRITION_FIELD_WINTER_PERCENT, camp: CAMP_RADIUS }),
     facts: [{ label: translate('ref.territoryTitle'), value: TERRITORY_RADIUS }] },
+  { id: 'visibility', section: 'war', title: translate('ref.visibility.title'),
+    body: translate('ref.visibility.body'), facts: [{ label: translate('ui.siteState'), value: 3 }] },
 
   {
     id: 'force',
@@ -210,6 +219,8 @@ export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
       bearing: String(ESCALADE_BEARING),
       loss: String(WALL_ASSAULT_LOSS),
       grain: String(BLOCKADE_GRAIN_LOSS),
+      population: BLOCKADE_POPULATION_LOSS, morale: BLOCKADE_MORALE_LOSS,
+      holds: CAPTURE_HOLDS, captureSeconds: CAPTURE_TICKS / TICK_HZ,
       cap: String(BLOCKADE_PRESSURE_CAP),
     }),
     facts: [

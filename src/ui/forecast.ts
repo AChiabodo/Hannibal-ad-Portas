@@ -111,9 +111,8 @@ export function forecastTreasury(visible: EconomyVisible | SiegeVisible, tick: n
   let unpaid = 0;
   let deserters = 0;
 
-  // The rules pay in the list's own order and stop when the coffer is empty; a
-  // Squad is charged whole, so the ones after it go unpaid even if a cheaper term
-  // would have fitted.
+  // Charge each Squad whole, in recruitment order. An unaffordable Squad is
+  // skipped; the remaining Treasury can still pay a later, cheaper one.
   for (const squad of visible.squads) {
     const owed = squad.payroll;
     payroll += owed;

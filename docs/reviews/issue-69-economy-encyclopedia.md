@@ -1,5 +1,9 @@
 # Issue #69 — Economy and Encyclopedia
 
+For the subsequent native-browser audit, corrections and menu-by-menu assessment,
+see [the 22 October browser review](issue-69-native-browser-review.md). Its browser
+evidence supersedes the unrun-browser limitation recorded below.
+
 ## Revision after human review, 22 October 2026
 
 The reopened issue replaces the original flat reference with five browsable

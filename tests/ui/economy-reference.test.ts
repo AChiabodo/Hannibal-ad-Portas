@@ -19,6 +19,31 @@ const visible: EconomyVisible = {
 };
 
 describe('the economic decision panel', () => {
+  it('stops promising another Season after the Match has ended', () => {
+    const model = hudModel(visible, [0], { kind: 'settlement', id: 0 }, [],
+      { desktop: true, uiScale: 2, ended: true, settlementPage: 'balance' },
+      { forecast: { label: 'Stima prossima Stagione', value: 'Tesoreria 22', estimate: true } });
+    expect(model.forecast).toBeNull();
+    const prose = model.detail!.ledger!.map((line) => `${line.label}: ${line.value}`).join(' ');
+    expect(prose).toContain('PARTITA CONCLUSA');
+    expect(prose).toContain('Tesoreria comune: 20');
+    expect(prose).not.toContain('prossima stagione');
+  });
+
+  it('keeps category and tab targets fixed when Cartagine opens the empty military category', () => {
+    for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
+      const layoutFor = (category: 'production' | 'military') => hudLayout(hudModel(visible, [0],
+        { kind: 'settlement', id: 0 }, [], { desktop: true, uiScale: 2 },
+        { faction: 'carthage', tab: 'construction', category }), size);
+      const production = layoutFor('production');
+      const military = layoutFor('military');
+      expect(military.commands).toHaveLength(0);
+      expect(military.tabs).toEqual(production.tabs);
+      expect(military.buttons.filter((button) => button.action.startsWith('category:')))
+        .toEqual(production.buttons.filter((button) => button.action.startsWith('category:')));
+    }
+  });
+
   it('names each land allocation and distinguishes idle buildings from completed ones', () => {
     const settlement = { ...visible.settlements[0]!, population: 4,
       works: [{ building: 'farm', standing: true, remaining: 0 },

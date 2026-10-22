@@ -18,6 +18,21 @@ import { squadLabel, workLabel } from '../../src/ui/strings';
 import { TICK_HZ } from '../../src/sim/clock';
 
 describe('the rule reference', () => {
+  it('helps a beginner read the real interface and distinguish current sight from memory', () => {
+    const controls = REFERENCE_ENTRIES.find((entry) => entry.id === 'interface');
+    expect(controls?.body).toContain('F6');
+    expect(controls?.body).toContain('soldo');
+    expect(controls?.body).toContain('lucchetto');
+    const sight = REFERENCE_ENTRIES.find((entry) => entry.id === 'visibility');
+    expect(sight?.body).toContain('Ultimo contatto noto');
+    expect(sight?.body).toContain('non');
+    for (const id of ['commands', 'conditions']) {
+      const entry = REFERENCE_ENTRIES.find((candidate) => candidate.id === id);
+      expect(entry?.body).not.toContain('marcia più rapidamente');
+      expect(entry?.body).toContain('velocità di movimento');
+    }
+  });
+
   it('answers every content item with canonical bills, sizes and faction names', () => {
     for (const building of BUILDINGS) {
       const entry = REFERENCE_ENTRIES.find((candidate) => candidate.id === `building:${building.id}`);
@@ -29,6 +44,9 @@ describe('the rule reference', () => {
       expect(entry?.title).toBe(squadLabel(type.id));
       for (const size of type.sizes) expect(entry?.body).toContain(String(size));
       expect(entry?.body).toContain(type.faction === 'rome' ? 'Roma' : 'Cartagine');
+      expect(entry?.body).toContain(`Morale iniziale: ${type.morale}`);
+      expect(entry?.body).toContain(`Munizioni iniziali: ${type.ammunition} salve`);
+      expect(entry?.body).toContain(`Passo: ${type.pace}`);
     }
     for (const kind of RESOURCE_KINDS) expect(REFERENCE_ENTRIES.some((entry) => entry.id === `resource:${kind}`)).toBe(true);
     expect(new Set(RESOURCE_KINDS.map((kind) => REFERENCE_ENTRIES.find((entry) => entry.id === `resource:${kind}`)?.body)).size).toBe(4);

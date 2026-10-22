@@ -539,7 +539,7 @@ export function hudModel(
     rows: rows(visible, strongholds),
     detail: selected === null
       ? null
-      : group !== null ? groupDetail(group) : detail(visible, strongholds, selected, known, view.tick ?? 0),
+      : group !== null ? groupDetail(group) : detail(visible, strongholds, selected, known, view.tick ?? 0, ended),
     selected,
     picked: pickedRows,
     commands,
@@ -556,7 +556,7 @@ export function hudModel(
       notice: session.notice ?? null,
     },
     notices: session.notices ?? [],
-    forecast: session.forecast ?? null,
+    forecast: ended ? null : session.forecast ?? null,
     guide: session.guide ?? null,
   };
 }
@@ -1125,6 +1125,7 @@ function detail(
   selected: Selection,
   known: KnownSite | null,
   tick: number,
+  ended: boolean,
 ): HudDetail | null {
   if (selected.kind === 'settlement') {
     const settlement = visible.settlements.find((candidate) => candidate.id === selected.id);
@@ -1137,7 +1138,7 @@ function detail(
 
     return {
       title: message('ui.listItem', { name: settlementName(settlement, strongholds), id: settlement.id }),
-      ...settlementLines(visible, settlement, tick),
+      ...settlementLines(visible, settlement, tick, ended),
     };
   }
 
@@ -1159,7 +1160,7 @@ function detail(
  * has an eye on (ADR-0020). A settlement remembered from a contact is not one of
  * those, so it gets no wall line at all rather than a remembered one.
  */
-function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement, tick: number): Pick<HudDetail, 'lines' | 'priority' | 'ledger' | 'summary' | 'works'> {
+function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement, tick: number, ended: boolean): Pick<HudDetail, 'lines' | 'priority' | 'ledger' | 'summary' | 'works'> {
   const economics = projectSettlement(settlement, visible.season);
   const boundary = nextBoundary(visible.season, tick);
   const future = projectSettlement(settlement, boundary.season);
@@ -1227,7 +1228,10 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement,
     { label: resourceLabel(RESOURCE_KINDS[2]!), value: message('economy.stockPair', { first: settlement.stocks.stone,
       second: settlement.stocks.iron, capacity: economics.storage, name: resourceLabel(RESOURCE_KINDS[3]!) }) },
   ];
-  return { lines, ledger, summary, works: [lines[2]!, lines[1]!, landLine, ...lines.slice(workStart)],
+  return { lines, ledger: ended ? [
+    { label: translate('match.ended'), value: translate('match.finalKnown') },
+    { label: translate('economy.commonTreasury'), value: String(visible.treasury) },
+  ] : ledger, summary, works: [lines[2]!, lines[1]!, landLine, ...lines.slice(workStart)],
     priority: importantWork < 0 ? [0] : [workStart + importantWork] };
 }
 
@@ -1622,7 +1626,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     const columnHeight = detail.height - 2 * inner - groupStrip;
     // Commands before prose: the card gets the wider half, because a picture and
     // its one word do not wrap the way a sentence does.
-    const economicPage = model.selected?.kind === 'settlement' && model.commands.length > 0;
+    const economicPage = model.selected?.kind === 'settlement';
     const textWidth = Math.max(140, Math.floor((detail.width - 3 * inner) * (economicPage ? 0.30 : 0.44)));
     const commandX = textX + textWidth + inner;
     const commandWidth = Math.max(80, detail.width - textWidth - 3 * inner);

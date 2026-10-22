@@ -4,6 +4,22 @@ import { encyclopediaLayout, openReference, referenceAction } from '../../src/ui
 import { REFERENCE_ENTRIES } from '../../src/ui/reference';
 
 describe('the reusable Encyclopedia surface', () => {
+  it('distinguishes topic navigation from article pages and counts the visible topics', () => {
+    const layout = encyclopediaLayout({ width: 1280, height: 720 }, openReference('treasury'));
+    expect(layout.text.map((line) => line.text)).toContain('Voci 1-5/10');
+    expect(layout.controls.find((control) => control.id === 'navNext')?.text).toBe('Altre voci');
+    expect(layout.controls.find((control) => control.id === 'next')?.text).toBe('Pagina dopo');
+  });
+
+  it('turns article pages without repeating the preceding page at the tail', () => {
+    const size = { width: 1280, height: 720 };
+    const state = openReference();
+    const first = encyclopediaLayout(size, state);
+    const second = encyclopediaLayout(size, referenceAction(state, 'next', first));
+    expect(second.offset).toBe(first.page);
+    expect(second.text.map((line) => line.text)).toContain('Pagina 2/2');
+  });
+
   it('opens with practical first steps and lets readers browse one subject at a time', () => {
     const size = { width: 1280, height: 720 };
     const first = encyclopediaLayout(size, openReference());

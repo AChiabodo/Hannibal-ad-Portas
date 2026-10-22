@@ -51,7 +51,7 @@ export function encyclopediaLayout(size: HudSize, state: ReferenceState, scale =
   const bodyWidth = Math.min(520, rect.width - navWidth - 42);
   const page = Math.max(1, Math.floor((rect.height - 156) / 12));
   const lines = entry.body.split('\n').flatMap((paragraph) => paragraph.length === 0 ? [''] : wrapText(paragraph, bodyWidth));
-  const max = Math.max(0, lines.length - page);
+  const max = Math.floor(Math.max(0, lines.length - 1) / page) * page;
   const offset = Math.min(max, Math.max(0, state.offset));
   const topics = referenceOf(entry.section);
   const navigationPage = Math.max(1, Math.floor((rect.height - 228) / 22));
@@ -60,13 +60,13 @@ export function encyclopediaLayout(size: HudSize, state: ReferenceState, scale =
   const controls: ReferenceControl[] = [
     { id: 'close', text: translate('ref.close'), enabled: true,
       rect: { x: rect.x + 8, y: rect.y + rect.height - 28, width: rect.width - 16, height: 20 } },
-    { id: 'navPrevious', text: translate('ref.previous'), enabled: navigation > 0,
+    { id: 'navPrevious', text: translate('ref.topicsPrevious'), enabled: navigation > 0,
       rect: { x: rect.x + 8, y: rect.y + rect.height - 54, width: Math.floor(navWidth / 2) - 2, height: 18 } },
-    { id: 'navNext', text: translate('ref.next'), enabled: navigation < navigationMax,
+    { id: 'navNext', text: translate('ref.topicsNext'), enabled: navigation < navigationMax,
       rect: { x: rect.x + 10 + Math.floor(navWidth / 2), y: rect.y + rect.height - 54, width: Math.floor(navWidth / 2) - 2, height: 18 } },
-    { id: 'previous', text: translate('ref.previous'), enabled: offset > 0,
+    { id: 'previous', text: translate('ref.pagePrevious'), enabled: offset > 0,
       rect: { x: bodyX, y: rect.y + rect.height - 54, width: Math.floor(bodyWidth / 2) - 2, height: 18 } },
-    { id: 'next', text: translate('ref.next'), enabled: offset < max,
+    { id: 'next', text: translate('ref.pageNext'), enabled: offset < max,
       rect: { x: bodyX + Math.floor(bodyWidth / 2) + 2, y: rect.y + rect.height - 54,
         width: Math.floor(bodyWidth / 2) - 2, height: 18 } },
   ];
@@ -81,13 +81,14 @@ export function encyclopediaLayout(size: HudSize, state: ReferenceState, scale =
   }
   const text = [
     { text: translate('ref.open'), rect: { x: rect.x + 8, y: rect.y + 8, width: navWidth, height: 12 } },
-    { text: translate('ref.topics'), rect: { x: rect.x + 8, y: rect.y + 144, width: navWidth, height: 12 } },
+    { text: message('ref.topicRange', { first: navigation + 1, last: Math.min(topics.length, navigation + navigationPage), total: topics.length }),
+      rect: { x: rect.x + 8, y: rect.y + 144, width: navWidth, height: 12 } },
     { text: translate(`ref.section.${entry.section}`), rect: { x: bodyX, y: rect.y + 8, width: bodyWidth, height: 12 } },
     ...wrapText(entry.title, bodyWidth).map((line, index) => ({ text: line,
       rect: { x: bodyX, y: rect.y + 28 + index * 12, width: bodyWidth, height: 12 } })),
     ...lines.slice(offset, offset + page).map((line, index) => ({ text: line,
       rect: { x: bodyX, y: rect.y + 60 + index * 12, width: bodyWidth, height: 12 } })),
-    { text: message('ref.page', { page: Math.ceil(offset / page) + 1, total: Math.ceil(lines.length / page) }),
+    { text: message('ref.page', { page: Math.floor(offset / page) + 1, total: Math.ceil(lines.length / page) }),
       rect: { x: bodyX, y: rect.y + rect.height - 104, width: bodyWidth, height: 12 } },
     ...wrapText(translate('ref.help'), bodyWidth).map((line, index) => ({ text: line,
       rect: { x: bodyX, y: rect.y + rect.height - 90 + index * 12, width: bodyWidth, height: 12 } })),
