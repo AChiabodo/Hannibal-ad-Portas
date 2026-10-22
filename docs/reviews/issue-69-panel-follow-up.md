@@ -115,3 +115,77 @@ and this design assessment. AGENTS.md remains outside the scoped commit.
 Independent code review of the follow-up found no actionable Standards or Spec
 findings. A final discoverability-only reorder was checked with the public
 reference-layout regression so the three requested topics are immediately visible.
+
+## Approved implementation: B default, A and C saved alternatives
+
+The Player selected B and asked to retain the two alternatives as selectable
+preferences. This decision supersedes the earlier recommendation of A; the
+separate prototype worktree and its three variants remain available.
+
+The real Match now defaults to **B - Laterale**. `Opzioni` has a `Pannello`
+control cycling B, A and C; its selection is saved in `spqr.ui.v1`. Old saved
+preferences migrate to B while retaining scale, navigator and guide settings.
+Reset returns to B. These are named presets, not a freeform editor: positions,
+widths and UI customization beyond those presets are future work.
+
+All three arrangements use the existing PixelBuffer/PixiJS renderer, filtered
+Observation and Command submission. Choosing a layout keeps the selected entity,
+selected purchase offer, category, group bindings and Match state. Detail and catalogue scroll offsets
+reset to fit the new arrangement. The camera and minimap use the actual available
+theatre rectangle, so a side panel is not mistaken for map space.
+
+B keeps the catalogue and selected-offer facts on the right and moves the minimap
+under the left navigator. Its military strip is 88 screen pixels high at UI 2x,
+including the border. Compact icons at 720p gain labels when there is room;
+hovering or keyboard focus shows their meaning and target instructions in the
+information panel. This is a tradeoff: B gives the map more vertical room while
+using a persistent horizontal band. At 1080p the offer inspector uses additional
+vertical room instead of forcing the same amount of scrolling as at 720p.
+
+An economic row selects an offer; `Costruisci` or `Recluta` commits it. The selected
+card shows canonical local costs, staffed benefits and lock reasons; `Dettagli
+[F1]` opens the full article. A retains a horizontal dock and upper-right minimap.
+C retains a compact dock and floating offer card. Opening the journal in C
+replaces that floating card temporarily, retaining its selection for return.
+Summary, seasonal Balance and Works remain separate views in every preset.
+
+### Standards
+
+Independent review found the missing persistent pace label and its recognition
+by private coordinates. Both were corrected: `IN PAUSA` / `IN CORSO` remains
+visible beside a separate Avvisi control, and the shared chrome identifies that
+label by an explicit role. The independent follow-up found no actionable
+Standards issues.
+
+### Spec
+
+Independent review found two input/geometry conflicts: C group chips overlapped
+purchase controls, and A expanded notices could reach groups/the dock. Both
+received public HUD regressions and fixes. C reserves group space inside the
+inspector; the journal now derives its page from available space and owns its
+scrolling region. The final journal fix was checked locally against the reported
+case, including twelve long notices and nine groups in all three layouts; an
+additional independent re-review was unavailable.
+
+### Validation of the selectable layouts
+
+Native browser gestures covered B/A/C switching, saved preference recovery in a
+new tab, preserved offer/entity selection, building inspection and scrolling,
+contextual F1 and return, purchases queued in pause and applied on resume,
+recruitment quantity totals, disabled purchases, Works, military orders and
+control-group recall. Rome and Carthage were inspected at 1280x720 and 1920x1080
+across representative views. The final C group-card regression was also exercised
+with two actually recruited Roman squads and a real Ctrl+1 binding. Final
+reference/purchase geometry and journal paging receive public-model regressions.
+Standalone Chromium/Playwright suites were not run; no new claim is made about
+combat completion, every victory/result variant or hardware performance.
+
+Final verification: lint, TypeScript, all seven guards and production build pass.
+The full non-browser suite passes in 121 files / 1,415 tests using
+`npx vitest run --maxWorkers=2`. The preceding default-concurrency `npm run verify`
+attempt had one five-second timeout in the repository-fence test; every other
+test passed, and the rerun passed without changing tests or timeouts. Options and
+result catalogue fingerprints were updated for the reviewed preset selector;
+all other accepted artefact fingerprints remain unchanged. Native F6/Tab/Enter
+also cycles B/A/C correctly, and the final Rome and Carthage pages have no console
+warnings/errors. A paused B construction page remains open for inspection.

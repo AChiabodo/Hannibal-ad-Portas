@@ -142,7 +142,7 @@ import { blockPlacement, blockSize, squadBlock, squadFrameKey, visualShape } fro
 import { tileAt, tilePixel } from './terrain.ts';
 import { VIEWED_FACTION } from './view.ts';
 import type { PixelPoint, Stage } from './stage.ts';
-import { DEFAULT_UI_PREFERENCES, fittedUiScale, loadUiPreferences, saveUiPreferences, type UiPreferences } from '../ui/preferences.ts';
+import { PANEL_LAYOUTS, type PanelLayout, DEFAULT_UI_PREFERENCES, fittedUiScale, loadUiPreferences, saveUiPreferences, type UiPreferences } from '../ui/preferences.ts';
 import { matchMenu, desktopMatchMenu, menuPlate, contains, type MatchMenu } from '../ui/match-menu.ts';
 import { GUIDE_CLOSED, GUIDE_FIRST_ENTRY, guideNext, guidePanel, type GuideActionName, type GuideEvent, type GuideState } from '../ui/guide.ts';
 import { message, translate } from '../ui/strings.ts';
@@ -278,6 +278,7 @@ export interface GameSnapshot {
 /** What the page tells a test or an agent about the game it is playing. */
 export interface GameHooks {
   preferences(): UiPreferences;
+  setPanelLayout(layout: PanelLayout): void;
   setUiScale(scale: number): void;
   toggleNavigator(): void;
   toggleGuide(): void;
@@ -588,6 +589,7 @@ export function createGame(options: GameOptions): Game {
   let recruitCount = 1;
   let focusId: string | null = null;
   let hoveredOrder: string | null = null;
+  let inspectedOrder: string | null = null;
   let settlementPage: 'summary' | 'balance' | 'works' = 'summary';
   /** The action waiting for a click, by its stable id, or `null`. */
   let armed: string | null = null;
@@ -643,6 +645,12 @@ export function createGame(options: GameOptions): Game {
 
   const hooks: GameHooks = {
     preferences: () => ({ ...preferences }),
+    setPanelLayout: (panelLayout) => {
+      if (!PANEL_LAYOUTS.includes(panelLayout)) throw new RangeError("Unknown panel layout");
+      detailOffset = 0;
+      commandOffset = 0;
+      updatePreferences({ ...preferences, panelLayout });
+    },
     setUiScale: (scale) => {
       if (![1, 2, 3].includes(scale)) throw new RangeError('UI scale must be 1, 2 or 3');
       updatePreferences({ ...preferences, uiScale: scale });
@@ -873,6 +881,7 @@ export function createGame(options: GameOptions): Game {
   function updatePreferences(next: UiPreferences): void {
     preferences = next;
     saveUiPreferences(next);
+    repaint();
     options.relayout?.(next);
     repaint();
   }
@@ -1201,10 +1210,12 @@ export function createGame(options: GameOptions): Game {
       detailOffset = 0;
       commandOffset = 0;
       settlementPage = 'summary';
+      inspectedOrder = null;
     }
+    if (!next.commands.some((order) => order.id === inspectedOrder)) inspectedOrder = null;
     detailSelection = next.selected;
     return { ...next, view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
-      noticesOpen, noticeOffset, settlementPage,
+      noticesOpen, noticeOffset, settlementPage, inspectedOrder,
       desktop, navigatorExpanded, sessionOpen, speed: pacing.speed, ...preferences,
       uiScale: fittedUiScale(preferences.uiScale, windowSize()), tick: match.state.tick,
       scaleWarning: desktop && (windowSize().width < 640 * preferences.uiScale || windowSize().height < 360 * preferences.uiScale),
@@ -1394,7 +1405,7 @@ export function createGame(options: GameOptions): Game {
   }
 
   function contextReference(): string {
-    const offer = model.commands.find((order) => order.id === (focusId?.startsWith('order:') ? focusId.slice(6) : hoveredOrder)) ?? model.commands[0];
+    const offer = model.commands.find((order) => order.id === (focusId?.startsWith('order:') ? focusId.slice(6) : inspectedOrder ?? hoveredOrder)) ?? model.commands[0];
     if (offer?.kind === 'build') return `building:${offer.subject}`;
     if (offer?.kind === 'recruit') return `squad:${offer.subject}`;
     if (model.selected?.kind === 'settlement' && settlementPage !== 'summary') return settlementPage === 'balance' ? 'treasury' : 'labour';
@@ -1455,6 +1466,7 @@ export function createGame(options: GameOptions): Game {
       else if (menuButton.action === 'new') hooks.newMatch();
       else if (menuButton.action === 'copy') void hooks.copySeed();
       else if (menuButton.action === 'scale') hooks.setUiScale(preferences.uiScale % 3 + 1);
+      else if (menuButton.action === 'panelLayout') hooks.setPanelLayout(PANEL_LAYOUTS[(PANEL_LAYOUTS.indexOf(preferences.panelLayout) + 1) % PANEL_LAYOUTS.length]!);
       else if (menuButton.action === 'reset') hooks.resetPreferences();
       else if (menuButton.action === 'guide') hooks.toggleGuide();
       else if (menuButton.action === 'close') { sessionOpen = false; resultDismissed = true; repaint(); }
@@ -1467,7 +1479,11 @@ export function createGame(options: GameOptions): Game {
     if (hit !== null) {
       if (hit.kind === 'button') hudButton(hit.action);
       else if (hit.kind === 'notice') centerNotice(hit.id);
-      else if (hit.kind === 'order') perform(hit.order.id);
+      else if (hit.kind === 'order') {
+        if (desktop && (hit.order.kind === 'build' || hit.order.kind === 'recruit')) {
+          inspectedOrder = hit.order.id; detailOffset = 0; repaint();
+        } else perform(hit.order.id);
+      }
       else if (hit.kind === 'tab') hooks.setTab(hit.tab);
       else if (hit.kind === 'group') hooks.recallGroup(hit.index);
       else if (armed !== null && hit.selection.kind === 'settlement') targetSettlement(hit.selection.id);
@@ -1503,7 +1519,7 @@ export function createGame(options: GameOptions): Game {
     const controls = [
       ...layout.buttons.map((button) => ({ id: `button:${button.action}`, label: button.text, rect: button.rect })),
       ...layout.rows.map((row) => ({ id: `row:${row.selection.kind}:${String(row.selection.id)}`, label: model.rows.find((r) => r.selection.id === row.selection.id && r.selection.kind === row.selection.kind)?.label ?? '', rect: row.rect })),
-      ...layout.tabs.map((tab) => ({ id: `tab:${tab.tab}`, label: translate(`tab.${tab.tab}`), rect: tab.rect })),
+      ...layout.tabs.map((tab) => ({ id: `tab:${tab.tab}`, label: tab.text ?? translate(`tab.${tab.tab}`), rect: tab.rect })),
       ...layout.commands.map(({ order, rect }) => ({ id: `order:${order.id}`, label: order.label, rect })),
       ...layout.groups.map((group) => ({ id: `group:${String(group.index)}`, label: `${translate('ui.groups')} ${String(group.index)}`, rect: group.rect })),
       ...layout.exceptions.map((row) => ({ id: `exception:${String(row.selection.id)}`, label: model.group?.exceptions.find((entry) => entry.squad === row.selection.id)?.name ?? '', rect: row.rect })),
@@ -1575,7 +1591,9 @@ export function createGame(options: GameOptions): Game {
   /** One of the bar's own buttons, pressed. */
   function hudButton(action: HudAction): void {
     const layout = hudLayout(model, options.size);
-    if (action.startsWith('settlement:')) {
+    if (action.startsWith('purchase:')) perform(action.slice(9));
+    else if (action === 'closeInspection') { inspectedOrder = null; repaint(); }
+    else if (action.startsWith('settlement:')) {
       settlementPage = action.slice(11) as typeof settlementPage;
       detailOffset = 0;
       repaint();
@@ -1827,7 +1845,7 @@ export function createGame(options: GameOptions): Game {
    * appears cannot cover a tile that the pointer still coordinates as bare ground.
    */
   function interfaceRects(layout: HudLayout): readonly Rect[] {
-    return [layout.bar, layout.list, layout.detail, layout.minimap,
+    return [layout.bar, layout.list, layout.detail, ...(layout.extraPanels ?? []), layout.minimap,
       ...(layout.notices.height > 0 ? [layout.notices] : []),
       ...(layout.guide.height > 0 ? [layout.guide] : [])];
   }

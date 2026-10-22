@@ -65,7 +65,7 @@ export const VIEW_HOOKS = [
  * seam, so a button is never a second way into the Match (#55).
  */
 export const GAME_HOOKS = [
-  'preferences', 'setUiScale', 'toggleNavigator', 'toggleGuide', 'resetPreferences', 'centerSelection', 'navigateMinimap', 'doubleClickAt',
+  'preferences', 'setPanelLayout', 'setUiScale', 'toggleNavigator', 'toggleGuide', 'resetPreferences', 'centerSelection', 'navigateMinimap', 'doubleClickAt',
   'submit',
   'configuration',
   'matchLayout',

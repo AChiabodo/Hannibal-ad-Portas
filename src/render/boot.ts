@@ -273,20 +273,21 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
       refresher();
     },
     viewport: (layout): ViewportRect => {
-      const left = desktop ? layout?.list.width ?? 0 : 0;
-      const top = desktop ? layout?.bar.height ?? 0 : 0;
-      const bottom = desktop ? layout?.detail.y ?? stage.height : stage.height;
+      const area = desktop && layout ? theatreArea(layout) : { x: 0, y: 0, width: stage.width, height: stage.height };
+      const left = area.x, top = area.y, bottom = area.y + area.height;
       return { x: camera.x + Math.floor(left / camera.zoom), y: camera.y + Math.floor(top / camera.zoom),
-        width: Math.floor((stage.width - left) / camera.zoom), height: Math.floor((bottom - top) / camera.zoom) };
+        width: Math.floor(area.width / camera.zoom), height: Math.floor((bottom - top) / camera.zoom) };
     },
   });
 
   const moveTo = (next: Camera): void => {
     if (desktop) {
       const layout = game.hooks.hudLayout();
-      bounds.height = layout.detail.y;
-      bounds.insetLeft = layout.list.width;
-      bounds.insetTop = layout.bar.height;
+      const area = theatreArea(layout);
+      bounds.width = area.x + area.width;
+      bounds.height = area.y + area.height;
+      bounds.insetLeft = area.x;
+      bounds.insetTop = area.y;
     }
     camera = clampTo(next, bounds);
     applyCamera(world, camera);
@@ -403,20 +404,26 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     Object.assign(size, next);
     bounds.width = next.width;
     const layout = game.hooks.hudLayout();
-    bounds.height = desktop ? layout.detail.y : next.height;
-    bounds.insetLeft = desktop ? layout.list.width : 0;
-    bounds.insetTop = desktop ? layout.bar.height : 0;
+    const area = theatreArea(layout);
+    bounds.width = desktop ? area.x + area.width : next.width;
+    bounds.height = desktop ? area.y + area.height : next.height;
+    bounds.insetLeft = desktop ? area.x : 0;
+    bounds.insetTop = desktop ? area.y : 0;
     camera = clampTo(camera, bounds);
     applyCamera(world, camera);
   }
 
+  function theatreArea(layout: ReturnType<typeof game.hooks.hudLayout>) {
+    return layout.theatre ?? { x: layout.list.width, y: layout.bar.height,
+      width: stage.width - layout.list.width, height: layout.detail.y - layout.bar.height };
+  }
+
   function centerOn(x: number, y: number): void {
     const layout = game.hooks.hudLayout();
-    const left = layout.list.width;
-    const top = layout.list.y;
-    const bottom = layout.detail.y;
+    const area = theatreArea(layout);
+    const left = area.x, top = area.y, bottom = area.y + area.height;
     moveTo({ zoom: camera.zoom,
-      x: Math.floor(x - (left + (stage.width - left) / 2) / camera.zoom),
+      x: Math.floor(x - (left + area.width / 2) / camera.zoom),
       y: Math.floor(y - (top + (bottom - top) / 2) / camera.zoom) });
   }
 

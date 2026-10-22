@@ -253,7 +253,15 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
       const layout = target.hudLayout();
       const topmost = [...(target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap])].reverse()
         .find((rect) => contains(rect, at.x, at.y));
+      if (layout.scrollRegions) {
+        const panels = [layout.notices, layout.detail, ...(layout.extraPanels ?? [])];
+        if (topmost && panels.some((r) => r.x === topmost.x && r.y === topmost.y && r.width === topmost.width && r.height === topmost.height)) {
+          const region = layout.scrollRegions.find(({ rect }) => contains(rect, at.x, at.y));
+          if (region) { target.scrollHud(region.region, event.deltaY < 0 ? -3 : 3); return; }
+        }
+      }
       for (const region of ['list', 'detail'] as const) {
+        if (region === 'detail' && layout.scrollRegions) continue;
         if (topmost && (topmost.x !== layout[region].x || topmost.y !== layout[region].y ||
           topmost.width !== layout[region].width || topmost.height !== layout[region].height)) continue;
         if (contains(layout[region], at.x, at.y)) {

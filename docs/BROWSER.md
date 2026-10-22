@@ -58,6 +58,7 @@ the camera's hooks and the Match's hooks, and nothing else:
 | `describe` | `() → ViewState` | view | Where the camera is, how big the viewport is, the seed, the map, the watch and the fog |
 | `samples` | `(points) → Rgba[]` | view | Reads the current frame's pixels at canvas points, in the art library's own RGBA |
 | `preferences` | `() -> UiPreferences` | Read presentation preferences |
+| `setPanelLayout` | `(layout) -> void` | Select saved sidebar (B), dock (A), or compact (C) presentation |
 | `setUiScale` | `(scale) -> void` | Request independent integer UI scale |
 | `toggleNavigator` | `() -> void` | Toggle the navigator |
 | `toggleGuide` | `() -> void` | Open the first-entry guide, or put it away |
@@ -324,7 +325,8 @@ seam and reaches the result with actual Commands, never a fabricated UI verdict.
 
 | Hook | Meaning |
 | --- | --- |
-| `preferences()` | Copy of UI scale, requested navigator visibility and guide dismissal. |
+| `preferences()` | Copy of saved panel layout, UI scale, requested navigator visibility and guide dismissal. |
+| `setPanelLayout(layout)` | Choose `sidebar`, `dock` or `compact` without changing selection or Match state. Defaults to B (`sidebar`); options cycles B, A, C. |
 | `setUiScale(scale)` | Request integer 1x, 2x or 3x UI scale independently of map zoom. |
 | `toggleNavigator()` | Toggle the navigator preference (Tab). Limited space collapses it temporarily. |
 | `toggleGuide()` | Opens the first-entry guide at its welcome line (pausing the clock it now holds), or closes it and records the dismissal (U8, Q11). Its stage and lines are read from `hud().guide`; its controls are `hudLayout().guideButtons`. |

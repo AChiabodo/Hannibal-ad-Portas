@@ -25,7 +25,7 @@ export interface SetupMenu {
 }
 
 export interface MenuButton {
-  readonly action: '0' | '1' | '2' | '3' | 'speed1' | 'speed2' | 'speed3' | 'restart' | 'new' | 'copy' | 'scale' | 'reset' | 'guide' | 'close';
+  readonly action: '0' | '1' | '2' | '3' | 'speed1' | 'speed2' | 'speed3' | 'restart' | 'new' | 'copy' | 'scale' | 'panelLayout' | 'reset' | 'guide' | 'close';
   readonly speed?: Speed;
   readonly text: string;
   readonly rect: Rect;
@@ -168,6 +168,7 @@ export function desktopMatchMenu(size: HudSize, top: number, config: MatchConfig
   const preferencesButtons = [
     ['scale', preferences.uiScale === scale ? message('ui.scale', { scale }) : message('ui.scaleFitted', { requested: preferences.uiScale, scale }), 104], ['reset', translate('ui.reset'), 104],
     ['guide', translate(preferences.guideDismissed ? 'ui.openGuide' : 'ui.hideGuide'), 104], ['close', translate('ui.closeOptions'), 104],
+    ['panelLayout', message('ui.panelLayout', { layout: translate(`layout.${preferences.panelLayout}`) }), 180],
   ] as const;
   for (const [index, [action, text, width]] of preferencesButtons.entries()) buttons.push({ action, text, enabled: true,
     rect: { x: 8 + index * 110, y: rect.y + lineHeight + 28, width, height: 22 } });

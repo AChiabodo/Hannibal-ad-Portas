@@ -44,7 +44,8 @@ import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 // byte-identical.
 // #69's revision gives construction offers separate name/cost lines and a two-column grid.
 // All other catalogue artefacts retain their accepted hashes.
-const PLATE_HASH = '67a836733ac4d5f2';
+// The saved panel selector changes only the Options and result specimens.
+const PLATE_HASH = 'd0a5e8a32afad83a';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'ui:carthage-column': 'ab1340faad9c09ab',
@@ -60,8 +61,8 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'ui:squad': '81e4974ec630d5ef',
   'ui:armed-pending': '6817ec6aeea8726d',
   'ui:construction': '369b6a8567d735db',
-  'ui:options': '1e03d0df52d0241e',
-  'ui:result': 'e641e2c442783d44',
+  'ui:options': 'bede2ea6d7e599a2',
+  'ui:result': 'bdf1e8a2adc62be0',
   'glyph:U+0020': '19ce279ecc93e509',
   'glyph:U+0041': 'aae456011072287d',
   'glyph:U+0061': 'b702478adf79d775',

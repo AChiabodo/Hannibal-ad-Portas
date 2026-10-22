@@ -40,7 +40,7 @@ function specimen(name: (typeof UI_SPECIMENS)[number]): PixelBuffer {
   if (name === 'options' || name === 'result') {
     const result = name === 'result' ? { kind: 'victory', winner: 'rome', tick: 62,
       reason: { kind: 'stronghold', stronghold: 1, path: 'assault' } } as const : null;
-    const menu = desktopMatchMenu(SIZE, 0, CONFIG, 1, result, '', { uiScale: 1, navigator: true, guideDismissed: true });
+    const menu = desktopMatchMenu(SIZE, 0, CONFIG, 1, result, '', { panelLayout: 'sidebar', uiScale: 1, navigator: true, guideDismissed: true });
     return crop(menuPlate(SIZE, menu), menu.rect);
   }
   const model = hudModel(VISIBLE, [0], { kind: name === 'construction' ? 'settlement' : 'squad', id: name === 'construction' ? 0 : 1 },

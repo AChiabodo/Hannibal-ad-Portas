@@ -82,6 +82,8 @@ import type { ForecastLine } from './forecast.ts';
 import type { GuidePanel } from './guide.ts';
 import { paintControl, paintFocus } from '../art/interface.ts';
 import { message, refusalLabel, resourceLabel, seasonLabel, squadLabel, translate, workLabel } from './strings.ts';
+import type { PanelLayout } from './preferences.ts';
+import { arrangePanelLayout } from './panel-layout.ts';
 
 /** What a Player has selected, or `null` for nothing. */
 export type Selection =
@@ -223,6 +225,8 @@ export interface HudSession {
 
 /** Presentation memory only; never part of the Match. Offsets count bitmap text lines. */
 export interface HudView {
+  readonly panelLayout?: PanelLayout;
+  readonly inspectedOrder?: string | null;
   readonly settlementPage?: 'summary' | 'balance' | 'works';
   readonly focus?: Rect | null;
   readonly hoveredOrder?: string | null;
@@ -247,6 +251,7 @@ export interface HudView {
 }
 
 export interface HudText {
+  readonly role?: 'pace';
   readonly text: string;
   readonly rect: Rect;
 }
@@ -257,7 +262,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = `settlement:${'summary' | 'balance' | 'works'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore';
+export type HudAction = `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore';
 
 export interface HudButton {
   readonly action: HudAction;
@@ -341,6 +346,9 @@ export interface ReadoutRect {
 
 /** The whole HUD, placed: every rectangle the renderer draws and the hit test reads. */
 export interface HudLayout {
+  readonly theatre?: Rect;
+  readonly extraPanels?: readonly Rect[];
+  readonly scrollRegions?: readonly { readonly region: 'detail' | 'commands' | 'notices'; readonly rect: Rect }[];
   readonly size: HudSize;
   readonly bar: Rect;
   readonly list: Rect;
@@ -393,6 +401,7 @@ export interface CommandRect {
 
 /** A settlement page's tab and where it stands. */
 export interface TabRect {
+  readonly text?: string;
   readonly tab: SettlementTab;
   readonly rect: Rect;
 }
@@ -570,7 +579,14 @@ function pickedSquads(visible: EconomyVisible, ids: readonly number[]): readonly
 
 /** Where everything stands, given what the HUD says. */
 export function hudLayout(model: HudModel, size: HudSize): HudLayout {
-  if (model.view.desktop) return desktopLayout(model, size);
+  if (model.view.desktop) {
+    if (model.view.panelLayout) {
+      const chrome = desktopLayout({ ...model, forecast: null,
+        notices: [] }, size);
+      return arrangePanelLayout(model, size, chrome);
+    }
+    return desktopLayout(model, size);
+  }
   const readouts = placeReadouts(model.readouts, size);
   const rowsHeight = readouts.reduce((tallest, placed) => Math.max(tallest, placed.rect.y + placed.rect.height), 0);
   const pauseY = rowsHeight + PADDING;
@@ -814,6 +830,7 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
   panel(buffer, layout.bar);
   panel(buffer, layout.list);
   panel(buffer, layout.detail);
+  for (const rect of layout.extraPanels ?? []) panel(buffer, rect);
   // The notice strip is a panel like any other: opaque, so a warning reads over a
   // forest exactly as it reads over a field.
   if (layout.notices.height > 0) panel(buffer, layout.notices);
@@ -848,7 +865,7 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
 
   for (const tab of layout.tabs) {
     paintControl(buffer, tab.rect, tab.tab === model.tab ? 'selected' : 'idle');
-    drawText(buffer, translate(`tab.${tab.tab}`), tab.rect.x + PADDING * scale, tab.rect.y + 3 * scale,
+    drawText(buffer, tab.text ?? translate(`tab.${tab.tab}`), tab.rect.x + PADDING * scale, tab.rect.y + 3 * scale,
       tab.tab === model.tab ? HUD_VALUE : HUD_LABEL, scale);
   }
 
@@ -858,7 +875,7 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
     // The armed action stands on its own ground, inside the panel's edge, so a
     // Player can see which of several orders is the one waiting for a click.
     paintControl(buffer, rect, model.orders.armed?.id === order.id ? 'armed' : !order.enabled ? 'disabled'
-      : model.view.hoveredOrder === order.id ? 'selected' : 'idle');
+      : (model.view.inspectedOrder ?? model.view.hoveredOrder) === order.id ? 'selected' : 'idle');
     if (order.group === 'construction' || order.group === 'recruitment') drawEconomyRow(buffer, order, rect, scale);
     else drawCommandButton(buffer, order, rect, scale);
   }
@@ -1557,7 +1574,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   const readouts = placeReadouts(model.readouts.slice(1, 4).map((line) => ({ ...line, label: `${line.label}: `, large: false, newRow: false })), { width, height });
   const progress = Math.floor(((model.view.tick ?? 0) % SEASON_TICKS) * 100 / SEASON_TICKS);
   text.push({ text: message('ui.seasonProgress', { progress }), rect: { x: 330, y: 4, width: 130, height: LINE_STEP } });
-  text.push({ text: translate(model.view.paused ? 'ui.paused' : 'ui.running'), rect: { x: 480, y: 4, width: 150, height: LINE_STEP } });
+  text.push({ role: 'pace', text: translate(model.view.paused ? 'ui.paused' : 'ui.running'), rect: { x: 480, y: 4, width: 150, height: LINE_STEP } });
   const actions = [
     ['pause', translate(model.view.ended ? 'match.ended' : model.view.paused ? 'ui.resume' : 'ui.pause'), 142],
     ['speed1', speedLabel(1, model.view.speed), 30], ['speed2', speedLabel(2, model.view.speed), 30],
@@ -1963,7 +1980,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
  * true now, `>` is something that just happened and can be acted on. A notice
  * whose target has gone says so instead of pretending to still point somewhere.
  */
-function noticeLine(notice: Notice): string {
+export function noticeLine(notice: Notice): string {
   const text = notice.detail === null
     ? notice.label
     : message('notice.withDetail', { label: notice.label, detail: notice.detail });
