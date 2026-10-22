@@ -19,6 +19,27 @@ const visible: EconomyVisible = {
 };
 
 describe('the economic decision panel', () => {
+  it('lays out every building paragraph as separate rows when inspecting and scrolling an offer', () => {
+    for (const faction of ['rome', 'carthage'] as const) {
+      for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
+        for (const category of CONSTRUCTION_CATEGORIES) {
+          const base = hudModel(visible, [0], { kind: 'settlement', id: 0 }, [],
+            { desktop: true, uiScale: 2 }, { faction, tab: 'construction', category: category.id });
+          for (const offer of base.commands) {
+            const hovered = { ...base, view: { ...base.view, hoveredOrder: offer.id } };
+            const first = hudLayout(hovered, size);
+            for (let offset = 0; offset <= first.detailScroll.max; offset += 1) {
+              const layout = hudLayout({ ...hovered, view: { ...hovered.view, detailOffset: offset } }, size);
+              for (const line of layout.text) {
+                expect(line.text, `${faction}/${offer.id}/${offset}`).not.toMatch(/[\r\n]/);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
   it('stops promising another Season after the Match has ended', () => {
     const model = hudModel(visible, [0], { kind: 'settlement', id: 0 }, [],
       { desktop: true, uiScale: 2, ended: true, settlementPage: 'balance' },

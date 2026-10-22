@@ -656,6 +656,9 @@ export function hudLayout(model: HudModel, size: HudSize): HudLayout {
 
 /** Wraps every glyph, including a value with no spaces; nothing is ellipsised away. */
 export function wrapText(text: string, width: number): string[] {
+  if (/[\r\n]/.test(text)) {
+    return text.split(/\r\n|\r|\n/).flatMap((paragraph) => paragraph === '' ? [''] : wrapText(paragraph, width));
+  }
   const lines: string[] = [];
   let remaining = text;
   while (measureText(remaining) > width) {

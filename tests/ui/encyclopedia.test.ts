@@ -4,6 +4,13 @@ import { encyclopediaLayout, openReference, referenceAction } from '../../src/ui
 import { REFERENCE_ENTRIES } from '../../src/ui/reference';
 
 describe('the reusable Encyclopedia surface', () => {
+  it('shows capture, exploration and supply immediately in Primi passi at 720p', () => {
+    const layout = encyclopediaLayout({ width: 1280, height: 720 }, openReference());
+    for (const id of ['capture', 'exploration', 'supply']) {
+      expect(layout.controls.some((control) => control.id === `entry:${id}`)).toBe(true);
+    }
+  });
+
   it('distinguishes topic navigation from article pages and counts the visible topics', () => {
     const layout = encyclopediaLayout({ width: 1280, height: 720 }, openReference('treasury'));
     expect(layout.text.map((line) => line.text)).toContain('Voci 1-5/10');

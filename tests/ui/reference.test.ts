@@ -18,6 +18,17 @@ import { squadLabel, workLabel } from '../../src/ui/strings';
 import { TICK_HZ } from '../../src/sim/clock';
 
 describe('the rule reference', () => {
+  it('gives beginners a directly named path to capture, exploration and supplies', () => {
+    const entries = ['capture', 'exploration', 'supply'].map((id) => REFERENCE_ENTRIES.find((entry) => entry.id === id));
+    expect(entries.every((entry) => entry?.section === 'start')).toBe(true);
+    expect(entries[0]?.body).toContain('casella centrale');
+    expect(entries[0]?.body).toContain('Castrum');
+    expect(entries[1]?.body).toContain('clic destro');
+    expect(entries[1]?.body).toContain('non conquista');
+    expect(entries[2]?.body).toContain('munizioni');
+    expect(entries[2]?.body).toContain('non vengono rimpiazzati');
+  });
+
   it('helps a beginner read the real interface and distinguish current sight from memory', () => {
     const controls = REFERENCE_ENTRIES.find((entry) => entry.id === 'interface');
     expect(controls?.body).toContain('F6');

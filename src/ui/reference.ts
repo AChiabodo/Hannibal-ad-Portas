@@ -36,7 +36,9 @@ import {
   FORMATION_STRIKE,
   POINTS_PER_MAN,
   VOLLEY_SHOCK,
+  SUPPLY_MORALE_LOSS,
 } from '../sim/combat.ts';
+import { SQUAD_VISION, SETTLEMENT_VISION } from '../sim/fog.ts';
 import { TICK_HZ } from '../sim/clock.ts';
 import {
   BLOCKADE_GRAIN_LOSS,
@@ -113,6 +115,16 @@ const SQUAD_GUIDANCE: Readonly<Record<string, StringKey>> = {
 export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
   { id: 'first-steps', section: 'start', title: translate('ref.start.title'),
     body: translate('ref.start.body'), facts: [{ label: translate('ui.groups'), value: 9 }] },
+  { id: 'capture', section: 'start', title: translate('ref.capture.title'),
+    body: message('ref.capture.body', { holds: CAPTURE_HOLDS, seconds: CAPTURE_TICKS / TICK_HZ, territory: TERRITORY_RADIUS }),
+    facts: [{ label: translate('ref.capture.title'), value: CAPTURE_TICKS / TICK_HZ }] },
+  { id: 'exploration', section: 'start', title: translate('ref.exploration.title'),
+    body: message('ref.exploration.body', { squad: SQUAD_VISION, settlement: SETTLEMENT_VISION }),
+    facts: [{ label: translate('ref.exploration.title'), value: SQUAD_VISION }] },
+  { id: 'supply', section: 'start', title: translate('ref.supply.title'),
+    body: message('ref.supply.body', { territory: TERRITORY_RADIUS, morale: SUPPLY_MORALE_LOSS,
+      outside: ATTRITION_PERCENT, winter: ATTRITION_WINTER_PERCENT, field: ATTRITION_FIELD_WINTER_PERCENT }),
+    facts: [{ label: translate('ref.supply.title'), value: TERRITORY_RADIUS }] },
   { id: 'economic-choices', section: 'start', title: translate('ref.choices.title'),
     body: translate('ref.choices.body'), facts: [{ label: translate('ui.tier'), value: 3 }] },
   { id: 'interface', section: 'start', title: translate('ref.interface.title'),
