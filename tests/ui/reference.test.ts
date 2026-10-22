@@ -15,13 +15,14 @@ import { SQUAD_TYPES } from '../../src/content/squads';
 import { BUILDINGS } from '../../src/content/buildings';
 import { RESOURCE_KINDS } from '../../src/sim/map';
 import { squadLabel, workLabel } from '../../src/ui/strings';
+import { TICK_HZ } from '../../src/sim/clock';
 
 describe('the rule reference', () => {
   it('answers every content item with canonical bills, sizes and faction names', () => {
     for (const building of BUILDINGS) {
       const entry = REFERENCE_ENTRIES.find((candidate) => candidate.id === `building:${building.id}`);
       expect(entry?.title).toBe(workLabel(building.id));
-      expect(entry?.body).toContain(`${building.buildTicks / 10} s`);
+      expect(entry?.body).toContain(`${building.buildTicks / TICK_HZ} s`);
     }
     for (const type of SQUAD_TYPES) {
       const entry = REFERENCE_ENTRIES.find((candidate) => candidate.id === `squad:${type.id}`);
@@ -30,6 +31,7 @@ describe('the rule reference', () => {
       expect(entry?.body).toContain(type.faction === 'rome' ? 'Roma' : 'Cartagine');
     }
     for (const kind of RESOURCE_KINDS) expect(REFERENCE_ENTRIES.some((entry) => entry.id === `resource:${kind}`)).toBe(true);
+    expect(new Set(RESOURCE_KINDS.map((kind) => REFERENCE_ENTRIES.find((entry) => entry.id === `resource:${kind}`)?.body)).size).toBe(4);
     for (const id of ['labour', 'seasons', 'population', 'commands', 'conditions', 'territory']) {
       expect(REFERENCE_ENTRIES.some((entry) => entry.id === id), id).toBe(true);
     }

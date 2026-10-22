@@ -2,10 +2,10 @@
 import { drawText, measureText } from '../art/font.ts';
 import { BASE } from '../art/palette.ts';
 import { paintControl, paintFocus } from '../art/interface.ts';
-import { createPixelBuffer, fillRect, type PixelBuffer } from '../art/pixel-buffer.ts';
+import { createPixelBuffer, fillRect, strokeRect, type PixelBuffer } from '../art/pixel-buffer.ts';
 import { wrapText, type HudSize, type Rect } from './hud.ts';
-import { REFERENCE_ENTRIES, type ReferenceEntry } from './reference.ts';
-import { translate } from './strings.ts';
+import { REFERENCE_ENTRIES, REFERENCE_SECTIONS, referenceOf, type ReferenceEntry } from './reference.ts';
+import { message, translate } from './strings.ts';
 
 export interface ReferenceState {
   readonly entry: string;
@@ -34,9 +34,10 @@ export interface EncyclopediaLayout {
   readonly navigationMax: number;
 }
 
-export function openReference(entry = 'seasons'): ReferenceState {
-  if (!REFERENCE_ENTRIES.some((candidate) => candidate.id === entry)) throw new RangeError(`Unknown reference: ${entry}`);
-  return { entry, offset: 0, navigation: REFERENCE_ENTRIES.findIndex((candidate) => candidate.id === entry) };
+export function openReference(entry = 'first-steps'): ReferenceState {
+  const item = REFERENCE_ENTRIES.find((candidate) => candidate.id === entry);
+  if (!item) throw new RangeError(`Unknown reference: ${entry}`);
+  return { entry, offset: 0, navigation: referenceOf(item.section).findIndex((candidate) => candidate.id === entry) };
 }
 
 /** All geometry is in screen pixels; text wraps before the one integer scale. */
@@ -45,39 +46,49 @@ export function encyclopediaLayout(size: HudSize, state: ReferenceState, scale =
   const height = Math.floor(size.height / scale);
   const rect = { x: 8, y: 8, width: width - 16, height: height - 16 };
   const entry = REFERENCE_ENTRIES.find((candidate) => candidate.id === state.entry) ?? REFERENCE_ENTRIES[0]!;
-  const navWidth = Math.min(190, Math.floor(rect.width * 0.34));
-  const bodyX = rect.x + navWidth + 18;
-  const bodyWidth = rect.width - navWidth - 30;
-  const page = Math.max(1, Math.floor((rect.height - 144) / 12));
-  const lines = wrapText(entry.body, bodyWidth);
+  const navWidth = Math.min(176, Math.floor(rect.width * 0.30));
+  const bodyX = rect.x + navWidth + 26;
+  const bodyWidth = Math.min(520, rect.width - navWidth - 42);
+  const page = Math.max(1, Math.floor((rect.height - 156) / 12));
+  const lines = entry.body.split('\n').flatMap((paragraph) => paragraph.length === 0 ? [''] : wrapText(paragraph, bodyWidth));
   const max = Math.max(0, lines.length - page);
   const offset = Math.min(max, Math.max(0, state.offset));
-  const navigationPage = Math.max(1, Math.floor((rect.height - 104) / 22));
-  const navigationMax = Math.max(0, REFERENCE_ENTRIES.length - navigationPage);
+  const topics = referenceOf(entry.section);
+  const navigationPage = Math.max(1, Math.floor((rect.height - 228) / 22));
+  const navigationMax = Math.max(0, topics.length - navigationPage);
   const navigation = Math.min(navigationMax, Math.max(0, state.navigation));
   const controls: ReferenceControl[] = [
     { id: 'close', text: translate('ref.close'), enabled: true,
       rect: { x: rect.x + 8, y: rect.y + rect.height - 28, width: rect.width - 16, height: 20 } },
     { id: 'navPrevious', text: translate('ref.previous'), enabled: navigation > 0,
-      rect: { x: rect.x + 8, y: rect.y + rect.height - 76, width: navWidth, height: 18 } },
+      rect: { x: rect.x + 8, y: rect.y + rect.height - 54, width: Math.floor(navWidth / 2) - 2, height: 18 } },
     { id: 'navNext', text: translate('ref.next'), enabled: navigation < navigationMax,
-      rect: { x: rect.x + 8, y: rect.y + rect.height - 54, width: navWidth, height: 18 } },
+      rect: { x: rect.x + 10 + Math.floor(navWidth / 2), y: rect.y + rect.height - 54, width: Math.floor(navWidth / 2) - 2, height: 18 } },
     { id: 'previous', text: translate('ref.previous'), enabled: offset > 0,
       rect: { x: bodyX, y: rect.y + rect.height - 54, width: Math.floor(bodyWidth / 2) - 2, height: 18 } },
     { id: 'next', text: translate('ref.next'), enabled: offset < max,
       rect: { x: bodyX + Math.floor(bodyWidth / 2) + 2, y: rect.y + rect.height - 54,
         width: Math.floor(bodyWidth / 2) - 2, height: 18 } },
   ];
-  for (const [index, item] of REFERENCE_ENTRIES.slice(navigation, navigation + navigationPage).entries()) {
+  for (const [index, section] of REFERENCE_SECTIONS.entries()) {
+    controls.push({ id: `section:${section}`, text: translate(`ref.section.${section}`), enabled: true,
+      selected: section === entry.section,
+      rect: { x: rect.x + 8, y: rect.y + 28 + index * 22, width: navWidth, height: 20 } });
+  }
+  for (const [index, item] of topics.slice(navigation, navigation + navigationPage).entries()) {
     controls.push({ id: `entry:${item.id}`, text: item.title, enabled: true, selected: item.id === entry.id,
-      rect: { x: rect.x + 8, y: rect.y + 26 + index * 22, width: navWidth, height: 20 } });
+      rect: { x: rect.x + 8, y: rect.y + 158 + index * 22, width: navWidth, height: 20 } });
   }
   const text = [
     { text: translate('ref.open'), rect: { x: rect.x + 8, y: rect.y + 8, width: navWidth, height: 12 } },
+    { text: translate('ref.topics'), rect: { x: rect.x + 8, y: rect.y + 144, width: navWidth, height: 12 } },
+    { text: translate(`ref.section.${entry.section}`), rect: { x: bodyX, y: rect.y + 8, width: bodyWidth, height: 12 } },
     ...wrapText(entry.title, bodyWidth).map((line, index) => ({ text: line,
-      rect: { x: bodyX, y: rect.y + 8 + index * 12, width: bodyWidth, height: 12 } })),
+      rect: { x: bodyX, y: rect.y + 28 + index * 12, width: bodyWidth, height: 12 } })),
     ...lines.slice(offset, offset + page).map((line, index) => ({ text: line,
-      rect: { x: bodyX, y: rect.y + 38 + index * 12, width: bodyWidth, height: 12 } })),
+      rect: { x: bodyX, y: rect.y + 60 + index * 12, width: bodyWidth, height: 12 } })),
+    { text: message('ref.page', { page: Math.ceil(offset / page) + 1, total: Math.ceil(lines.length / page) }),
+      rect: { x: bodyX, y: rect.y + rect.height - 104, width: bodyWidth, height: 12 } },
     ...wrapText(translate('ref.help'), bodyWidth).map((line, index) => ({ text: line,
       rect: { x: bodyX, y: rect.y + rect.height - 90 + index * 12, width: bodyWidth, height: 12 } })),
   ];
@@ -89,7 +100,22 @@ export function encyclopediaLayout(size: HudSize, state: ReferenceState, scale =
 
 /** The same transitions serve pointer controls, keyboard navigation and a future menu. */
 export function referenceAction(state: ReferenceState, action: string, layout: EncyclopediaLayout): ReferenceState {
-  if (action.startsWith('entry:')) return { ...openReference(action.slice(6)), navigation: layout.navigation };
+  if (action.startsWith('section:')) {
+    const section = REFERENCE_SECTIONS.find((candidate) => candidate === action.slice(8));
+    if (section) return openReference(referenceOf(section)[0]!.id);
+  }
+  if (action.startsWith('entry:')) {
+    const next = openReference(action.slice(6));
+    const entry = REFERENCE_ENTRIES.find((candidate) => candidate.id === next.entry)!;
+    return entry.section === layout.entry.section ? { ...next, navigation: layout.navigation } : next;
+  }
+  if (action === 'entryNext' || action === 'entryPrevious') {
+    const topics = referenceOf(layout.entry.section);
+    const index = topics.findIndex((entry) => entry.id === state.entry);
+    const nextIndex = (index + (action === 'entryNext' ? 1 : -1) + topics.length) % topics.length;
+    return { ...openReference(topics[nextIndex]!.id), navigation: Math.min(nextIndex,
+      Math.max(layout.navigation, nextIndex - layout.navigationPage + 1)) };
+  }
   if (action === 'previous' || action === 'next') {
     return { ...state, offset: Math.max(0, Math.min(layout.max, layout.offset + (action === 'next' ? layout.page : -layout.page))) };
   }
@@ -103,6 +129,10 @@ export function referenceAction(state: ReferenceState, action: string, layout: E
 export function encyclopediaPlate(size: HudSize, layout: EncyclopediaLayout, scale = 2, focus: string | null = null): PixelBuffer {
   const plate = createPixelBuffer(size.width, size.height);
   fillRect(plate, 0, 0, size.width, size.height, BASE.night);
+  strokeRect(plate, layout.rect.x, layout.rect.y, layout.rect.width, layout.rect.height, BASE.bronze);
+  const section = layout.controls.find((control) => control.id.startsWith('section:'))!;
+  fillRect(plate, section.rect.x + section.rect.width + 8 * scale, layout.rect.y + 8 * scale,
+    scale, layout.rect.height - 46 * scale, BASE.bronze);
   for (const { text, rect } of layout.text) drawText(plate, text, rect.x, rect.y, BASE.parchment, scale);
   for (const control of layout.controls) {
     paintControl(plate, control.rect, !control.enabled ? 'disabled' : control.selected ? 'selected' : 'idle');

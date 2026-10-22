@@ -165,10 +165,10 @@ describe('the HUD model', () => {
 
     expect(model.detail?.title).toBe('Insediamento minore 2');
     expect(words).toContain(`${translate('ui.tier')} 2`);
-    expect(words).toContain(`${translate('ui.population')} 14`);
-    expect(words).toContain(`${translate('resource.grain')} 7`);
-    expect(words).toContain(`${translate('resource.iron')} 4`);
-    expect(words).toContain(`${translate('ui.labourAuto')} 3/3/2/0`);
+    expect(words).toContain(`${translate('ui.population')} 14/12 abitanti`);
+    expect(words).toContain(`${translate('resource.grain')} 7 / 30`);
+    expect(words).toContain(`${translate('resource.iron')} 4 / 30`);
+    expect(words).toContain('Lavoro sui terreni Grano 3, Legname 3, Pietra 2, Ferro 0');
     expect(words.join('\n')).toContain('Villa');
     expect(words.join('\n')).toContain(translate('ui.workBuilding'));
   });
@@ -341,7 +341,7 @@ describe('the HUD on screen', () => {
   it('pins an active Work and makes all wrapped secondary text reachable', () => {
     const selected = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 2 });
     expect(hudLayout(selected, SIZE).priority.map((line) => line.text).join(' '))
-      .toContain('Cantieri: Villa - In costruzione (12 s)');
+      .toContain('Villa: In costruzione: 12 s con personale');
     const long = { label: 'Una descrizione molto lunga del lavoro', value: '1234567890123456789012345678901234567890' };
     const model = { ...selected, detail: { ...selected.detail!, lines: [...selected.detail!.lines, long] } };
     const reached: string[] = [];
@@ -541,7 +541,7 @@ it('keeps desktop navigation and contextual detail apart at readable 2x scale', 
     { desktop: true, uiScale: 2, navigator: true });
   const layout = hudLayout(model, { width: 1280, height: 720 });
   expect(layout.detail.x).toBe(0);
-  expect(layout.detail.width).toBeGreaterThan(800);
+  expect(layout.detail.width).toBeLessThanOrEqual(800);
   expect(layout.minimap.x).toBeGreaterThanOrEqual(layout.detail.width);
   expect(layout.list.y + layout.list.height).toBeLessThanOrEqual(layout.detail.y);
   expect(layout.buttons.some((button) => button.action === 'center')).toBe(true);
@@ -826,7 +826,8 @@ it('keeps every numbered control group reachable, wrapping the chips rather than
   // A detail long enough to scroll, so the column's own scroll buttons exist in
   // the same band as the group strip: the two must not share a pixel.
   const long = Array.from({ length: 30 }, (_unused, index) => ({ label: `Riga ${String(index)}`, value: 'valore' }));
-  const model = { ...selected, detail: { ...selected.detail!, lines: [...selected.detail!.lines, ...long] } };
+  const model = { ...selected, view: { ...selected.view, settlementPage: 'works' as const },
+    detail: { ...selected.detail!, works: [...selected.detail!.works!, ...long] } };
   const layout = hudLayout(model, DESKTOP);
 
   expect(layout.groups.map((group) => group.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);

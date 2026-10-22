@@ -44,6 +44,8 @@ import {
   ESCALADE_BEARING,
   ESCALADE_DAMAGE,
   RAM_BEARING_PER_BLOW,
+  RAM_COST,
+  RAM_BUILD_TICKS,
   WALL_ASSAULT_LOSS,
 } from '../sim/siege.ts';
 import { RESOURCE_KINDS } from '../sim/map.ts';
@@ -51,13 +53,13 @@ import { BASE_HOUSING, BASE_STORAGE, GRAIN_PER_HEAD, HARVEST_YIELD, LAND_RADIUS,
 import { SEASON_TICKS } from '../sim/season.ts';
 import { ATTRITION_PERCENT, ATTRITION_WINTER_PERCENT, ATTRITION_FIELD_WINTER_PERCENT, CAMP_RADIUS, TERRITORY_RADIUS } from '../sim/territory.ts';
 import { buildingDescription, resourceBill } from './construction.ts';
-import { message, resourceLabel, squadLabel, workLabel, translate } from './strings.ts';
+import { message, resourceLabel, squadLabel, workLabel, translate, type StringKey } from './strings.ts';
 
 /** The subjects an entry can belong to, in the order an Encyclopedia lists them. */
-export type ReferenceSection = 'force' | 'combat' | 'missiles' | 'siege' | 'roster' | 'economy' | 'buildings' | 'commands';
+export type ReferenceSection = 'start' | 'economy' | 'buildings' | 'army' | 'war';
 
 /** Every section, in the order the reference reads. */
-export const REFERENCE_SECTIONS: readonly ReferenceSection[] = ['economy', 'buildings', 'roster', 'commands', 'force', 'combat', 'missiles', 'siege'];
+export const REFERENCE_SECTIONS: readonly ReferenceSection[] = ['start', 'economy', 'buildings', 'army', 'war'];
 
 /** One whole number an entry quotes, so the sentence can be checked against the rule. */
 export interface ReferenceFact {
@@ -75,7 +77,7 @@ export interface ReferenceEntry {
   readonly section: ReferenceSection;
   /** Its heading, in the Player's language. */
   readonly title: string;
-  /** What the rule does, in one paragraph. */
+  /** The article, with paragraph and section breaks. */
   readonly body: string;
   /** The numbers the body quotes, from the rules themselves. */
   readonly facts: readonly ReferenceFact[];
@@ -97,11 +99,24 @@ const LARGEST_TYPE = SQUAD_TYPES.reduce((largest, type) =>
 const LARGEST_SIZE = LARGEST_TYPE.strength;
 const SMALLEST_SIZE = Math.min(...LARGEST_TYPE.sizes);
 
+const SQUAD_GUIDANCE: Readonly<Record<string, StringKey>> = {
+  hastati: 'ref.unit.hastati', principes: 'ref.unit.principes', triarii: 'ref.unit.triarii',
+  'libyan-spear': 'ref.unit.libyan', gaul: 'ref.unit.gauls', 'iberian-sword': 'ref.unit.iberian',
+  'balearic-slinger': 'ref.unit.balearic', 'numidian-horse': 'ref.unit.numidian', elephant: 'ref.unit.elephant',
+} as const;
+
 /** One entry per rule, in the order `REFERENCE_SECTIONS` lists their subjects. */
 export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
+  { id: 'first-steps', section: 'start', title: translate('ref.start.title'),
+    body: translate('ref.start.body'), facts: [{ label: translate('ui.groups'), value: 9 }] },
+  { id: 'economic-choices', section: 'start', title: translate('ref.choices.title'),
+    body: translate('ref.choices.body'), facts: [{ label: translate('ui.tier'), value: 3 }] },
+  { id: 'treasury', section: 'economy', title: translate('ref.treasury.title'),
+    body: message('ref.treasury.body', { cap: TREASURY_CAP, tax: TAX_PER_DENARIUS, loss: MORALE_LOSS_PER_UNPAID_SEASON }),
+    facts: [{ label: translate('ui.treasury'), value: TREASURY_CAP }] },
   ...RESOURCE_KINDS.map((kind): ReferenceEntry => ({
     id: `resource:${kind}`, section: 'economy', title: resourceLabel(kind),
-    body: message('economy.scopeBody', { cap: TREASURY_CAP }),
+    body: `${translate((['ref.grain', 'ref.timber', 'ref.stone', 'ref.iron'] as const)[kind]!)}\n\n${message('economy.scopeBody', { cap: TREASURY_CAP })}`,
     facts: [{ label: translate('ui.treasury'), value: TREASURY_CAP }],
   })),
   { id: 'labour', section: 'economy', title: translate('economy.labourTitle'),
@@ -114,6 +129,12 @@ export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
     body: message('economy.populationBody', { housing: BASE_HOUSING, storage: BASE_STORAGE, heads: GRAIN_PER_HEAD,
       growth: POPULATION_GROWTH, loss: STARVATION_LOSS, tax: TAX_PER_DENARIUS }),
     facts: [{ label: translate('ui.population'), value: BASE_HOUSING }] },
+  { id: 'latin-economy', section: 'economy', title: translate('ref.latin.title'),
+    body: message('ref.latin.body', { villa: BUILDINGS.find((building) => building.id === 'villa')!.labour,
+      forum: BUILDINGS.find((building) => building.id === 'forum')!.labour, camp: CAMP_RADIUS }),
+    facts: [{ label: translate('work.castrum'), value: CAMP_RADIUS }] },
+  { id: 'punic-economy', section: 'economy', title: translate('ref.punic.title'),
+    body: translate('ref.punic.body'), facts: [{ label: translate('ui.men'), value: PAYROLL_BASIS }] },
   ...BUILDINGS.map((building): ReferenceEntry => ({
     id: `building:${building.id}`, section: 'buildings', title: workLabel(building.id),
     body: buildingDescription(building),
@@ -121,26 +142,27 @@ export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
       { label: translate('ui.population'), value: building.labour }],
   })),
   ...SQUAD_TYPES.map((type): ReferenceEntry => ({
-    id: `squad:${type.id}`, section: 'roster', title: squadLabel(type.id),
-    body: message('ref.squadTerms', { faction: translate(`faction.${type.faction}`), tier: type.tier,
-      sizes: type.sizes.map((size) => `${size}: ${resourceBill(recruitCost(type, size))}; ${translate('ui.payroll')} ${payrollBill(type, size)}`).join(' / '),
+    id: `squad:${type.id}`, section: 'army', title: squadLabel(type.id),
+    body: `${translate(SQUAD_GUIDANCE[type.id]!)}\n\n${message('ref.squadTerms', { faction: translate(`faction.${type.faction}`), tier: type.tier,
+      sizes: type.sizes.map((size) => message(type.figures === 1 ? 'ref.beastBill' : 'ref.sizeBill', {
+        size, cost: resourceBill(recruitCost(type, size)), payroll: payrollBill(type, size) })).join('\n'),
       rate: type.payroll, basis: PAYROLL_BASIS, impact: type.impact,
-      figures: translate(type.figures === 1 ? 'ref.beast' : 'ref.soldiers') }),
+      figures: translate(type.figures === 1 ? 'ref.beast' : 'ref.soldiers') })}`,
     facts: type.sizes.map((size) => ({ label: translate('ui.men'), value: size })),
   })),
-  { id: 'commands', section: 'commands', title: translate('ref.commandsTitle'),
+  { id: 'commands', section: 'start', title: translate('ref.commandsTitle'),
     body: message('ref.commandsBody', { groups: 9 }), facts: [{ label: translate('ui.groups'), value: 9 }] },
-  { id: 'conditions', section: 'commands', title: translate('ref.conditionsTitle'),
+  { id: 'conditions', section: 'army', title: translate('ref.conditionsTitle'),
     body: message('ref.conditionsBody', { loss: MORALE_LOSS_PER_UNPAID_SEASON }),
     facts: [{ label: translate('ui.morale'), value: MORALE_LOSS_PER_UNPAID_SEASON }] },
-  { id: 'territory', section: 'commands', title: translate('ref.territoryTitle'),
+  { id: 'territory', section: 'war', title: translate('ref.territoryTitle'),
     body: message('ref.territoryBody', { radius: TERRITORY_RADIUS, outside: ATTRITION_PERCENT,
       winter: ATTRITION_WINTER_PERCENT, field: ATTRITION_FIELD_WINTER_PERCENT, camp: CAMP_RADIUS }),
     facts: [{ label: translate('ref.territoryTitle'), value: TERRITORY_RADIUS }] },
 
   {
     id: 'force',
-    section: 'force',
+    section: 'army',
     title: translate('ref.force.title'),
     body: message('ref.force.body', {
       points: String(POINTS_PER_MAN),
@@ -156,7 +178,7 @@ export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
   },
   {
     id: 'combat',
-    section: 'combat',
+    section: 'war',
     title: translate('ref.combat.title'),
     body: message('ref.combat.body', {
       rounds: String(TICK_HZ / EXCHANGE_TICKS),
@@ -172,17 +194,18 @@ export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
   },
   {
     id: 'missiles',
-    section: 'missiles',
+    section: 'war',
     title: translate('ref.missiles.title'),
     body: message('ref.missiles.body', { shock: String(VOLLEY_SHOCK) }),
     facts: [{ label: translate('ref.missiles.shock'), value: VOLLEY_SHOCK }],
   },
   {
     id: 'siege',
-    section: 'siege',
+    section: 'war',
     title: translate('ref.siege.title'),
     body: message('ref.siege.body', {
       ram: String(RAM_BEARING_PER_BLOW),
+      ramCost: RAM_COST, ramSeconds: RAM_BUILD_TICKS / TICK_HZ,
       escalade: String(ESCALADE_DAMAGE),
       bearing: String(ESCALADE_BEARING),
       loss: String(WALL_ASSAULT_LOSS),
@@ -199,7 +222,7 @@ export const REFERENCE_ENTRIES: readonly ReferenceEntry[] = [
   },
   {
     id: 'roster',
-    section: 'roster',
+    section: 'army',
     title: translate('ref.roster.title'),
     body: translate('ref.roster.body'),
     // Read straight off the content table, so the entry cannot quote an `impact`

@@ -1,66 +1,73 @@
 # Issue #69 — Economy and Encyclopedia
 
-The construction page keeps one of four categories selected across settlement
-changes. The public order model still supports an unfiltered content inventory;
-the HUD requests one category and exposes only that list. Disabled purchases
-remain inspectable. Every economic row has a contextual `?` reference link.
+## Revision after human review, 22 October 2026
 
-Building descriptions use content costs, staffed seconds, Labour, seasonal
-potential output, passive housing/storage, Tier unlocks and the Roman camp rule.
-The selected settlement explains current staffing, population/housing, local
-storage and its next-boundary stocks. Treasury remains a Faction-wide estimate,
-with a countdown in seconds, income before Payroll, and explicit assumptions.
-Unfinished works are excluded. An observed blockade refuses the estimate;
-autumn stocks are refused if population changes because the Observation's worked
-land does not reveal capacity for the post-growth Harvest allocation.
+The reopened issue replaces the original flat reference with five browsable
+sections: Primi passi, Economia, Edifici, Esercito, Guerra e territorio. Each
+section lists only its own articles. Contextual links select the matching section;
+keyboard navigation keeps the current topic visible. Articles preserve paragraph
+breaks and paginate without clipping at both reference desktop sizes.
 
-The Encyclopedia has canonical entries for every resource, building and Squad
-type, plus Labour, Seasons, population, Commands/group movement, conditions,
-Territory, force, combat, missiles and Siege. It uses Italian string-table text
-and the existing procedural bitmap rendering. The reusable layout/action/plate
-surface can be hosted by the future #70 main menu without a Match.
+The Italian prose starts from player decisions. First steps explain the campaign
+objective, actual menu names, spending, recruitment, movement and the two siege
+paths. Every resource has its own purpose and advice. Buildings explain when to
+build, then cost, staffed seconds, permanent workers, effects and actual unlocks.
+Troop articles explain roles before listing canonical sizes, prices and Payroll.
+The Latin and Carthaginian economic notes distinguish shared production/tax rules
+from roster costs and the Roman Castrum. The reference explains the second ration
+needed for growth, the work displaced by buildings, non-depleting resource nodes,
+all-resource storage, winter and the limits of the Forecast.
 
-In a normal Match, use F1, the top control or an offer's `?`. Escape or the return
-control closes it. Tab traverses controls, arrows traverse entries, PageUp/Down
-scroll text, and the pointer can navigate and page through both lists. Opening
-pauses time; returning restores the prior pause state, selection and keyboard
-focus. Presentation state is separate from the Match and its hash.
+The user approved sections, prose, economic-menu changes and public-model/rule
+verification in Q1–Q3. Q4 superseded an intermediate dense account view: the
+Panoramica is now a compact card, 800 by 200 screen pixels at 2x without control
+groups, showing only population/workers and paired local stocks/capacities.
+Bilancio stagionale and Edifici e lavoro open separately within that card;
+Panoramica returns to the summary. Construction and Recruitment remain direct
+tabs. Bound control groups retain their own reserved strip. Construction offers
+use two columns, with names above costs instead of competing for one line.
 
-Verification boundaries:
+Existing works distinguish active, understaffed and stalled construction. Named
+land allocations replace the four unexplained numbers. The seasonal account
+separates local stocks from shared Treasury, income before Payroll, unpaid Squads,
+countdown and assumptions. No economic rules, worker commands or ownership/fog
+semantics change. Presentation remains outside Match state and hashes.
 
-- Final `npm run verify`: passed lint, TypeScript, all seven guards, 120 Vitest
-  files / 1,392 tests and the production build. Chromium is not part of this command.
-- Public order/HUD/reference checks cover every applicable content item, category
-  membership, locked offers, complete text pagination and both desktop sizes.
-- Real economy Match boundaries cover stock, population and Treasury results over
-  four Seasons, including winter and Harvest.
-- `e2e/economy-reference.spec.ts`, owned by the `economy` profile, provides normal
-  Match samples for both Factions at 1280×720 and 1920×1080: category changes,
-  available/unavailable purchases, contextual reference and pointer/keyboard
-  return, hash/selection preservation and a real Season outcome comparison.
-- Chromium samples, complete browser acceptance and actual-frame inspection are
-  **unrun**: this task did not include an explicit request for a Chromium run.
-  The browser spec is typechecked, not claimed as executed or visually accepted.
+## Verification
+
+Final `npm run verify` passed on the corrected candidate: lint, TypeScript, all
+seven guards, 120 Vitest files / 1,395 tests and the production build. Focused
+HUD/reference checks also passed during development. Canonical four-Season
+comparisons cover both Factions, including growth, Harvest and winter.
+The accepted construction specimen was inspected directly before updating its
+fingerprint and the containing catalogue plate; no other artwork changed.
+
+Bitmap plates were generated outside the repository for both Factions at
+1280x720 and 1920x1080, and inspected for representative reference, summary and
+offer surfaces. These are renderer output, not real-browser frames.
+
+Interactive browser verification could not run: the in-app browser was
+unavailable, native Computer Use could not connect to its pipe, and automatic
+approval review rejected the visible Chromium launch with `blocked by policy`.
+No Playwright tests or headless Chromium were launched. Real pointer/keyboard
+navigation, pause/return integration, browser console and rendered Match frames
+remain unverified; the issue should not be represented as visually accepted.
 
 ## Standards
 
-The initial review found one P2: corrupted accented Italian letters in the new
-string-table text. Fixed using valid UTF-8, with a string-table regression check
-rejecting Unicode replacement characters. No other architecture or code-smell
-findings warranted changes.
+One P2 was found: the new Force paragraph confused the displayed value (survivors
+weighted by troop type) with damage points per casualty, contrary to GLOSSARY.md.
+The sentence now explains the two separately. The Standards reviewer confirmed
+the correction; no other substantive standard violations or actionable baseline
+smells were found. Renderer, Observation and presentation-state boundaries hold.
 
 ## Spec
 
-The initial review found two P2s, both fixed:
+One P2 was found: the timber article claimed that some recruitment spends timber,
+although all canonical troop bills use grain and iron. The sentence now explicitly
+limits timber to construction and excludes it from recruitment. The Spec reviewer
+confirmed the correction; no additional scope or implementation findings remain.
+Generic matchup advice was also changed to name troops actually in the roster.
 
-- Arrow navigation could retain reference focus on a now-hidden entry. It now
-  focuses the newly selected visible entry and normalizes stale control focus.
-- The unavailable-purchase browser sample expected only a reason, while the real
-  notice includes the offer name. It now checks both components. The sample also
-  covers Enter after arrow navigation so the focus regression remains observable.
-
-Initial totals: Standards 1 (P2 text corruption), Spec 2 (P2 hidden keyboard
-focus and incorrect test expectation). No unresolved findings remain from those
-reviews; both reviewers confirmed the staged corrections. The construction bitmap was inspected directly through the Node
-PixelBuffer generator; only its fingerprint and the containing catalogue plate
-changed. This is not browser-frame evidence.
+Review totals: Standards 1 P2, corrected; Spec 1 P2, corrected. No unresolved code
+findings. Interactive browser verification remains unrun for the reasons above.

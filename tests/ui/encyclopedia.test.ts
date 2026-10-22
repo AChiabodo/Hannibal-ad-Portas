@@ -4,6 +4,20 @@ import { encyclopediaLayout, openReference, referenceAction } from '../../src/ui
 import { REFERENCE_ENTRIES } from '../../src/ui/reference';
 
 describe('the reusable Encyclopedia surface', () => {
+  it('opens with practical first steps and lets readers browse one subject at a time', () => {
+    const size = { width: 1280, height: 720 };
+    const first = encyclopediaLayout(size, openReference());
+    expect(first.entry.id).toBe('first-steps');
+    expect(first.controls.filter((control) => control.id.startsWith('section:')).map((control) => control.text))
+      .toEqual(['Primi passi', 'Economia', 'Edifici', 'Esercito', 'Guerra e territorio']);
+    const buildings = encyclopediaLayout(size, referenceAction(openReference(), 'section:buildings', first));
+    const entries = buildings.controls.filter((control) => control.id.startsWith('entry:'));
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.every((control) => control.id.startsWith('entry:building:'))).toBe(true);
+    const context = encyclopediaLayout(size, openReference('building:forum'));
+    expect(context.controls.find((control) => control.id === 'section:buildings')?.selected).toBe(true);
+    expect(context.controls.find((control) => control.id === 'entry:building:forum')).toBeDefined();
+  });
   for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
     it(`keeps every entry, long paragraph and return reachable at ${size.width}`, () => {
       for (const entry of REFERENCE_ENTRIES) {
@@ -22,6 +36,9 @@ describe('the reusable Encyclopedia surface', () => {
             expect(rect.y + rect.height).toBeLessThanOrEqual(size.height);
             expect(rect.x + rect.width).toBeLessThanOrEqual(size.width);
             expect(rect.height).toBeGreaterThanOrEqual(36);
+          }
+          for (const control of layout.controls) {
+            expect(measureText(control.text, 2), `clipped control: ${control.id}`).toBeLessThanOrEqual(control.rect.width - 16);
           }
           expect(visited.has(layout.offset), `unreachable tail of ${entry.id}`).toBe(false);
           visited.add(layout.offset);

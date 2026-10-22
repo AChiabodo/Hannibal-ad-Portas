@@ -28,7 +28,7 @@ export function resourceBill(amounts: BuildingType['cost']): string {
 
 /** Complete building terms: conditional output, passive limits and actual unlocks. */
 export function buildingDescription(building: BuildingType): string {
-  const parts = [message('economy.buildTerms', { cost: resourceBill(building.cost), seconds: building.buildTicks / TICK_HZ,
+  const parts = [translate(BUILDING_GUIDANCE[building.id]!), message('economy.buildTerms', { cost: resourceBill(building.cost), seconds: building.buildTicks / TICK_HZ,
     workers: building.labour, tier: building.tier, max: building.maxPerSettlement })];
   if (RESOURCE_KINDS.some((kind) => amountOf(building.yields, kind) > 0)) {
     parts.push(message('economy.potential', { yield: resourceBill(building.yields) }));
@@ -42,5 +42,11 @@ export function buildingDescription(building: BuildingType): string {
     parts.push(message('economy.progression', { tier: building.raisesTier, unlocks: unlocks.join(', ') }));
   }
   if (building.id === 'castrum') parts.push(message('economy.camp', { radius: CAMP_RADIUS }));
-  return parts.join(' ');
+  return parts.join('\n\n');
 }
+
+const BUILDING_GUIDANCE: Readonly<Record<string, StringKey>> = {
+  farm: 'building.advice.farm', 'lumber-camp': 'building.advice.lumber-camp', quarry: 'building.advice.quarry',
+  mine: 'building.advice.mine', market: 'building.advice.market', granary: 'building.advice.granary',
+  house: 'building.advice.house', villa: 'building.advice.villa', forum: 'building.advice.forum', castrum: 'building.advice.castrum',
+};

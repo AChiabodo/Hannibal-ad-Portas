@@ -127,7 +127,6 @@ import { minimapPlate, type ViewportRect, type KnownMinimapSite } from '../ui/mi
 import { knownSites, siteIdentities, type KnownSite } from '../ui/sites.ts';
 import { createNoticeBook, markedConditions, moraleOf, squadConditions, type Notice, type SquadCondition } from '../ui/conditions.ts';
 import { encyclopediaLayout, encyclopediaPlate, openReference, referenceAction, type EncyclopediaLayout, type ReferenceState } from '../ui/encyclopedia.ts';
-import { REFERENCE_ENTRIES } from '../ui/reference.ts';
 import { CONSTRUCTION_CATEGORIES, type ConstructionCategory } from '../ui/construction.ts';
 import { forecastLine } from '../ui/forecast.ts';
 import type { OrderMarkKind } from '../art/markers.ts';
@@ -589,6 +588,7 @@ export function createGame(options: GameOptions): Game {
   let recruitCount = 1;
   let focusId: string | null = null;
   let hoveredOrder: string | null = null;
+  let settlementPage: 'summary' | 'balance' | 'works' = 'summary';
   /** The action waiting for a click, by its stable id, or `null`. */
   let armed: string | null = null;
   /** The last order given on this page, and whether the seam has taken it yet. */
@@ -761,6 +761,8 @@ export function createGame(options: GameOptions): Game {
     setTab: (next) => {
       if (!SETTLEMENT_TABS.includes(next)) throw new RangeError(`"${String(next)}" is not a settlement page`);
       tab = next;
+      settlementPage = 'summary';
+      detailOffset = 0;
       commandOffset = 0;
       commandNotice = null;
       repaint();
@@ -1198,10 +1200,11 @@ export function createGame(options: GameOptions): Game {
     if (next.selected?.id !== detailSelection?.id || next.selected?.kind !== detailSelection?.kind) {
       detailOffset = 0;
       commandOffset = 0;
+      settlementPage = 'summary';
     }
     detailSelection = next.selected;
     return { ...next, view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
-      noticesOpen, noticeOffset,
+      noticesOpen, noticeOffset, settlementPage,
       desktop, navigatorExpanded, sessionOpen, speed: pacing.speed, ...preferences,
       uiScale: fittedUiScale(preferences.uiScale, windowSize()), tick: match.state.tick,
       scaleWarning: desktop && (windowSize().width < 640 * preferences.uiScale || windowSize().height < 360 * preferences.uiScale),
@@ -1394,10 +1397,11 @@ export function createGame(options: GameOptions): Game {
     const offer = model.commands.find((order) => order.id === (focusId?.startsWith('order:') ? focusId.slice(6) : hoveredOrder)) ?? model.commands[0];
     if (offer?.kind === 'build') return `building:${offer.subject}`;
     if (offer?.kind === 'recruit') return `squad:${offer.subject}`;
-    return model.selected?.kind === 'squad' ? 'commands' : 'seasons';
+    if (model.selected?.kind === 'settlement' && settlementPage !== 'summary') return settlementPage === 'balance' ? 'treasury' : 'labour';
+    return model.selected?.kind === 'squad' ? 'commands' : 'first-steps';
   }
 
-  function showReference(entry = 'seasons'): void {
+  function showReference(entry = 'first-steps'): void {
     const next = openReference(entry);
     if (reference === null) {
       referencePaused = !pacing.paused && result === null;
@@ -1534,8 +1538,7 @@ export function createGame(options: GameOptions): Game {
       } else if (key === 'Enter' || key === ' ') activateReference(referenceFocus);
       else if (key === 'PageUp' || key === 'PageDown') activateReference(key === 'PageDown' ? 'next' : 'previous');
       else if (key === 'ArrowDown' || key === 'ArrowUp') {
-        const index = REFERENCE_ENTRIES.findIndex((entry) => entry.id === reference!.entry);
-        reference = openReference(REFERENCE_ENTRIES[(index + (key === 'ArrowDown' ? 1 : -1) + REFERENCE_ENTRIES.length) % REFERENCE_ENTRIES.length]!.id);
+        reference = referenceAction(reference, key === 'ArrowDown' ? 'entryNext' : 'entryPrevious', readReference());
         referenceFocus = `entry:${reference.entry}`;
         repaint();
       }
@@ -1572,7 +1575,11 @@ export function createGame(options: GameOptions): Game {
   /** One of the bar's own buttons, pressed. */
   function hudButton(action: HudAction): void {
     const layout = hudLayout(model, options.size);
-    if (action.startsWith('category:')) {
+    if (action.startsWith('settlement:')) {
+      settlementPage = action.slice(11) as typeof settlementPage;
+      detailOffset = 0;
+      repaint();
+    } else if (action.startsWith('category:')) {
       hooks.setCategory(action.slice(9) as ConstructionCategory);
     } else if (action === 'reference') showReference(contextReference());
     else if (action.startsWith('reference:')) showReference(action.slice(10));

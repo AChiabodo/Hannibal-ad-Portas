@@ -195,6 +195,8 @@ export interface SettlementProjection {
   readonly storage: number;
   readonly staffed: number;
   readonly needed: number;
+  /** Whether each current work receives all its workers, in the visible order. */
+  readonly workStaffing: readonly boolean[];
   /** Autumn reallocation after growth cannot be derived from worked land alone. */
   readonly harvestUncertain: boolean;
 }
@@ -212,11 +214,13 @@ export function projectSettlement(settlement: VisibleSettlement, season: Season)
   let needed = 0;
   let housing = BASE_HOUSING;
   let storage = BASE_STORAGE;
+  const workStaffing: boolean[] = [];
 
   for (const work of settlement.works) {
     const code = buildingCode(work.building);
     const building = code === undefined ? undefined : buildingOf(code);
-    if (building === undefined) continue;
+    if (building === undefined) { workStaffing.push(false); continue; }
+    workStaffing.push(available >= building.labour);
 
     needed += building.labour;
     // A work's housing and storage count once it stands; its labour is claimed
@@ -262,7 +266,7 @@ export function projectSettlement(settlement: VisibleSettlement, season: Season)
     stocks.grain = Math.min(storage, stocks.grain + amountOf(settlement.land, RESOURCE.grain) * HARVEST_YIELD);
   }
   return { income: Math.floor(population / TAX_PER_DENARIUS) + denarii,
-    stocks, population, housing, storage, staffed, needed, harvestUncertain };
+    stocks, population, housing, storage, staffed, needed, workStaffing, harvestUncertain };
 }
 
 /** The selected settlement's stock estimate; uncertain autumn land is explicitly refused. */
