@@ -71,7 +71,7 @@ export type StringTable = Readonly<Record<string, Translation>>;
  */
 export const STRINGS = {
   'economy.balanceTitle': { it: 'Bilancio stagionale', en: undefined },
-  'economy.worksTitle': { it: 'Edifici e lavoro', en: undefined },
+  'economy.worksTitle': { it: 'Edifici e coda', en: undefined },
   'economy.compactPeople': { it: '{population}/{housing} | Lavoratori edifici {staffed}/{needed}', en: undefined },
   'economy.stockPair': { it: '{first}/{capacity} | {name} {second}/{capacity}', en: undefined },
   'economy.treasuryChange': { it: '{current} > {next} denari (stima)', en: undefined },
@@ -132,7 +132,7 @@ export const STRINGS = {
   'panel.camp': { it: 'Quartieri invernali per Roma; non sblocca reparti.', en: undefined },
   'panel.limits': { it: 'Richiede livello {tier}; limite {max}.', en: undefined },
   'panel.balance': { it: 'Bilancio', en: undefined },
-  'panel.works': { it: 'Lavoro', en: undefined },
+  'panel.works': { it: 'Lavori', en: undefined },
   'ui.inspectHelp': { it: 'Scegli una proposta per leggere costi ed effetti.', en: undefined },
   'ui.purchase': { it: 'Costruisci', en: undefined },
   'ui.purchaseRecruit': { it: 'Recluta', en: undefined },

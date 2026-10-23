@@ -1631,6 +1631,8 @@ export function createGame(options: GameOptions): Game {
     else if (action === 'closeInspection') { inspectedOrder = null; repaint(); }
     else if (action.startsWith('settlement:')) {
       settlementPage = action.slice(11) as typeof settlementPage;
+      tab = 'overview';
+      inspectedOrder = null;
       detailOffset = 0;
       repaint();
     } else if (action.startsWith('category:')) {

@@ -76,3 +76,21 @@ acceptance-suite result.
 Screenshots are saved in the task's visualization folder as
 `issue69-pause-final-720.png`, `issue69-pause-final-1080.png`,
 `issue69-resourcebar-final-720.png` and `issue69-neutral-help-final-720.png`.
+## Construction-list discoverability regression (2026-10-24)
+
+The list had not been deleted: existing buildings and unfinished Works remained
+under Overview's footer action, labelled `Lavoro`, but the construction catalogue
+had no direct entry. Add `Lavori` beside the three settlement tabs in A/B/C;
+activating it switches to Overview/Works, clears proposal inspection and resets
+scroll. The full page name is `Edifici e coda`. No simulation state changes.
+
+The public HUD regression first failed because the catalogue had no
+`settlement:works` action, then passed for all three presets, including the
+presence of a completed Fattoria and a construction countdown. Native IAB testing
+followed the actual catalogue purchase and clicked Lavori to see the running
+Fattoria countdown. Static Standards and Spec reviews reported no findings.
+
+Final validation: `npm run verify` passed lint, TypeScript, guards, 121 test files /
+1,421 tests and production build. Native purchase-to-completion showed the same
+Fattoria first with a countdown and then `In attivita`; console warnings/errors
+were empty. Standalone Chromium profiles were not run.

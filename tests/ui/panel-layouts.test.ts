@@ -192,3 +192,21 @@ it('explains capture and shows observed centre control directly on a neutral sit
   expect(layout.buttons.some((b) => b.action === 'reference:capture')).toBe(true);
   expect(layout.text.some((line) => line.text.includes('Muovi'))).toBe(true);
 });
+
+it('keeps buildings and the construction queue directly reachable from the building catalogue', () => {
+  const economy: EconomyVisible = { ...visible, settlements: [{ ...visible.settlements[0]!,
+    works: [{ building: 'farm', remaining: 0, standing: true }, { building: 'villa', remaining: 120, standing: false }] }] };
+  for (const panelLayout of ['sidebar', 'dock', 'compact'] as const) {
+    const view = { desktop: true, uiScale: 2 as const, panelLayout };
+    const catalogue = hudModel(economy, [0], { kind: 'settlement', id: 0 }, [], view, { faction: 'rome', tab: 'construction' });
+    const layout = hudLayout(catalogue, { width: 1280, height: 720 });
+    const queue = layout.buttons.find((button) => button.action === 'settlement:works');
+    expect(queue, panelLayout).toBeDefined();
+    expect(queue!.text).toBe('Lavori');
+    expect(hudHit(catalogue, { width: 1280, height: 720 }, queue!.rect.x + 2, queue!.rect.y + 2))
+      .toMatchObject({ kind: 'button', action: 'settlement:works' });
+    const works = hudModel(economy, [0], { kind: 'settlement', id: 0 }, [], { ...view, settlementPage: 'works' }, { faction: 'rome', tab: 'overview' });
+    expect(works.detail!.works!.some((line) => line.label === 'Fattoria')).toBe(true);
+    expect(works.detail!.works!.some((line) => line.value.includes('12'))).toBe(true);
+  }
+});

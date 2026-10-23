@@ -151,9 +151,10 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
 
   let y = catalogue.y;
   if (ownSettlement) {
-    const tw = Math.floor((catalogue.width - 4) / 3);
+    const tw = Math.floor((catalogue.width - 6) / 4);
     SETTLEMENT_TABS.forEach((tab, i) => tabs.push({ tab, text: translate(`tab.short.${tab}`),
       rect: { x: catalogue.x + i * (tw + 2), y, width: tw, height: 16 } }));
+    button('settlement:works', translate('panel.works'), { x: catalogue.x + 3 * (tw + 2), y, width: tw, height: 16 });
     y += 19;
     if (model.tab === 'construction') {
       const columns = sidebar ? 2 : 4, bw = Math.floor((catalogue.width - (columns - 1) * 2) / columns);
