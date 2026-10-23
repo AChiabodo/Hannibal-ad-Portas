@@ -263,7 +263,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore';
+export type HudAction = `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works' | 'catalogue'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore';
 
 export interface HudButton {
   readonly action: HudAction;
@@ -1242,17 +1242,23 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement,
   const active = settlement.works.findIndex((work) => !work.standing);
   const importantWork = stalled < 0 ? active : stalled;
   const summary = [
-    { label: translate('ui.population'), value: message('economy.compactPeople', { population: settlement.population,
-      housing: economics.housing, staffed: economics.staffed, needed: economics.needed }) },
-    { label: resourceLabel(RESOURCE_KINDS[0]!), value: message('economy.stockPair', { first: settlement.stocks.grain,
-      second: settlement.stocks.timber, capacity: economics.storage, name: resourceLabel(RESOURCE_KINDS[1]!) }) },
-    { label: resourceLabel(RESOURCE_KINDS[2]!), value: message('economy.stockPair', { first: settlement.stocks.stone,
-      second: settlement.stocks.iron, capacity: economics.storage, name: resourceLabel(RESOURCE_KINDS[3]!) }) },
+    { label: translate('economy.summaryPeopleLabel'), value: message('economy.summaryPeople', { population: settlement.population }) },
+    { label: translate('economy.summaryHousingLabel'), value: message('economy.summaryHousing', { housing: economics.housing }) },
+    { label: translate('economy.summaryStaffedLabel'), value: String(economics.staffed) },
+    { label: translate('economy.summaryNeededLabel'), value: String(economics.needed) },
+    ...RESOURCE_KINDS.map((kind) => ({ label: resourceLabel(kind), value: message('economy.summaryStock', { amount: stockOf(settlement, kind), capacity: economics.storage }) })),
+  ];
+  const workLines = settlement.works.map((_work, index) => lines[workStart + index]!);
+  const works = [
+    { label: translate('economy.developing'), value: String(settlement.works.filter((work) => !work.standing).length) },
+    ...workLines.filter((_line, index) => !settlement.works[index]!.standing),
+    { label: translate('economy.completed'), value: String(settlement.works.filter((work) => work.standing).length) },
+    ...workLines.filter((_line, index) => settlement.works[index]!.standing),
   ];
   return { lines, ledger: ended ? [
     { label: translate('match.ended'), value: translate('match.finalKnown') },
     { label: translate('economy.commonTreasury'), value: String(visible.treasury) },
-  ] : ledger, summary, works: [lines[2]!, lines[1]!, landLine, ...lines.slice(workStart)],
+  ] : ledger, summary, works,
     priority: importantWork < 0 ? [0] : [workStart + importantWork] };
 }
 

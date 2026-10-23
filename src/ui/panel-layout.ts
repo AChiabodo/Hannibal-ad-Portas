@@ -100,7 +100,8 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
 
   const settlement = model.selected?.kind === 'settlement';
   const ownSettlement = settlement && model.detail?.summary !== undefined;
-  const economic = ownSettlement && model.tab !== 'overview';
+  const buildingList = ownSettlement && model.tab === 'construction' && model.view.settlementPage === 'works';
+  const economic = ownSettlement && model.tab !== 'overview' && !buildingList;
   const inspected = model.commands.find((offer) => offer.id === model.view.inspectedOrder);
   let catalogue: Rect = { ...detail, x: detail.x + 4, y: detail.y + 4, width: detail.width - 8, height: detail.height - 8 };
   let inspector: Rect | null = null;
@@ -108,7 +109,7 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
   if (sidebar && !hidden) {
     addText(model.detail?.title ?? translate('ui.selectEntity'), detail.x + 4, detail.y + 4, detail.width - 8, true);
     if (settlement) {
-      if (ownSettlement) prose([model.detail?.lines[0]?.value ?? ''], { x: detail.x + 4, y: detail.y + 18, width: detail.width - 8, height: 12 }, 0, false);
+      if (ownSettlement) prose([`${translate('ui.tier')}: ${model.detail?.lines[2]?.value ?? ''}`], { x: detail.x + 4, y: detail.y + 18, width: detail.width - 8, height: 12 }, 0, false);
       catalogue = { x: detail.x + 4, y: detail.y + (ownSettlement ? 32 : 20), width: detail.width - 8, height: detail.height - (ownSettlement ? 36 : 24) };
       if (economic) {
         const ih = Math.min(160, Math.max(108, detail.height - 210));
@@ -140,7 +141,7 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
       detailScroll = information({ x: 4, y: detail.y + 18, width: 132, height: detail.height - 22 });
       catalogue = { x: 144, y: detail.y + 4, width: detail.width - 148, height: detail.height - 8 };
     }
-    if (economic && inspected && !model.view.noticesOpen) {
+    if (economic && (inspected || model.tab === 'construction') && !model.view.noticesOpen) {
       const guideBottom = (base.guide.y + base.guide.height) / scale;
       const top = Math.max(bar.height + 4, base.guide.height ? guideBottom + 4 : 0);
       const height = Math.max(90, Math.min(176, detail.y - top - 4));
@@ -151,12 +152,15 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
 
   let y = catalogue.y;
   if (ownSettlement) {
-    const tw = Math.floor((catalogue.width - 6) / 4);
+    const tw = Math.floor((catalogue.width - 4) / 3);
     SETTLEMENT_TABS.forEach((tab, i) => tabs.push({ tab, text: translate(`tab.short.${tab}`),
       rect: { x: catalogue.x + i * (tw + 2), y, width: tw, height: 16 } }));
-    button('settlement:works', translate('panel.works'), { x: catalogue.x + 3 * (tw + 2), y, width: tw, height: 16 });
     y += 19;
-    if (model.tab === 'construction') {
+    if (buildingList) {
+      detailScroll = prose((model.detail?.works ?? []).map((line) => `${line.label}: ${line.value}`),
+        { x: catalogue.x, y, width: catalogue.width, height: catalogue.y + catalogue.height - y - 22 }, model.view.detailOffset ?? 0, true);
+      button('settlement:catalogue', translate('panel.catalogue'), { x: catalogue.x, y: catalogue.y + catalogue.height - 18, width: catalogue.width, height: 18 });
+    } else if (model.tab === 'construction') {
       const columns = sidebar ? 2 : 4, bw = Math.floor((catalogue.width - (columns - 1) * 2) / columns);
       CONSTRUCTION_CATEGORIES.forEach((category, i) => button(`category:${category.id}`,
         translate(`category.short.${category.id}`), { x: catalogue.x + i % columns * (bw + 2), y: y + Math.floor(i / columns) * 18, width: bw, height: 16 }));
@@ -172,9 +176,9 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
       const source = page === 'balance' ? model.detail?.ledger : page === 'works' ? model.detail?.works : model.detail?.summary;
       detailScroll = prose((source ?? model.detail?.lines ?? []).map((line) => `${line.label}: ${line.value}`),
         { x: catalogue.x, y, width: catalogue.width, height: catalogue.y + catalogue.height - y - 22 }, model.view.detailOffset ?? 0, true);
-      const bw = Math.floor((catalogue.width - 4) / 3), by = catalogue.y + catalogue.height - 18;
-      for (const [i, page] of (['summary', 'balance', 'works'] as const).entries()) button(`settlement:${page}`,
-        translate(page === 'summary' ? 'tab.short.overview' : page === 'balance' ? 'panel.balance' : 'panel.works'),
+      const bw = Math.floor((catalogue.width - 2) / 2), by = catalogue.y + catalogue.height - 18;
+      for (const [i, page] of (['summary', 'balance'] as const).entries()) button(`settlement:${page}`,
+        translate(page === 'summary' ? 'tab.short.overview' : 'panel.balance'),
         { x: catalogue.x + i * (bw + 2), y: by, width: bw, height: 18 });
     }
   }
@@ -209,6 +213,12 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
   }
   const inspectorGroups = inspector && !sidebar && !dock && model.groups.length > 0 ? 18 : 0;
   if (inspector) {
+    const inspectionTop = inspector.y;
+    if (dock) extraPanels.push(inspector);
+    if (model.tab === 'construction') {
+      button('settlement:works', translate('economy.worksTitle'), { x: inspector.x + 4, y: inspector.y + 2, width: inspector.width - 8, height: 18 });
+      inspector = { ...inspector, y: inspector.y + 22, height: inspector.height - 22 };
+    }
     if (inspected) {
       addText(inspected.label, inspector.x + 4, inspector.y + 4, inspector.width - 8, true);
       const pending = model.orders.pending > 0 ? message(model.view.paused ? 'ui.pendingPaused' : 'ui.pending', { count: model.orders.pending }) : model.orders.notice;
@@ -218,7 +228,10 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
       button(`reference:${inspected.kind === 'build' ? 'building' : 'squad'}:${inspected.subject}`, translate('ui.shortDetails'),
         { x: inspector.x + Math.floor(inspector.width / 2) + 1, y: inspector.y + inspector.height - 20 - inspectorGroups, width: Math.floor((inspector.width - 10) / 2), height: 18 });
       if (!sidebar && !dock) button('closeInspection', translate('ui.closeInspection'),
-        { x: inspector.x, y: inspector.y - 20, width: inspector.width, height: 18 });
+        { x: inspector.x, y: inspectionTop - 20, width: inspector.width, height: 18 });
+    } else if (model.tab === 'construction') {
+      detailScroll = prose((model.detail?.works ?? []).map((line) => `${line.label}: ${line.value}`),
+        { x: inspector.x + 4, y: inspector.y + 4, width: inspector.width - 8, height: inspector.height - 8 - inspectorGroups }, model.view.detailOffset ?? 0, true);
     } else prose([translate('ui.inspectHelp')], { ...inspector, x: inspector.x + 4, y: inspector.y + 4, width: inspector.width - 8, height: inspector.height - 8 }, 0, false);
   }
   // Control groups remain real controls, never a decorative list in the new arrangements.
@@ -267,7 +280,7 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
   const bottom = sidebar ? (settlement || !model.selected ? h : catalogue.y - 4) : detail.y;
   return { ...base, detail: screen(hidden ? { x: w, y: bar.height, width: 0, height: 0 } : detail), minimap: screen(minimap),
     theatre: screen({ x: list.width, y: bar.height, width: (sidebar ? right : w) - list.width, height: bottom - bar.height }),
-    extraPanels: [...extraPanels.map(screen), ...(dock && inspector ? [screen(inspector)] : [])],
+    extraPanels: extraPanels.map(screen),
     readouts: chrome.readouts, text: [...chrome.text, ...chromeText, ...placed(text)], priority: [...chromePriority, ...placed(priority)], status: placed(status),
     buttons: [...chrome.buttons, ...chromeButtons, ...placed(buttons)], commands: placed(commands), tabs: placed(tabs), groups: placed(groups),
     commandRules: [], exceptions: placed(exceptions), detailScroll, commandScroll,

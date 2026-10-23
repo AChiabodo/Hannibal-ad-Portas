@@ -1630,8 +1630,9 @@ export function createGame(options: GameOptions): Game {
     if (action.startsWith('purchase:')) perform(action.slice(9));
     else if (action === 'closeInspection') { inspectedOrder = null; repaint(); }
     else if (action.startsWith('settlement:')) {
-      settlementPage = action.slice(11) as typeof settlementPage;
-      tab = 'overview';
+      const page = action.slice(11);
+      settlementPage = page === 'catalogue' ? 'summary' : page as typeof settlementPage;
+      tab = page === 'works' || page === 'catalogue' ? 'construction' : 'overview';
       inspectedOrder = null;
       detailOffset = 0;
       repaint();

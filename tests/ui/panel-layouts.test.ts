@@ -202,11 +202,53 @@ it('keeps buildings and the construction queue directly reachable from the build
     const layout = hudLayout(catalogue, { width: 1280, height: 720 });
     const queue = layout.buttons.find((button) => button.action === 'settlement:works');
     expect(queue, panelLayout).toBeDefined();
-    expect(queue!.text).toBe('Lavori');
+    expect(queue!.text).toBe('Edifici e coda');
+    expect(layout.tabs).toHaveLength(3);
+    for (const tab of layout.tabs) expect(overlaps(queue!.rect, tab.rect)).toBe(false);
     expect(hudHit(catalogue, { width: 1280, height: 720 }, queue!.rect.x + 2, queue!.rect.y + 2))
       .toMatchObject({ kind: 'button', action: 'settlement:works' });
-    const works = hudModel(economy, [0], { kind: 'settlement', id: 0 }, [], { ...view, settlementPage: 'works' }, { faction: 'rome', tab: 'overview' });
+    const works = hudModel(economy, [0], { kind: 'settlement', id: 0 }, [], { ...view, settlementPage: 'works' }, { faction: 'rome', tab: 'construction' });
     expect(works.detail!.works!.some((line) => line.label === 'Fattoria')).toBe(true);
     expect(works.detail!.works!.some((line) => line.value.includes('12'))).toBe(true);
+    const list = hudLayout(works, { width: 1280, height: 720 });
+    expect(list.commands).toEqual([]);
+    expect(list.buttons.some((button) => button.action === 'settlement:catalogue')).toBe(true);
+    const read = Array.from({ length: list.detailScroll.max + 1 }, (_, detailOffset) =>
+      hudLayout({ ...works, view: { ...works.view, detailOffset } }, { width: 1280, height: 720 }).text.map((line) => line.text).join(' ')).join(' ');
+    expect(read).toContain('Fattoria');
+    expect(read).toContain('In costruzione');
+    expect(layout.text.some((line) => line.text.includes('In costruzione'))).toBe(true);
+  }
+});
+
+
+it('explains the settlement summary with named quantities instead of slash-separated shorthand', () => {
+  const model = hudModel(visible, [0], { kind: 'settlement', id: 0 }, [], { desktop: true, uiScale: 2, panelLayout: 'sidebar' });
+  const summary = model.detail!.summary!;
+  expect(summary.find((line) => line.label === 'Abitanti')?.value).toBe('10 persone');
+  expect(summary.find((line) => line.label === 'Capienza abitativa')?.value).toBe('12 persone');
+  expect(summary.find((line) => line.label === 'Lavoratori assegnati')?.value).toBe('0');
+  expect(summary.find((line) => line.label === 'Richiesti dagli edifici')?.value).toBe('0');
+  for (const resource of ['Grano', 'Legname', 'Pietra', 'Ferro']) {
+    expect(summary.find((line) => line.label === resource)?.value).toMatch(/unita; capienza 30/);
+  }
+  expect(summary.map((line) => line.value).join(' ')).not.toMatch(/[|/]/);
+});
+
+it('keeps compact building-list navigation clear of close and control groups', () => {
+  for (const inspectedOrder of [undefined, 'build:farm']) {
+    const economy: EconomyVisible = { ...visible, settlements: [{ ...visible.settlements[0]!,
+      works: Array.from({ length: 12 }, () => ({ building: 'farm' as const, remaining: 120, standing: false })) }] };
+    const model = hudModel(economy, [0], { kind: 'settlement', id: 0 }, [],
+      { desktop: true, uiScale: 2, panelLayout: 'compact', inspectedOrder },
+      { faction: 'rome', tab: 'construction', groups: Array.from({ length: 9 }, (_, i) => ({ index: i + 1, count: 1, composition: 'Astati 1' })) });
+    const layout = hudLayout(model, { width: 1280, height: 720 });
+    const queue = layout.buttons.find((button) => button.action === 'settlement:works')!;
+    expect(hudHit(model, { width: 1280, height: 720 }, queue.rect.x + 2, queue.rect.y + 2))
+      .toMatchObject({ kind: 'button', action: 'settlement:works' });
+    for (const button of layout.buttons) {
+      if (button.action === 'closeInspection') expect(overlaps(button.rect, queue.rect)).toBe(false);
+      for (const group of layout.groups) expect(overlaps(button.rect, group.rect), button.action).toBe(false);
+    }
   }
 });

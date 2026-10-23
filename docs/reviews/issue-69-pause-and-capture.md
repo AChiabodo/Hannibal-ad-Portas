@@ -94,3 +94,36 @@ Final validation: `npm run verify` passed lint, TypeScript, guards, 121 test fil
 1,421 tests and production build. Native purchase-to-completion showed the same
 Fattoria first with a countdown and then `In attivita`; console warnings/errors
 were empty. Standalone Chromium profiles were not run.
+
+## Settlement overview and construction refactor (2026-10-24)
+
+This supersedes the preceding fourth-button navigation fix. Keep exactly three
+real tabs with identical painting: Sintesi, Edifici, Recluta. Construction's
+inspector defaults to actual Works, grouped as in-construction and completed,
+and offers Edifici e coda for the full scrollable list. Nuove costruzioni returns
+to the catalogue. Inspecting a proposal uses the same detail space for its costs
+and purchase, retaining the list link. The selected main tab stays Edifici.
+
+Overview now names population, housing capacity, assigned workers, required
+workers and each resource's amount/capacity separately. It does not print ratio
+shorthand or combine two resources on one row. The header states the settlement
+level instead of repeating an unexplained population ratio. Balance retains its
+own drilldown; Works no longer mixes allocation, walls and garrison into the
+building list. The first-steps reference explains the revised navigation.
+
+Public HUD regressions failed before the change, then passed for the three
+presets. Static Standards review reported no findings; Spec review found two
+compact-inspector overlaps (close versus list link, scrolling versus groups).
+Both were fixed and covered by a new regression with nine groups, twelve Works,
+and both inspected/uninspected states. The focused review confirmed resolution.
+Native IAB inspection checked the readable summary, uniform tabs, actual purchase,
+full-list navigation, return to catalogue, and inline construction countdown.
+
+Final validation of this refactor: `npm run verify` passed lint, TypeScript,
+guards, 121 files / 1,423 tests and production build. The reference test also
+passed after the first-steps prose update. Native IAB at 1280x720 and 1920x1080
+showed a completed Fattoria alongside an unfinished Lesnaia within the catalogue.
+The final tab had no console warnings/errors. Standalone Chromium profiles were
+not run. Evidence: issue69-readable-summary-final.png,
+issue69-construction-refactor-final.png and issue69-construction-refactor-1080.png
+in the task visualization folder.
