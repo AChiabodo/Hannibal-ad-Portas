@@ -20,6 +20,8 @@ export interface BrowserMatchOptions {
   /** Composition seams for rules-driven scenarios; never exposed as browser hooks. */
   readonly rules?: MatchRules<SiegeWorld, Command>;
   readonly opponent?: Controller<SiegeVisible>;
+  /** Presentation observer, after rules have resolved; receives only this Faction's view. */
+  readonly afterTick?: (visible: SiegeVisible, commands: readonly Command[]) => void;
 }
 
 export function createBrowserMatch(options: BrowserMatchOptions) {
@@ -72,6 +74,7 @@ export function createBrowserMatch(options: BrowserMatchOptions) {
         log.push(...entries);
         if (log.length > 128) log.splice(0, log.length - 128);
         settle();
+        options.afterTick?.(this.observe(), structuredClone(entries.filter(({ command }) => command.faction === options.faction).map(({ command }) => command)));
         afterTick?.();
       }
     },

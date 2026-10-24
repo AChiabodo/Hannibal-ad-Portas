@@ -25,7 +25,7 @@ export interface SetupMenu {
 }
 
 export interface MenuButton {
-  readonly action: '0' | '1' | '2' | '3' | 'speed1' | 'speed2' | 'speed3' | 'restart' | 'new' | 'copy' | 'scale' | 'settings' | 'back' | 'reference' | 'navigator' | 'panelLayout' | 'reset' | 'guide' | 'close';
+  readonly action: '0' | '1' | '2' | '3' | 'speed1' | 'speed2' | 'speed3' | 'restart' | 'new' | 'copy' | 'scale' | 'settings' | 'back' | 'reference' | 'navigator' | 'panelLayout' | 'reset' | 'guide' | 'close' | 'home' | 'play' | 'tutorial' | 'resume' | 'economy' | 'recruitment' | 'combat' | 'siege';
   readonly speed?: Speed;
   readonly text: string;
   readonly rect: Rect;
@@ -45,11 +45,12 @@ export interface SetupModel {
   readonly invalid: boolean;
 }
 
-export function setupLayout(size: HudSize, model: SetupModel): SetupMenu {
+export function setupLayout(size: HudSize, model: SetupModel, returnToMenu = false): SetupMenu {
   // A page rather than a dialog: the objective and the two choices need whole
   // sentences, and a sentence squeezed into the one line a menu row has is how a
   // first entry ends up explaining nothing (#59).
-  const rect = { x: Math.floor((size.width - 600) / 2), y: Math.floor((size.height - 464) / 2), width: 600, height: 464 };
+  const height = returnToMenu ? 500 : 464;
+  const rect = { x: Math.floor((size.width - 600) / 2), y: Math.floor((size.height - height) / 2), width: 600, height };
   const textWidth = rect.width - 32;
   const texts: SetupText[] = [];
   const lines = [
@@ -89,6 +90,8 @@ export function setupLayout(size: HudSize, model: SetupModel): SetupMenu {
     texts.push({ text, rect: { x: rect.x + 16, y: rect.y + rect.height - 42 + index * lineStep, width: textWidth, height: lineStep }, scale: 2 });
   }
 
+  if (returnToMenu) buttons.push({ action: 'back', text: translate('entry.home'), enabled: true,
+    rect: { x: rect.x + 16, y: rect.y + rect.height - 74, width: textWidth, height: 22 } });
   return { rect, texts, buttons };
 }
 
@@ -158,7 +161,7 @@ export function contains(rect: Rect, x: number, y: number): boolean {
 
 /** Centered pause/result menu; settings are a separate, extensible page. */
 export function desktopMatchMenu(size: HudSize, top: number, config: MatchConfiguration,
-  speed: Speed, result: MatchResult | null, notice: string, preferences: UiPreferences, page: 'main' | 'settings' = 'main'): MatchMenu {
+  speed: Speed, result: MatchResult | null, notice: string, preferences: UiPreferences, page: 'main' | 'settings' = 'main', showHome = false): MatchMenu {
   const scale = fittedUiScale(preferences.uiScale, size);
   const logical = { width: Math.floor(size.width / scale), height: Math.floor(size.height / scale) };
   const base = matchMenu(logical, top / scale, config, speed, result, notice);
@@ -169,6 +172,7 @@ export function desktopMatchMenu(size: HudSize, top: number, config: MatchConfig
     { action: 'close', text: translate(result === null ? 'pause.resume' : 'ui.closeOptions') },
     { action: 'settings', text: translate('pause.settings') },
     { action: 'reference', text: translate('ref.open') },
+    ...(showHome ? [{ action: 'home' as const, text: translate('entry.home') }] : []),
     ...(['restart', 'new', 'copy'] as const).map((action) => ({ action, text: translate(`pause.${action}`) })),
   ] : [
     { action: 'back', text: translate('pause.back') },

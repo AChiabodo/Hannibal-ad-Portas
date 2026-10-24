@@ -60,6 +60,7 @@ export const FEATURES = {
   // The browser host: setup, the first-entry guide, a whole Match, the debug
   // surface and desktop presentation.
   host: [
+    'e2e/journey.spec.ts',
     'e2e/setup.spec.ts',
     'e2e/first-entry.spec.ts',
     'e2e/match.spec.ts',
@@ -85,6 +86,7 @@ export const SMOKE = ['e2e/smoke.spec.ts'];
  * assertions with `SPQR_VISUAL=1`.
  */
 export const VISUAL_SPECS = [
+  'e2e/journey.spec.ts',
   'e2e/economy-reference.spec.ts',
   'e2e/group-orders.spec.ts',
   'e2e/formation-art.spec.ts',

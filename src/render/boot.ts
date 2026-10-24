@@ -164,6 +164,9 @@ export interface ViewHooks {
 export interface GameView extends ViewHooks, GameHooks {
   /** What the renderer did when the page booted. */
   readonly probe: FrameReport;
+  suspend(): void;
+  activate(): void;
+  dispose(): void;
 }
 
 /**
@@ -171,7 +174,18 @@ export interface GameView extends ViewHooks, GameHooks {
  * both, the Match and its interface over everything, one frame drawn, and the
  * hooks Playwright and, later, an external agent drive it with.
  */
-export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserMatchOptions> & { readonly sessionControls?: boolean; readonly firstEntry?: boolean } = {}): Promise<GameView> {
+export interface BrowserViewOptions extends Partial<BrowserMatchOptions> {
+  readonly sessionControls?: boolean;
+  readonly firstEntry?: boolean;
+  readonly host?: import('../input/journey.ts').BrowserMatch;
+  readonly home?: () => void;
+  readonly tutorial?: import('../input/tutorial.ts').Tutorial;
+  readonly tutorialAction?: (action: 'next' | 'retry' | 'exit') => void;
+  readonly newMatch?: () => void;
+  readonly restart?: () => void;
+}
+
+export async function bootRenderer(mount: HTMLElement, options: BrowserViewOptions = {}): Promise<GameView> {
   const config: MatchConfiguration = { seed: options.seed ?? DEFAULT_SEED, faction: options.faction ?? 'rome', difficulty: options.difficulty ?? 'centurio' };
   const map = generateMap(config.seed);
   const theatre = renderTerrain(map);
@@ -252,12 +266,16 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     relayout,
     centerOn,
     ...config,
+    host: options.host,
+    home: options.home,
+    tutorial: options.tutorial,
+    tutorialAction: options.tutorialAction,
     rules: options.rules,
     opponent: options.opponent,
     sessionControls: options.sessionControls,
     firstEntry: options.firstEntry,
-    restart: () => leave(matchAddress(config, ENTRY_PATH)),
-    newMatch: () => leave(`${ENTRY_PATH}?previous=${String(config.seed)}`),
+    restart: options.restart ?? (() => leave(matchAddress(config, ENTRY_PATH))),
+    newMatch: options.newMatch ?? (() => leave(`${ENTRY_PATH}?previous=${String(config.seed)}`)),
     ended: () => {
       watch = null;
       inspection = false;
@@ -310,7 +328,12 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     game.sync();
   };
 
+  let active = true;
+  const lifecycle = new AbortController();
   const view: GameView = {
+    suspend: () => { active = false; game.stop(); options.host?.pacing.pause(); stage.canvas.hidden = true; stage.canvas.remove(); },
+    activate: () => { active = true; mount.appendChild(stage.canvas); stage.canvas.hidden = false; game.returnToMatch(); stage.canvas.focus(); },
+    dispose: () => { active = false; game.stop(); lifecycle.abort(); stage.destroy(); },
     ...game.hooks,
     probe: frameReport(stage),
     panBy: (dx, dy) => {
@@ -431,12 +454,12 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     const home = map.strongholds[config.faction === 'rome' ? 0 : 1];
     const at = tilePixel(home.x, home.y);
     centerOn(at.x, at.y);
-    window.addEventListener('resize', () => { relayout(); game.sync(); });
+    window.addEventListener('resize', () => { if (active) { relayout(); game.sync(); } }, { signal: lifecycle.signal });
   }
   game.start();
   stage.canvas.tabIndex = 0;
   stage.canvas.focus();
-  window.addEventListener('keydown', (event) => {
+  stage.canvas.addEventListener('keydown', (event) => {
     if (options.sessionControls === false) return;
     if (!['F2', 'F3', 'F4'].includes(event.key)) return;
     event.preventDefault();
@@ -457,10 +480,10 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     location.assign(address);
   }
   window.addEventListener('beforeunload', (event) => {
-    if (leaving || game.hooks.result() !== null) return;
+    if (options.home || leaving || game.hooks.result() !== null) return;
     event.preventDefault();
     event.returnValue = '';
-  });
+  }, { signal: lifecycle.signal });
 
   return view;
 }

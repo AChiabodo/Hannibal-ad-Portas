@@ -277,7 +277,7 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
     { passive: false },
   );
 
-  window.addEventListener('keydown', (event) => {
+  stage.canvas.addEventListener('keydown', (event) => {
     // A key pressed inside a text field is a letter, not an order: nothing on
     // the page has one today, and the day it does this is already right.
     const element = event.target;

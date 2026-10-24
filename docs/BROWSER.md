@@ -13,6 +13,24 @@ Two pages publish the same shape. The game is `/`, the catalogue of generated ar
 `/atelier.html`, and whichever of `view`, `game` and `atelier` is not this page is
 `null` — so one inspection routine reads either.
 
+## Entry and practice (#70)
+
+The bare entry opens the bitmap main menu. Gioca opens configuration, Tutorial
+opens repeatable independent chapters, and Enciclopedia/Opzioni work before a
+Match exists. These destinations publish `game: null` and `view: null`.
+`data-spqr-screen` names `menu`, `setup`, `chapters`, `reference`, `options`,
+`match` or `practice`. Valid configured direct addresses retain their behavior.
+
+Menu principale in the pause menu suspends the normal Match in memory. Riprendi
+returns to its same clock, log, selection and camera. Practice publishes its own
+ordinary Match hooks and leaves the normal Match untouched. Tutorial objectives
+are visible as `hud().guide`; Next is offered only after resolved outcomes.
+Retry discards only the current practice. F1 and Aiuto open the existing reference.
+Reload or page closure loses the suspended Match; there is no persistent save.
+
+The browser owner is `e2e/journey.spec.ts` in the `host` profile. Its Chromium runs
+and actual-frame evidence require an explicit user request under AGENTS.md.
+
 ## Opening the page
 
 `npm run dev` serves both pages. A page marks itself booted on the body, and says

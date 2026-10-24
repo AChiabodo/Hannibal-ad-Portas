@@ -6,15 +6,17 @@ import { setupLayout } from '../src/ui/match-menu';
 import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
 
 /** Where setup puts its controls, read from the same layout the page draws. */
-const SETUP = setupLayout({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT }, {
+const SETUP = setupLayout({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT + 60 }, {
   config: { seed: 0, faction: 'rome', difficulty: 'centurio' }, proposed: 0, seedText: '', focus: 0, invalid: false,
-});
+}, true);
 const SEED = SETUP.buttons[2]!.rect;
 const START = SETUP.buttons[3]!.rect;
 
 test('the explicit seed field accepts a pasted zero seed', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
   await expect(page.locator('canvas')).toHaveAttribute('aria-label', /conquistare la Roccaforte nemica/);
   await page.evaluate(() => navigator.clipboard.writeText('0'));
@@ -72,6 +74,8 @@ async function openMatch(page: Page, faction = 'rome', seed = 7): Promise<void> 
 
 test('keyboard setup selects Carthage, difficulty and an explicit seed; restart preserves them', async ({ page }) => {
   await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Tab');
@@ -97,6 +101,8 @@ test('keyboard setup selects Carthage, difficulty and an explicit seed; restart 
 test('pointer setup, invalid and empty seeds, copy, pacing, pause and fresh New Match', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
   const box = (await page.locator('canvas').boundingBox())!;
   // The visible seed field; typing replaces its proposed value.
@@ -127,16 +133,12 @@ test('pointer setup, invalid and empty seeds, copy, pacing, pause and fresh New 
   await page.keyboard.press('Space');
   await expect.poll(() => page.evaluate(() => window.__SPQR.game!.tick())).toBeGreaterThan(tick);
   await page.keyboard.press('Space');
-  page.once('dialog', (dialog) => { void dialog.dismiss(); });
-  await page.keyboard.press('a');
-  await pressMenu(page, 'new');
-  expect(await page.evaluate(() => window.__SPQR.game!.configuration())).toEqual(config);
-  page.once('dialog', (dialog) => { void dialog.accept(); });
   await pressMenu(page, 'new');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
+  page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.keyboard.press('Enter');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'match');
   expect((await page.evaluate(() => window.__SPQR.game!.configuration())).seed).not.toBe(config.seed);
@@ -147,6 +149,8 @@ for (const faction of ['rome', 'carthage'] as const) {
     test(`real rules, human submission, final knowledge and bitmap controls: ${faction} at ${String(width)}`, async ({ page, spqr }) => {
       await page.setViewportSize({ width, height: width === 1280 ? 720 : 1080 });
       await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
       await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
       await capture(page, `setup-${String(width)}`, 'issue64');
       await openMatch(page, faction);

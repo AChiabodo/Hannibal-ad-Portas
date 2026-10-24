@@ -92,6 +92,9 @@ import {
   type Selection as PlayerSelection,
 } from '../input/selection.ts';
 import { createBrowserMatch, type BrowserMatchOptions } from '../input/match-host.ts';
+import type { BrowserMatch } from '../input/journey.ts';
+import type { Tutorial } from '../input/tutorial.ts';
+import { tutorialPanel } from '../ui/tutorial.ts';
 import type { MatchConfiguration } from '../input/match-setup.ts';
 import { type SiegeVisible } from '../sim/siege.ts';
 import {
@@ -482,6 +485,8 @@ export interface Game {
   start(): void;
   /** Stops it. Idempotent. */
   stop(): void;
+  /** Restores the presentation and explicit Resume without losing the Guide pause. */
+  returnToMatch(): void;
 }
 
 /** What a game needs to exist: a stage, a seed, the viewport, the camera and the fog. */
@@ -494,6 +499,10 @@ export interface GameOptions {
   readonly opponent?: BrowserMatchOptions['opponent'];
   readonly restart?: () => void;
   readonly newMatch?: () => void;
+  readonly home?: () => void;
+  readonly host?: BrowserMatch;
+  readonly tutorial?: Tutorial;
+  readonly tutorialAction?: (action: 'next' | 'retry' | 'exit') => void;
   readonly ended?: () => void;
   /** A composed visual fixture can omit navigation chrome. Normal Matches always show it. */
   readonly sessionControls?: boolean;
@@ -544,7 +553,7 @@ export function createGame(options: GameOptions): Game {
   const config: MatchConfiguration = { seed: options.seed, faction: options.faction ?? PLAYER_FACTION,
     difficulty: options.difficulty ?? 'centurio' };
   const faction = config.faction;
-  const host = createBrowserMatch({ ...config, rules: options.rules, opponent: options.opponent });
+  const host = options.host ?? createBrowserMatch({ ...config, rules: options.rules, opponent: options.opponent });
   const match = host.match;
   const human = host.human;
   const pacing = host.pacing;
@@ -885,6 +894,15 @@ export function createGame(options: GameOptions): Game {
     },
     start: startLoop,
     stop: stopLoop,
+    returnToMatch: () => {
+      reference = null; sessionOpen = false; pausePage = 'main';
+      menuWasRunning = false; focusId = null;
+      if (!guidePaused && result === null) pacing.resume();
+      else pacing.pause();
+      preferences = desktop ? loadUiPreferences() : preferences;
+      options.relayout?.(preferences);
+      repaint(); startLoop();
+    },
   };
 
   function updatePreferences(next: UiPreferences): void {
@@ -1265,7 +1283,7 @@ export function createGame(options: GameOptions): Game {
       sites: known,
       notices,
       forecast: forecastLine(observation, match.state.tick),
-      guide: guidePanel(guide),
+      guide: options.tutorial && !guide.open ? tutorialPanel(options.tutorial) : guidePanel(guide),
     };
   }
 
@@ -1378,13 +1396,13 @@ export function createGame(options: GameOptions): Game {
       options.stage.render();
       return;
     }
-    options.stage.canvas.setAttribute('aria-label', [translate('ui.keyboard'), focused?.label ?? '', ...layout.readouts.map(({ line }) => `${line.label} ${line.value}`), ...layout.text.filter(({ rect }) => rect.y < layout.bar.height).map(({ text }) => text), ...layout.buttons.map(({ text }) => text), ...(guide.open ? [...layout.guideText.map(({ text }) => text), ...layout.guideButtons.map(({ text }) => text)] : []), ...(menu.visible ? [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)] : [])].join('. '));
+    options.stage.canvas.setAttribute('aria-label', [translate('ui.keyboard'), focused?.label ?? '', ...layout.readouts.map(({ line }) => `${line.label} ${line.value}`), ...layout.text.filter(({ rect }) => rect.y < layout.bar.height).map(({ text }) => text), ...layout.buttons.map(({ text }) => text), ...(model.guide !== null ? [...layout.guideText.map(({ text }) => text), ...layout.guideButtons.map(({ text }) => text)] : []), ...(menu.visible ? [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)] : [])].join('. '));
     options.stage.render();
   }
 
   function readMenu(): MatchMenu {
     return desktop
-      ? desktopMatchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice, preferences, pausePage)
+      ? desktopMatchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice, preferences, pausePage, options.home !== undefined)
       : matchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice);
   }
 
@@ -1475,6 +1493,7 @@ export function createGame(options: GameOptions): Game {
       if (!menuButton.enabled) return;
       if (menuButton.action === 'restart') hooks.restart();
       else if (menuButton.action === 'new') hooks.newMatch();
+      else if (menuButton.action === 'home') options.home?.();
       else if (menuButton.action === 'copy') void hooks.copySeed();
       else if (menuButton.action === 'scale') hooks.setUiScale(preferences.uiScale % 3 + 1);
       else if (menuButton.action === 'panelLayout') hooks.setPanelLayout(PANEL_LAYOUTS[(PANEL_LAYOUTS.indexOf(preferences.panelLayout) + 1) % PANEL_LAYOUTS.length]!);
@@ -1616,6 +1635,8 @@ export function createGame(options: GameOptions): Game {
       const focused = controls.find(({ id }) => id === focusId);
       if (focused !== undefined) {
         pickAt(focused.rect.x + focused.rect.width / 2, focused.rect.y + focused.rect.height / 2, false);
+        // Navigation may detach or dispose this session synchronously.
+        if (!options.stage.canvas.isConnected) return true;
         focusId = focused.id;
         repaint();
       }
@@ -1627,7 +1648,11 @@ export function createGame(options: GameOptions): Game {
   /** One of the bar's own buttons, pressed. */
   function hudButton(action: HudAction): void {
     const layout = hudLayout(model, options.size);
-    if (action.startsWith('purchase:')) perform(action.slice(9));
+    if (action === 'tutorialHelp') showReference('first-steps');
+    else if (action === 'tutorialNext') { if (options.tutorial?.next()) options.tutorialAction?.('next'); }
+    else if (action === 'tutorialRetry') options.tutorialAction?.('retry');
+    else if (action === 'tutorialExit') options.tutorialAction?.('exit');
+    else if (action.startsWith('purchase:')) perform(action.slice(9));
     else if (action === 'closeInspection') { inspectedOrder = null; repaint(); }
     else if (action.startsWith('settlement:')) {
       const page = action.slice(11);

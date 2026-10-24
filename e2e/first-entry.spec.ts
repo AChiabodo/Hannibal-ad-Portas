@@ -109,6 +109,8 @@ test.describe('setup explains the Match being configured', () => {
     test(`states Faction, difficulty and the objective at ${String(size.width)}x${String(size.height)}`, async ({ page }) => {
       await page.setViewportSize({ width: size.width, height: size.height });
       await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
       await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
       const label = await page.locator('#app canvas').getAttribute('aria-label');
       expect(label).toContain(translate('match.objective'));

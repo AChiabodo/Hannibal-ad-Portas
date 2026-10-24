@@ -263,7 +263,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works' | 'catalogue'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore';
+export type HudAction = `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works' | 'catalogue'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore' | 'tutorialNext' | 'tutorialRetry' | 'tutorialExit' | 'tutorialHelp';
 
 export interface HudButton {
   readonly action: HudAction;

@@ -86,6 +86,8 @@ async function reviewScene(
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
   await page.setViewportSize({ width, height });
   await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
   if (faction === 'carthage') await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Tab');

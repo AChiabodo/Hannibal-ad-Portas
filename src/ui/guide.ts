@@ -71,7 +71,7 @@ export type GuideActionName = 'guideBegin' | 'guideSkip' | 'guideClose';
 
 /** One control the panel offers. */
 export interface GuideAction {
-  readonly action: GuideActionName;
+  readonly action: GuideActionName | 'tutorialNext' | 'tutorialRetry' | 'tutorialExit' | 'tutorialHelp';
   readonly text: string;
 }
 

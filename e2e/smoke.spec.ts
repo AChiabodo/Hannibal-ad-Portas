@@ -93,6 +93,8 @@ async function clickableSquad(page: Page): Promise<{ readonly squad: SquadReport
 
 test('boots the real entry, reports its renderer and paints the setup screen', async ({ page, spqr }) => {
   await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
