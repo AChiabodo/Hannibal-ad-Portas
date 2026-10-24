@@ -10,7 +10,7 @@ import { BUILDINGS } from '../content/buildings.ts';
 import { MATCHUP } from '../content/arms.ts';
 import { payrollBill, recruitCost, SQUAD_TYPES } from '../content/squads.ts';
 import { TICK_HZ } from '../sim/clock.ts';
-import { BASE_HOUSING, GRAIN_PER_HEAD, TAX_PER_DENARIUS } from '../sim/economy.ts';
+import { BASE_HOUSING, BASE_STORAGE, GRAIN_PER_HEAD, TAX_PER_DENARIUS } from '../sim/economy.ts';
 import type { Command } from '../sim/command.ts';
 import { runMatch, type MatchRun } from '../sim/driver.ts';
 import { RELIEF_RADIUS, RAM_COST, SIEGE_RADIUS, canAssault, observeSiege, siegeMatchOutcome, siegeMatchRules,
@@ -27,7 +27,7 @@ export interface AiMatchRun extends MatchRun {
 
 const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
   recruitCost, payrollBill,
-  grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, taxPerDenarius: TAX_PER_DENARIUS,
+  grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, baseStorage: BASE_STORAGE, taxPerDenarius: TAX_PER_DENARIUS,
   ticksUntilPayroll: ticksUntilSeason };
 const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ };
 const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
@@ -158,23 +158,22 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
 
   /** The D5 army: the siege owns its Squads, and the field owns the rest. */
   const siegeBehaviour: Behaviour<SiegeVisible, Command> = { ...siege, tactical: (context) => {
-    const proposed = siege.tactical!(context);
-    if (proposed.length === 0) return [];
     const field = fieldOf(context);
-    // A withdrawal is the one field order that beats a siege: men who are done
-    // fighting are not left standing under a wall to hold a ring together.
+    // Recovery owns both a new withdrawal and the march it leaves on later
+    // ticks. Remove those Squads before the siege evaluates its available power.
     const withdrawn = new Set(field?.commands.filter((command) => command.kind === 'withdraw')
       .flatMap((command) => command.squads) ?? []);
-    const trimmed = proposed.map((candidate) => ({ ...candidate,
-      commands: candidate.commands.flatMap((command) => {
-        const squads = command.squads.filter((id) => !withdrawn.has(id));
-        return squads.length === 0 ? [] : [{ ...command, squads }];
-      }) })).filter((candidate) => candidate.commands.length > 0);
-    if (trimmed.length === 0) return [];
-    const committed = new Set(trimmed.flatMap((candidate) => candidate.commands)
+    const { visible } = context.observation;
+    const squads = visible.squads.filter((squad) => !withdrawn.has(squad.id) &&
+      !(squad.goal !== null && visible.settlements.some((site) =>
+        site.x === squad.goal!.x && site.y === squad.goal!.y)));
+    const proposed = siege.tactical!({ ...context, observation: { ...context.observation,
+      visible: { ...visible, squads } } });
+    if (proposed.length === 0) return [];
+    const committed = new Set(proposed.flatMap((candidate) => candidate.commands)
       .flatMap((command) => command.squads));
     const shared = share(context, field, committed);
-    return trimmed.map((candidate) => {
+    return proposed.map((candidate) => {
       const contributions: readonly Contribution<Command>[] = [
         { behaviour: siege.id, commands: candidate.commands }, ...shared,
       ];

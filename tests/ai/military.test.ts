@@ -3,7 +3,7 @@ import { createAi } from '../../src/ai/controller.ts';
 import { createMilitaryBehaviour } from '../../src/ai/military.ts';
 import { createBehaviourRegistry } from '../../src/ai/registry.ts';
 import { DIFFICULTY } from '../../src/ai/difficulty.ts';
-import { militaryRegistry } from '../../src/cli/ai-match.ts';
+import { createArmyController, militaryRegistry } from '../../src/cli/ai-match.ts';
 import { SQUAD_TYPES } from '../../src/content/squads.ts';
 import { MATCHUP } from '../../src/content/arms.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
@@ -31,6 +31,34 @@ function battlefield(): SiegeVisible {
 }
 
 describe('the military Controller', () => {
+  it('keeps an ongoing withdrawal owned by the field when the composed siege could use that Squad', () => {
+    const base = battlefield();
+    const controller = createArmyController('imperator');
+    const commands = controller.decide({ faction: 'rome', tick: 1, visible: { ...base,
+      enemies: [], contacts: [{ kind: 'stronghold', id: 1, type: null, x: 80, y: 80, seen: 0 }],
+      fronts: [{ settlement: 1, breached: false, besieger: null, siege: null, ram: null, garrison: 0, hold: 0, structures: [] }],
+      squads: [{ ...base.squads[0]!, x: 30, y: 30, goal: { x: 20, y: 20 } }],
+    } });
+    expect(commands.filter((command) => 'squads' in command && command.squads.includes(0))).toEqual([]);
+  });
+
+  it('recalls an exhausted scout outside combat and preserves its march home', () => {
+    const controller = ai();
+    const base = battlefield();
+    const visible = { ...base, enemies: [], contacts: [], squads: [{ ...base.squads[0]!,
+      x: 50, y: 50, morale: 5, goal: { x: 60, y: 50 } }] };
+    expect(controller.decide({ faction: 'rome', tick: 0, visible }))
+      .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [0] });
+    const continuing = controller.decide({ faction: 'rome', tick: 1, visible: { ...visible,
+      squads: [{ ...visible.squads[0]!, goal: { x: 20, y: 20 } }],
+    } });
+    expect(continuing.filter((command) => 'squads' in command && command.squads.includes(0))).toEqual([]);
+    const arrived = controller.decide({ faction: 'rome', tick: 2, visible: { ...visible,
+      squads: [{ ...visible.squads[0]!, x: 20, y: 20, goal: null }],
+    } });
+    expect(arrived.filter((command) => 'squads' in command && command.squads.includes(0))).toEqual([]);
+  });
+
   it('stands alone: registered without the economy or scouting, it still plans from its own contact memory', () => {
     const registry = createBehaviourRegistry<SiegeVisible, Command>([
       createMilitaryBehaviour({ squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX,

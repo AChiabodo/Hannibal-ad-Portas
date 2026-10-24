@@ -3,6 +3,10 @@
 24 October 2026. Baseline: `22e77ce752149732a9ed3599d32570a261e2d766`.
 **Not accepted / do not close #71.** Browser evidence and sampled timing failures remain.
 
+This is the historical `a6468d5` report. The subsequent fixes, regenerated matrix
+and remaining AI-vs-AI failures are tracked in the
+[AI recovery report](issue-21-24-ai-recovery.md); do not read its old 35/60 as the latest result.
+
 ## Reproduce
 
 ```powershell
@@ -128,10 +132,11 @@ wall-time measurements.
   the historical outcome regressions above; that documentation and the separate
   tournament stall regression are included.
 
-The final boundary regression also checks the observation immediately before
-tick 2,100 resolves: Payroll is due on that step, so incomplete work contributes
-no income. The corrected calendar projection leaves all 60 recorded final hashes
-unchanged; the matrix above was regenerated on that final version.
+Correction found during recovery: the earlier boundary interpretation was wrong.
+`advanceCalendar` resolves `tick + 1`; observation 2,099 precedes Payroll, while
+observation 2,100 follows it and has a whole Season until the next bill. The
+recovery fixes the projection and tests both observations. The historical matrix
+above belongs to the earlier code, not this corrected projection.
 
 No browser smoke, acceptance, visual or hardware performance result is inferred
 from these passed non-browser checks. The first-entry human symptom's exact seed

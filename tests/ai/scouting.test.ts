@@ -14,6 +14,27 @@ import { observeSiege, siegeMatchRules } from '../../src/sim/siege.ts';
 import type { SiegeVisible } from '../../src/sim/siege.ts';
 
 describe('the scouting Controller', () => {
+  it('uses two distinct opening patrols at Imperator when a two-Squad army can provide them', () => {
+    const world = siegeMatchRules.createWorld(7);
+    const home = world.economy.settlements[0]!;
+    for (let i = 0; i < 2; i += 1) musterSquad(world.economy, world.map, {
+      faction: 'rome', squadType: 'hastati', men: 24, x: home.x, y: home.y,
+    });
+    const visible = observeSiege(world, 'rome');
+    const counts = Object.values(DIFFICULTY).map((difficulty) => {
+      const controller = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ,
+        registry: createBehaviourRegistry<SiegeVisible, Command>([
+          createScoutingBehaviour({ width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
+            vision: SQUAD_VISION, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
+            scoutTypes: ['hastati', 'gaul', 'numidian-horse'] }, difficulty),
+        ]) });
+      const moves = controller.decide({ faction: 'rome', tick: 0, visible }).filter((command) => command.kind === 'move');
+      expect(new Set(moves.map((command) => `${command.x},${command.y}`)).size).toBe(moves.length);
+      return moves.length;
+    });
+    expect(counts).toEqual([1, 1, 2]);
+  });
+
   it('stands alone: registered without the field, it still sends a light Squad to the frontier', () => {
     const registry = createBehaviourRegistry<SiegeVisible, Command>([
       createScoutingBehaviour({ width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,

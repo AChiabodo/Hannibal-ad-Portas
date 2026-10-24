@@ -110,7 +110,8 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const { visible, tick, faction } = observation;
     const contacts = planningContacts(visible.contacts, tick, content.ticksPerSecond);
     const found = contacts.some((contact) => contact.kind === 'stronghold');
-    const quota = Math.max(1, Math.ceil(visible.squads.length / (found ? difficulty.scoutsPerFound : difficulty.scoutsPer)));
+    const quota = Math.max(found ? 1 : difficulty.openingScouts,
+      Math.ceil(visible.squads.length / (found ? difficulty.scoutsPerFound : difficulty.scoutsPer)));
     const scouts = visible.squads.filter((squad) => {
       const type = types.get(squad.type);
       const light = type !== undefined && content.scoutTypes.includes(type.id);
@@ -160,14 +161,13 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
               const central = Math.min(site.x, width - 1 - site.x, site.y, height - 1 - site.y);
               const home = visible.settlements[0] ?? squad;
               const outward = distance(home, site);
-              // Explore across the theatre before combing the home boundary.
-              // This uses only map dimensions and our own home, never an unseen target.
+              // Search the opposite end of the theatre across all latitudes.
+              // Home's latitude says nothing about where the opponent lives.
+              // Only own home, public dimensions and explored terrain enter this prior.
               const acrossX = width - 1 - home.x - site.x;
-              const acrossY = height - 1 - home.y - site.y;
-              const across = -(acrossX * acrossX + acrossY * acrossY);
-              const crossing = terrain[(height - 1 - home.y) * width + width - 1 - home.x] === unseen;
+              const across = -(acrossX * acrossX);
               const score = Math.floor(((unknown + (refresh ? 60 : 0)) * 100 + central * 10) *
-                (10 + outward) / (travel + 10)) + (!found && crossing ? across * 100 : 0);
+                (10 + outward) / (travel + 10)) + (!found ? across * 100 : 0);
               if (score > best) { best = score; target = site; }
             }
           }

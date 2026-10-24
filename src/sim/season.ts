@@ -59,10 +59,9 @@ export const SEASON_TICKS = 210 * TICK_HZ;
 
 /** Time from an observed Match tick to the next Payroll/production boundary. */
 export function ticksUntilSeason(tick: number): number {
-  // Controllers observe before tick `tick` resolves. At a nonzero boundary
-  // Payroll is due on that very step, not a full Season later.
-  if (tick === 0) return SEASON_TICKS;
-  return (SEASON_TICKS - tick % SEASON_TICKS) % SEASON_TICKS;
+  // advanceCalendar resolves tick + 1: observing a boundary means its
+  // production and Payroll have already been charged.
+  return SEASON_TICKS - tick % SEASON_TICKS;
 }
 
 /** How many ticks a game year lasts: four Seasons, fourteen minutes of Match time. */

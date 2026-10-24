@@ -34,6 +34,7 @@ complete acceptance runs.
 | `npm run test:focus -- src/ui/strings.ts` | Vitest's import graph from one or more changed paths | 11.6 s (14 files, 186 tests) |
 | `npm run test:focus -- src/sim/state.ts` | The same, on the most connected module there is | 51.8 s (42 files, 510 tests) |
 | `npm run test:unit` | Every non-browser test | 63.2 s warm; not a 60-second promise |
+| `npm run test:ai-pressure` | Fixed 60-case passive-human AI matrix, Replay, contact and actual pressure | Non-browser; separate from the focus budget |
 | `npm run test:smoke` | `e2e/smoke.spec.ts`: real boot, one Command, rendering, console health and the Atelier | 8.3 s warm (10.9 s with the provisioning pre-step) |
 | `npm run test:feature -- <name>` | One browser responsibility from the table below | 10 s (`orders`) up to a few minutes (`squads`, `terrain`) |
 | `npm run test:accept` | Every browser spec; no screenshots | 503 s, 148 tests, all passed |
@@ -44,6 +45,11 @@ A *responsibility* is what the code calls a `FEATURES` entry: the name after
 `test:feature`. The focused budget holds even for the worst case measured, a hub
 module whose import graph reaches 42 files; the whole unit suite is a different,
 unbudgeted profile.
+
+`npm run verify` includes `test:ai-pressure` after the unit suite. Every declared
+seed 1–10, human Faction and difficulty must pass; a failure exits nonzero.
+This headless gate neither launches Chromium nor replaces interactive browser
+acceptance, and does not authorize any browser profile.
 
 Extra Playwright arguments pass through. Use the `--flag=value` form for a value
 with spaces, because npm re-splits a command line:

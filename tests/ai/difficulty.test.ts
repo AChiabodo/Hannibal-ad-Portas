@@ -56,7 +56,7 @@ describe('the three difficulty levels', () => {
   });
 
   it('carries decision knobs only: there is nowhere for a resource or vision bonus to hide', () => {
-    const axes = ['aggression', 'horizonSeasons', 'name', 'reactionSeconds', 'refreshSeconds',
+    const axes = ['aggression', 'horizonSeasons', 'name', 'openingScouts', 'reactionSeconds', 'refreshSeconds',
       'scoutsPer', 'scoutsPerFound'];
     for (const level of Object.values(DIFFICULTY)) {
       expect(Object.keys(level).sort()).toEqual(axes);

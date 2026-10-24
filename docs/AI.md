@@ -105,10 +105,17 @@ facts and observed fronts; it never imports the rules, world or hidden map.
 Both postures prioritize the first affordable detachment. Rome starts a Market
 to fund its first Payroll before spending the opening timber on a Villa;
 Carthage can initially afford a small Gaul detachment from ordinary taxes.
-Both pursue Tier 2 deliberately. A second Market waits until that Tier exists
+Both pursue Tier 2 and then Tier 3 when resources and staffed food production
+can support the Villa and Forum. A second Market waits until Tier 2 exists
 so it cannot consume the labour needed to reach it. Housing follows population
 pressure; resource producers follow measured stock shortages and winter food
 needs, with utilities and reasons in the decision log.
+
+The first Roman Market and payable detachment can be planned together when
+construction finishes before Payroll. The combined purchase pays both costs,
+retains food and treasury reserves, and requires enough existing labour.
+Granaries receive priority when storage cannot hold the food floor plus an
+otherwise sustainable recruit. Difficulty never reduces that food floor.
 
 Labour allocation remains automatic: there is no assignment Command (ADR-0005).
 The policy changes the demand by choosing which work to raise, waits for current
@@ -335,6 +342,10 @@ A siege owns the Squads it commits. `scoutingRegistry` remains the D4 field and
 its patrols; `difficultyRegistry` adds the siege, and its candidate outranks the
 field's so a `hold` cannot stand down a Squad already at the walls. A field
 `withdraw` is the one exception, and the siege releases the men it names.
+Recovery also owns an existing march to friendly quarters on subsequent ticks.
+Spent scouts receive that march even outside combat; at home they remain out of
+scouting and siege until eligible again. Siege force excludes spent and returning
+Squads before choosing its path, and an empty ring never emits an empty withdrawal.
 
 ## The three difficulty levels (D5)
 
@@ -347,6 +358,7 @@ Each has four axes and nothing else:
 | Aggression (`attackPercent`) | 130% | 125% | 115% |
 | Planning horizon (Seasons of reserve) | 1 | 2 | 3 |
 | Scouting quota (`scoutsPer`/`scoutsPerFound`) | 5/12 | 3/8 | 2/5 |
+| Minimum opening patrols, when available | 1 | 1 | 2 |
 | Contact refresh | 60 s | 30 s | 15 s |
 
 Reaction time is `createAi`'s `operationalSeconds`; the default 30 is Centurio,
@@ -356,6 +368,11 @@ Aggression sets the margin the field needs before attacking and biases the siege
 toward the fast path. Horizon is the Seasons of Payroll the economy holds back
 and one less than its grain floor. Scouting quality is how large a share of the
 army explores and how soon a contact is worth refreshing.
+
+Before finding the enemy, patrols favor the opposite end of the theatre in
+longitude, exploring unknown ground across latitudes. They do not assume that
+the enemy's latitude mirrors their home. Multiple patrols choose distinct goals;
+neither hidden coordinates nor a seed-specific route enters the policy.
 
 Difficulty changes the opponent's thinking and nothing else. It never grants
 resources, production or vision: every value is a threshold or a clock the
@@ -369,9 +386,9 @@ Carthaginian blockade, reinforcement, abandonment and the age limit through the
 Controller.
 `tests/ai/difficulty.test.ts` checks the four axes, the operational clock, and
 that every level sees the same rule-filtered Observation. `tests/ai/siege-match.test.ts`
-plays whole Matches with no human: Rome takes the Stronghold by Assault on seed 1
-and Carthage by Blockade on seed 7, a Stronghold still falls at Tiro and
-Imperator, the Command log replays to the same hash, the
+plays whole Matches with no human. Its historical victory assertions currently
+expose unresolved stalls; see [the recovery report](reviews/issue-21-24-ai-recovery.md).
+The Command log replays to the same hash, the
 decisions do not move when a hidden army moves, and the three levels' decision
 logs are distinguishable on one seed. These are deterministic policy checks, not
 tournament balance: the balance numbers are E3's and F1's.

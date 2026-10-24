@@ -142,12 +142,14 @@ export function createSiegeBehaviour(
       const committed = field.filter(atWalls);
       const reserve = field.filter((squad) => !atWalls(squad) && !spent(squad));
       const willing = (squads: readonly SiegeSquad[]) => squads.filter((squad) => !spent(squad)).map((squad) => squad.id);
-      const committedPower = committed.reduce((sum, squad) => sum + power(squad), 0);
+      const committedPower = committed.filter((squad) => !spent(squad))
+        .reduce((sum, squad) => sum + power(squad), 0);
       const totalPower = committedPower + reserve.reduce((sum, squad) => sum + power(squad), 0);
       const holds = (value: number) => value * 100 >= threat * margin;
       const besieging = committed.length > 0 || front?.besieger === faction;
 
       if (besieging && !holds(totalPower)) {
+        if (committed.length === 0) return [];
         return [candidate('abandon', stated(`Abandon settlement ${String(target.id)}: relief of ${String(reliefPower)} power ` +
           `answers our ${String(committedPower)} and no reserve can match it; withdraw rather than feed it.`),
         [{ kind: 'withdraw', faction, squads: committed.map((squad) => squad.id) }])];

@@ -206,9 +206,10 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
         const lost = threat > support;
         if (!exhausted && !lost) return true;
         assigned.add(squad.id);
-        if (squad.engaged || (!returning && enemies.length > 0)) {
+        const sheltered = visible.settlements.some((settlement) => distance(squad, settlement) === 0);
+        if (squad.engaged || (!returning && (enemies.length > 0 || (exhausted && !sheltered)))) {
           commands.push({ kind: 'withdraw', faction, squads: [squad.id] });
-          reasons.push(`Withdraw Squad ${squad.id}: strength ${squad.men}, morale ${squad.morale}, local power ${support} against ${threat}; do not reinforce a lost engagement.`);
+          reasons.push(`Withdraw Squad ${squad.id}: strength ${squad.men}, morale ${squad.morale}, local power ${support} against ${threat}; recover in friendly quarters rather than remain spent in the field.`);
           withdrawing = true;
         }
         return false;
