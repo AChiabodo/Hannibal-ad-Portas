@@ -788,7 +788,7 @@ export function hudHit(model: HudModel, size: HudSize, x: number, y: number): Hu
   const layout = hudLayout(model, size);
 
   for (const button of layout.guideButtons) {
-    if (contains(button.rect, x, y)) return { kind: 'button', action: button.action };
+    if (contains(button.rect, x, y)) return button.enabled ? { kind: 'button', action: button.action } : null;
   }
   for (const button of layout.buttons) {
     if (contains(button.rect, x, y)) return { kind: 'button', action: button.action };
@@ -895,8 +895,9 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
     drawText(buffer, line.text, line.rect.x, line.rect.y, line.title ? HUD_VALUE : HUD_LABEL, scale);
   }
   for (const button of layout.guideButtons) {
-    panel(buffer, button.rect);
-    drawText(buffer, button.text, button.rect.x + PADDING * scale, button.rect.y + 5 * scale, HUD_VALUE, scale);
+    if (button.enabled) panel(buffer, button.rect);
+    else paintControl(buffer, button.rect, 'disabled');
+    drawText(buffer, button.text, button.rect.x + PADDING * scale, button.rect.y + 5 * scale, button.enabled ? HUD_VALUE : HUD_BORDER, scale);
   }
 
   for (const button of layout.buttons) {
@@ -1911,7 +1912,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     const buttonY = guidePanel.y + guidePanel.height - PADDING - guideButtonsHeight;
     for (const action of guide.actions) {
       const width = Math.min(guideBodyWidth, measureText(action.text) + 2 * PADDING + 2);
-      guideButtons.push({ action: action.action, text: action.text, enabled: true,
+      guideButtons.push({ action: action.action, text: action.text, enabled: action.enabled ?? true,
         rect: { x: buttonX, y: buttonY, width, height: guideButtonsHeight } });
       buttonX += width + 3;
     }

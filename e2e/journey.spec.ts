@@ -78,9 +78,21 @@ for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]
     await entry(page, 'recruitment', true, true);
     await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'practice');
     await page.keyboard.press('Space');
-    expect(await page.evaluate(() => window.__SPQR.game!.hud().guide!.actions.some((b) => b.action === 'tutorialNext'))).toBe(false);
-    await recruitTwo(page);
+    // Reading does not advance itself; entering the next action does not complete it.
+    await keyboardGuide(page, 'tutorialNext');
     expect(await page.evaluate(() => window.__SPQR.game!.hud().guide!.step)).toBe(2);
+    expect(await page.evaluate(() => window.__SPQR.game!.hudLayout().guideButtons.find((b) => b.action === 'tutorialNext')!.enabled)).toBe(false);
+    // Space controls the clock even while the disabled Next button has keyboard focus.
+    await page.keyboard.press('Space');
+    expect(await page.evaluate(() => window.__SPQR.game!.paused())).toBe(false);
+    await page.keyboard.press('Space');
+    expect(await page.evaluate(() => window.__SPQR.game!.paused())).toBe(true);
+    expect(await page.evaluate(() => window.__SPQR.game!.hud().guide!.step)).toBe(2);
+    const home = await page.evaluate(() => window.__SPQR.game!.hudLayout().rows.find((r) => r.selection.kind === 'settlement')!.rect);
+    await press(page, home);
+    expect(await page.evaluate(() => window.__SPQR.game!.hudLayout().guideButtons.find((b) => b.action === 'tutorialNext')!.enabled)).toBe(true);
+    await keyboardGuide(page, 'tutorialNext');
+    expect(await page.evaluate(() => window.__SPQR.game!.hud().guide!.step)).toBe(3);
     await capture(page, `tutorial-${size.width}`, 'issue70');
     await keyboardGuide(page, 'tutorialExit');
     await page.keyboard.press('Escape');

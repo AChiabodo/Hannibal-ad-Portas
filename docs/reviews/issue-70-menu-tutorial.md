@@ -33,9 +33,10 @@ Tutorial chapters start independent ordinary rules sessions on seed 7 as Rome:
 
 The first two opponents remain idle. No chapter changes rules, grants resources,
 reveals fog or mutates a live world. An after-tick presentation observer receives
-copies of only the human Faction's Observation and Commands. Objectives depend on
-resolved outcomes, not submission or acknowledgement. Next appears only after
-completion and returns to chapter selection; it never awards an objective.
+copies of only the human Faction's Observation and Commands. Action steps depend on resolved outcomes or the public selection/panel state,
+not a submitted order. Every step waits for explicit Next; explanations can be
+acknowledged immediately and action steps enable Next only once fulfilled. After
+the final explanation, Capitoli returns to chapter selection.
 Retry creates a fresh session after confirmation. Exit returns to chapters, and
 the preserved normal Match remains paused. Aiuto/F1 uses the existing reference;
 the concise Guide can be reopened from the existing pause settings.
@@ -96,3 +97,52 @@ this is a procedural specimen, not a browser frame or interaction verdict.
 
 Spec total: two initial P2 findings fixed; zero remaining concrete defects in the
 recheck. Browser acceptance remains unverified as described above.
+
+## Teaching revision after player feedback
+
+The four chapters now contain 12, 15, 16 and 19 numbered lessons, respectively.
+Each presents one action with its purpose or one explanation to read. Completed
+outcomes do not advance messages automatically, so an early action cannot skip
+unread teaching. A disabled Avanti and a short status distinguish an action still
+required from a completed action. The final summary uses Capitoli to return.
+
+Economy separates selecting the Stronghold, local/shared stocks, construction
+category, offer inspection, construction cost/labour, starting and finishing work,
+seasonal balance and the Season boundary. Recruitment purchases each small Squad
+separately and explains size, quantity, grain/iron and survivor Payroll. Movement
+adds selection, multi-selection, destination, group binding/recall, camera,
+exploration, contact, morale and withdrawal. Territory/Siege adds discovery,
+capture, supply, enemy contact, approach, inspecting fortifications, selecting
+soldiers again and choosing Blocco then its target.
+
+The teaching copy addresses a first-time Player and contains no Controller,
+Command, Observation or session-isolation explanations. It names the actual UI
+labels, including Reparti, Edifici, Costruisci, Recluta and Blocco. Farm output,
+labour, costs and duration, recruitment costs, Payroll, Season length and capture
+checks are interpolated from shipped content/rules.
+
+Public presentation observations verify panel/selection steps. They cannot award
+construction, recruitment, movement, combat, capture or Siege outcomes, which
+still come from the practice Faction's ordinary after-tick Observation. The tests
+exercise all four full lesson sequences and preserve the refused-order regression.
+Every lesson's full text, action row and glyphs are checked at both reference
+resolutions, including paused/disabled action states. Browser specifications were
+updated but Chromium has not been run for this revision.
+
+Revision verification: `npm run verify` passed with 124 files / 1,433 non-browser
+tests, lint, TypeScript, guards and production build. A generated 1280x720 farm
+lesson specimen was inspected; it is not a browser interaction/frame gate.
+
+### Revision Standards review
+
+Zero findings. The new presentation observations, rule outcomes, Italian String
+table and disabled-button input path follow the existing boundaries.
+
+### Revision Spec review
+
+One P2 instruction/control mismatch was fixed: focused Avanti could consume
+Space instead of resuming a paused exercise. During Tutorial play, Space now
+reaches the existing pacing control while Enter activates lesson buttons; open
+reference and pause-menu handling retain precedence. The authored browser journey
+covers toggling pause with disabled Avanti focused. Static recheck found no
+remaining concrete finding. Browser execution remains unrun.

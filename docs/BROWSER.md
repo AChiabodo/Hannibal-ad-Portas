@@ -24,7 +24,9 @@ Match exists. These destinations publish `game: null` and `view: null`.
 Menu principale in the pause menu suspends the normal Match in memory. Riprendi
 returns to its same clock, log, selection and camera. Practice publishes its own
 ordinary Match hooks and leaves the normal Match untouched. Tutorial objectives
-are visible as `hud().guide`; Next is offered only after resolved outcomes.
+are visible as `hud().guide`; its step number and action status are public.
+Avanti acknowledges an explanation or an action already completed; it stays disabled for an unperformed action.
+Messages never advance automatically, and Capitoli returns after the final summary.
 Retry discards only the current practice. F1 and Aiuto open the existing reference.
 Reload or page closure loses the suspended Match; there is no persistent save.
 

@@ -1242,7 +1242,10 @@ export function createGame(options: GameOptions): Game {
     }
     if (!next.commands.some((order) => order.id === inspectedOrder)) inspectedOrder = null;
     detailSelection = next.selected;
-    return { ...next, view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
+    options.tutorial?.present({ settlement: human.selection.settlement, squads: human.selection.squads,
+      tab, category, inspected: inspectedOrder, page: settlementPage });
+    return { ...next, guide: options.tutorial && !guide.open ? tutorialPanel(options.tutorial) : next.guide,
+      view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
       noticesOpen, noticeOffset, settlementPage, inspectedOrder,
       desktop, navigatorExpanded, sessionOpen, speed: pacing.speed, ...preferences,
       uiScale: fittedUiScale(preferences.uiScale, windowSize()), tick: match.state.tick,
@@ -1283,7 +1286,7 @@ export function createGame(options: GameOptions): Game {
       sites: known,
       notices,
       forecast: forecastLine(observation, match.state.tick),
-      guide: options.tutorial && !guide.open ? tutorialPanel(options.tutorial) : guidePanel(guide),
+      guide: guidePanel(guide),
     };
   }
 
@@ -1621,6 +1624,8 @@ export function createGame(options: GameOptions): Game {
       else openPauseMenu();
       return true;
     }
+    // Lesson navigation must not steal the pause key advertised to a new Player.
+    if (options.tutorial && !menu.visible && key === ' ') return false;
     if (!desktop || (key !== 'F6' && focusId === null && !menu.visible)) return false;
     const controls = interfaceControls();
     if (controls.length === 0) return false;
@@ -1649,7 +1654,15 @@ export function createGame(options: GameOptions): Game {
   function hudButton(action: HudAction): void {
     const layout = hudLayout(model, options.size);
     if (action === 'tutorialHelp') showReference('first-steps');
-    else if (action === 'tutorialNext') { if (options.tutorial?.next()) options.tutorialAction?.('next'); }
+    else if (action === 'tutorialNext') {
+      const tutorial = options.tutorial;
+      if (!tutorial) return;
+      const complete = tutorial.complete;
+      if (tutorial.next()) {
+        if (complete) options.tutorialAction?.('next');
+        else repaint();
+      }
+    }
     else if (action === 'tutorialRetry') options.tutorialAction?.('retry');
     else if (action === 'tutorialExit') options.tutorialAction?.('exit');
     else if (action.startsWith('purchase:')) perform(action.slice(9));

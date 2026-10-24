@@ -73,6 +73,7 @@ export type GuideActionName = 'guideBegin' | 'guideSkip' | 'guideClose';
 export interface GuideAction {
   readonly action: GuideActionName | 'tutorialNext' | 'tutorialRetry' | 'tutorialExit' | 'tutorialHelp';
   readonly text: string;
+  readonly enabled?: boolean;
 }
 
 /** What the panel shows at one moment: its words and its controls. */
