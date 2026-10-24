@@ -46,7 +46,7 @@ describe('an unopposed economy across three Years', () => {
     }
     const builds = (faction: string) => run.log.flatMap(({ command }) =>
       command.faction === faction && command.kind === 'build' ? [command.building] : []);
-    expect(builds('rome')[0]).toBe('villa');
+    expect(builds('rome')[0]).toBe('market');
     expect(builds('carthage')[0]).toBe('market');
     expect(final[0]!.squads.map((squad) => squad.type)).not.toEqual(final[1]!.squads.map((squad) => squad.type));
     if (seed === 7) {

@@ -11,15 +11,14 @@ function economyAi() {
 }
 
 describe('the economy Controller', () => {
-  it('opens Rome with a Tier objective and Carthage with recurring market income', () => {
+  it('opens with a payable detachment or the market needed to fund one before a Tier objective', () => {
     const world = siegeMatchRules.createWorld(7);
-    for (const [faction, settlement, building] of [
-      ['rome', 0, 'villa'], ['carthage', 1, 'market'],
+    for (const [faction, command] of [
+      ['rome', { kind: 'build', faction: 'rome', settlement: 0, building: 'market' }],
+      ['carthage', { kind: 'recruit', faction: 'carthage', settlement: 1, squadType: 'gaul', men: 24, count: 1 }],
     ] as const) {
       const ai = economyAi();
-      expect(ai.decide({ faction, tick: 0, visible: observeSiege(world, faction) })).toEqual([
-        { kind: 'build', faction, settlement, building },
-      ]);
+      expect(ai.decide({ faction, tick: 0, visible: observeSiege(world, faction) })).toEqual([command]);
       expect(ai.readLog()[0]?.selected.behaviour).toBe('economy');
     }
   });
@@ -46,6 +45,17 @@ describe('the economy Controller', () => {
         expect(isLegalSize(type, command.men), `${faction} ${command.squadType} ${String(command.men)}`).toBe(true);
         expect(command.count).toBeGreaterThan(0);
       }
+    }
+  });
+
+  it('funds the first detachment from a staffed market finishing before Payroll, never one finishing afterwards', () => {
+    const visible = observeSiege(siegeMatchRules.createWorld(7), 'rome');
+    for (const [tick, recruits] of [[300, true], [2000, false], [2100, false]] as const) {
+      const commands = economyAi().decide({ faction: 'rome', tick,
+        visible: { ...visible, settlements: [{ ...visible.settlements[0]!,
+          works: [{ building: 'market', standing: false, remaining: 200 }],
+        }] } });
+      expect(commands.some((command) => command.kind === 'recruit')).toBe(recruits);
     }
   });
 

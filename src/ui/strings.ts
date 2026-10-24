@@ -600,6 +600,7 @@ export const STRINGS = {
   'notice.blockade': { it: 'Blocco su {name}', en: 'Blockade at {name}' },
   'notice.refusal': { it: 'Ordine rifiutato: {name} - {reason}', en: 'Order refused: {name} - {reason}' },
   'notice.engaged': { it: 'A contatto: {name}', en: 'In contact: {name}' },
+  'notice.contact': { it: 'Nemico avvistato', en: 'Enemy sighted' },
   'notice.loss': { it: 'Reparto perduto: {name}', en: 'Squad lost: {name}' },
   'notice.siege': { it: 'Assedio su {name}', en: 'Siege at {name}' },
   // How a notice is written: the mark that says whether it is standing or an

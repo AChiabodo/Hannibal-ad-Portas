@@ -72,15 +72,20 @@ describe('a batch of AI-vs-AI Matches', () => {
   }, 60_000);
 
   it('plays a real Match: one seed, to a victory, with the decisions it took to win it', async () => {
-    // P2's roster and prices moved who wins a shipped AI Match; #66 owns that
-    // balance. This seed is one the new baseline still decides, with a clean,
-    // non-lopsided victory at a stated tick.
-    const report = await runTournament(batch({ seeds: 1, firstSeed: 6, ticks: 7000, workers: 1 }));
+    // #71's opening changes the outcome baseline. Seed 13 at Tiro remains a
+    // real blockade victory; the fixed 1–10 pressure matrix retains every failure.
+    const report = await runTournament(batch({ seeds: 1, firstSeed: 13, difficulty: 'tiro', ticks: 7000, workers: 1 }));
 
-    expect(report.matches[0]).toMatchObject({ seed: 6, outcome: 'victory', winner: 'carthage', ticks: 6300 });
+    expect(report.matches[0]).toMatchObject({ seed: 13, outcome: 'victory', winner: 'carthage', ticks: 6300 });
     expect(report.winRate).toEqual({ rome: 0, carthage: 1 });
     expect(report.outliers.lopsided).toEqual([]);
     expect(report.outliers.stalled).toEqual([]);
+  }, 120_000);
+
+  it('retains the historical Centurio seed 6 stall instead of counting submitted Orders as victory', async () => {
+    const report = await runTournament(batch({ seeds: 1, firstSeed: 6, ticks: 7000, workers: 1 }));
+    expect(report.matches[0]).toMatchObject({ seed: 6, outcome: 'clock', winner: null, ticks: 7000 });
+    expect(report.winRate).toEqual({ rome: 0, carthage: 0 });
   }, 120_000);
 
   it("refuses a directory it cannot write decision logs to, before playing anything", async () => {

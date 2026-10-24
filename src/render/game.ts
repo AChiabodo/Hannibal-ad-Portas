@@ -367,6 +367,7 @@ export interface GameHooks {
   notices(): readonly Notice[];
   /**
    * Centres a location-bearing notice, when the place it names is still known.
+   * An enemy sighting centres its recorded tile, never a hidden current position.
    *
    * A notice whose Squad has left the field or whose settlement the Faction no
    * longer knows is marked `lost` and answers `false`, so a stale target is
@@ -1193,7 +1194,9 @@ export function createGame(options: GameOptions): Game {
 
     const target = notice.target;
     const observation = visible();
-    const at = target.kind === 'squad'
+    const at = target.kind === 'contact'
+      ? tilePixel(target.x, target.y)
+      : target.kind === 'squad'
       ? (() => {
         const squad = observation.squads.find((candidate) => candidate.id === target.id);
 

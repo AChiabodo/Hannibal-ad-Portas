@@ -18,6 +18,7 @@ import { RELIEF_RADIUS, RAM_COST, SIEGE_RADIUS, canAssault, observeSiege, siegeM
 import { FATIGUE_MAX } from '../sim/squad.ts';
 import { MAP_WIDTH, MAP_HEIGHT, TERRAIN } from '../sim/map.ts';
 import { SQUAD_VISION, UNSEEN } from '../sim/fog.ts';
+import { ticksUntilSeason } from '../sim/season.ts';
 
 /** A headless AI run retains explanations beside the replayable Command log. */
 export interface AiMatchRun extends MatchRun {
@@ -26,7 +27,8 @@ export interface AiMatchRun extends MatchRun {
 
 const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
   recruitCost, payrollBill,
-  grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, taxPerDenarius: TAX_PER_DENARIUS };
+  grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, taxPerDenarius: TAX_PER_DENARIUS,
+  ticksUntilPayroll: ticksUntilSeason };
 const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ };
 const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
   vision: SQUAD_VISION, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,

@@ -49,7 +49,7 @@ interface Settlement {
   readonly population: number;
   readonly stocks: Resources;
   readonly land: Resources;
-  readonly works: readonly { readonly building: string; readonly standing: boolean }[];
+  readonly works: readonly { readonly building: string; readonly standing: boolean; readonly remaining: number }[];
 }
 
 /** Only owned economic facts, plus the fronts the Faction can already observe. */
@@ -79,6 +79,8 @@ export function createEconomyBehaviour(content: {
   readonly grainPerHead: number;
   readonly baseHousing: number;
   readonly taxPerDenarius: number;
+  /** Projection supplied by the calendar owner; policies do not derive Season boundaries. */
+  readonly ticksUntilPayroll: (tick: number) => number;
   readonly squadTypes: readonly {
     readonly id: string; readonly faction: Faction; readonly tier: number;
     readonly strength: number; readonly sizes: readonly number[];
@@ -108,7 +110,11 @@ export function createEconomyBehaviour(content: {
         const building = buildings.get(work.building);
         if (building === undefined || building.labour > available) continue;
         available -= building.labour;
-        if (work.standing) income += building.denarii;
+        // Payroll is charged at the next Season boundary. A staffed market
+        // finishing before then can fund that bill; it need not be standing
+        // on the recruitment tick. No future population growth is assumed.
+        const untilPayroll = content.ticksUntilPayroll(observation.tick);
+        if (work.standing || work.remaining < untilPayroll) income += building.denarii;
       }
     }
     const payroll = visible.squads.reduce((sum, squad) => sum + squad.payroll, 0);
@@ -142,7 +148,9 @@ export function createEconomyBehaviour(content: {
                 settlement.stocks.grain - cost.grain < grainFloor(food) ||
                 Object.entries(cost).some(([key, amount]) => settlement.stocks[key as keyof Resources] < amount)) continue;
               candidates.push({ id: `recruit-${settlement.id}-${type.id}-${men}`,
-                utility: 45 + type.tier * 5 - count * 4 + Math.floor((10 * men) / type.strength) +
+                // Establish eyes in the field before spending the opening stocks on a Tier.
+                utility: (observation.visible.squads.length === 0 ? 100 : 45) + type.tier * 5 - count * 4 +
+                  Math.floor((10 * men) / type.strength) +
                   (preference?.utility ?? 0),
                 reason: `Payroll ${payroll} is covered by income ${funds.income}; retain ${requiredReserve(payroll)} denarii.${preference === undefined ? '' : ` ${preference.reason}`}`,
                 commands: [{ kind: 'recruit', faction: observation.faction, settlement: settlement.id,
@@ -178,7 +186,7 @@ export function createEconomyBehaviour(content: {
             const markets = works.filter((work) => work.denarii > 0).length;
             // A second market must not consume the hands reserved for the villa.
             utility = markets > 0 && settlement.tier < TIER_TWO ? 0
-              : markets === 0 && plan.posture === 'commerce' ? 90 : 50;
+              : markets === 0 ? 90 : 50;
             reason = 'Recurring denarii fund Payroll.';
           } else if (building.id === 'house' && settlement.population >= housing - HOUSING_HEADROOM) {
             utility = 110;

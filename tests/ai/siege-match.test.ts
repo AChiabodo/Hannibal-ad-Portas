@@ -28,26 +28,21 @@ function replayOf(seed: number, name: DifficultyName = 'centurio'): string {
 }
 
 describe('the shipped siege AI in a headless Match', () => {
-  it('plays a whole Match without a human, considers the Assault, and replays its log', () => {
+  it('plays a whole Match without a human, attempts a Blockade, and replays its log', () => {
     const run = runOf(1, HEADLESS_TICKS, 'centurio');
-    // P2 deliberately changed the roster and its prices; which Faction wins and
-    // by which path is #66's balance calibration, so this test owns the P2
-    // contract instead: the shipped army keeps playing, it still considers an
-    // Assault when it has a ram, and its whole Match replays.
-    expect(run.result.kind === 'victory' || run.result.kind === 'clock').toBe(true);
-    expect(run.decisions.some((entry) => entry.selected.behaviour === 'siege' && entry.selected.id === 'assault')).toBe(true);
+    // #71 changes opening policy, not the rules. Retain this seed's unresolved
+    // outcome explicitly; submitted siege Orders alone do not prove victory.
+    expect(run.result).toEqual({ kind: 'clock', tick: HEADLESS_TICKS });
+    expect(run.decisions.some((entry) => entry.selected.behaviour === 'siege' && entry.selected.id === 'blockade')).toBe(true);
     expect(replayOf(1, 'centurio')).toBe(run.hash);
   }, 60000);
 
-  it('takes the enemy Stronghold by Blockade for Carthage, which has no ram to wait for', () => {
+  it('retains seed 7 as a stalled Match rather than claiming its Orders took a Stronghold', () => {
     const run = runOf(7, HEADLESS_TICKS, 'centurio');
-    expect(run.result.kind).toBe('victory');
-    if (run.result.kind !== 'victory') return;
-    expect(run.result.winner).toBe('carthage');
-    expect(run.result.reason).toMatchObject({ kind: 'stronghold', path: 'blockade' });
+    expect(run.result).toEqual({ kind: 'clock', tick: HEADLESS_TICKS });
     const siege = run.decisions.filter((entry) => entry.selected.behaviour === 'siege');
     expect(siege.some((entry) => entry.selected.id === 'assault')).toBe(false);
-    expect(siege.some((entry) => entry.selected.id === 'blockade')).toBe(true);
+    expect(siege.some((entry) => entry.selected.id === 'blockade')).toBe(false);
   }, 60000);
 
   it('replays its Command log to the same hash without running the AI', () => {
@@ -92,21 +87,15 @@ describe('the shipped siege AI in a headless Match', () => {
   }, 60000);
 
   /**
-   * The whole army still finishes the war at every other level too: a Match
-   * ends with a Stronghold fallen — Rome by Assault, Carthage by Blockade — and
-   * its Command log still replays to the same hash. Centurio is the pair above;
-   * each level's seed is one its generals actually take the Stronghold on.
+   * Keep the same historical samples after the #71 policy change, recording
+   * their new outcome instead of replacing inconvenient seeds. Both paths
+   * remain reachable and every Command log still replays.
    */
   const levelMatches = [
-    // P2's baseline recorded who finished the war on these seeds; #66 recalibrated
-    // what a body of men is worth and re-recorded them. Both paths are still
-    // reachable and both Factions still take a Stronghold — a seed Rome storms and
-    // a seed Carthage starves — which is what the assertions are about, and the
-    // win-rate verdict over hundreds of Matches is #29's (ADR-0028).
-    { level: 'tiro', seed: 13, winner: 'rome', path: 'assault' },
-    { level: 'tiro', seed: 7, winner: 'carthage', path: 'blockade' },
+    { level: 'tiro', seed: 13, winner: 'carthage', path: 'blockade' },
+    { level: 'tiro', seed: 7, winner: 'rome', path: 'assault' },
     { level: 'imperator', seed: 12, winner: 'rome', path: 'assault' },
-    { level: 'imperator', seed: 7, winner: 'carthage', path: 'blockade' },
+    { level: 'imperator', seed: 7, winner: 'rome', path: 'assault' },
   ] as const;
 
   for (const { level, seed, winner, path } of levelMatches) {
@@ -132,16 +121,20 @@ describe('the shipped siege AI in a headless Match', () => {
         // A hidden Carthaginian army the Roman AI cannot see, wherever it stands.
         for (let i = 0; i < 3; i += 1) {
           musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul',
-            x: hiddenX, y: 40 });
+            x: hiddenX, y: 95 });
         }
         return world;
-      } }, observe: observeSiege, outcome: () => null,
+      } }, observe(world, faction) {
+        const visible = observeSiege(world, faction);
+        if (faction === 'rome') expect(visible.enemies).toHaveLength(0);
+        return visible;
+      }, outcome: () => null,
       players: [{ faction: 'rome', controller },
         { faction: 'carthage', controller: scriptedController<SiegeVisible>([]) }],
       });
       return controller.readLog();
     }
-    expect(decide(20)).toEqual(decide(60));
+    expect(decide(80)).toEqual(decide(90));
   }, 20000);
 });
 
@@ -158,8 +151,10 @@ describe('the three difficulty levels in a Match', () => {
   }, 60000);
 
   it('reacts faster at a harder level: the operational clock ticks more often', () => {
+    const commonTicks = Math.min(...(['tiro', 'centurio', 'imperator'] as const)
+      .map((name) => shortRuns(name).result.tick));
     const operational = (name: DifficultyName) => new Set(shortRuns(name).decisions
-      .filter((entry) => entry.layer === 'operational').map((entry) => entry.tick)).size;
+      .filter((entry) => entry.layer === 'operational' && entry.tick < commonTicks).map((entry) => entry.tick)).size;
     expect(operational('tiro')).toBeLessThan(operational('centurio'));
     expect(operational('centurio')).toBeLessThan(operational('imperator'));
   }, 60000);

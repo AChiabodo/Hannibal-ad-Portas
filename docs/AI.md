@@ -102,8 +102,9 @@ still runs the foundation alone, ending at the bound without Commands.
 constants from the composition root, outside `ai/`. It reads only owned economic
 facts and observed fronts; it never imports the rules, world or hidden map.
 
-Rome's growth posture puts its Villa first. Carthage's commerce posture puts a
-Market first, then grows the labour pool and production needed for a Villa.
+Both postures prioritize the first affordable detachment. Rome starts a Market
+to fund its first Payroll before spending the opening timber on a Villa;
+Carthage can initially afford a small Gaul detachment from ordinary taxes.
 Both pursue Tier 2 deliberately. A second Market waits until that Tier exists
 so it cannot consume the labour needed to reach it. Housing follows population
 pressure; resource producers follow measured stock shortages and winter food
@@ -115,9 +116,12 @@ construction, and rejects works it cannot staff. It keeps hands on land unless
 grain works can feed the population. This is the same allocation every Controller
 uses, with no AI-only production rule.
 
-Every operational decision recomputes recurring tax and staffed, standing Market
-income. Unfinished or unstaffed works and blockaded settlements contribute no
-Market income; blockaded settlements contribute no tax either. Recruitment prices
+Every operational decision recomputes recurring tax and staffed Market income
+available by the next Payroll. A staffed Market still under construction counts
+only if its remaining work finishes before that boundary; the calendar owner
+supplies `ticksUntilSeason` through the composition root rather than the policy
+deriving Season boundaries. Unstaffed works and blockaded settlements contribute
+no Market income; blockaded settlements contribute no tax either. Recruitment prices
 every real size a type offers with the content table's own `recruitCost` and
 `payrollBill`, emits one Squad at a time, requires total Payroll no greater than
 recurring income, retains two Seasons of the proposed Payroll plus
@@ -223,9 +227,18 @@ reveal unexplored terrain. They score information gain against travel distance,
 prefer progress away from home and toward the interior, and spread detachments
 across different targets. A march continues while its destination can still
 reveal ground or refresh a contact. There is no random choice, hidden terrain
-lookup or enemy-position hint. After thirty seconds a remembered contact can
+lookup or enemy-position hint. Before finding the enemy, the first crossing is
+biased toward the region opposite its own home; once that region is observed,
+ordinary information-gain scoring resumes. This geographical heuristic can
+search the wrong latitude and does not guarantee a contact deadline.
+After thirty seconds a remembered contact can
 draw a patrol back within circular vision, refreshing it through the ordinary
 Match rules. Exploration continues after discovery.
+
+The fixed passive-human pressure matrix, retained failures and changed
+AI-vs-AI outcome baseline are in
+[the #71 diagnostic report](reviews/issue-71-visible-pressure.md).
+Neither discovery tests nor headless pacing prove normal-browser visual pressure.
 
 The search is the most expensive thing the AI does, and it is done on every tick:
 a whole-theatre walk per light Squad, asking of every tile how much unknown ground

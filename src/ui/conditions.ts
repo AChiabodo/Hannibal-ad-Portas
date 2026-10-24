@@ -167,13 +167,14 @@ export type NoticeKind =
   | 'blockade'
   | 'refusal'
   | 'engaged'
+  | 'contact'
   | 'siege'
   | 'loss';
 
 /** Where a notice is about, when the Faction knows a place for it. */
 export interface NoticeTarget {
-  /** Whether it names a Squad or a settlement. */
-  readonly kind: 'squad' | 'settlement';
+  /** Own Squad, known settlement, or the historical tile of an enemy sighting. */
+  readonly kind: 'squad' | 'settlement' | 'contact';
   /** The id a selection and a Command use. */
   readonly id: number;
   /** The tile it stood on when the notice was read, so a click can centre it. */
@@ -247,6 +248,7 @@ export function createNoticeBook(): NoticeBook {
   const stored = new Map<string, Stored>();
   let seenSquads = new Map<number, Seen>();
   let seenFronts = new Map<number, string | null>();
+  const spotted = new Set<number>();
 
   return {
     read(visible, tick) {
@@ -379,6 +381,16 @@ export function createNoticeBook(): NoticeBook {
     beforeFronts: ReadonlyMap<number, string | null>,
   ): readonly Fresh[] {
     const fresh: Fresh[] = [];
+
+    if (hasFronts(visible)) {
+      for (const enemy of visible.enemies) {
+        if (spotted.has(enemy.id)) continue;
+        spotted.add(enemy.id);
+        fresh.push({ id: `event:contact:${String(enemy.id)}`, kind: 'contact',
+          label: translate('notice.contact'), detail: null,
+          target: { kind: 'contact', id: enemy.id, x: enemy.x, y: enemy.y } });
+      }
+    }
 
     for (const squad of visible.squads) {
       const before = beforeSquads.get(squad.id);
