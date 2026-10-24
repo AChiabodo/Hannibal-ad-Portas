@@ -171,7 +171,7 @@ outside it. What is not here, the Faction cannot know.
 | `settlements` | The settlements you hold, one record each: below.                                      |
 | `squads`      | The Squads you keep, one record each: below.                                           |
 | `fog`         | What you have seen of the ground, and what you see now.                                |
-| `contacts`    | The enemies you have seen, at the tile you last saw them: `kind` (`squad`, `settlement`, `stronghold`), `id`, `x`, `y`, `seen` (the tick), `type` (for a Squad, or `null`). A place is a memory, not a live position. |
+| `contacts`    | Enemy Squads and settlements you have seen, including unowned villages: `kind` (`squad`, `settlement`, `stronghold`), `id`, `x`, `y`, `seen` (the tick), `type` (for a Squad, or `null`). Optional `unowned: true` confirms a village has no owner **in current vision only**; it is absent in memory. A remembered place does not report live position or ownership. |
 | `enemies`     | Enemy field Squads **in your sight right now**: `id`, `type`, `x`, `y`.                |
 | `fronts`      | The Sieges you can read (see below).                                                   |
 <!-- observation:end -->

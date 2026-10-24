@@ -29,9 +29,9 @@
  * make:
  *
  * - **Ownership** comes from the Observation and only while the settlement is in
- *   view: an own settlement is the Faction's, a contact in view is the enemy's
- *   (contacts are written for enemy-held settlements only), and a settlement in view
- *   with neither is held by nobody. A **remembered** settlement has no owner: memory
+ *   view: an own settlement is the Faction's; a contact explicitly confirmed
+ *   unowned is held by nobody, and other contacts in view are the enemy's.
+ *   A **remembered** settlement has no owner: memory
  *   records a settlement, not who holds it today, which is the rule the minimap
  *   states in its own colour for a remembered site. Its *kind* — Stronghold or minor
  *   settlement — is remembered, because that is what was seen standing there.
@@ -147,11 +147,9 @@ export function knownSites(
     const memory: SiteMemory = knowledge === KNOWLEDGE.visible ? 'seen' : 'remembered';
     sites.push({
       ...identity,
-      // A contact is an enemy-held settlement, and *only* while it is in view: memory
-      // records a settlement, not who holds it today (the minimap draws a remembered
-      // site in stone for the same reason). A settlement in view with no contact and
-      // none of its own is held by nobody.
-      owner: memory === 'seen' && contact !== undefined ? enemy : null,
+      // Current vision distinguishes an unowned village from an enemy-held
+      // settlement. Memory never reports who holds it today.
+      owner: memory === 'seen' && contact !== undefined && contact.unowned !== true ? enemy : null,
       memory,
       // Only what is in view has a front: memory holds a settlement, not its walls.
       front: memory === 'seen' ? fronts.get(identity.id) ?? null : null,

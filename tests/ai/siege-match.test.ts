@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { armyRegistry, difficultyRegistry, playAiMatch, playAiMatchAt, type AiMatchRun } from '../../src/cli/ai-match.ts';
+import { armyRegistry, createArmyController, difficultyRegistry, playAiMatch, playAiMatchAt, type AiMatchRun } from '../../src/cli/ai-match.ts';
 import { createAi } from '../../src/ai/controller.ts';
 import { DIFFICULTY, type DifficultyName } from '../../src/ai/difficulty.ts';
 import { HEADLESS_TICKS } from '../../src/sim/season.ts';
@@ -28,21 +28,36 @@ function replayOf(seed: number, name: DifficultyName = 'centurio'): string {
 }
 
 describe('the shipped siege AI in a headless Match', () => {
-  it('plays a whole Match without a human, attempts a Blockade, and replays its log', () => {
+  it.each(['tiro', 'centurio', 'imperator'] as const)('completes a real Carthaginian Blockade at %s', (level) => {
+    const setup = { seed: 13, ticks: HEADLESS_TICKS, rules: siegeMatchRules,
+      observe: observeSiege, outcome: siegeMatchOutcome };
+    const run = runMatch({ ...setup, players: [
+      { faction: 'rome', controller: scriptedController<SiegeVisible>([]) },
+      { faction: 'carthage', controller: createArmyController(level) },
+    ] });
+    expect(run.result).toEqual({ kind: 'victory', winner: 'carthage', tick: 6300,
+      reason: { kind: 'stronghold', stronghold: 0, path: 'blockade' } });
+    const replayed = runMatch({ ...setup, players: [
+      { faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
+      { faction: 'carthage', controller: scriptedController<SiegeVisible>(run.log) },
+    ] });
+    expect(replayed.hash).toBe(run.hash);
+  }, 60000);
+
+  it('takes a Stronghold without a human and replays its log after the ram-readiness fix', () => {
     const run = runOf(1, HEADLESS_TICKS, 'centurio');
-    // #71 changes opening policy, not the rules. Retain this seed's unresolved
-    // outcome explicitly; submitted siege Orders alone do not prove victory.
-    expect(run.result).toEqual({ kind: 'clock', tick: HEADLESS_TICKS });
-    expect(run.decisions.some((entry) => entry.selected.behaviour === 'siege' && entry.selected.id === 'blockade')).toBe(true);
+    expect(run.result).toEqual({ kind: 'victory', winner: 'rome', tick: 1251,
+      reason: { kind: 'stronghold', stronghold: 1, path: 'assault' } });
+    expect(run.decisions.some((entry) => entry.selected.behaviour === 'siege' && entry.selected.id === 'assault')).toBe(true);
     expect(replayOf(1, 'centurio')).toBe(run.hash);
   }, 60000);
 
-  it('retains seed 7 as a stalled Match rather than claiming its Orders took a Stronghold', () => {
+  it('resolves the retained seed 7 stall with an actual Stronghold conquest', () => {
     const run = runOf(7, HEADLESS_TICKS, 'centurio');
-    expect(run.result).toEqual({ kind: 'clock', tick: HEADLESS_TICKS });
+    expect(run.result).toEqual({ kind: 'victory', winner: 'carthage', tick: 4200,
+      reason: { kind: 'stronghold', stronghold: 0, path: 'blockade' } });
     const siege = run.decisions.filter((entry) => entry.selected.behaviour === 'siege');
-    expect(siege.some((entry) => entry.selected.id === 'assault')).toBe(false);
-    expect(siege.some((entry) => entry.selected.id === 'blockade')).toBe(false);
+    expect(siege.some((entry) => entry.selected.id === 'blockade')).toBe(true);
   }, 60000);
 
   it('replays its Command log to the same hash without running the AI', () => {
@@ -92,7 +107,8 @@ describe('the shipped siege AI in a headless Match', () => {
    * remain reachable and every Command log still replays.
    */
   const levelMatches = [
-    { level: 'tiro', seed: 13, winner: 'carthage', path: 'blockade' },
+    { level: 'centurio', seed: 6, winner: 'rome', path: 'assault' },
+    { level: 'tiro', seed: 13, winner: 'rome', path: 'assault' },
     { level: 'tiro', seed: 7, winner: 'rome', path: 'assault' },
     { level: 'imperator', seed: 12, winner: 'rome', path: 'assault' },
     { level: 'imperator', seed: 7, winner: 'rome', path: 'assault' },

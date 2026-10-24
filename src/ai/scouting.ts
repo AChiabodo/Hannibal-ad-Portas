@@ -4,6 +4,7 @@ import { atHalfStrength, type Behaviour } from './registry.ts';
 import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
+import { restingAtHome } from './recovery.ts';
 
 export interface ScoutingObservation {
   readonly year: number;
@@ -108,7 +109,10 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
   }
   return { id: 'scouting', tactical: ({ observation }) => {
     const { visible, tick, faction } = observation;
-    const contacts = planningContacts(visible.contacts, tick, content.ticksPerSecond);
+    // Open settlements belong to expansion; stationary villages must not pull
+    // the discovery patrol away from the enemy's Stronghold on every refresh.
+    const contacts = planningContacts(visible.contacts, tick, content.ticksPerSecond)
+      .filter((contact) => contact.kind !== 'settlement');
     const found = contacts.some((contact) => contact.kind === 'stronghold');
     const quota = Math.max(found ? 1 : difficulty.openingScouts,
       Math.ceil(visible.squads.length / (found ? difficulty.scoutsPerFound : difficulty.scoutsPer)));
@@ -116,6 +120,7 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
       const type = types.get(squad.type);
       const light = type !== undefined && content.scoutTypes.includes(type.id);
       return light && !squad.routing && !squad.engaged && squad.garrison === null &&
+        !restingAtHome(squad, visible.settlements, type.morale) &&
         !atHalfStrength(squad) && squad.morale * 2 > type.morale &&
         !visible.enemies.some((enemy) => distance(squad, enemy) <= vision + 1) &&
         !(squad.goal !== null && visible.settlements.some((home) => distance(home, squad.goal!) === 0));

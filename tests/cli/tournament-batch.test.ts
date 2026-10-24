@@ -72,17 +72,17 @@ describe('a batch of AI-vs-AI Matches', () => {
   }, 60_000);
 
   it('plays a real Match: one seed, to a victory, with the decisions it took to win it', async () => {
-    // #71's opening changes the outcome baseline. Seed 13 at Tiro remains a
-    // real blockade victory; the fixed 1–10 pressure matrix retains every failure.
+    // The retained seed now ends when Rome finishes its ram instead of recalling
+    // the builders one round before shelter. This is still a real victory contract.
     const report = await runTournament(batch({ seeds: 1, firstSeed: 13, difficulty: 'tiro', ticks: 7000, workers: 1 }));
 
-    expect(report.matches[0]).toMatchObject({ seed: 13, outcome: 'victory', winner: 'carthage', ticks: 6300 });
-    expect(report.winRate).toEqual({ rome: 0, carthage: 1 });
+    expect(report.matches[0]).toMatchObject({ seed: 13, outcome: 'victory', winner: 'rome', ticks: 1051 });
+    expect(report.winRate).toEqual({ rome: 1, carthage: 0 });
     expect(report.outliers.lopsided).toEqual([]);
     expect(report.outliers.stalled).toEqual([]);
   }, 120_000);
 
-  it('retains the historical Centurio seed 6 stall instead of counting submitted Orders as victory', async () => {
+  it('reports the short seed 6 bound as clock before its later conquest', async () => {
     const report = await runTournament(batch({ seeds: 1, firstSeed: 6, ticks: 7000, workers: 1 }));
     expect(report.matches[0]).toMatchObject({ seed: 6, outcome: 'clock', winner: null, ticks: 7000 });
     expect(report.winRate).toEqual({ rome: 0, carthage: 0 });

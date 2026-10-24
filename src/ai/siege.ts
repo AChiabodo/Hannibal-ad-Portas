@@ -4,6 +4,7 @@ import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
 import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
+import type { AssaultReadiness } from './assault.ts';
 
 type Faction = Observation<unknown>['faction'];
 
@@ -23,7 +24,8 @@ interface VisibleSiegeFront {
   readonly settlement: number;
   readonly breached: boolean;
   readonly besieger: Faction | null;
-  readonly ram: { readonly built: boolean } | null;
+  readonly siege?: 'assault' | 'blockade' | null;
+  readonly ram: { readonly built: boolean; readonly hp?: number; readonly remaining?: number } | null;
   readonly garrison: number;
 }
 
@@ -41,6 +43,7 @@ export interface SiegeObservation {
 
 /** Content and constants supplied at composition; the AI imports no simulation value. */
 export interface SiegeContent {
+  readonly canContinueAssault?: AssaultReadiness;
   /** Whether a Faction can assault at all: the ram is Rome's alone (ADR-0008). */
   readonly canAssault: (faction: Faction) => boolean;
   /** What laying a ram down costs from the Faction's one treasury. */
@@ -111,9 +114,10 @@ export function createSiegeBehaviour(
 
     return Math.max(0, squad.men * (type?.impact ?? 1) * squad.morale);
   };
-  const spent = (squad: SiegeSquad) => {
+  const spent = (squad: SiegeSquad, observation: Observation<SiegeObservation>) => {
     const type = types.get(squad.type);
-    return type !== undefined && (atHalfStrength(squad) || squad.morale * 2 <= type.morale);
+    return type !== undefined && (atHalfStrength(squad) || (squad.morale * 2 <= type.morale &&
+      !content.canContinueAssault?.(observation.faction, observation.visible, squad)));
   };
   const margin = attackPercent(difficulty);
 
@@ -140,9 +144,9 @@ export function createSiegeBehaviour(
       const atWalls = (squad: SiegeSquad) => distance(squad, place) <= content.siegeRadius ||
         (squad.goal !== null && squad.goal.x === place.x && squad.goal.y === place.y);
       const committed = field.filter(atWalls);
-      const reserve = field.filter((squad) => !atWalls(squad) && !spent(squad));
-      const willing = (squads: readonly SiegeSquad[]) => squads.filter((squad) => !spent(squad)).map((squad) => squad.id);
-      const committedPower = committed.filter((squad) => !spent(squad))
+      const reserve = field.filter((squad) => !atWalls(squad) && !spent(squad, observation));
+      const willing = (squads: readonly SiegeSquad[]) => squads.filter((squad) => !spent(squad, observation)).map((squad) => squad.id);
+      const committedPower = committed.filter((squad) => !spent(squad, observation))
         .reduce((sum, squad) => sum + power(squad), 0);
       const totalPower = committedPower + reserve.reduce((sum, squad) => sum + power(squad), 0);
       const holds = (value: number) => value * 100 >= threat * margin;

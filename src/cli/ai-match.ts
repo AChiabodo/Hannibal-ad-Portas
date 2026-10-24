@@ -3,6 +3,9 @@ import { createEconomyBehaviour } from '../ai/economy.ts';
 import { createMilitaryBehaviour, createMilitaryRecruitment } from '../ai/military.ts';
 import { createScoutingBehaviour } from '../ai/scouting.ts';
 import { createSiegeBehaviour } from '../ai/siege.ts';
+import { createAssaultReadiness } from '../ai/assault.ts';
+import { restingAtHome } from '../ai/recovery.ts';
+import { createExpansionBehaviour } from '../ai/expansion.ts';
 import { createBehaviourRegistry, type Behaviour, type BehaviourContext, type BehaviourRegistry,
   type Candidate, type Contribution } from '../ai/registry.ts';
 import { DIFFICULTY, type Difficulty, type DifficultyName } from '../ai/difficulty.ts';
@@ -13,7 +16,7 @@ import { TICK_HZ } from '../sim/clock.ts';
 import { BASE_HOUSING, BASE_STORAGE, GRAIN_PER_HEAD, TAX_PER_DENARIUS } from '../sim/economy.ts';
 import type { Command } from '../sim/command.ts';
 import { runMatch, type MatchRun } from '../sim/driver.ts';
-import { RELIEF_RADIUS, RAM_COST, SIEGE_RADIUS, canAssault, observeSiege, siegeMatchOutcome, siegeMatchRules,
+import { RELIEF_RADIUS, RAM_COST, SIEGE_RADIUS, ASSAULT_TICKS, WALL_SHOCK, canAssault, observeSiege, siegeMatchOutcome, siegeMatchRules,
   type SiegeVisible } from '../sim/siege.ts';
 import { FATIGUE_MAX } from '../sim/squad.ts';
 import { MAP_WIDTH, MAP_HEIGHT, TERRAIN } from '../sim/map.ts';
@@ -29,7 +32,10 @@ const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
   recruitCost, payrollBill,
   grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, baseStorage: BASE_STORAGE, taxPerDenarius: TAX_PER_DENARIUS,
   ticksUntilPayroll: ticksUntilSeason };
-const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ };
+const canContinueAssault = createAssaultReadiness({ siegeRadius: SIEGE_RADIUS,
+  assaultTicks: ASSAULT_TICKS, wallShock: WALL_SHOCK });
+const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ,
+  canContinueAssault };
 const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
   vision: SQUAD_VISION, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
   scoutTypes: ['hastati', 'gaul', 'numidian-horse'] };
@@ -39,7 +45,7 @@ const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, 
 // in the same units as the rest of a Controller's power.
 const garrisonEstimate = Math.max(...SQUAD_TYPES.filter((type) => type.tier === 1)
   .map((type) => type.strength * type.impact * type.morale));
-const siegeContent = { canAssault, ramCost: RAM_COST, siegeRadius: SIEGE_RADIUS, reliefRadius: RELIEF_RADIUS,
+const siegeContent = { canAssault, canContinueAssault, ramCost: RAM_COST, siegeRadius: SIEGE_RADIUS, reliefRadius: RELIEF_RADIUS,
   garrisonEstimate, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES };
 
 /** Economy alone at one difficulty: what `economyRegistry` is to Centurio. */
@@ -79,6 +85,7 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
   const military = createMilitaryBehaviour(militaryContent, difficulty);
   const scouting = createScoutingBehaviour(scoutingContent, difficulty);
   const siege = createSiegeBehaviour(siegeContent, difficulty);
+  const expansion = createExpansionBehaviour({ ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES });
 
   const fieldOf = (context: BehaviourContext<SiegeVisible>) => bestCandidate(military.tactical!(context));
 
@@ -165,6 +172,7 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
       .flatMap((command) => command.squads) ?? []);
     const { visible } = context.observation;
     const squads = visible.squads.filter((squad) => !withdrawn.has(squad.id) &&
+      !restingAtHome(squad, visible.settlements, SQUAD_TYPES.find((type) => type.id === squad.type)?.morale ?? 0) &&
       !(squad.goal !== null && visible.settlements.some((site) =>
         site.x === squad.goal!.x && site.y === squad.goal!.y)));
     const proposed = siege.tactical!({ ...context, observation: { ...context.observation,
@@ -184,7 +192,25 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
   } };
 
   const behaviours: Behaviour<SiegeVisible, Command>[] = [economy, military, scoutingBehaviour];
-  if (withSiege) behaviours.push(siegeBehaviour);
+  if (withSiege) {
+    behaviours.push(siegeBehaviour, { ...expansion, tactical: (context) => {
+      // A viable main siege retains priority. Never divert its ring to a village.
+      if (siegeBehaviour.tactical!(context).length > 0) return [];
+      const field = fieldOf(context);
+      const fieldOwned = new Set(field?.commands.filter((command) => command.kind !== 'hold')
+        .flatMap((command) => command.squads) ?? []);
+      const proposed = expansion.tactical!({ ...context, observation: { ...context.observation,
+        visible: { ...context.observation.visible,
+          squads: context.observation.visible.squads.filter((squad) => !fieldOwned.has(squad.id)) } } });
+      return proposed.map((candidate) => {
+        const owned = new Set(candidate.commands.flatMap((command) => command.squads));
+        const contributions: readonly Contribution<Command>[] = [
+          { behaviour: expansion.id, commands: candidate.commands }, ...share(context, field, owned),
+        ];
+        return { ...candidate, commands: commandsOf(contributions), contributions };
+      });
+    } });
+  }
   return createBehaviourRegistry<SiegeVisible, Command>(behaviours);
 }
 

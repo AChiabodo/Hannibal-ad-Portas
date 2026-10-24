@@ -1345,7 +1345,8 @@ export function createGame(options: GameOptions): Game {
     const window = visible();
     const ownership: KnownMinimapSite[] = window.settlements.map((site) => ({ ...site, owner: factionCode(faction) }));
     for (const contact of window.contacts) {
-      if (contact.kind !== 'squad') ownership.push({ ...contact, owner: factionCode(faction === 'rome' ? 'carthage' : 'rome') });
+      if (contact.kind !== 'squad') ownership.push({ ...contact,
+        owner: contact.unowned === true ? -1 : factionCode(faction === 'rome' ? 'carthage' : 'rome') });
     }
     for (const site of [...match.state.world.map.strongholds, ...match.state.world.map.settlements]) {
       if (knows(window.fog, site.x, site.y) === 2 && !ownership.some((known) => known.x === site.x && known.y === site.y)) ownership.push({ ...site, owner: -1 });

@@ -147,7 +147,7 @@ _UI_: Nebbia di guerra
 _Avoid_: Shroud, blackout, visibility mask, using "fog" for the unexplored state alone
 
 **Last known contact**:
-Where an enemy thing was standing when the Faction last saw it, kept after it marches out of view. The place is a memory and not a live position, and how stale that memory is matters.
+Where an enemy Squad or a settlement stood when the Faction last saw it, kept after sight is lost; an open settlement may belong to nobody. The place is a memory, not a live position or a claim about who owns it today, and how stale that memory is matters.
 _UI_: Ultimo contatto noto
 _Avoid_: Blip, tracker, calling a thing the rules can see right now a "contact" (that is an enemy in sight; only the fog's *memory* of one is a last known contact)
 

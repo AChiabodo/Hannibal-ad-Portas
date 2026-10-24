@@ -1,7 +1,9 @@
 # AI recovery after the #71 audit
 
 24 October 2026. Implementation baseline: `a6468d5`.
-**Partial recovery; the AI audit and #71 remain incomplete.**
+**Headless AI recovery implemented; #71 remains open for browser evidence.**
+The first batch's failures below are retained history. The second batch resolves
+them and the additional historical Centurio seed 6 regression.
 
 ## Ownership and authorization
 
@@ -20,7 +22,7 @@ This distinction is retained rather than retrospectively changing its acceptance
 The proposed five-tile vision deadzone was withdrawn because its initial fixture
 violated the public Observation contract; it is not counted as a confirmed bug.
 
-## Implemented slices and public evidence
+## First batch (`929ee41`): implemented slices and public evidence
 
 Each behavior fix was exercised through the agreed Controller/Observation or
 Match seam, with a failing case before its implementation.
@@ -71,7 +73,8 @@ not merely a submitted order.
 | Pre-#71 baseline | 10/60 | Historical committed baseline |
 | `a6468d5` | 35/60 | Historical committed `headless.jsonl`; 25 retained failures |
 | Recovery before combined opening | 59/60 | Seed 7, human Carthage/Imperator: contact 1,293 > 1,200 |
-| Final recovery | **60/60** | [All cases](issue-71/recovery.jsonl), all Replay hashes match, no observed unpaid Seasons |
+| First batch (`929ee41`) | 60/60 | Pressure restored; active-opponent regressions still unresolved |
+| Consolidated recovery | **60/60** | [All cases](issue-71/recovery.jsonl), all Replay hashes match, no observed unpaid Seasons |
 
 No seed was replaced and no deadline was loosened. This sample proves pressure
 against the specified passive opening, not global balance or success against
@@ -82,10 +85,10 @@ matrix to 52/60; terrain-cost search did not fix the last failure; prioritizing 
 second Market before Tier 2 delayed Tier progression in three economy fixtures
 without resolving the historical military stalls.
 
-## Remaining failures: do not close
+## First-batch failures, retained history
 
-The six remaining historical AI-vs-AI failures are independent of the passive
-matrix and remain represented by failing assertions:
+The six historical AI-vs-AI failures in the first batch were independent of the
+passive matrix and remained represented by failing assertions:
 
 - Centurio seed 7 still ends at the three-Year clock, and now selects siege
   activity contrary to the previous no-siege assertion. This is changed behavior,
@@ -95,14 +98,14 @@ matrix and remain represented by failing assertions:
 - The real-victory tournament contract, Tiro seed 13 at 7,000 ticks, ends at the
   clock instead of the expected Carthaginian victory at 6,300.
 
-These samples must be diagnosed and fixed before the overall AI work can be
-accepted. Returning exhausted scouts and refusing to count unavailable troops
-correct specific errors but do not establish an effective offensive strategy
-against another active army. Nominal enemy-strength estimates remain the public
+These samples blocked acceptance of that batch. The second batch below resolves
+the causes and verifies real conquests. Returning exhausted scouts alone did not
+establish an effective offensive strategy against another active army.
+Nominal enemy-strength estimates remain the public
 roster estimates required by ADR-0028; hidden headcount was not exposed to force
 a win. Costs, Payroll, aggregate force and simulation rules were not relaxed.
 
-## Verification and independent review
+## First-batch verification and independent review
 
 Environment remains Windows/Node 22.22.2/npm 10.9.7; concurrent checks mean these
 durations are execution evidence, not hardware performance benchmarks.
@@ -126,5 +129,105 @@ durations are execution evidence, not hardware performance benchmarks.
 
 Chromium was not explicitly requested: smoke, acceptance, visual captures,
 ordinary paced browser matrix and cohesive playthroughs remain **unrun**.
-#71 stays open. #21–#24 also remain open while the recovery is incomplete.
+#71 stays open. #21–#24 remain open for review of the recovery.
 #29, #31 and #32 are unchanged. No push is implied by this local recovery.
+
+## Second batch: why the offensive campaigns stalled
+
+1. **Withdrawal one round before protection.** Seed 13/Tiro recalled Rome's
+   builders at tick 841, with morale 5/10 and a paid ram 10 ticks from completion
+   at 850. Field and siege now share the visible remaining shock calculation:
+   construction advances before punishment and the completion round shelters
+   the ring. Only men who retain positive morale can continue. Half-strength
+   and an overwhelming relief army still require withdrawal.
+2. **Recovery ended too soon.** Men returned to quarters but resumed campaigns
+   just above half morale, lost it again outside Supply, and repeated the loop.
+   They now rest to nominal morale before offensive work. A threatened home
+   still gets its defensive line through the existing 12-tile defence tasks.
+   Review caught and corrected an initial four-tile-only defence exemption.
+3. **No economic expansion from observed villages.** Neutral villages were
+   discarded from contact memory, and no policy attempted their capture. They
+   now enter memory through the same eyes and fog filter. Expansion can occupy
+   a known open village after the first Payroll when the main siege is not
+   sustainable. It leaves every non-hold field assignment, returning Squad and
+   viable main siege untouched. Captured sites run the ordinary economy policy.
+   Starting expansion during the opening caused a seed-7 regression; deferring
+   it until the first Payroll lets the initial campaign resolve first.
+4. **Village memory implied hostility in the interface.** A currently seen
+   unowned village now carries `unowned: true`; it is not marked as enemy on the
+   map/minimap. The flag is absent in memory. A real Match counterfactual proves
+   that the remembered contact is identical whether an unseen village remains
+   neutral or is secretly captured. The historical neutral-only enemy-contact
+   assumption is updated in the glossary and protocol.
+5. **Fresh power paid for a tired approach.** The defence counted rested men
+   when ordering a march, then withdrew the same line on arrival because Fatigue
+   reduced its power. Approach allocation now includes maximum marching Fatigue
+   outside local contact. Two 24-man Hastati do not fund the approach against a
+   nominal Gaul; three do and commit the reserve. The old six-Spear input is
+   retained as an insufficient approach, while a separate contact fixture
+   verifies reserve commitment against the same six Spear Squads.
+
+Public Controller and Match regressions cover each slice. No enemy headcount,
+hidden ownership, bonus income or lowered costs/food reserves were introduced.
+Fog memory now includes discovered villages and remains part of the state hash;
+changed hashes are replayed rather than assumed presentation-neutral.
+
+### Retained outcomes on the final policy
+
+[Machine-readable outcomes and Replay hashes](issue-71/recovered-outcomes.jsonl).
+All seven historical seed/level pairs are retained; none is replaced by an easier
+sample. Victory assertions remain victories, and the former Centurio clock
+assertions now require actual conquest.
+
+| Seed | Difficulty | Winner / path | Tick |
+| --- | --- | --- | --- |
+| 1 | Centurio | Rome / Assault | 1,251 |
+| 7 | Centurio | Carthage / Blockade | 4,200 |
+| 6 | Centurio | Rome / Assault | 13,751 |
+| 13 | Tiro | Rome / Assault | 1,051 |
+| 7 | Tiro | Rome / Assault | 1,401 |
+| 12 | Imperator | Rome / Assault | 801 |
+| 7 | Imperator | Rome / Assault | 1,401 |
+
+All seven Replay hashes match. Seed 13/Tiro changes winner because Rome now
+finishes its ram before Carthage's blockade can win; the tournament fixture still
+requires a real victory at its measured tick. Centurio seed 6 remains a clock at
+the deliberately short 7,000-tick reporting bound, but its paired full Match
+test requires the later victory. No clock golden conceals a whole-Match stall.
+
+Separate permanent tests require a real Carthaginian Blockade victory on seed 13
+against a passive Rome at **each** difficulty, tick 6,300, with matching Replay.
+Those tests demonstrate capability, not equal-strength tournament balance.
+#29 still owns its broader balance study; these samples are not a monotonic
+win-rate guarantee across difficulty levels.
+
+### Final verification
+
+Final `npm run verify` completed with **exit 0**: lint, TypeScript, all guards,
+**126 files / 1,473 tests** (70.39 seconds), all **60/60** mandatory pressure cases
+with matching Replay hashes, and production build (Vite 1.88 seconds).
+
+The latest pressure owner focus passed **10/10** in **22.37 seconds**, within its
+60-second budget. The
+whole suite is a separate unbudgeted profile. Smoke/acceptance budgets remain
+unmeasured because Chromium is not authorized.
+
+Independent final review has **0 documented Standards violations** and **0
+actionable Spec findings**. The
+defence-during-recovery finding was fixed with a red/green public regression.
+Chromium remains unrun; the UI/minimap observation fix does not imply rendered
+acceptance. All reopened issues remain open, with #71 still awaiting its browser
+matrix and cohesive journeys.
+
+## Standards
+
+No documented violation remains. One optional duplication observation concerns
+nearest-enemy selection in defensive availability versus assignment. It is a
+maintenance suggestion, not a demonstrated functional defect.
+
+## Spec
+
+No actionable finding remains in the implemented AI recovery. The independent
+review checked withdrawal ownership, actual construction/capture, remaining ram
+shock, rest versus defence, approach power, and hidden ownership independence.
+Browser evidence for #71 is still missing, explicitly outside the executed gates.
