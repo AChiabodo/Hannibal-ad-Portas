@@ -303,6 +303,16 @@ function requireStrength(shape: Shape): number {
  * like, how wide it stands, where its men stand in it — is derived from these.
  */
 export interface Block extends Shape {
+  /** Aggregate admission/departure; no individual soldier state. */
+  garrisonJourney?: {
+    settlement: number;
+    phase: number;
+    remaining: number;
+    ticket: number;
+    goalX: number;
+    goalY: number;
+    fromOutside: number;
+  };
   /** Requested shape retained while a real marching column clears an access. */
   marchFormation?: number;
   /**

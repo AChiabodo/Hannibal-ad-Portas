@@ -248,6 +248,8 @@ export interface Allocation {
 
 /** One settlement: what the economy owns on one tile of the map. */
 export interface Settlement {
+  /** Construction tradition persists through conquest, independently of holder. */
+  origin?: number;
   /** Its id: the index it takes in the economy's list, which is what a Command names. */
   readonly id: number;
 
@@ -275,6 +277,7 @@ export interface Settlement {
 
 /** Everything the economy is: the settlements, the two treasuries, and the Squads. */
 export interface Economy {
+  nextAccessTicket?: number;
   pending?: PendingOrder[];
   nextPendingId?: number;
   /** Every settlement on the map, owned or not, by id. */
@@ -337,6 +340,7 @@ export interface PendingOrder {
 /** A settlement at the opening of a Match: its people, and the four empty stocks. */
 function openSettlement(id: number, site: Site, owner: number): Settlement {
   return {
+    origin: owner === 1 ? 1 : 0,
     id,
     x: site.x,
     y: site.y,

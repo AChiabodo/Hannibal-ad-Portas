@@ -49,9 +49,9 @@ const exterior = exteriorPositions.map((at, index): BuildingLot => ({
 const PLAN: SettlementLayout = {
   grounds: { x: -12, y: -12, width: 25, height: 25 },
   core: { x: -7, y: -7, width: 15, height: 15 },
-  capture: { x: -1, y: -3, width: 3, height: 3 },
-  muster: { x: -3, y: 0, width: 6, height: 4 },
-  assembly: { x: 0, y: 5 },
+  capture: { x: -1, y: -1, width: 3, height: 3 },
+  muster: { x: -3, y: 2, width: 6, height: 4 },
+  assembly: { x: 0, y: 6 },
   gate: { x: -1, y: 7, width: 3, height: 1 },
   lots: [...interior, ...exterior],
 };

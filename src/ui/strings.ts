@@ -708,6 +708,8 @@ const REFUSAL_KEYS: Readonly<Record<RouteRefusal, StringKey>> = {
   water: 'refusal.water',
   unreachable: 'refusal.unreachable',
   'no-space': 'refusal.noSpace',
+  'garrison-full': 'refusal.noSpace',
+  'garrison-type': 'refusal.unreachable',
 };
 
 /**

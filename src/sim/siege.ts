@@ -72,6 +72,7 @@ import { bearingOf, figuresOf, stockAt, squadTypeOf } from '../content/index.ts'
 import { fortificationHp, garrisonCapacity } from '../content/fortifications.ts';
 import { bindSiegeSpace } from './settlement-space.ts';
 import type { ObservedSettlement } from '../content/settlement-appearance.ts';
+import { advanceGarrisonJourneys, requestGarrison } from './settlement-access.ts';
 import { TICK_HZ } from './clock.ts';
 import type { Command, SiegePath } from './command.ts';
 import { bearing, BREAKING_MORALE, woundsOf } from './combat.ts';
@@ -93,7 +94,7 @@ import { RESOURCE, type MapGrid, type Site } from './map.ts';
 import type { MatchRules } from './match.ts';
 import { goalOf, orderedSquads, orderSquadTo, routeCacheFor } from './movement.ts';
 import { recordCasualties, type Fallen } from './residue.ts';
-import { NO_REFUSAL, type RouteCache } from './route.ts';
+import type { RouteCache } from './route.ts';
 import {
   FACINGS,
   facingCode,
@@ -578,6 +579,8 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
 
     const changes = stepEconomyWorld(world, tick, commands, suppliedBy(world.siege));
 
+    advanceGarrisonJourneys(world, (squad, target) => orderSquadTo(world.map, squad, target, routes, true));
+
     besiege(world, tick);
 
     // One Season of blockade for every boundary the clock crossed — normally one,
@@ -759,34 +762,8 @@ function takeUpGarrison(
   faction: Faction,
   ids: readonly number[],
 ): boolean {
-  const front = frontAt(world.siege, settlementId);
-  const settlement = world.economy.settlements[settlementId];
-  if (front === undefined || settlement === undefined) return false;
-  if (settlement.owner !== factionCode(faction)) return false;
-  // A garrison mans walls, and an open settlement has none: an open one is held
-  // in the field, by the Squads standing on its centre.
-  if (!isWalled(front)) return false;
-
-  let garrisoned = false;
-
-  for (const squad of orderedSquads(world.economy, factionCode(faction), ids)) {
-    if (!inReach(squad, settlement, SIEGE_RADIUS)) continue;
-    const type = squadTypeOf(squad.type);
-    if (type === undefined || type.arm === 'cavalry' || type.figures === 1) continue;
-    if (squad.garrison === settlement.id) continue;
-    const occupied = garrisonOf(world.economy, settlement.id).reduce((men, current) => men + current.strength, 0);
-    if (occupied + squad.strength > garrisonCapacity(settlement.tier)) continue;
-
-    squad.garrison = settlement.id;
-    squad.x = settlement.x;
-    squad.y = settlement.y;
-    squad.steps = [];
-    squad.wait = 0;
-    squad.refused = NO_REFUSAL;
-    garrisoned = true;
-  }
-
-  return garrisoned;
+  return requestGarrison(world, settlementId, factionCode(faction), ids,
+    (squad, target) => orderSquadTo(world.map, squad, target, routeCacheFor(world.map), true));
 }
 
 /** One front's tick: whether the Siege still stands, and what it does about it. */

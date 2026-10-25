@@ -514,6 +514,11 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
 
   return {
     id: squad.id,
+    ...(squad.garrisonJourney === undefined ? {} : { passage: {
+      settlement: squad.garrisonJourney.settlement,
+      phase: (['approaching', 'waiting', 'entering', 'leaving'] as const)[squad.garrisonJourney.phase] ?? 'waiting',
+      remaining: squad.garrisonJourney.remaining,
+    } }),
     type: type?.id ?? 'unknown',
     x: squad.x,
     y: squad.y,

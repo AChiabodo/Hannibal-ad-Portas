@@ -94,7 +94,8 @@ export function crossingPerimeter(map: MapGrid, squad: Squad): boolean {
   if (space === undefined) return false;
   const rect = squadGround(squad);
   return space.economy.settlements.slice(0, 2).some((site) => {
-    const core = coreOf(space.economy, site);
+    const bounds = coreOf(space.economy, site);
+    const core = { x: bounds.x + 1, y: bounds.y + 1, width: bounds.width - 2, height: bounds.height - 2 };
     return intersects(rect, core) && !(containsTile(core, rect.x, rect.y) &&
       containsTile(core, rect.x + rect.width - 1, rect.y + rect.height - 1));
   });

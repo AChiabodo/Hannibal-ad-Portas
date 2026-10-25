@@ -85,6 +85,7 @@ import {
   type PassageCheck,
 } from './route.ts';
 import { canOccupy, crossingPerimeter, hasPhysicalSpace, physicalSignature, refreshPhysicalSpace } from './settlement-space.ts';
+import { requestDeparture } from './settlement-access.ts';
 import {
   FACING,
   facingCode,
@@ -331,7 +332,7 @@ function connectedTo(map: MapGrid, site: Site): ReadonlySet<number> {
 export function march(economy: Economy, map: MapGrid): void {
   refreshPhysicalSpace(map);
   for (const squad of economy.squads) {
-    if (squad.marchFormation !== undefined && !crossingPerimeter(map, squad) &&
+    if (squad.marchFormation !== undefined && !accessColumn(squad) && !crossingPerimeter(map, squad) &&
       canOccupy(map, squad, squad.x, squad.y, squad.marchFormation)) {
       squad.formation = squad.marchFormation;
       delete squad.marchFormation;
@@ -369,6 +370,9 @@ export function march(economy: Economy, map: MapGrid): void {
  * walk: what an Observation reports as its goal, and what a UI marks on the map.
  */
 export function goalOf(squad: Block): Site | null {
+  if (squad.garrisonJourney?.phase === 3 && squad.garrison !== FIELD) {
+    return { x: squad.garrisonJourney.goalX, y: squad.garrisonJourney.goalY };
+  }
   const last = squad.steps.at(-1);
 
   return last === undefined ? null : { x: tileX(last), y: tileY(last) };
@@ -428,7 +432,7 @@ export function routeCacheFor(map: MapGrid): RouteCache {
  * come through here rather than growing a second way to move a block that would
  * forget what a refusal is.
  */
-export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: RouteCache): void {
+export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: RouteCache, preserveJourney = false): void {
   refreshPhysicalSpace(map);
   const destination = squad.steps.at(-1);
 
@@ -445,6 +449,11 @@ export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: Route
     squad.refused = refusalCode(route.reason);
     return;
   }
+  if (squad.garrison !== FIELD && !preserveJourney) {
+    requestDeparture(squad, to);
+    return;
+  }
+  if (!preserveJourney) delete squad.garrisonJourney;
 
   // The route is the Squad's own copy: a Squad walks its steps, and the cache
   // must not be walked away by whoever asked for it second. Turning to face the
@@ -474,6 +483,7 @@ export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: Route
 
 /** Stops a Squad where it stands, and forgets where it was going. */
 function standDown(squad: Squad): void {
+  delete squad.garrisonJourney;
   squad.steps = [];
   squad.wait = 0;
   squad.refused = NO_REFUSAL;
@@ -526,7 +536,7 @@ function takeStep(map: MapGrid, squad: Squad): void {
 }
 
 function passageFormation(map: MapGrid, squad: Squad, x: number, y: number, facing: number): number | undefined {
-  const wanted = squad.marchFormation ?? squad.formation;
+  const wanted = accessColumn(squad) ? 1 : squad.marchFormation ?? squad.formation;
   const face = facing;
   if (canOccupy(map, squad, x, y, wanted, face) && canOccupy(map, squad, squad.x, squad.y, wanted, face) &&
     (wanted === squad.formation || !crossingPerimeter(map, squad))) return wanted;
@@ -543,11 +553,16 @@ function passageCheck(map: MapGrid, squad: Squad): PassageCheck {
   return (x, y, fromX, fromY) => {
     const faces = fromX === undefined || fromY === undefined ? [0, 1, 2, 3] :
       [y < fromY ? 0 : x > fromX ? 1 : y > fromY ? 2 : 3];
-    const wanted = squad.marchFormation ?? squad.formation;
+    const wanted = accessColumn(squad) ? 1 : squad.marchFormation ?? squad.formation;
     return faces.some((facing) => [wanted, 1].some((formation) =>
       canOccupy(map, squad, x, y, formation, facing) &&
       (fromX === undefined || fromY === undefined || canOccupy(map, squad, fromX, fromY, formation, facing))));
   };
+}
+
+function accessColumn(squad: Squad): boolean {
+  const journey = squad.garrisonJourney;
+  return journey !== undefined && journey.fromOutside === 1 && (journey.phase === 0 || journey.phase === 2);
 }
 
 /**

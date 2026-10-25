@@ -19,6 +19,34 @@ function stage() {
 }
 
 describe('the shared settlement rules (#74)', () => {
+  it('marches an outside Squad through its Gate before granting Garrison protection', () => {
+    const { world, match } = stage();
+    const squad = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 40, y: 25 });
+    match.step([garrison('rome', [squad.id], 0)]);
+    const approaching = observeSiege(match.state.world, 'rome').squads.find((current) => current.id === squad.id)!;
+    expect(approaching.garrison).toBeNull();
+    expect(approaching.passage?.phase).toBe('approaching');
+    expect(approaching.x).toBeGreaterThan(32);
+    for (let tick = 0; tick < 250; tick += 1) match.step();
+    expect(observeSiege(match.state.world, 'rome').squads.find((current) => current.id === squad.id)?.garrison).toBe(0);
+  });
+  it('keeps a Garrison protected until a free departure can actually begin', () => {
+    const { world, match } = stage();
+    const squad = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 25, y: 25 });
+    match.step([garrison('rome', [squad.id], 0)]);
+    for (let tick = 0; tick < 150; tick += 1) match.step();
+    const blocker = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 120, x: 30, y: 25 });
+    blocker.facing = 1;
+    match.step([move('rome', [squad.id], 45, 25)]);
+    const current = observeSiege(match.state.world, 'rome').squads.find((candidate) => candidate.id === squad.id)!;
+    expect(current.garrison).toBe(0);
+    expect(current.passage?.phase).toBe('leaving');
+    match.step([move('rome', [blocker.id], 48, 25)]);
+    for (let tick = 0; tick < 200; tick += 1) match.step();
+    const outside = observeSiege(match.state.world, 'rome').squads.find((candidate) => candidate.id === squad.id)!;
+    expect(outside.garrison).toBeNull();
+    expect(outside.x).toBe(45);
+  });
   it('waits before charging a building lot occupied by a field formation, then starts once clear', () => {
     const { world, match } = stage();
     const blocker = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 20, y: 30 });
