@@ -45,6 +45,7 @@ import { TICK_HZ } from '../sim/clock.ts';
 import type { BadgeName } from '../art/icons.ts';
 import {
   BUILDINGS,
+  SQUAD_TYPES,
   amountOf,
   pay,
   payrollBill,
@@ -297,7 +298,8 @@ function siegeOrders(
 
     return missing ? why : null;
   };
-  const garrisonReason = refusal(!ownWalls, translate('reason.noOwnWalls'));
+  const eligible = picked.some((squad) => SQUAD_TYPES.some((type) => type.id === squad.type && type.arm !== 'cavalry'));
+  const garrisonReason = refusal(!ownWalls || !eligible, !ownWalls ? translate('reason.noOwnWalls') : translate('refusal.garrisonType'));
   const assaultReason = refusal(!canAssault(faction) || !enemyWalls,
     canAssault(faction) ? translate('reason.noEnemyWalls') : translate('reason.noRam'));
   const blockadeReason = refusal(!enemySettlement, translate('reason.noEnemySettlement'));
@@ -308,7 +310,7 @@ function siegeOrders(
     {
       id: 'garrison', kind: 'garrison', group: 'siege', label: translate('cmd.garrison'),
       short: translate('cmdShort.garrison'), costs: [], subject: null,
-      note: message('ui.partial', { near: String(garrisonReach(visible, picked).near), total: String(picked.length) }),
+      note: translate('garrison.travel'),
       shortcut: null, target: 'settlement', targetHint: translate('target.ownWalled'),
       ...offer(garrisonReason),
     },
@@ -457,7 +459,7 @@ function costLabel(cost: ResourceAmounts): string {
   return parts.length === 0 ? translate('ui.none') : parts.join(', ');
 }
 
-/** Which group of the picked Squads could garrison a settlement at once. */
+/** Eligible infantry that may approach a friendly doorway; capacity is checked on arrival. */
 export function garrisonReach(
   visible: EconomyVisible | SiegeVisible,
   picked: readonly VisibleSquad[],
@@ -468,11 +470,7 @@ export function garrisonReach(
   const at = chosen.length > 0 ? chosen : walled;
   if (at.length === 0) return { near: 0, total: picked.length };
 
-  // "In reach" is the rules' own radius and the rules' own measure (Chebyshev,
-  // `siege.ts`): the interface asks the same question rather than inventing a
-  // distance a Player would then be surprised by.
-  const near = picked.filter((squad) => at.some((site) =>
-    Math.max(Math.abs(squad.x - site.x), Math.abs(squad.y - site.y)) <= SIEGE_RADIUS)).length;
+  const near = picked.filter((squad) => SQUAD_TYPES.some((type) => type.id === squad.type && type.arm !== 'cavalry')).length;
 
   return { near, total: picked.length };
 }
@@ -505,7 +503,10 @@ export function settlementTargets(visible: EconomyVisible | SiegeVisible): reado
       walled: contact.kind === 'stronghold' ? true : walledOf(visible, contact.id),
     }));
 
-  return [...own, ...remembered];
+  const appearances = isSiege(visible) ? visible.appearances ?? [] : [];
+  const recorded = new Set([...known, ...remembered.map((target) => target.id)]);
+  return [...own, ...remembered, ...appearances.filter((site) => !recorded.has(site.id) && site.tiles.length > 0)
+    .map((site) => ({ id: site.id, x: site.x, y: site.y, own: false, walled: site.kind === 'stronghold' }))];
 }
 
 /** The enemy Squads this Faction sees standing in the open right now. */
@@ -673,11 +674,11 @@ function walled(front: VisibleFront): boolean {
 
 /** A visible neutral structure is a movement target at its canonical centre, not its roof's terrain tile. */
 export function neutralMoveDestination(
-  sites: readonly (Pick<import('./sites.ts').KnownSite, 'x' | 'y' | 'kind' | 'owner' | 'memory'> & { readonly rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number } })[],
+  sites: readonly (Pick<import('./sites.ts').KnownSite, 'x' | 'y' | 'kind' | 'owner' | 'memory'> & Pick<Partial<import('./sites.ts').KnownSite>, 'appearance'> & { readonly rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number } })[],
   point: { readonly x: number; readonly y: number },
   ground: { readonly x: number; readonly y: number },
 ): { readonly x: number; readonly y: number } {
-  const site = sites.find((site) => site.kind === 'settlement' && site.owner === null && site.memory === 'seen'
+  const site = sites.find((site) => site.appearance === undefined && site.kind === 'settlement' && site.owner === null && site.memory === 'seen'
     && point.x >= site.rect.x && point.x < site.rect.x + site.rect.width && point.y >= site.rect.y && point.y < site.rect.y + site.rect.height);
   return site ? { x: site.x, y: site.y } : ground;
 }

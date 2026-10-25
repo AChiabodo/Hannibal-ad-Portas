@@ -42,8 +42,9 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
   const hidden = sidebar && model.selected === null;
   const right = hidden ? w : w - Math.min(260, Math.max(216, Math.floor(w * .27)));
   const sw = Math.min(260, Math.max(216, Math.floor(w * .27)));
+  const managementHeight = model.view.settlementPage === 'management' ? 180 : dock ? 104 : 92;
   const detail: Rect = sidebar ? { x: w - sw, y: bar.height + 2, width: sw, height: h - bar.height - 2 }
-    : { x: 0, y: h - (dock ? 104 : 92), width: dock ? w : w - MINIMAP_PLATE_WIDTH - 2, height: dock ? 104 : 92 };
+    : { x: 0, y: h - managementHeight, width: dock ? w : w - MINIMAP_PLATE_WIDTH - 2, height: managementHeight };
   const minimap: Rect = { x: sidebar ? 2 : w - MINIMAP_PLATE_WIDTH,
     y: dock ? bar.height + 2 : h - MINIMAP_PLATE_HEIGHT,
     width: MINIMAP_PLATE_WIDTH, height: MINIMAP_PLATE_HEIGHT };
@@ -173,12 +174,27 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
     }
     if (model.tab === 'overview') {
       const page = model.view.settlementPage ?? 'summary';
-      const source = page === 'balance' ? model.detail?.ledger : page === 'works' ? model.detail?.works : model.detail?.summary;
-      detailScroll = prose((source ?? model.detail?.lines ?? []).map((line) => `${line.label}: ${line.value}`),
-        { x: catalogue.x, y, width: catalogue.width, height: catalogue.y + catalogue.height - y - 22 }, model.view.detailOffset ?? 0, true);
-      const bw = Math.floor((catalogue.width - 2) / 2), by = catalogue.y + catalogue.height - 18;
-      for (const [i, page] of (['summary', 'balance'] as const).entries()) button(`settlement:${page}`,
-        translate(page === 'summary' ? 'tab.short.overview' : 'panel.balance'),
+      if (page === 'management') {
+        const entries = model.detail?.management ?? [];
+        const at = Math.min(Math.max(0, model.view.detailOffset ?? 0), Math.max(0, entries.length - 1));
+        detailScroll = { offset: at, max: Math.max(0, entries.length - 1), page: 1 };
+        const entry = entries[at];
+        if (entry !== undefined) {
+          prose([entry.text], { x: catalogue.x, y, width: catalogue.width, height: Math.max(24, catalogue.y + catalogue.height - y - 64) }, 0, false);
+          const controlsY = catalogue.y + catalogue.height - 60;
+          for (const [i, action] of entry.actions.entries()) button(action.action, action.text,
+            { x: catalogue.x + i * 80, y: controlsY, width: 76, height: 18 }, !model.view.ended);
+        }
+        button('detailPrevious', translate('ui.previous'), { x: catalogue.x, y: catalogue.y + catalogue.height - 40, width: 60, height: 18 }, at > 0);
+        button('detailNext', translate('ui.next'), { x: catalogue.x + 64, y: catalogue.y + catalogue.height - 40, width: 60, height: 18 }, at < detailScroll.max);
+      } else {
+        const source = page === 'balance' ? model.detail?.ledger : page === 'works' ? model.detail?.works : model.detail?.summary;
+        detailScroll = prose((source ?? model.detail?.lines ?? []).map((line) => `${line.label}: ${line.value}`),
+          { x: catalogue.x, y, width: catalogue.width, height: catalogue.y + catalogue.height - y - 22 }, model.view.detailOffset ?? 0, true);
+      }
+      const bw = Math.floor((catalogue.width - 4) / 3), by = catalogue.y + catalogue.height - 18;
+      for (const [i, page] of (['summary', 'balance', 'management'] as const).entries()) button(`settlement:${page}`,
+        page === 'management' ? translate('settlement.management') : translate(page === 'summary' ? 'tab.short.overview' : 'panel.balance'),
         { x: catalogue.x + i * (bw + 2), y: by, width: bw, height: 18 });
     }
   }

@@ -21,14 +21,14 @@ export type AssaultReadiness = (faction: Faction, visible: AssaultObservation,
 
 /** A paid ram can shelter an existing ring before its surviving men break. */
 export function createAssaultReadiness(content: {
-  readonly siegeRadius: number; readonly assaultTicks: number; readonly wallShock: number;
+  readonly siegeRadius: number; readonly settlementRadius?: number; readonly assaultTicks: number; readonly wallShock: number;
 }): AssaultReadiness {
   return (faction, visible, squad) => (visible.fronts ?? []).some((front) => {
     if (front.besieger !== faction || front.siege !== 'assault' || front.ram === null ||
       (front.ram.hp ?? 0) <= 0) return false;
     const target = visible.contacts?.find((contact) => contact.id === front.settlement &&
       (contact.kind === 'stronghold' || contact.kind === 'settlement'));
-    if (target === undefined || distance(squad, target) > content.siegeRadius) return false;
+    if (target === undefined || Math.max(0, distance(squad, target) - (content.settlementRadius ?? 0)) > content.siegeRadius) return false;
     const remaining = front.ram.built ? 0 : front.ram.remaining;
     if (remaining === undefined) return false;
     // The round that completes construction is already sheltered; only earlier

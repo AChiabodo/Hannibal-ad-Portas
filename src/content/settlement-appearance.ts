@@ -10,6 +10,7 @@ export interface ObservedSettlementTile {
   readonly cell: number;
   readonly seen: number;
   readonly visible: boolean;
+  readonly origin?: 'rome' | 'carthage';
   readonly tier?: number;
   readonly owner?: 'rome' | 'carthage' | 'none';
   readonly origin?: 'rome' | 'carthage';

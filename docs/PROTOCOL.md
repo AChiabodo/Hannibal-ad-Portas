@@ -458,3 +458,27 @@ other — and `docs/COMMANDS.md` is the twelve things you may say.
 until the enemy Stronghold is seen, then blockade it. It writes its plan in about
 two hundred lines and imports nothing from this repository, which is what an
 "agent that is not this codebase" means.
+
+
+## Physical settlement observations (#74)
+
+Owned settlements may include `pending`: unpaid build/recruit requests with stable
+`id`, `kind`, subject (`building` or `squadType`, `men`, `count`), `reason`
+(`space` or `resources`) and the quoted resource `cost`. Cancel a request with
+`cancelPending`, naming the settlement and observed order ID. Active construction
+remains in `works`; an occupied lot prevents a pending construction from starting.
+
+`appearances` records only observed portions of each settlement. Its `tiles` use
+row-major cells within 25 by 25 grounds centred on the settlement. Each cell has
+its sighting `seen`, current `visible` flag and only the appearance facts known
+there: tier, construction tradition (`origin`), owner, individual work ordinal,
+phase (0 foundations, 1 incomplete, 2 finished), fortification condition, sentries
+and ram. Missing cells reveal nothing; remembered cells retain their last observed
+appearance. Seeing one cell does not reveal the remaining buildings or stocks.
+
+Own squads may carry `passage`: the named settlement, `phase` (`approaching`,
+`waiting`, `entering`, `leaving`), remaining time and an optional impediment.
+Only non-null `garrison` denotes protection on the walls. A refused admission is
+explicit (`garrison-full` or `garrison-type`); waiting for a doorway is distinct.
+Fronts may report `garrisonMen` and `garrisonCapacity`; surviving men occupy
+60/120/240 places at tiers I/II/III for either faction.

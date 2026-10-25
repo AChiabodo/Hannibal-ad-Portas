@@ -52,6 +52,7 @@ interface Settlement {
   readonly population: number;
   readonly stocks: Resources;
   readonly land: Resources;
+  readonly pending?: readonly { readonly kind: 'build' | 'recruit'; readonly building?: string | null; readonly squadType?: string | null }[];
   readonly works: readonly { readonly building: string; readonly standing: boolean; readonly remaining: number }[];
 }
 
@@ -142,7 +143,8 @@ export function createEconomyBehaviour(content: {
         let grainCapacityNeeded = grainFloor(food);
         if (!observation.visible.squads.some((squad) => squad.unpaid > 0)) {
           for (const type of content.squadTypes) {
-            if (type.faction !== observation.faction || type.tier > settlement.tier) continue;
+            if (type.faction !== observation.faction || type.tier > settlement.tier ||
+              settlement.pending?.some((order) => order.kind === 'recruit' && order.squadType === type.id)) continue;
             const count = observation.visible.squads.filter((squad) => squad.type === type.id).length;
             const preference = content.recruitmentPreference?.(observation, type.id);
             // A type offers several real sizes; the AI prices each one with the
@@ -178,6 +180,7 @@ export function createEconomyBehaviour(content: {
         const housing = content.baseHousing + works.reduce((sum, work) => sum + work.housing, 0);
         const storage = content.baseStorage + works.reduce((sum, work) => sum + work.storage, 0);
         for (const building of content.buildings) {
+          if (settlement.pending?.some((order) => order.kind === 'build' && order.building === building.id)) continue;
           if (building.tier > settlement.tier ||
             (building.faction !== undefined && building.faction !== observation.faction) ||
             settlement.works.filter((work) => work.building === building.id).length >= building.maxPerSettlement ||
@@ -229,7 +232,8 @@ export function createEconomyBehaviour(content: {
             building.buildTicks < content.ticksUntilPayroll(observation.tick) &&
             !candidates.some((candidate) => candidate.commands.some((command) => command.kind === 'recruit'))) {
             firstDetachment: for (const type of content.squadTypes) {
-              if (type.faction !== observation.faction || type.tier > settlement.tier) continue;
+              if (type.faction !== observation.faction || type.tier > settlement.tier ||
+              settlement.pending?.some((order) => order.kind === 'recruit' && order.squadType === type.id)) continue;
               for (const men of type.sizes) {
                 const cost = content.recruitCost(type, men);
                 const payroll = funds.payroll + content.payrollBill(type, men);

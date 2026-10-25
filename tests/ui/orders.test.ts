@@ -160,14 +160,14 @@ describe('the offers a selection has', () => {
     });
   });
 
-  it('offers a garrison only for a walled settlement of its own, and counts who is in reach', () => {
+  it('offers a garrison only for a walled settlement of its own, and counts infantry eligible to approach the gate', () => {
     const orders = squadOrders(visible(), 'rome', [HASTATI, PRINCIPES]);
     const garrison = orders.find((order) => order.id === 'garrison');
 
     expect(garrison?.enabled).toBe(true);
-    // HASTATI stands 2+2 tiles from the settlement and PRINCIPES 1+1: only one is in reach.
-    expect(garrisonReach(visible(), [HASTATI, PRINCIPES])).toEqual({ near: 1, total: 2 });
-    expect(garrison?.note).toBe(`1 su 2 a portata`);
+    // Both infantry squads can approach the gate regardless of initial distance: only one is in reach.
+    expect(garrisonReach(visible(), [HASTATI, PRINCIPES])).toEqual({ near: 2, total: 2 });
+    expect(garrison?.note).toContain('Raggiunge la porta');
 
     const open = visible({ fronts: [front(0, 0)] });
     expect(squadOrders(open, 'rome', [HASTATI]).find((order) => order.id === 'garrison')).toMatchObject({

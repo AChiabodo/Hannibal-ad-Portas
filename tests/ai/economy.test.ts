@@ -159,3 +159,15 @@ describe('the economy Controller', () => {
     }
   });
 });
+
+
+it('does not duplicate an observed pending purchase (#74)', () => {
+  const base = observeSiege(siegeMatchRules.createWorld(1), 'rome');
+  const visible = { ...base, settlements: base.settlements.map((site) => ({ ...site, pending: [
+    { id: 4, kind: 'build' as const, building: 'market', squadType: '', men: 0, count: 0, reason: 'space' as const },
+    { id: 5, kind: 'recruit' as const, building: '', squadType: 'hastati', men: 24, count: 1, reason: 'space' as const },
+  ] })) };
+  const commands = economyAi().decide({ faction: 'rome', tick: 0, visible });
+  expect(commands.some((command) => command.kind === 'build' && command.building === 'market')).toBe(false);
+  expect(commands.some((command) => command.kind === 'recruit' && command.squadType === 'hastati')).toBe(false);
+});

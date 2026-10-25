@@ -27,6 +27,7 @@ interface VisibleSiegeFront {
   readonly siege?: 'assault' | 'blockade' | null;
   readonly ram: { readonly built: boolean; readonly hp?: number; readonly remaining?: number } | null;
   readonly garrison: number;
+  readonly garrisonMen?: number;
 }
 
 /** What a siege policy may read: its own army, the ground it has seen, and the walls in front of it. */
@@ -50,6 +51,7 @@ export interface SiegeContent {
   readonly ramCost: number;
   /** How close a Squad has to be to be at the walls. */
   readonly siegeRadius: number;
+  readonly settlementRadius?: number;
   /** How close a field army has to come to threaten the ring. */
   readonly reliefRadius: number;
   /** One unknown garrison's worth of power, for a front whose walls have not been seen. */
@@ -135,13 +137,13 @@ export function createSiegeBehaviour(
       /** Every reason ends with the age of the sighting it acted on: the grounds, stated. */
       const stated = (reason: string) => `${reason} ${sighting}`;
 
-      const relief = visible.enemies.filter((enemy) => distance(enemy, place) <= content.reliefRadius);
+      const relief = visible.enemies.filter((enemy) => Math.max(0, distance(enemy, place) - (content.settlementRadius ?? 0)) <= content.reliefRadius);
       const reliefPower = relief.reduce((sum, enemy) => sum + nominal(enemy.type), 0);
       const garrison = front === undefined ? 1 : front.garrison;
       const threat = garrison * content.garrisonEstimate + reliefPower;
 
       const field = visible.squads.filter((squad) => !squad.routing && squad.garrison === null);
-      const atWalls = (squad: SiegeSquad) => distance(squad, place) <= content.siegeRadius ||
+      const atWalls = (squad: SiegeSquad) => Math.max(0, distance(squad, place) - (content.settlementRadius ?? 0)) <= content.siegeRadius ||
         (squad.goal !== null && squad.goal.x === place.x && squad.goal.y === place.y);
       const committed = field.filter(atWalls);
       const reserve = field.filter((squad) => !atWalls(squad) && !spent(squad, observation));
