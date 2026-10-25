@@ -264,7 +264,8 @@ export interface VisibleSquad {
    * Siege's ram defence and wall work are read from, and the number a Controller
    * prices its own line with — so the interface, the AI and the rules quote one
    * fact and cannot drift apart. It is a fact about **this Faction's own** Squad:
-   * an enemy's headcount is not in an Observation, and neither is its bearing.
+   * Siege sight reports an enemy's visible headcount (ADR-0029), but not its
+   * private condition or this derived bearing field.
    */
   readonly bearing: number;
 

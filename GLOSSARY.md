@@ -151,6 +151,11 @@ Where an enemy Squad or a settlement stood when the Faction last saw it, kept af
 _UI_: Ultimo contatto noto
 _Avoid_: Blip, tracker, calling a thing the rules can see right now a "contact" (that is an enemy in sight; only the fog's *memory* of one is a last known contact)
 
+**Enemy in sight**:
+An enemy field Squad currently covered by the Faction's eyes. Its visible body, formation and facing may be seen; its nerve, supplies and intentions remain private. Once sight is lost, only its last known contact remains.
+_UI_: Nemico avvistato
+_Avoid_: Calling a remembered position a live enemy, treating a visible formation as knowledge of its orders
+
 ### Command
 
 **Controller**:

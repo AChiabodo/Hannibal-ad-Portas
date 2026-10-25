@@ -1377,6 +1377,7 @@ export function createGame(options: GameOptions): Game {
     ground.update({ sites: known, selected: human.selection.settlement });
     field.update({
       squads: visible().squads,
+      enemies: observation.enemies,
       selected: human.selection.squads,
       tick: match.state.tick,
       faction: faction,

@@ -1,5 +1,9 @@
 # A blow is counted in the men brought to bear, not in Squads
 
+The later [ADR-0029](0029-visible-enemy-formations-share-the-observation.md)
+supersedes only the enemy-headcount visibility restriction below; the combat
+rules and private-condition boundary remain unchanged.
+
 ADR-0026 gave the roster real, independently commandable sizes: Rome 24/60/120,
 Carthage 24/48, and a fixed size for a specialist. C3's exchange, written before
 any of that, counted a Squad's blow from its **frontage** — the files it stands

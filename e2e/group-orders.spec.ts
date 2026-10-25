@@ -22,6 +22,7 @@ for (const faction of ['rome', 'carthage'] as const) {
       const card = (await hudLayout(page)).commands.find((c) => c.order.id === `recruit:${type}:24`)!;
       expect(card.order.enabled).toBe(true);
       await press(card.rect);
+      await press((await hudLayout(page)).buttons.find((b) => b.action === `purchase:recruit:${type}:24`)!.rect);
       await page.evaluate(() => window.__SPQR.game!.resume());
       await advance(page, 1);
       await page.evaluate(() => window.__SPQR.game!.pause());
@@ -34,7 +35,7 @@ for (const faction of ['rome', 'carthage'] as const) {
       await page.evaluate(({ dx, dy }) => window.__SPQR.view!.panBy(dx, dy),
         { dx: x - before.camera.x, dy: y - before.camera.y });
       const view = await describeView(page);
-      const panels = await hudRects(page);
+      let panels = await hudRects(page);
       const screen = (x: number, y: number) => ({ x: (x - view.camera.x) * view.camera.zoom,
         y: (y - view.camera.y) * view.camera.zoom });
       const open = (point: { x: number; y: number }) => point.x > 10 && point.y > 50 &&
@@ -55,10 +56,13 @@ for (const faction of ['rome', 'carthage'] as const) {
       expect(picked).toContain(first.squad.id);
       expect(picked).toContain(second.squad.id);
       await page.keyboard.press('Control+1');
+      panels = await hudRects(page);
 
       const map = generateMap(7);
-      const target = Array.from({ length: 12 }, (_, i) => ({ x: first.squad.x + 5 + i, y: first.squad.y + 5 }))
-        .find((p) => p.x < 96 && p.y < 96 && isWalkable(terrainAt(map, p.x, p.y)) && open(screen(tilePixel(p.x, p.y).x, tilePixel(p.x, p.y).y)));
+      const target = Array.from({ length: 12 }, (_, i) => 5 + i)
+        .flatMap((distance) => [{ x: first.squad.x + distance, y: first.squad.y }, { x: first.squad.x - distance, y: first.squad.y },
+          { x: first.squad.x, y: first.squad.y + distance }, { x: first.squad.x, y: first.squad.y - distance }])
+        .find((p) => p.x >= 0 && p.y >= 0 && p.x < 96 && p.y < 96 && isWalkable(terrainAt(map, p.x, p.y)) && open(screen(tilePixel(p.x, p.y).x, tilePixel(p.x, p.y).y)));
       expect(target).toBeDefined();
       const targetPixel = tilePixel(target!.x, target!.y);
       const click = screen(targetPixel.x, targetPixel.y);
@@ -84,7 +88,8 @@ for (const faction of ['rome', 'carthage'] as const) {
       expect(arrived.map((s) => ({ x: s.x, y: s.y }))).toEqual(goals);
       expect(arrived.every((s) => s.goal === null)).toBe(true);
       expect((await hud(page)).orders.last?.status).toBe('applied');
-      await page.keyboard.press('Escape');
+      await press((await hudRows(page)).find((entry) => entry.selection.kind === 'settlement')!.rect);
+      expect((await selection(page)).squads).toEqual([]);
       await page.keyboard.press('1');
       expect((await selection(page)).squads).toEqual(picked);
       for (const s of arrived) {
@@ -94,6 +99,7 @@ for (const faction of ['rome', 'carthage'] as const) {
         expect(s.rect.x + s.rect.width <= other.rect.x || other.rect.x + other.rect.width <= s.rect.x ||
           s.rect.y + s.rect.height <= other.rect.y || other.rect.y + other.rect.height <= s.rect.y).toBe(true);
       }
+      await page.keyboard.press('f');
       await capture(page, `arrival-${faction}-${size.width}`, 'issue68');
       const diagnosis = await spqr.diagnosis();
       expect(diagnosis.errors).toEqual([]);

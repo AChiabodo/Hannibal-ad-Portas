@@ -68,7 +68,7 @@
  * still blockaded. `siegeMatchOutcome` is where a Match first ends sooner than
  * its bound: the fall of a Stronghold, and the reason it fell.
  */
-import { bearingOf, stockAt, squadTypeOf } from '../content/index.ts';
+import { bearingOf, figuresOf, stockAt, squadTypeOf } from '../content/index.ts';
 import { TICK_HZ } from './clock.ts';
 import type { Command, SiegePath } from './command.ts';
 import { bearing, BREAKING_MORALE, woundsOf } from './combat.ts';
@@ -80,6 +80,7 @@ import {
   stepEconomyWorld,
   type EconomyVisible,
   type EconomyWorld,
+  type VisibleSquad,
 } from './economy-match.ts';
 import { UNOWNED, type Economy, type Settlement, type Squad, type Supplied } from './economy.ts';
 import { factionCode, factionOf, type Faction } from './faction.ts';
@@ -93,6 +94,8 @@ import { NO_REFUSAL, type RouteCache } from './route.ts';
 import {
   FACINGS,
   facingCode,
+  facingOf,
+  formationOf,
   FIELD,
   isRouting,
   ROUTING,
@@ -367,7 +370,11 @@ export interface SiegeVisible extends EconomyVisible {
   readonly fog: FogView;
   readonly contacts: readonly KnownContact[];
   /** Enemy field Squads currently in ordinary vision, with no private economic or combat facts. */
-  readonly enemies: readonly { readonly id: number; readonly type: string; readonly x: number; readonly y: number }[];
+  readonly enemies: readonly {
+    readonly id: number; readonly type: string; readonly x: number; readonly y: number;
+    /** Present on canonical Observations; omitted by older external scenario fixtures. No private condition or orders. */
+    readonly appearance?: Pick<VisibleSquad, 'men' | 'capacity' | 'figures' | 'formation' | 'facing'>;
+  }[];
   /** The fronts this Faction holds, is besieging, or has an eye on (ADR-0020). */
   readonly fronts: readonly VisibleFront[];
 }
@@ -595,7 +602,13 @@ export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (wo
     contacts: siegeContacts(world, faction),
     enemies: world.economy.squads
       .filter((squad) => squad.owner !== owner && squad.garrison === FIELD && eyes.some((eye) => eyeCovers(eye, squad)))
-      .map((squad) => ({ id: squad.id, type: squadTypeOf(squad.type)?.id ?? 'unknown', x: squad.x, y: squad.y })),
+      .map((squad) => {
+        const type = squadTypeOf(squad.type);
+        return { id: squad.id, type: type?.id ?? 'unknown', x: squad.x, y: squad.y,
+          appearance: { men: squad.strength, capacity: squad.capacity,
+            figures: type === undefined ? squad.strength : figuresOf(type, squad.strength),
+            formation: formationOf(squad.formation), facing: facingOf(squad.facing) } };
+      }),
     fronts: world.siege.fronts
       .filter((front) => {
         const settlement = world.economy.settlements[front.settlement];

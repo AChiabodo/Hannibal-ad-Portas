@@ -42,8 +42,7 @@ async function activateByKeyboard(page: Page, rect: Rect): Promise<void> {
 }
 
 async function leaveFocus(page: Page): Promise<void> {
-  if (BEFORE) await page.evaluate(() => window.__SPQR.game!.cancelTargeting());
-  else await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__SPQR.game!.cancelTargeting());
 }
 
 async function revealOrder(page: Page, id: string) {
@@ -128,10 +127,13 @@ for (const faction of ['rome', 'carthage'] as const) for (const [width, height] 
         const card = await revealOrder(page, id);
         const pending = (await hud(page)).orders.pending;
         await press(page, card.rect);
+        const purchase = (await hudLayout(page)).buttons.find((button) => button.action === `purchase:${id}`)!;
+        await press(page, purchase.rect);
         if (card.order.enabled) expect((await hud(page)).orders.pending, `${id} pointer`).toBe(pending + 1);
         else expect((await hud(page)).orders.notice, `${id} pointer refusal`).toBeTruthy();
         const drawn = await revealOrder(page, id);
         await activateByKeyboard(page, drawn.rect);
+        await activateByKeyboard(page, (await hudLayout(page)).buttons.find((button) => button.action === `purchase:${id}`)!.rect);
         if (card.order.enabled) expect((await hud(page)).orders.pending, `${id} keyboard`).toBe(pending + 2);
         else expect((await hud(page)).orders.pending, `${id} stays unavailable`).toBe(pending);
         await frame(page, `economy-${id.replace(':', '-')}-${faction}-${String(width)}x${String(height)}`);
@@ -158,7 +160,7 @@ for (const faction of ['rome', 'carthage'] as const) for (const [width, height] 
       expect(at.x, 'the reviewed Siege is in the theatre, not offscreen').toBeGreaterThanOrEqual(layout.list.width);
       expect(at.x).toBeLessThanOrEqual(width);
       expect(at.y).toBeGreaterThanOrEqual(layout.bar.height);
-      expect(at.y).toBeLessThan(layout.detail.y);
+      expect((await hudRects(page)).some((rect) => covers(rect, at.x, at.y)), 'the reviewed Siege is outside the interface').toBe(false);
       if (stage === 'building') expect(target.front?.ram?.built).toBe(false);
       if (stage === 'ram') expect(target.front?.ram?.built).toBe(true);
       if (stage === 'breach') expect(target.front?.breached).toBe(true);
@@ -342,8 +344,11 @@ test('keyboard focus reaches the same settlement tab and command rectangles as t
     await page.keyboard.press('Tab');
   }
   await page.keyboard.press('Enter');
+  await activateByKeyboard(page, (await hudLayout(page)).buttons.find((button) => button.action === `purchase:${recruit.order.id}`)!.rect);
   expect((await hud(page)).orders.pending).toBe(before + 1);
   await frame(page, 'keyboard-recruitment-rome-1280x720');
+  await page.keyboard.press('Escape');
+  expect((await hud(page)).view.sessionOpen).toBe(true);
   await page.keyboard.press('Escape');
   expect((await hud(page)).view.focus).toBeNull();
   expect((await hud(page)).selected).toEqual({ kind: 'settlement', id: 0 });

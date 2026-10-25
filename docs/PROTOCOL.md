@@ -172,7 +172,7 @@ outside it. What is not here, the Faction cannot know.
 | `squads`      | The Squads you keep, one record each: below.                                           |
 | `fog`         | What you have seen of the ground, and what you see now.                                |
 | `contacts`    | Enemy Squads and settlements you have seen, including unowned villages: `kind` (`squad`, `settlement`, `stronghold`), `id`, `x`, `y`, `seen` (the tick), `type` (for a Squad, or `null`). Optional `unowned: true` confirms a village has no owner **in current vision only**; it is absent in memory. A remembered place does not report live position or ownership. |
-| `enemies`     | Enemy field Squads **in your sight right now**: `id`, `type`, `x`, `y`.                |
+| `enemies`     | Enemy field Squads **in your sight right now**: `id`, `type`, `x`, `y`, and `appearance` (`men`, `capacity`, `figures`, `formation`, `facing`). Appearance exists only in current sight; it is never retained in `contacts`. No enemy morale, fatigue, ammunition, stocks or goal is exposed (ADR-0029). |
 | `fronts`      | The Sieges you can read (see below).                                                   |
 <!-- observation:end -->
 
@@ -212,7 +212,7 @@ Each entry of `squads`:
 | `engaged`     | Whether an enemy Squad is in contact with it right now.                             |
 | `payroll`     | What it owes at the next Season boundary, priced on the men still standing.        |
 | `unpaid`      | Seasons in a row it has gone unpaid.                                               |
-| `bearing`     | The force it brings into a fight: its men times its type's `impact`. It is the number the exchange, a wall's defence and a Controller's estimate all read, and it is a fact about **your own** Squad only — an enemy's men and bearing are not in an Observation (ADR-0028). |
+| `bearing`     | The force it brings into a fight: its men times its type's `impact`. It is the number the exchange, a wall's defence and a Controller's estimate all read, and this field is about **your own** Squad only. Enemy appearance now reports visible men (ADR-0029), without private condition or a bearing field. |
 | `garrison`    | The settlement it is manning, or `null` when it is in the field.                    |
 | `home`        | The settlement that raised it.                                                     |
 | `inTerritory` | Whether it stands on ground of yours, where it draws supply.                        |

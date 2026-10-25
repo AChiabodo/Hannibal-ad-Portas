@@ -12,6 +12,10 @@ export function resourceBar(model: HudModel, size: HudSize): Pick<HudLayout, 're
       progress: Math.floor((model.view.tick ?? 0) % SEASON_TICKS * 100 / SEASON_TICKS) }), rect: rect(218, 26, 190, 10) },
     { role: 'pace' as const, text: message('hud.pace', { state: translate(model.view.ended ? 'pause.finished' : model.view.paused ? 'ui.paused' : 'ui.running'), speed: model.view.speed ?? 1 }), rect: rect(414, 26, 104, 10) },
   ];
+  if (model.view.scaleWarning || model.view.smallWindow) text.push({
+    text: translate(model.view.smallWindow ? 'ui.smallWindow' : 'ui.scaleWarning'),
+    rect: rect(4, 42, width - 8, 10),
+  });
   const readouts = [model.readouts[3], ...model.readouts.slice(4, 8)].flatMap((line, i) => line ? [{
     line: { ...line, value: line.value === translate('ui.unknown') ? '?' : line.value, label: `${line.label}:`, large: false, newRow: false }, rect: rect(i === 0 ? 88 : 180 + (i - 1) * 84, 7, 82, 10),
   }] : []);

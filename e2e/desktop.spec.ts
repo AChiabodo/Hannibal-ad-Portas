@@ -89,7 +89,7 @@ for (const width of [1280, 1920]) for (const faction of ['rome', 'carthage']) {
       });
       expect(point.x).toBeGreaterThanOrEqual(point.layout.list.width);
       expect(point.y).toBeGreaterThanOrEqual(point.layout.list.y);
-      expect(point.y).toBeLessThan(point.layout.detail.y);
+      expect(point.y).toBeLessThan(point.layout.theatre!.y + point.layout.theatre!.height);
       expect(await page.evaluate(() => window.__SPQR.game!.hudLayout().minimap)).toEqual(minimap);
     }
     await page.evaluate(() => window.__SPQR.view!.zoomTo(2));
@@ -118,7 +118,7 @@ test('resize, scale and stored preferences preserve the Match and reset without 
   await clickAction(page, 'guide');
   await clickAction(page, 'navigator');
   await clickAction(page, 'scale'); // 3x fits at 1920x1080
-  expect(await page.evaluate(() => window.__SPQR.game!.preferences())).toEqual({ uiScale: 3, navigator: false, guideDismissed: true });
+  expect(await page.evaluate(() => window.__SPQR.game!.preferences())).toEqual({ uiScale: 3, navigator: false, guideDismissed: true, panelLayout: 'sidebar' });
   await page.setViewportSize({ width: 1280, height: 720 });
   await expect.poll(() => page.evaluate(() => window.__SPQR.game!.hudLayout().text.map((line) => line.text).join(' '))).toContain('Scala richiesta');
   expect(await page.evaluate(() => window.__SPQR.game!.preferences().uiScale)).toBe(3);
@@ -129,10 +129,10 @@ test('resize, scale and stored preferences preserve the Match and reset without 
   await page.reload();
   await page.waitForFunction(() => window.__SPQR?.game);
   await page.evaluate(() => window.__SPQR.game!.pause());
-  expect(await page.evaluate(() => window.__SPQR.game!.preferences())).toEqual({ uiScale: 3, navigator: false, guideDismissed: true });
+  expect(await page.evaluate(() => window.__SPQR.game!.preferences())).toEqual({ uiScale: 3, navigator: false, guideDismissed: true, panelLayout: 'sidebar' });
   expect(await page.evaluate(() => window.__SPQR.game!.selection())).toEqual({ squads: [], settlement: null });
   await clickAction(page, 'reset');
-  expect(await page.evaluate(() => window.__SPQR.game!.preferences())).toEqual({ uiScale: 2, navigator: true, guideDismissed: false });
+  expect(await page.evaluate(() => window.__SPQR.game!.preferences())).toEqual({ uiScale: 2, navigator: true, guideDismissed: false, panelLayout: 'sidebar' });
   await page.setViewportSize({ width: 900, height: 600 });
   await expect.poll(() => page.evaluate(() => window.__SPQR.game!.hudLayout().text.map((line) => line.text).join(' '))).toContain('1280x720');
   expect(await page.evaluate(() => window.__SPQR.game!.hudLayout().list.width)).toBe(0);

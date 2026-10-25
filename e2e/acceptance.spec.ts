@@ -100,6 +100,9 @@ async function raiseTwo(page: Page, faction: Faction): Promise<readonly { id: nu
     expect(card?.order.enabled, 'the opening stocks can raise a second line').toBe(true);
     if (card === undefined) throw new Error('no recruit card');
     await press(page, card.rect);
+    const purchase = (await hudLayout(page)).buttons.find((button) => button.action === `purchase:recruit:${FIRST_LINE[faction]}:24`);
+    expect(purchase?.enabled, 'the inspected line can be purchased').toBe(true);
+    await press(page, purchase!.rect);
     await advance(page, 1);
   }
 
@@ -111,6 +114,7 @@ async function raiseTwo(page: Page, faction: Faction): Promise<readonly { id: nu
 
 /** Drags a box round two Squads, which is the pointer's multiple selection. */
 async function boxSelect(page: Page, boxes: readonly { rect: { x: number; y: number; width: number; height: number } }[]): Promise<void> {
+  await page.evaluate(() => { window.__SPQR.view!.zoomTo(1); window.__SPQR.game!.centerSelection(); });
   const view = await describeView(page);
   const corners = boxes.map(({ rect }) => ({
     left: stageToScreen(view.camera, rect.x, rect.y),
@@ -145,8 +149,9 @@ async function centreOn(page: Page, tile: { x: number; y: number }): Promise<voi
   const before = await describeView(page);
   const px = tile.x * 16 + 8;
   const py = tile.y * 16 + 8;
-  const wantedX = Math.round(px - before.width / (2 * before.camera.zoom));
-  const wantedY = Math.round(py - before.height / (2 * before.camera.zoom));
+  const area = (await hudLayout(page)).theatre ?? { x: 0, y: 0, width: before.width, height: before.height };
+  const wantedX = Math.round(px - (area.x + area.width / 2) / before.camera.zoom);
+  const wantedY = Math.round(py - (area.y + area.height / 2) / before.camera.zoom);
   await page.evaluate(({ dx, dy }) => window.__SPQR.view?.panBy(dx, dy), {
     dx: wantedX - before.camera.x, dy: wantedY - before.camera.y,
   });
@@ -178,7 +183,8 @@ test.describe('the delivered interface under a Player’s hands', () => {
       const destination = stageToScreen(camera, first.x * 16 + 8 + 48, first.y * 16 + 8 + 48);
       await clickCanvas(page, destination, 'right');
       expect((await hud(page)).orders.pending, 'the paused order is queued').toBe(1);
-      expect((await hudLayout(page)).status.map((entry) => entry.text).join(' ')).toContain(translate('ui.pendingPaused').replace('{count}', '1'));
+      const pendingLayout = await hudLayout(page);
+      expect([...pendingLayout.status, ...pendingLayout.text, ...pendingLayout.priority].map((entry) => entry.text).join(' ')).toContain(translate('ui.pendingPaused').replace('{count}', '1'));
       await capture(page, `mixed-selection-pending-${faction}-${String(size.width)}x${String(size.height)}`, 'issue59');
 
       // A refused order: the rules say deep water, and the interface says so in
@@ -300,8 +306,13 @@ test.describe('long lists, long text and critical conditions', () => {
       await capture(page, `long-list-${faction}-${String(size.width)}x${String(size.height)}`, 'issue59');
 
       // A settlement's detail is longer than its panel, and scrolls.
+      // The supported dock deliberately has a shallow detail area, so this
+      // remains an overflow scene even where the taller sidebar fits all works.
+      await page.evaluate(() => window.__SPQR.game!.setPanelLayout('dock'));
       const home = (await state(page)).visible.settlements[0]!;
       await page.evaluate((id) => window.__SPQR.game!.select({ kind: 'settlement', id }), home.id);
+      await press(page, (await hudLayout(page)).tabs.find((tab) => tab.tab === 'construction')!.rect);
+      await press(page, (await hudLayout(page)).buttons.find((button) => button.action === 'settlement:works')!.rect);
       const detail = await hudLayout(page);
       expect((await hud(page)).detail?.lines.length, 'the settlement has a long panel').toBeGreaterThanOrEqual(8);
       expect(detail.detailScroll.max, 'the detail scrolls rather than clipping').toBeGreaterThan(0);

@@ -150,8 +150,9 @@ balance or browser rendering evidence.
 `createMilitaryBehaviour` receives the public Squad catalogue, matchup matrix
 and fatigue scale at composition. The complete Siege Observation now includes
 `enemies`: only enemy field Squads within the ordinary circular vision of owned
-settlements or Squads. Each record contains id, type and current tile; it carries
-no enemy treasury, stock, strength, morale or goal. Vision uses the same disc as
+settlements or Squads. Each record contains id, type, current tile and its visible
+formation appearance (men, capacity, figures, formation and facing; ADR-0029).
+It carries no enemy treasury, stock, morale, fatigue, ammunition or goal. Vision uses the same disc as
 terrain fog. Garrisons and enemies outside that disc are absent. D4 adds the
 Faction's authoritative `fog` and its decoded `contacts` beside current sight;
 reading the projection never refreshes memory. Since D4, a settlement's front is
@@ -167,6 +168,8 @@ that Observation. Unoccupied regions have zero threat. Friendly power scales
 the Squad's remaining strength and morale, discounted up to half by fatigue.
 Enemy power uses the observed type's full nominal morale, since its actual
 condition is private; an unknown type gets a conservative default estimate.
+The current military policy still uses nominal type strength; the appearance
+extension enables honest formation rendering without retuning this policy.
 An owned settlement's region also includes enemies within `DEFENCE_RADIUS` tiles of the
 settlement, including across region edges. Regions with the largest deficit
 between threat and friendly power receive defensive allocation first. The

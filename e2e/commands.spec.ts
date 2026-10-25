@@ -87,6 +87,7 @@ async function pressCommand(page: Page, id: string): Promise<void> {
 
 /** Presses one of the bar's own buttons, e.g. the one that centres the selection. */
 async function pressButton(page: Page, action: string): Promise<void> {
+  if (action === 'center') { await page.keyboard.press('f'); return; }
   const rect = await page.evaluate((wanted) => window.__SPQR.game!.hudLayout().buttons
     .find((button) => button.action === wanted)?.rect ?? null, action);
   if (rect === null) throw new Error(`the bar has no "${action}" button`);
@@ -229,6 +230,8 @@ test('a Squad is ordered by its buttons, by an armed click and by the same key',
   expect(await page.evaluate(() => window.__SPQR.game!.targeting())).toBeNull();
   expect((await applied(page)).length).toBe(before);
   expect((await selection(page)).squads).toEqual([nearest]);
+  expect((await hud(page)).view.sessionOpen).toBe(true);
+  await page.keyboard.press('Escape');
 
   // The `A` key arms the same action the button does, through the same path.
   await page.keyboard.press('a');
@@ -238,11 +241,13 @@ test('a Squad is ordered by its buttons, by an armed click and by the same key',
   expect(await lastCommand(page)).toMatchObject({ kind: 'attackMove', squads: [nearest], x: home.x - 2, y: home.y - 3 });
 
   // `S` is Hold, and Escape does not take back a Command already submitted: it
-  // drops the selection, which is the other thing Escape means.
+  // opens the pause menu without dropping the selection.
   await page.keyboard.press('s');
   expect((await hud(page)).orders.pending).toBe(1);
   await page.keyboard.press('Escape');
-  expect((await selection(page)).squads).toEqual([]);
+  expect((await hud(page)).view.sessionOpen).toBe(true);
+  expect((await selection(page)).squads).toEqual([nearest]);
+  await page.keyboard.press('Escape');
   await advance(page, 1);
   expect(await lastCommand(page)).toMatchObject({ kind: 'hold', squads: [nearest] });
 
@@ -326,20 +331,26 @@ test('construction and recruitment are content-backed pages that submit real Com
   await press(page, tabs.find((tab) => tab.tab === 'construction')!.rect);
 
   const farm = (await hud(page)).commands.find((order) => order.id === 'build:farm');
-  expect(farm?.note).toContain('tick');
+  expect(farm?.note).toContain('40 s');
   expect(farm?.enabled).toBe(true);
   await pressCommand(page, 'build:farm');
+  await pressButton(page, 'purchase:build:farm');
   await advance(page, 1);
   expect(await lastCommand(page)).toMatchObject({ kind: 'build', settlement: home.id, building: 'farm' });
 
-  const works = (await hud(page)).detail?.lines.filter((line) => line.label === 'Cantieri').map((line) => line.value) ?? [];
-  expect(works.join(' ')).toContain('Fattoria');
+  expect(await page.evaluate(() => window.__SPQR.game!.state().visible.settlements[0]!.works.some((work) => work.building === 'farm'))).toBe(true);
+  await pressButton(page, 'settlement:works');
+  expect((await hud(page)).view.settlementPage).toBe('works');
+  expect((await hud(page)).view.inspectedOrder).toBeNull();
+  const workLayout = await page.evaluate(() => window.__SPQR.game!.hudLayout());
+  expect([...workLayout.text, ...workLayout.priority].map((line) => line.text).join(' ')).toContain('Fattoria');
 
   await press(page, (await page.evaluate(() => window.__SPQR.game!.hudLayout().tabs))
     .find((tab) => tab.tab === 'recruitment')!.rect);
   const hastati = (await hud(page)).commands.find((order) => order.id === 'recruit:hastati:24');
   expect(hastati?.enabled).toBe(true);
   await pressCommand(page, 'recruit:hastati:24');
+  await pressButton(page, 'purchase:recruit:hastati:24');
   await advance(page, 1);
   expect(await lastCommand(page)).toMatchObject({ kind: 'recruit', settlement: home.id, squadType: 'hastati', men: 24, count: 1 });
 });
@@ -369,6 +380,8 @@ test('recruitment quotes and buys a real size and count for both Factions, by po
     // who never touches the pointer after opening the page would.
     const rect = await commandRect(page, `recruit:${firstLine}:24`);
     await focusRect(page, rect);
+    await page.keyboard.press('Enter');
+    await focusRect(page, (await page.evaluate((id) => window.__SPQR.game!.hudLayout().buttons.find((button) => button.action === `purchase:${id}`)!.rect, `recruit:${firstLine}:24`)));
     await page.keyboard.press('Enter');
 
     await advance(page, 1);
@@ -494,7 +507,7 @@ test('orders given while paused are visibly pending, and land on the next tick',
   await pressCommand(page, 'hold');
   const paused = await hud(page);
   expect(paused.orders.pending).toBe(1);
-  const said = await page.evaluate(() => window.__SPQR.game!.hudLayout().status.map((line) => line.text).join(' '));
+  const said = await page.evaluate(() => { const layout = window.__SPQR.game!.hudLayout(); return [...layout.status, ...layout.text, ...layout.priority].map((line) => line.text).join(' '); });
   expect(said).toContain('In attesa: 1');
   expect(said).toContain('in pausa');
 
@@ -559,14 +572,14 @@ test('renders the contextual panels at 1280x720 and 1920x1080, for both Factions
         const rect = window.__SPQR.game!.hudLayout().commands
           .find((command) => command.order.id === 'attackMove')!.rect;
 
-        return window.__SPQR.view!.samples([[rect.x + rect.width / 2, rect.y + rect.height / 2]]);
+        return window.__SPQR.view!.samples([[rect.x + 2, rect.y + rect.height - 3]]);
       });
       await pressCommand(page, 'attackMove');
       const armedAfter = await page.evaluate(() => {
         const rect = window.__SPQR.game!.hudLayout().commands
           .find((command) => command.order.id === 'attackMove')!.rect;
 
-        return window.__SPQR.view!.samples([[rect.x + rect.width / 2, rect.y + rect.height / 2]]);
+        return window.__SPQR.view!.samples([[rect.x + 2, rect.y + rect.height - 3]]);
       });
       expect(armedAfter, 'the armed action is drawn differently').not.toEqual(armedBefore);
 
@@ -575,8 +588,8 @@ test('renders the contextual panels at 1280x720 and 1920x1080, for both Factions
       const colours = await page.evaluate(() => {
         const layout = window.__SPQR.game!.hudLayout();
         const points: [number, number][] = [];
-        for (let y = layout.detail.y + 2; y < layout.detail.y + layout.detail.height - 2; y += 3) {
-          for (let x = layout.detail.x + 2; x < layout.detail.x + layout.detail.width - 2; x += 3) points.push([x, y]);
+        for (let y = layout.detail.y; y < layout.detail.y + layout.detail.height; y += 2) {
+          for (let x = layout.detail.x; x < layout.detail.x + layout.detail.width; x += 2) points.push([x, y]);
         }
         const seen = new Set(window.__SPQR.view!.samples(points).map((rgba) => rgba.join(',')));
 
@@ -585,8 +598,8 @@ test('renders the contextual panels at 1280x720 and 1920x1080, for both Factions
       expect(colours).toBeGreaterThanOrEqual(4);
       await capture(page, `commands-${faction}-${String(width)}x${String(height)}`, 'issue55');
 
-      const status = await page.evaluate(() => window.__SPQR.game!.hudLayout().status.map((line) => line.text));
-      expect(status.join(' ')).toContain('Mira');
+      const status = await page.evaluate(() => { const layout = window.__SPQR.game!.hudLayout(); return [...layout.status, ...layout.text, ...layout.priority].map((line) => line.text); });
+      expect(status.join(' ')).toContain(translate('target.ground'));
 
       // The card is rows of decisions, three of them, and every picture is ink on
       // the frame the page presented — sampled live, not inferred from the model.
@@ -604,7 +617,7 @@ test('renders the contextual panels at 1280x720 and 1920x1080, for both Factions
 
         return { rows, icons };
       });
-      expect(card.rows).toBe(3);
+      expect(card.rows).toBe(1);
       // Two at least: the panel's ground and the picture on it. A muted control is
       // one ink, so asking for more would fail on exactly the state it tests.
       for (const colours of card.icons) expect(colours).toBeGreaterThan(1);

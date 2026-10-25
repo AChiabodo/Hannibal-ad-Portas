@@ -1,7 +1,10 @@
 # Issue #71 — visible pressure diagnostic and integration status
 
 24 October 2026. Baseline: `22e77ce752149732a9ed3599d32570a261e2d766`.
-**Not accepted / do not close #71.** Browser evidence and sampled timing failures remain.
+**Historical baseline, not the current acceptance status.** The failures below
+were subsequently fixed. See the [AI recovery report](issue-21-24-ai-recovery.md)
+and [final browser verification](issue-71-browser-verification.md) for current
+results and closure evidence.
 
 This is the historical `a6468d5` report. The subsequent fixes, regenerated matrix
 and remaining AI-vs-AI failures are tracked in the

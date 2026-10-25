@@ -45,6 +45,21 @@ const CARTHAGE: Site = { x: 85, y: 85 };
 /** A tile one step from Carthage's Stronghold: where a besieging army stands at the walls. */
 const AT_THE_GATE: Site = { x: 84, y: 85 };
 
+it('shows only the real visual formation of an enemy currently in sight, without its private condition or orders', () => {
+  const world = stage();
+  const enemy = musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', x: 12, y: 10, men: 24 });
+  enemy.strength = 9;
+  const observed = observeSiege(world, 'rome').enemies;
+  expect(observed).toMatchObject([{ id: enemy.id, type: 'gaul', x: 12, y: 10,
+    appearance: { men: 9, capacity: 24, figures: 9, formation: 'line', facing: 'south' } }]);
+  expect(Object.keys(observed[0]!).sort()).toEqual(['appearance', 'id', 'type', 'x', 'y']);
+  expect(Object.keys(observed[0]!.appearance!).sort()).toEqual(['capacity', 'facing', 'figures', 'formation', 'men']);
+  const match = matchOn(world);
+  match.step([move('carthage', [enemy.id], 70, 10)]);
+  run(match, 80);
+  expect(observeSiege(match.state.world, 'rome').enemies).toEqual([]);
+});
+
 /**
  * A hand-built theatre: two Strongholds on plain ground, an optional minor
  * settlement, and nothing else that could be confused with what a test measures.

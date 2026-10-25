@@ -68,7 +68,7 @@ describe('military decisions in a headless Match', () => {
       return { visible: observations[0]!, decisions: controller.readLog() };
     }
     const first = run(70);
-    expect(first.visible.enemies).toEqual([
+    expect(first.visible.enemies).toMatchObject([
       { id: 2, type: 'gaul', x: 28, y: 20 },
       { id: 3, type: 'gaul', x: 24, y: 24 },
       { id: 4, type: 'gaul', x: 33, y: 20 },

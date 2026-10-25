@@ -10,9 +10,17 @@ for (const faction of ['rome', 'carthage'] as const) {
     test(`economic decisions and reference return: ${faction} ${size.width}`, async ({ page }) => {
       await dismissFirstEntry(page);
       await page.setViewportSize(size);
-      await page.goto(`/?play=1&seed=7&faction=${faction}&difficulty=tiro`);
-      await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'match');
-      await page.evaluate(() => window.__SPQR.game!.pause());
+      // A seasonal economic forecast assumes no intervening orders or siege.
+      // The real opponent is measured separately by #71's paced Match matrix.
+      await page.goto('/e2e/hud-fixture.html');
+      await page.evaluate(async (side) => {
+        const bootPath = '/src/render/boot.ts', controllerPath = '/src/sim/controller.ts';
+        const { bootRenderer } = await import(bootPath);
+        const { idleController } = await import(controllerPath);
+        const view = await bootRenderer(document.getElementById('app')!, { seed: 7, faction: side, opponent: idleController() });
+        view.pause();
+        window.__SPQR = { boot: { booted: true, render: view.probe }, game: view, view, atelier: null };
+      }, faction);
       const button = async (action: string) => {
         const control = (await hudLayout(page)).buttons.find((item) => item.action === action);
         expect(control, action).toBeDefined();

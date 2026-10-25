@@ -196,9 +196,13 @@ test('the four acts are performed through the pointed-at interface, and their re
   expect(card, 'the card is drawn where the panel says').toBeDefined();
   if (card === undefined) throw new Error('no card to press');
   await press(page, card.rect);
+  await press(page, (await hudLayout(page)).buttons.find((button) => button.action === 'purchase:recruit:hastati:24')!.rect);
   expect((await guide(page))?.stage, 'a submitted recruit moves the guide to selection').toBe('select');
   expect((await hud(page)).orders.last?.status, 'a paused order is queued, not applied').toBe('pending');
-  expect((await hudLayout(page)).status.map((entry) => entry.text).join(' ')).toContain(translate('ui.submitted').replace('{name}', 'Astati'));
+  expect((await hud(page)).orders.pending).toBe(1);
+  const pendingLayout = await hudLayout(page);
+  expect([...pendingLayout.status, ...pendingLayout.text, ...pendingLayout.priority].map((entry) => entry.text).join(' '))
+    .toContain(translate('ui.pendingPaused').replace('{count}', '1'));
   await capture(page, 'recruit-pending-1280x720', 'issue59');
 
   await advance(page, 1);

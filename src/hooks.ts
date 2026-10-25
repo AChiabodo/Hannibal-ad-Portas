@@ -132,7 +132,7 @@ export const GAME_HOOKS = [
  * itself when it started — and it belongs to `GameView` in `render/boot.ts`
  * rather than to either half.
  */
-export const GAME_PAGE_HOOKS = ['probe', ...VIEW_HOOKS, ...GAME_HOOKS] as const;
+export const GAME_PAGE_HOOKS = ['probe', 'suspend', 'activate', 'dispose', ...VIEW_HOOKS, ...GAME_HOOKS] as const;
 
 /**
  * The Atelier's inspection surface — `AtelierHooks` in `render/atelier.ts`.

@@ -1,7 +1,11 @@
 # AI recovery after the #71 audit
 
 24 October 2026. Implementation baseline: `a6468d5`.
-**Headless AI recovery implemented; #71 remains open for browser evidence.**
+**Historical headless-stage report.** Browser verification was subsequently
+authorized and completed on 25 October; see the
+[final browser report](issue-71-browser-verification.md) for the current result
+and closure evidence. Statements below about unrun Chromium/open issues describe
+the earlier stage, before that verification.
 The first batch's failures below are retained history. The second batch resolves
 them and the additional historical Centurio seed 6 regression.
 
@@ -231,3 +235,13 @@ No actionable finding remains in the implemented AI recovery. The independent
 review checked withdrawal ownership, actual construction/capture, remaining ram
 shock, rest versus defence, approach power, and hidden ownership independence.
 Browser evidence for #71 is still missing, explicitly outside the executed gates.
+
+## Subsequent browser verification (25 October)
+
+The [browser report](issue-71-browser-verification.md) supersedes the unrun-browser
+status above: complete acceptance 174/174, smoke 3/3, all six ordinary paced
+pressure cases and both real-input journeys verified, with inspected frames for
+both Factions and reference resolutions. The review found and fixed missing
+enemy rendering using the user-approved shared current-sight appearance
+contract (ADR-0029). All 60 headless pressure cases still pass with the same
+Replay hashes; the seven retained full-Match victories remain unchanged.

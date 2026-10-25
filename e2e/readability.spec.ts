@@ -130,8 +130,9 @@ async function recruit(page: Page, faction: Faction): Promise<number> {
 async function centreOn(page: Page, tile: Site): Promise<ViewState> {
   const before = await describeView(page);
   const at = tilePixel(tile.x, tile.y);
-  const wantedX = Math.round(at.x - before.width / (2 * before.camera.zoom));
-  const wantedY = Math.round(at.y - before.height / (2 * before.camera.zoom));
+  const area = (await hudLayout(page)).theatre ?? { x: 0, y: 0, width: before.width, height: before.height };
+  const wantedX = Math.round(at.x - (area.x + area.width / 2) / before.camera.zoom);
+  const wantedY = Math.round(at.y - (area.y + area.height / 2) / before.camera.zoom);
   await page.evaluate(
     ({ dx, dy }) => window.__SPQR.view?.panBy(dx, dy),
     { dx: wantedX - before.camera.x, dy: wantedY - before.camera.y },
@@ -264,8 +265,8 @@ test.describe('the theatre’s annotations', () => {
         expect(report, `${faction}: the Squad is on the map`).toBeDefined();
         if (report === undefined) throw new Error('no Squad to select');
 
-        const view = await centreOn(page, { x: report.x, y: report.y });
         await select(page, { kind: 'squad', id });
+        const view = await centreOn(page, { x: report.x, y: report.y });
 
         const selected = (await indicators(page)).find((entry) => entry.id === id);
         expect(selected?.annotation, `${faction} ${String(size.width)}: a selected Squad wears the plate`).toBe('plate');
@@ -372,6 +373,7 @@ test.describe('the theatre’s annotations', () => {
     expect(await page.evaluate(() => window.__SPQR.game?.paused())).toBe(false);
 
     // The strip is drawn where the layout says, at the far side of the interface.
+    await press(page, (await hudLayout(page)).buttons.find((button) => button.action === 'notices')!.rect);
     const layout = await hudLayout(page);
     expect(layout.noticeRows.length).toBeGreaterThan(0);
     const row = layout.noticeRows.find((entry) => entry.id === refusal?.id);
@@ -540,14 +542,24 @@ test.describe('the theatre’s annotations', () => {
     await capture(page, 'fatigue-pin-rome-1280x720', 'issue58');
   });
 
-  test('the labelled estimate is on the strip, and pause and speed do not move a mark', async ({ page }) => {
+  test('the labelled estimate is in seasonal balance, and pause and speed do not move a mark', async ({ page }) => {
     await openMatch(page, 'rome', RESOLUTIONS[0]);
     const id = await recruit(page, 'rome');
     const report = (await squads(page)).find((entry) => entry.id === id);
     if (report === undefined) throw new Error('no Squad to order');
 
-    const layout = await hudLayout(page);
-    const words = [...layout.text, ...layout.priority].map((line) => line.text).join(' ');
+    await select(page, { kind: 'settlement', id: (await state(page)).visible.settlements[0]!.id });
+    await press(page, (await hudLayout(page)).tabs.find((entry) => entry.tab === 'overview')!.rect);
+    await press(page, (await hudLayout(page)).buttons.find((button) => button.action === 'settlement:balance')!.rect);
+    let words = '';
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const layout = await hudLayout(page);
+      words = [...layout.text, ...layout.priority].map((line) => line.text).join(' ');
+      if (words.includes(translate('forecast.title'))) break;
+      const next = layout.buttons.find((button) => button.action === 'detailNext' && button.enabled);
+      if (!next) break;
+      await press(page, next.rect);
+    }
     expect(words, 'the economy’s estimate is labelled').toContain(translate('forecast.title'));
 
     await select(page, { kind: 'squad', id });

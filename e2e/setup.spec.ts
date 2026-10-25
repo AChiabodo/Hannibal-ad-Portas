@@ -127,6 +127,8 @@ test('pointer setup, invalid and empty seeds, copy, pacing, pause and fresh New 
     await pressMenu(page, `speed${String(speed)}`);
     expect(await page.evaluate(() => window.__SPQR.game!.speed())).toBe(speed);
   }
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
   const tick = await page.evaluate(() => window.__SPQR.game!.tick());
   await page.waitForTimeout(400);
   expect(await page.evaluate(() => window.__SPQR.game!.tick())).toBe(tick);
@@ -249,6 +251,8 @@ for (const faction of ['rome', 'carthage'] as const) {
       let dialogs = 0;
       page.on('dialog', (dialog) => { dialogs += 1; void dialog.accept(); });
       await pressMenu(page, 'new');
+      await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+      await page.keyboard.press('Enter');
       await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
       expect(dialogs).toBe(0);
       const diagnosis = await spqr.diagnosis();

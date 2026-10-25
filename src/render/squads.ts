@@ -29,6 +29,9 @@ import type { Formation } from '../sim/command.ts';
 import type { Facing } from '../sim/squad.ts';
 import { formationShape } from '../content/formation.ts';
 
+/** The geometric data a procedural formation needs; private condition is irrelevant. */
+export type SquadDrawing = Pick<VisibleSquad, 'id' | 'type' | 'capacity' | 'figures' | 'formation' | 'facing' | 'goal'>;
+
 /**
  * Which figure each Squad type is drawn as: both rosters, named for their types.
  *
@@ -240,7 +243,7 @@ export const SELECTION_INK: Rgba = shadeAt(RAMPS.parchment, 6);
  * @throws RangeError when the Squad's type is not one the content table knows:
  *   a Squad the roster cannot draw is worth refusing loudly.
  */
-export function squadBlock(squad: VisibleSquad, options: BlockOptions = {}): PixelBuffer {
+export function squadBlock(squad: SquadDrawing, options: BlockOptions = {}): PixelBuffer {
   const figure = FIGURE_OF_SQUAD[squad.type];
   if (figure === undefined) {
     throw new RangeError(`"${squad.type}" is not a Squad type the rosters draw`);
@@ -276,7 +279,7 @@ export function squadBlock(squad: VisibleSquad, options: BlockOptions = {}): Pix
  * twenty soldiers sixty times a second. It is exported so that the page's own
  * loop and this module cannot disagree about when a block is stale.
  */
-export function squadFrameKey(squad: VisibleSquad, options: BlockOptions = {}): string {
+export function squadFrameKey(squad: SquadDrawing, options: BlockOptions = {}): string {
   return [
     squad.type,
     squad.facing,
@@ -316,7 +319,7 @@ function clothOf(figure: FigureName | undefined, override?: 'rome' | 'carthage')
  * at the 10 Hz clock: fast enough to read as walking, slow enough for a block of
  * men not to shimmer.
  */
-export function frameStepOf(squad: VisibleSquad, tick: number): number {
+export function frameStepOf(squad: SquadDrawing, tick: number): number {
   return squad.goal === null ? -1 : Math.floor(tick / 2) % 2;
 }
 
@@ -324,7 +327,7 @@ export function frameStepOf(squad: VisibleSquad, tick: number): number {
  * One man's frame: the Squad's frame, offset by where he stands, so that the men
  * of a marching block are not in lockstep.
  */
-function frameFor(squad: VisibleSquad, man: PlacedMan, tick: number): FigureFrame {
+function frameFor(squad: SquadDrawing, man: PlacedMan, tick: number): FigureFrame {
   const step = frameStepOf(squad, tick);
   if (step < 0) return figureFrame('idle', 0);
 

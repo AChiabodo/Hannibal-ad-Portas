@@ -27,10 +27,12 @@ async function entry(page: Page, action: string, suspended: boolean, chapters = 
   await press(page, button.rect);
 }
 
-async function gameMenu(page: Page, action: string): Promise<void> {
+async function gameMenu(page: Page, action: string): Promise<number> {
   await page.keyboard.press('Escape');
+  const parkedTick = await page.evaluate(() => window.__SPQR.game!.tick());
   const button = await page.evaluate((wanted) => window.__SPQR.game!.matchLayout().buttons.find((b) => b.action === wanted)!.rect, action);
   await press(page, button);
+  return parkedTick;
 }
 
 async function keyboardGuide(page: Page, action: string): Promise<void> {
@@ -63,7 +65,7 @@ for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]
     await press(page, skip);
     await page.keyboard.press('Space');
     const before = await page.evaluate(() => window.__SPQR.game!.state());
-    await gameMenu(page, 'home');
+    const parkedTick = await gameMenu(page, 'home');
     await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
     await entry(page, 'reference', true);
     await expect(page.locator('canvas')).toHaveAttribute('aria-label', /Enciclopedia/);
@@ -96,13 +98,16 @@ for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]
     await capture(page, `tutorial-${size.width}`, 'issue70');
     await keyboardGuide(page, 'tutorialExit');
     await page.keyboard.press('Escape');
+    const resumedAt = Date.now();
     await entry(page, 'resume', true);
     await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'match');
     await page.keyboard.press('Space');
     const restored = await page.evaluate(() => window.__SPQR.game!.state());
     expect(restored.seed).toBe(before.seed);
     expect(restored.faction).toBe(before.faction);
-    expect(restored.tick - before.tick).toBeLessThanOrEqual(3);
+    // Resume runs through real animation frames until Space pauses it. Its
+    // permitted ticks follow elapsed wall time, not a fixed number of API calls.
+    expect(restored.tick - parkedTick).toBeLessThanOrEqual(Math.ceil((Date.now() - resumedAt) / 100) + 1);
     expect(restored.applied.slice(0, before.applied.length)).toEqual(before.applied);
     expect((await spqr.diagnosis()).errors).toEqual([]);
   });

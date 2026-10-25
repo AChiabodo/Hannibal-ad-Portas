@@ -40,7 +40,7 @@ import {
 } from '../src/hooks';
 import type { SpqrDebugHooks } from '../src/debug';
 import type { AtelierHooks } from '../src/render/atelier';
-import type { ViewHooks } from '../src/render/boot';
+import type { GameView, ViewHooks } from '../src/render/boot';
 import type { GameHooks, GameSnapshot } from '../src/render/game';
 import type { Command } from '../src/sim/command';
 
@@ -80,7 +80,7 @@ test('publishes exactly the hooks the interfaces declare, and no others', () => 
   const game: Agrees<(typeof GAME_HOOKS)[number], GameHooks> = true;
   const atelier: Agrees<(typeof ATELIER_HOOKS)[number], AtelierHooks> = true;
   const pages: Agrees<(typeof PAGES)[number], SpqrDebugHooks> = true;
-  const gamePage: Agrees<(typeof GAME_PAGE_HOOKS)[number], ViewHooks & GameHooks & { probe: unknown }> = true;
+  const gamePage: Agrees<(typeof GAME_PAGE_HOOKS)[number], GameView> = true;
   const atelierPage: Agrees<(typeof ATELIER_PAGE_HOOKS)[number], AtelierHooks & { probe: unknown }> = true;
   const snapshot: Agrees<(typeof SNAPSHOT_FIELDS)[number], GameSnapshot> = true;
 

@@ -70,6 +70,9 @@ the camera's hooks and the Match's hooks, and nothing else:
 | Hook | Signature | Page | What it does |
 | --- | --- | --- | --- |
 | `probe` | — | both | The frame report the page booted with: engine, viewport, centre pixel |
+| `suspend` | `()` | game | Stops this view while its Match is retained in the journey |
+| `activate` | `()` | game | Reattaches the retained view and starts its animation loop |
+| `dispose` | `()` | game | Stops the loop and releases the view's renderer and event handlers |
 | `panBy` | `(dx, dy)` | view | Moves the camera by whole stage pixels; refuses anything else |
 | `zoomTo` | `(zoom)` | view | Sets a whole-number magnification, keeping the viewport's middle where it is |
 | `zoomAbout` | `(zoom, screenX, screenY)` | view | Sets a magnification, keeping one screen pixel where it is |
