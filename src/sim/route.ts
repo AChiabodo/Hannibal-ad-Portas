@@ -193,7 +193,9 @@ export type Route =
  *   this map, or the pace is not a whole number of at least one: a route starts
  *   where a Squad stands, and a Squad stands on land.
  */
-export function findRoute(map: MapGrid, from: Site, to: Site, pace = 1): Route {
+export type PassageCheck = (x: number, y: number, fromX?: number, fromY?: number) => boolean;
+
+export function findRoute(map: MapGrid, from: Site, to: Site, pace = 1, canEnter?: PassageCheck): Route {
   requirePace(pace);
 
   const start = tileOf(from);
@@ -206,9 +208,10 @@ export function findRoute(map: MapGrid, from: Site, to: Site, pace = 1): Route {
   const goal = tileOf(to);
   if (goal < 0) return { kind: 'refused', reason: 'off-map' };
   if (!isWalkable(terrainAt(map, to.x, to.y))) return { kind: 'refused', reason: 'water' };
+  if (canEnter !== undefined && !canEnter(to.x, to.y)) return { kind: 'refused', reason: 'unreachable' };
   if (goal === start) return { kind: 'route', steps: [] };
 
-  const steps = search(map, start, goal, pace);
+  const steps = search(map, start, goal, pace, canEnter);
 
   return steps === null ? { kind: 'refused', reason: 'unreachable' } : { kind: 'route', steps };
 }
@@ -233,7 +236,7 @@ function tileOf(site: Site): number {
  * is the road's ticks divided by its pace, so no tile behind the one in hand can
  * be reached more cheaply.
  */
-function search(map: MapGrid, start: number, goal: number, pace: number): number[] | null {
+function search(map: MapGrid, start: number, goal: number, pace: number, canEnter?: PassageCheck): number[] | null {
   const cost = new Int32Array(TILE_COUNT).fill(-1);
   const cameFrom = new Int32Array(TILE_COUNT).fill(-1);
   const estimate = new Int32Array(TILE_COUNT).fill(-1);
@@ -264,6 +267,7 @@ function search(map: MapGrid, start: number, goal: number, pace: number): number
 
       const ground = terrainAt(map, tileX(neighbour), tileY(neighbour));
       if (!isWalkable(ground)) continue;
+      if (canEnter !== undefined && !canEnter(tileX(neighbour), tileY(neighbour), tileX(tile), tileY(tile))) continue;
 
       const through = reached + paceCost(ground, pace);
       const known = cost[neighbour] as number;
@@ -425,7 +429,7 @@ export interface RouteCache {
    * looked up after that. One route is remembered per pace, because a horse's
    * quickest way is not always a footsoldier's.
    */
-  route(from: Site, to: Site, pace?: number): Route;
+  route(from: Site, to: Site, pace?: number, canEnter?: PassageCheck, context?: string): Route;
 
   /** How many searches it has run: what "remembered rather than recomputed" is counted by. */
   readonly searches: number;
@@ -457,12 +461,13 @@ export function createRouteCache(map: MapGrid, limit: number = ROUTE_CACHE_LIMIT
   let hits = 0;
 
   return {
-    route(from: Site, to: Site, pace = 1): Route {
-      const key = routeKey(from, to, pace);
+    route(from: Site, to: Site, pace = 1, canEnter?: PassageCheck, context = ''): Route {
+      const base = routeKey(from, to, pace);
+      const key = base === null ? null : `${context}/${base}`;
 
       // A tile that is not on the map is refused without a search and without a
       // memory: there is nothing to work out, and nothing worth remembering.
-      if (key === null) return findRoute(map, from, to, pace);
+      if (key === null) return findRoute(map, from, to, pace, canEnter);
 
       const remembered = routes.get(key);
       if (remembered !== undefined) {
@@ -475,7 +480,7 @@ export function createRouteCache(map: MapGrid, limit: number = ROUTE_CACHE_LIMIT
       }
 
       searches += 1;
-      const route = findRoute(map, from, to, pace);
+      const route = findRoute(map, from, to, pace, canEnter);
       routes.set(key, route);
       if (routes.size > limit) forgetOldest(routes);
 

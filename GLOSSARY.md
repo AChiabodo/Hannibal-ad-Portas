@@ -24,7 +24,7 @@ _UI_: Giocatore
 _Avoid_: using "player" to mean the human specifically
 
 **Stronghold**:
-A Faction's main settlement in the theatre. The fall of the enemy Stronghold ends the Match.
+A Faction's fortified main settlement in the theatre, whose identity is independent of its Tier. The fall of the enemy Stronghold ends the Match.
 _UI_: Roccaforte
 _Avoid_: Capital, base, HQ, mother city
 
@@ -112,7 +112,7 @@ _UI_: Giacimento
 _Avoid_: Deposit, mine, patch, field
 
 **Minor settlement**:
-A capturable settlement that is not a Stronghold. Four to six stand on every map, and taking one means holding its centre.
+A capturable settlement that is not a Stronghold, even at the highest Tier. Four to six stand on every map; they have no Walls and are taken by holding their Capture area.
 _UI_: Insediamento minore
 _Avoid_: Village, town, city, outpost
 
@@ -122,12 +122,12 @@ _UI_: Mura
 _Avoid_: Fortification (that is the walls and the gate together), rampart, defences
 
 **Gate**:
-The opening in a Stronghold's walls, and the one piece of them the ram is aimed at. It is a structure like the walls: it takes its own damage, and a broken gate is a breach.
+The controlled passage in a Stronghold's Walls, open to its owner's Squads while intact and the structure a Ram is aimed at. It takes its own damage; a destroyed Gate is a Breach through which either Faction may pass.
 _UI_: Porta
 _Avoid_: Door, entrance
 
 **Breach**:
-Any one structure of a settlement's fortification broken — a gate or a stretch of wall. A breach is what lets an Assault storm the place, and what lets its centre be held.
+A Gate or stretch of Walls broken open, creating a physical passage through the fortification. A Breach is necessary for an Assault to take a Stronghold, but its active Garrison must also be overcome.
 _UI_: Breccia
 _Avoid_: Gap, hole, breakthrough
 
@@ -147,7 +147,7 @@ _UI_: Nebbia di guerra
 _Avoid_: Shroud, blackout, visibility mask, using "fog" for the unexplored state alone
 
 **Last known contact**:
-Where an enemy Squad or a settlement stood when the Faction last saw it, kept after sight is lost; an open settlement may belong to nobody. The place is a memory, not a live position or a claim about who owns it today, and how stale that memory is matters.
+Where an enemy Squad or a settlement stood when the Faction last saw it, kept after sight is lost; a settlement also retains its last observed appearance. This is dated knowledge, never a live position, a current appearance or a claim about who owns the place today.
 _UI_: Ultimo contatto noto
 _Avoid_: Blip, tracker, calling a thing the rules can see right now a "contact" (that is an enemy in sight; only the fog's *memory* of one is a last known contact)
 
@@ -235,7 +235,7 @@ _UI_: Assalto
 _Avoid_: Attack, storm (reserve "attack" for combat between Squads)
 
 **Blockade**:
-The slow path of a Siege: cutting supply and starving a settlement into surrender, breakable by the besieged Faction's field army. A ring that outweighs the garrison starves it faster, up to twice the stated rate, because what a town loses a Season is the men camped outside it and not the number of Squads they are drawn as.
+The slow path of a Siege: cutting supply and starving a settlement into surrender, lifted when the besiegers leave or are eliminated, or an external relief army outweighs them. A ring that outweighs the Garrison starves it faster, up to twice the stated rate; troops still inside the settlement do not themselves lift the Blockade.
 _UI_: Blocco
 _Avoid_: Encirclement, investment, starvation
 
@@ -245,7 +245,7 @@ _UI_: Attrito
 _Avoid_: Decay, drain, penalty
 
 **Quarters**:
-Where a Squad winters under cover: inside one of its Faction's settlements — garrisoned in it, or standing on its centre — or in a camp. A Squad in quarters pays no Attrition for the winter; one in the open does.
+Where a Squad winters under cover: inside its own Stronghold's Walls, in the inhabited core of its own Minor settlement, or in a Camp. A Squad in Quarters pays no Attrition for the winter; exterior productive grounds alone do not provide that shelter.
 _UI_: Quartieri d'inverno
 _Avoid_: Shelter, base, barracks
 
@@ -270,9 +270,19 @@ _UI_: Ariete
 _Avoid_: Battering ram, siege engine (that is the kind; the ram is the one v1 has), siege tower
 
 **Garrison**:
-The Squads a Faction puts inside a settlement's walls instead of in the field. A garrison is a posture of an ordinary Squad: it mans the walls, it is not fought by the contact rules, it is fed by the settlement's granary, and it surrenders rather than routing when a storm breaks it. What it does to a ram is its **force** and not the count of Squads on the wall.
+The infantry and slinger Squads a Faction assigns to a Stronghold's walls instead of the field, within its Garrison capacity. It is a posture of ordinary Squads, protected from field contact, fed by the settlement's granary and measured by Force against a Ram; a storm that breaks it makes it surrender rather than Rout.
 _UI_: Guarnigione
 _Avoid_: Defender (any Squad defending is not necessarily a garrison), reserve, stack
+
+**Garrison capacity**:
+The maximum number of surviving men a Stronghold can accommodate in its Garrison, set by its Tier. It limits the whole Garrison, independently of the Squads' original purchased Capacity or how many Squads those men belong to.
+_UI_: Capienza della guarnigione
+_Avoid_: Capacity on its own, number of Squads
+
+**Garrison assembly point**:
+The gathering place just inside a Stronghold's Gate where field Squads join its Garrison, including Squads already in the courtyard.
+_UI_: Punto di raccolta della guarnigione
+_Avoid_: Muster area, Capture area
 
 **Rout**:
 What a Squad does when its morale is gone: it runs for the nearest settlement its Faction holds, strikes weakly, and is not butchered while it has somewhere to run. Automatic, and not a state a Player can order.
@@ -326,8 +336,28 @@ A place on the map with people, buildings and a stock: a Stronghold or a minor s
 _UI_: Insediamento
 _Avoid_: City, town, base, colony (a Stronghold and a minor settlement are both settlements)
 
+**Capture area**:
+The recognizable, walkable part of a Settlement's central square whose sustained control determines capture. A Stronghold also requires a Breach and the neutralization or surrender of its Garrison.
+_UI_: Piazza di controllo
+_Avoid_: Centre tile, invisible capture point
+
+**Muster area**:
+The open ground in a Settlement where newly recruited Squads assemble in the field, distinct from its Garrison.
+_UI_: Zona di raduno
+_Avoid_: Spawn point, automatic Garrison
+
+**Settlement footprint**:
+The ground a Settlement physically occupies, distinct from the surrounding Territory it supplies.
+_UI_: —
+_Avoid_: Territory, using the drawing's extent to mean the occupied ground
+
+**Settlement grounds**:
+The full area reserved for a Settlement and its future Works, including open ground and passages. Reserved ground is not necessarily an obstacle.
+_UI_: —
+_Avoid_: Territory, treating all reserved ground as impassable
+
 **Tier**:
-One of the three steps of a settlement's growth — raised by the building that raises it — and the gate on which Squad types it may raise. The progression is the tiers, and there is no technology tree beside them.
+One of the three steps of a settlement's growth, raised by the building that raises it and governing which Squad types it may raise. A Stronghold's Tier also determines its Garrison capacity and fortification resistance; there is no separate technology tree.
 _UI_: Livello
 _Avoid_: Level for a settlement's progression, age, era, upgrade
 
@@ -335,6 +365,11 @@ _Avoid_: Level for a settlement's progression, age, era, upgrade
 How a settlement's population is divided between its works and its land. There is no Command for it: it follows from what the settlement has built and who lives in it.
 _UI_: Manodopera
 _Avoid_: Assignment, jobs, workers
+
+**Pending order**:
+A requested construction or recruitment waiting for its starting conditions, before payment and before a Work or Squad exists. It may be cancelled before it starts.
+_UI_: Ordine in attesa
+_Avoid_: Work, completed purchase
 
 **Work**:
 One building in one settlement: a labour demand plus a timer while it goes up, and a labour demand plus what it yields once it stands.

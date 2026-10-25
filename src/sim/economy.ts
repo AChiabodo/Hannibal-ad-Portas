@@ -67,14 +67,11 @@ import {
   buildingCode,
   buildingOf,
   isLegalSize,
-  pay,
   payrollBill,
-  recruitCost,
   squadTypeCode,
   squadTypeOf,
   stockAt,
   stockOf,
-  times,
   type BuildingType,
   type ResourceAmounts,
 } from '../content/index.ts';
@@ -83,7 +80,9 @@ import { factionCode } from './faction.ts';
 import { RESOURCE, RESOURCE_KINDS, MAP_HEIGHT, MAP_WIDTH, TERRAIN, terrainAt, type MapGrid, type Site } from './map.ts';
 import type { BuildCommand, Command, RecruitCommand } from './command.ts';
 import type { Season } from './season.ts';
-import { standingAt, type Block } from './squad.ts';
+import type { Block } from './squad.ts';
+import { advancePendingOrders, enqueueOrder } from './pending-orders.ts';
+import { bindEconomySpace } from './settlement-space.ts';
 
 /**
  * The owner a settlement nobody holds has.
@@ -182,6 +181,9 @@ export const ALWAYS_SUPPLIED: Supplied = () => true;
  * working (ADR-0005).
  */
 export interface Work {
+  /** Permanent copy number and original builder, preserved on conquest. */
+  readonly ordinal?: number;
+  origin?: number;
   /** Which building it is, as a content code — state holds numbers, not ids. */
   readonly building: number;
 
@@ -273,6 +275,8 @@ export interface Settlement {
 
 /** Everything the economy is: the settlements, the two treasuries, and the Squads. */
 export interface Economy {
+  pending?: PendingOrder[];
+  nextPendingId?: number;
   /** Every settlement on the map, owned or not, by id. */
   readonly settlements: Settlement[];
 
@@ -305,12 +309,29 @@ export function createEconomy(map: MapGrid): Economy {
     settlements.push(openSettlement(settlements.length, site, UNOWNED));
   }
 
-  return {
+  return bindEconomySpace(map, {
     settlements,
     treasuries: [STARTING_DENARII, STARTING_DENARII],
     squads: [],
     nextSquadId: 1,
-  };
+    pending: [],
+    nextPendingId: 1,
+  });
+}
+
+/** Unpaid, integer-only requests. A pending request is not yet a Work or Squad. */
+export interface PendingOrder {
+  readonly id: number;
+  readonly owner: number;
+  readonly settlement: number;
+  /** 0: construction; 1: recruitment. */
+  readonly kind: number;
+  readonly content: number;
+  readonly ordinal: number;
+  readonly men: number;
+  readonly count: number;
+  /** 1: occupied ground; 2: insufficient stock. */
+  reason: number;
 }
 
 /** A settlement at the opening of a Match: its people, and the four empty stocks. */
@@ -595,6 +616,7 @@ export function harvest(
  * then — the building is the tier, and there is no separate upgrade.
  */
 export function advanceConstruction(map: MapGrid, economy: Economy): void {
+  advancePendingOrders(economy);
   for (const settlement of economy.settlements) {
     if (settlement.works.every((work) => work.remaining === 0)) continue;
 
@@ -679,6 +701,12 @@ export function applyEconomyCommand(economy: Economy, command: Command): boolean
       return applyBuild(economy, command);
     case 'recruit':
       return applyRecruit(economy, command);
+    case 'cancelPending': {
+      if (heldSettlement(economy, command.settlement, command.faction) === undefined) return false;
+      const previous = economy.pending ?? [];
+      economy.pending = previous.filter((order) => order.id !== command.order || order.settlement !== command.settlement || order.owner !== factionCode(command.faction));
+      return economy.pending.length !== previous.length;
+    }
     default:
       return false;
   }
@@ -697,14 +725,15 @@ function applyBuild(economy: Economy, command: BuildCommand): boolean {
   if (building.faction !== undefined && building.faction !== command.faction) return false;
   if (building.tier > settlement.tier) return false;
 
-  const standing = settlement.works.filter((work) => work.building === code).length;
-  if (standing >= building.maxPerSettlement) return false;
-
-  const payment = pay(settlement.stocks, building.cost);
-  if (!payment.affordable) return false;
-
-  settled(settlement, payment.remaining);
-  settlement.works.push({ building: code, remaining: building.buildTicks });
+  const used = new Set([
+    ...settlement.works.filter((work) => work.building === code).map((work, ordinal) => work.ordinal ?? ordinal),
+    ...(economy.pending ?? []).filter((order) => order.settlement === settlement.id && order.kind === 0 && order.content === code).map((order) => order.ordinal),
+  ]);
+  let ordinal = 0;
+  while (used.has(ordinal)) ordinal += 1;
+  if (ordinal >= building.maxPerSettlement) return false;
+  enqueueOrder(economy, { owner: factionCode(command.faction), settlement: settlement.id,
+    kind: 0, content: code, ordinal, men: 0, count: 1 });
 
   return true;
 }
@@ -722,28 +751,8 @@ function applyRecruit(economy: Economy, command: RecruitCommand): boolean {
   if (type.tier > settlement.tier) return false;
   if (!isLegalSize(type, command.men)) return false;
 
-  const payment = pay(settlement.stocks, times(recruitCost(type, command.men), command.count));
-  if (!payment.affordable) return false;
-
-  settled(settlement, payment.remaining);
-
-  for (let raised = 0; raised < command.count; raised += 1) {
-    economy.squads.push({
-      // A Squad leaves the settlement it was raised in, standing where it is
-      // with the men it was bought as: from there it is C1's block, and the
-      // first order it is given moves it off the square. Its capacity is those
-      // same men, and its strength starts there too — C3 is what separates them.
-      ...standingAt(settlement.x, settlement.y, command.men, type.ammunition),
-      id: economy.nextSquadId,
-      owner: factionCode(command.faction),
-      type: code,
-      capacity: command.men,
-      home: settlement.id,
-      morale: type.morale,
-      unpaid: 0,
-    });
-    economy.nextSquadId += 1;
-  }
+  enqueueOrder(economy, { owner: factionCode(command.faction), settlement: settlement.id,
+    kind: 1, content: code, ordinal: 0, men: command.men, count: command.count });
 
   return true;
 }
@@ -826,8 +835,3 @@ function earn(settlement: Settlement, allocation: Allocation, economy: Economy):
 }
 
 /** Writes a paid cost back into a settlement's stock. */
-function settled(settlement: Settlement, remaining: readonly number[]): void {
-  for (const kind of RESOURCE_KINDS) {
-    settlement.stocks[kind] = remaining[kind] ?? stockAt(settlement.stocks, kind);
-  }
-}

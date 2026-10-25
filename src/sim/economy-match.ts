@@ -88,6 +88,7 @@ import { eyeOf, SETTLEMENT_VISION, SQUAD_VISION, type Eye } from './fog.ts';
 import { generateMap, type MapGrid, type Site } from './map.ts';
 import { applyMovementCommands, goalOf, march, routeCacheFor } from './movement.ts';
 import { refusalOf, type RouteRefusal } from './route.ts';
+import { pendingOrderCost } from './pending-orders.ts';
 import { fadeResidue, recordCasualties } from './residue.ts';
 import { facingOf, FIELD, formationOf, isRouting, type Facing } from './squad.ts';
 import {
@@ -133,6 +134,8 @@ export type VisibleStocks = ResourceAmounts;
 
 /** What a Faction sees of one work: what it is building, and how far along it is. */
 export interface VisibleWork {
+  readonly ordinal?: number;
+  readonly origin?: Faction;
   /** The building's id, so a Controller can name it in a Build Command. */
   readonly building: string;
 
@@ -144,7 +147,19 @@ export interface VisibleWork {
 }
 
 /** What a Faction sees of one settlement it holds: what it is, what it has, where its people are. */
+export interface VisiblePendingOrder {
+  readonly cost?: ResourceAmounts;
+  readonly id: number;
+  readonly kind: 'build' | 'recruit';
+  readonly building: string;
+  readonly squadType: string;
+  readonly men: number;
+  readonly count: number;
+  readonly reason: 'space' | 'resources';
+}
+
 export interface VisibleSettlement {
+  readonly pending?: readonly VisiblePendingOrder[];
   /** Its id, as a Build or Recruit Command names it. */
   readonly id: number;
 
@@ -172,6 +187,12 @@ export interface VisibleSettlement {
 
 /** What a Faction sees of one Squad it keeps: what it is, where it stands and what it costs to keep. */
 export interface VisibleSquad {
+  readonly passage?: {
+    readonly settlement: number;
+    readonly phase: 'approaching' | 'waiting' | 'entering' | 'leaving';
+    readonly remaining: number;
+    readonly reason?: string;
+  };
   /** Its id, as a Command names it. */
   readonly id: number;
 
@@ -428,7 +449,7 @@ export const observeEconomy: MatchSetup<EconomyWorld, EconomyVisible>['observe']
     treasury: world.economy.treasuries[owner] ?? 0,
     settlements: world.economy.settlements
       .filter((settlement) => settlement.owner === owner)
-      .map((settlement) => visibleSettlement(world.map, settlement)),
+      .map((settlement) => visibleSettlement(world.map, settlement, world.economy)),
     squads: world.economy.squads
       .filter((squad) => squad.owner === owner)
       .map((squad) => visibleSquad(world.economy, territory, squad)),
@@ -459,7 +480,7 @@ export function eyesOfEconomy(world: EconomyWorld, faction: Faction): readonly E
 }
 
 /** A settlement, as its holder reads it: where it is, and how its people are spent. */
-function visibleSettlement(map: MapGrid, settlement: Settlement): VisibleSettlement {
+function visibleSettlement(map: MapGrid, settlement: Settlement, economy: Economy): VisibleSettlement {
   const allocation = allocate(settlement, landCapacity(map, settlement));
 
   return {
@@ -471,9 +492,18 @@ function visibleSettlement(map: MapGrid, settlement: Settlement): VisibleSettlem
     stocks: namedStock(settlement.stocks),
     land: namedStock(allocation.land),
     works: settlement.works.map((work) => ({
+      ordinal: work.ordinal ?? 0,
+      origin: (work.origin ?? settlement.owner) === 1 ? 'carthage' : 'rome',
       building: buildingOf(work.building)?.id ?? 'unknown',
       remaining: work.remaining,
       standing: work.remaining === 0,
+    })),
+    pending: (economy.pending ?? []).filter((order) => order.settlement === settlement.id).map((order) => ({
+      id: order.id, kind: order.kind === 0 ? 'build' : 'recruit',
+      cost: pendingOrderCost(order),
+      building: order.kind === 0 ? buildingOf(order.content)?.id ?? 'unknown' : '',
+      squadType: order.kind === 1 ? squadTypeOf(order.content)?.id ?? 'unknown' : '',
+      men: order.men, count: order.count, reason: order.reason === 2 ? 'resources' : 'space',
     })),
   };
 }

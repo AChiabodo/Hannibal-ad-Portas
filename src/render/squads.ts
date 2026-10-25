@@ -27,7 +27,7 @@ import type { VisibleSquad } from '../sim/economy-match.ts';
 import { TILE_SIZE } from '../sim/map.ts';
 import type { Formation } from '../sim/command.ts';
 import type { Facing } from '../sim/squad.ts';
-import { formationShape } from '../content/formation.ts';
+import { formationSlots, FIGURE_FILE_STEP, FIGURE_RANK_STEP } from '../content/formation.ts';
 
 /** The geometric data a procedural formation needs; private condition is irrelevant. */
 export type SquadDrawing = Pick<VisibleSquad, 'id' | 'type' | 'capacity' | 'figures' | 'formation' | 'facing' | 'goal'>;
@@ -81,7 +81,7 @@ export const FIGURE_FACING_OF_FACING: Readonly<Record<Facing, FigureFacing>> = {
  * shields overlapping, not a row of men with gaps between them, and the overlap
  * is what makes a hundred and twenty men read as one block at the lowest zoom.
  */
-export const FILE_STEP = 4;
+export const FILE_STEP = FIGURE_FILE_STEP;
 
 /**
  * How far apart two ranks stand, in pixels: enough to retain heads and equipment.
@@ -90,7 +90,7 @@ export const FILE_STEP = 4;
  * few pixels up the screen; the overlap is what makes a column deep rather than
  * tall.
  */
-export const RANK_STEP = 5;
+export const RANK_STEP = FIGURE_RANK_STEP;
 
 /** One Figure per survivor, and one beast regardless of abstract strength. */
 export function visualShape(squad: Pick<VisibleSquad, 'id' | 'type' | 'capacity' | 'figures' | 'formation' | 'facing'>): BlockShape {
@@ -159,13 +159,7 @@ function recruitedSlots(shape: BlockShape): readonly PlacedMan[] {
     throw new RangeError('a block needs surviving men within its purchased capacity');
   }
   if (shape.formation !== 'line' && shape.formation !== 'column') throw new RangeError('unknown block formation');
-  const { files } = formationShape(capacity, shape.formation);
-  return Array.from({ length: capacity }, (_unused, index) => {
-    const file = index % files;
-    const rank = Math.floor(index / files);
-    const along = Math.floor(((2 * file - (files - 1)) * FILE_STEP) / 2);
-    return { file, rank, ...turned(shape.facing, along, rank * RANK_STEP) };
-  });
+  return formationSlots(capacity, shape.formation, shape.facing);
 }
 
 /** Bounds include vacant purchased slots, keeping the anchor and plates stable. */
@@ -188,26 +182,6 @@ export function blockSize(shape: BlockShape): BlockSize {
  * block as its own men would say it, `behind` runs from the front rank towards
  * the rear.
  */
-function turned(
-  facing: Facing,
-  along: number,
-  behind: number,
-): { readonly x: number; readonly y: number } {
-  switch (facing) {
-    case 'south':
-      // Facing the bottom of the screen: the block's left is the viewer's right,
-      // and its ranks run up the screen behind the front rank. The subtractions
-      // are written as `0 - x` rather than `-x` so that the middle of the block
-      // is the number zero and not the signed zero a comparison can tell apart.
-      return { x: 0 - along, y: 0 - behind };
-    case 'north':
-      return { x: along, y: behind };
-    case 'east':
-      return { x: 0 - behind, y: along };
-    case 'west':
-      return { x: behind, y: 0 - along };
-  }
-}
 
 /** What a block is drawn on, and how: everything `squadBlock` needs that is not the shape. */
 export interface BlockOptions {

@@ -125,7 +125,7 @@ export function siteLook(site: KnownSite): SettlementLook {
     gateSide,
     // No front is no fortification *known*: a walled settlement is drawn as a walled
     // settlement, with no gate and no damage invented for it.
-    gate: gate === undefined ? null : conditionOf(gate, GATE_HP),
+    gate: gate === undefined ? null : conditionOf(gate, gate.maxHp ?? GATE_HP),
     walls: wallsOf(front),
     ram: ramOf(front),
   };
@@ -144,7 +144,7 @@ function wallsOf(front: VisibleFront | null): Readonly<Record<SiteSide, SiteCond
   for (const structure of front.structures) {
     if (structure.kind !== 'wall') continue;
 
-    walls[SIDE_OF_FACING[structure.side]] = conditionOf(structure, WALL_HP);
+    walls[SIDE_OF_FACING[structure.side]] = conditionOf(structure, structure.maxHp ?? WALL_HP);
   }
 
   return walls;

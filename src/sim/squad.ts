@@ -303,6 +303,8 @@ function requireStrength(shape: Shape): number {
  * like, how wide it stands, where its men stand in it — is derived from these.
  */
 export interface Block extends Shape {
+  /** Requested shape retained while a real marching column clears an access. */
+  marchFormation?: number;
   /**
    * The shape it holds, as a `FORMATION` code: the one part of `Shape` a rule
    * writes, when a Formation Command arrives.

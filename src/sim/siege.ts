@@ -69,6 +69,9 @@
  * its bound: the fall of a Stronghold, and the reason it fell.
  */
 import { bearingOf, figuresOf, stockAt, squadTypeOf } from '../content/index.ts';
+import { fortificationHp, garrisonCapacity } from '../content/fortifications.ts';
+import { bindSiegeSpace } from './settlement-space.ts';
+import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import { TICK_HZ } from './clock.ts';
 import type { Command, SiegePath } from './command.ts';
 import { bearing, BREAKING_MORALE, woundsOf } from './combat.ts';
@@ -264,6 +267,8 @@ export interface Structure {
  * points.
  */
 export interface Front {
+  /** Last Tier applied to these structures, so growth preserves existing damage. */
+  tier?: number;
   /** The settlement this front is about: the economy's own id. */
   readonly settlement: number;
 
@@ -313,6 +318,7 @@ export interface SiegeWorld extends EconomyWorld {
 
 /** One piece of a fortification, as the Faction that can see it reads it. */
 export interface VisibleStructure {
+  readonly maxHp?: number;
   /** Whether it is the gate or a stretch of wall. */
   readonly kind: StructureKind;
 
@@ -363,10 +369,13 @@ export interface VisibleFront {
 
   /** How many Squads are garrisoning it. */
   readonly garrison: number;
+  readonly garrisonMen?: number;
+  readonly garrisonCapacity?: number;
 }
 
 /** What a Faction may know of a Siege: its own walls, and the ones it is at. */
 export interface SiegeVisible extends EconomyVisible {
+  readonly appearances?: readonly ObservedSettlement[];
   readonly fog: FogView;
   readonly contacts: readonly KnownContact[];
   /** Enemy field Squads currently in ordinary vision, with no private economic or combat facts. */
@@ -392,7 +401,7 @@ export function createSiege(map: MapGrid, economy: Economy): Siege {
   const strongholds = map.strongholds.map((site) => settlementIdAt(economy, site));
   const [rome, carthage] = map.strongholds;
 
-  return {
+  return bindSiegeSpace(map, {
     fronts: economy.settlements.map((settlement) => {
       const side = strongholds.indexOf(settlement.id);
       const gateSide = side === 0 ? sideToward(rome, carthage) : sideToward(carthage, rome);
@@ -400,7 +409,7 @@ export function createSiege(map: MapGrid, economy: Economy): Siege {
       return frontOf(settlement, side >= 0 ? gateSide : undefined);
     }),
     strongholds,
-  };
+  });
 }
 
 /**
@@ -496,6 +505,16 @@ export function applySiegeCommand(world: SiegeWorld, command: Command, routes: R
  * runs inside the economy's tick — has already happened.
  */
 export function besiege(world: SiegeWorld, tick: number): void {
+  for (const front of world.siege.fronts) {
+    const tier = world.economy.settlements[front.settlement]?.tier ?? 1;
+    const previous = front.tier ?? 1;
+    if (tier === previous) continue;
+    for (const structure of front.structures) {
+      const gate = structure.kind === STRUCTURE.gate;
+      if (structure.hp > 0) structure.hp = Math.ceil(structure.hp * fortificationHp(tier, gate) / fortificationHp(previous, gate));
+    }
+    front.tier = tier;
+  }
   for (const front of world.siege.fronts) resolveFront(world, front, tick);
 
   if (tick % CAPTURE_TICKS === 0) captureRound(world);
@@ -653,8 +672,9 @@ export const siegeMatchOutcome: MatchSetup<SiegeWorld, SiegeVisible>['outcome'] 
 /** A front at the opening of a Match: its walls if it is a Stronghold, and nobody at them. */
 function frontOf(settlement: Settlement, gateSide: Facing | undefined): Front {
   return {
+    tier: settlement.tier,
     settlement: settlement.id,
-    structures: gateSide === undefined ? [] : fortifications(gateSide),
+    structures: gateSide === undefined ? [] : fortifications(gateSide, settlement.tier),
     besieger: UNOWNED,
     path: SIEGE.none,
     ram: 0,
@@ -667,10 +687,10 @@ function frontOf(settlement: Settlement, gateSide: Facing | undefined): Front {
 }
 
 /** A gate and four stretches of wall, one to a side, all standing. */
-function fortifications(gateSide: Facing): Structure[] {
+function fortifications(gateSide: Facing, tier = 1): Structure[] {
   return [
-    { kind: STRUCTURE.gate, side: facingCode(gateSide), hp: GATE_HP },
-    ...FACINGS.map((side) => ({ kind: STRUCTURE.wall, side: facingCode(side), hp: WALL_HP })),
+    { kind: STRUCTURE.gate, side: facingCode(gateSide), hp: fortificationHp(tier, true) },
+    ...FACINGS.map((side) => ({ kind: STRUCTURE.wall, side: facingCode(side), hp: fortificationHp(tier, false) })),
   ];
 }
 
@@ -751,6 +771,11 @@ function takeUpGarrison(
 
   for (const squad of orderedSquads(world.economy, factionCode(faction), ids)) {
     if (!inReach(squad, settlement, SIEGE_RADIUS)) continue;
+    const type = squadTypeOf(squad.type);
+    if (type === undefined || type.arm === 'cavalry' || type.figures === 1) continue;
+    if (squad.garrison === settlement.id) continue;
+    const occupied = garrisonOf(world.economy, settlement.id).reduce((men, current) => men + current.strength, 0);
+    if (occupied + squad.strength > garrisonCapacity(settlement.tier)) continue;
 
     squad.garrison = settlement.id;
     squad.x = settlement.x;
@@ -1235,6 +1260,7 @@ function visibleFront(economy: Economy, front: Front): VisibleFront {
       kind: structureKindOf(structure.kind),
       side: facingOfSide(structure.side),
       hp: structure.hp,
+      maxHp: fortificationHp(front.tier ?? 1, structure.kind === STRUCTURE.gate),
       standing: structure.hp > 0,
     })),
     breached: breached(front),
@@ -1245,6 +1271,8 @@ function visibleFront(economy: Economy, front: Front): VisibleFront {
       : null,
     hold: front.hold,
     garrison: garrisonOf(economy, front.settlement).length,
+    garrisonMen: garrisonOf(economy, front.settlement).reduce((men, squad) => men + squad.strength, 0),
+    garrisonCapacity: garrisonCapacity(economy.settlements[front.settlement]?.tier ?? 1),
   };
 }
 

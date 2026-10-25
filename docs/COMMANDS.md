@@ -52,7 +52,7 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 
 ## What every Command carries
 
-- **`kind`** — one of the twelve Commands in the table below. Nothing else is a
+- **`kind`** — one of the thirteen Commands in the table below. Nothing else is a
   Command.
 - **`faction`** — `"rome"` or `"carthage"`: the Faction that issued the Command. It
   is part of the Command because a log has to be readable without the Players
@@ -83,6 +83,7 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 | `blockade`    | `faction`, `squads`, `settlement`         | Starve a settlement into surrender. Slow, cheap in lives, breakable by a relieving army (ADR-0008).     |
 | `formation`   | `faction`, `squads`, `formation`          | Set the shape the Squads hold: `line` for frontage, `column` for depth (PLAN §4).                       |
 | `group`       | `faction`, `group`, `squads`              | Bind Squads to a numbered control group, or clear it with an empty list.                                |
+| `cancelPending` | `faction`, `settlement`, `order` | Cancel an owned unpaid construction or recruitment request by its observed order ID. |
 <!-- vocabulary:end -->
 
 ### Ground arrival allocation (#68)
