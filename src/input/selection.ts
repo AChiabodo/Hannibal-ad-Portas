@@ -32,7 +32,7 @@
  * would mean a click on a soldier's chest missed him, which is the one thing a
  * Player would never believe. So a pick is done against the rectangle a Squad is
  * **drawn** in (`render/squads.ts` composes it, this module is handed it), and
- * the click and the box ask the same question of the same rectangles. That is
+ * the click and the box use the same bounds and optional alpha coverage. That is
  * also why this module has no opinion about pixels: it is handed rectangles, and
  * a test can hand it rectangles of its own.
  */
@@ -53,6 +53,8 @@ export interface PickRect {
  * the picture it is, and what picking it means.
  */
 export interface Pickable {
+  /** Optional drawn RGBA mask. Vacant slots and transparent corners pass through. */
+  readonly ink?: { readonly width: number; readonly height: number; readonly pixels: ArrayLike<number> };
   /** What a click selects: the men, or a settlement's panel. */
   readonly kind: 'squad' | 'settlement';
 
@@ -156,13 +158,13 @@ export function selectAt(
  * did the Player mean" would be one more than a Player can see.
  */
 export function pickableAt(pickables: readonly Pickable[], point: PickPoint): Pickable | null {
-  return frontmost(pickables.filter((pickable) => contains(pickable.rect, point)));
+  return frontmost(pickables.filter((pickable) => contains(pickable.rect, point) && inkAt(pickable, point.x, point.y)));
 }
 
 /**
  * Picks every Squad a dragged box touches — box selection.
  *
- * A block whose drawn rectangle merely *overlaps* the box is picked, not only
+ * A block whose drawn ink intersects the box is picked, not only
  * one whose tile is inside it: the box is drawn over what the Player can see,
  * and a man standing half inside it was plainly aimed at. The picked Squads come
  * back in the order the Faction's own list keeps them, so the resulting order's
@@ -177,7 +179,7 @@ export function selectIn(
   // A dragged box is a gesture about men: it picks every Squad it touches and
   // leaves a settlement's panel to a click on the place itself.
   const touched = pickables
-    .filter((squad) => squad.kind === 'squad' && overlaps(squad.rect, box))
+    .filter((squad) => squad.kind === 'squad' && overlaps(squad.rect, box) && inkIn(squad, box))
     .map((squad) => squad.id);
 
   if (touched.length === 0) return additive ? selection : NOTHING_SELECTED;
@@ -283,4 +285,25 @@ function toggled(squads: readonly number[], id: number, additive: boolean): read
   if (squads.includes(id)) return squads.filter((candidate) => candidate !== id);
 
   return [...squads, id];
+}
+
+/** Same alpha coverage for clicks and boxes; depth/layer ordering stays unchanged. */
+function inkAt(pickable: Pickable, x: number, y: number): boolean {
+  if (pickable.ink === undefined) return true;
+  const localX = Math.floor(x - pickable.rect.x);
+  const localY = Math.floor(y - pickable.rect.y);
+  if (localX < 0 || localY < 0 || localX >= pickable.ink.width || localY >= pickable.ink.height) return false;
+  return (pickable.ink.pixels[(localY * pickable.ink.width + localX) * 4 + 3] ?? 0) > 0;
+}
+
+function inkIn(pickable: Pickable, box: PickRect): boolean {
+  if (pickable.ink === undefined) return true;
+  const left = Math.max(pickable.rect.x, Math.floor(box.x));
+  const top = Math.max(pickable.rect.y, Math.floor(box.y));
+  const right = Math.min(pickable.rect.x + pickable.rect.width, box.x + box.width);
+  const bottom = Math.min(pickable.rect.y + pickable.rect.height, box.y + box.height);
+  for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
+    if (inkAt(pickable, x, y)) return true;
+  }
+  return false;
 }

@@ -54,6 +54,9 @@ export interface Difficulty {
   /** Scouting quality: one light Squad explores per this many, before the enemy is found. */
   readonly scoutsPer: number;
 
+  /** Minimum patrols sought before discovery, capped by eligible Squads actually available. */
+  readonly openingScouts: number;
+
   /** Scouting quality: one light Squad patrols per this many, once the enemy is found. */
   readonly scoutsPerFound: number;
 
@@ -73,11 +76,11 @@ export interface Difficulty {
  */
 export const DIFFICULTY: Readonly<Record<DifficultyName, Difficulty>> = Object.freeze({
   tiro: Object.freeze({ name: 'tiro', reactionSeconds: 60, aggression: 30,
-    horizonSeasons: 1, scoutsPer: 5, scoutsPerFound: 12, refreshSeconds: 60 }),
+    horizonSeasons: 1, scoutsPer: 5, openingScouts: 1, scoutsPerFound: 12, refreshSeconds: 60 }),
   centurio: Object.freeze({ name: 'centurio', reactionSeconds: 30, aggression: 45,
-    horizonSeasons: 2, scoutsPer: 3, scoutsPerFound: 8, refreshSeconds: 30 }),
+    horizonSeasons: 2, scoutsPer: 3, openingScouts: 1, scoutsPerFound: 8, refreshSeconds: 30 }),
   imperator: Object.freeze({ name: 'imperator', reactionSeconds: 15, aggression: 75,
-    horizonSeasons: 3, scoutsPer: 2, scoutsPerFound: 5, refreshSeconds: 15 }),
+    horizonSeasons: 3, scoutsPer: 2, openingScouts: 2, scoutsPerFound: 5, refreshSeconds: 15 }),
 });
 
 /** Whether a string names a level: what a command line asks before refusing one. */

@@ -27,6 +27,7 @@ import { siteSprite } from '../src/art/settlements';
 import { screenToStage, stageToScreen } from '../src/render/camera';
 import { REMEMBERED } from '../src/render/fog';
 import { siteLook } from '../src/render/settlements';
+import { tileAt } from '../src/render/terrain';
 import type { ViewState } from '../src/render/boot';
 import type { SiteReport } from '../src/render/game';
 import { KNOWLEDGE, type Knowledge } from '../src/sim/fog';
@@ -43,6 +44,7 @@ import {
   dismissFirstEntry,
   hud,
   hudRects,
+  hudLayout,
   knowledge,
   samples,
   select,
@@ -103,8 +105,9 @@ async function clickAt(page: Page, x: number, y: number): Promise<void> {
 /** Pans the camera so one stage point is in the middle of the viewport. */
 async function centreOn(page: Page, stage: { readonly x: number; readonly y: number }): Promise<ViewState> {
   const before = await describeView(page);
-  const wantedX = Math.round(stage.x - before.width / (2 * before.camera.zoom));
-  const wantedY = Math.round(stage.y - before.height / (2 * before.camera.zoom));
+  const area = (await hudLayout(page)).theatre ?? { x: 0, y: 0, width: before.width, height: before.height };
+  const wantedX = Math.round(stage.x - (area.x + area.width / 2) / before.camera.zoom);
+  const wantedY = Math.round(stage.y - (area.y + area.height / 2) / before.camera.zoom);
   await page.evaluate(
     ({ dx, dy }) => window.__SPQR.view?.panBy(dx, dy),
     { dx: wantedX - before.camera.x, dy: wantedY - before.camera.y },
@@ -134,9 +137,9 @@ function same(got: Rgba | undefined, wanted: readonly number[], tolerance: numbe
 
 /** The knowledge state of the tile a stage pixel stands on. */
 function knowledgeAt(states: readonly Knowledge[], x: number, y: number): Knowledge {
-  const tile = Math.floor(y / 16) * MAP_WIDTH + Math.floor(x / 16);
+  const tile = tileAt(x, y);
 
-  return states[tile] ?? KNOWLEDGE.unexplored;
+  return states[tile.y * MAP_WIDTH + tile.x] ?? KNOWLEDGE.unexplored;
 }
 
 /**
@@ -381,7 +384,8 @@ test.describe('a fortification under siege', () => {
     // An Assault, aimed at the structure a Player can see: the click lands on the
     // gatehouse in the drawing, and the order is to do it.
     expect(await page.evaluate(() => window.__SPQR.game?.perform('assault'))).toBe(true);
-    const gate = stageToScreen(view.camera, target!.rect.x + Math.floor(target!.rect.width / 2), target!.rect.y + target!.rect.height - 6);
+    const aim = await centreOn(page, { x: target!.rect.x + target!.rect.width / 2, y: target!.rect.y + target!.rect.height / 2 });
+    const gate = stageToScreen(aim.camera, target!.rect.x + Math.floor(target!.rect.width / 2), target!.rect.y + target!.rect.height - 6);
     await clickAt(page, gate.x, gate.y);
     expect(await page.evaluate(() => window.__SPQR.game?.targeting())).toBeNull();
 

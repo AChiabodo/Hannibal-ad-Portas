@@ -262,15 +262,20 @@ function playDraws(seed: number, ticks: number): MatchRun {
 }
 
 /**
- * How many Squads each Faction puts in the field for the march Match: six, so
- * that both together are the dozen the ticket's last criterion is about.
+ * The force each Faction puts in the field for the march Match.
+ *
+ * The two forces bring the **same men** and a different number of Squads: two
+ * full Roman lines of 120 against five Carthaginian bodies of 48, two hundred and
+ * forty a side. Before #66 the two rosters' blocks were counted as equal however
+ * many men stood in them, and six a side was a fair fight; with a blow read off
+ * the men brought to bear (`sim/combat.ts`) six 48-man bodies against six 120-man
+ * ones is 288 men against 720, and the Match is a walkover that tests nothing.
+ * Seven Squads of two types is what the same two hundred and forty men look like
+ * now, and the fight the golden hash gates is a real one (ADR-0028).
  */
-const MARCH_SQUADS_PER_FACTION = 6;
-
-/** The type each Faction musters: the tier-1 infantry on its own roster (C4). */
-const MARCH_TYPES: Readonly<Record<Faction, string>> = {
-  rome: 'hastati',
-  carthage: 'libyan-spear',
+const MARCH_FORCES: Readonly<Record<Faction, { readonly squadType: string; readonly men: number; readonly squads: number }>> = {
+  rome: { squadType: 'hastati', men: 120, squads: 2 },
+  carthage: { squadType: 'libyan-spear', men: 48, squads: 5 },
 };
 
 /** How far from its Stronghold a Faction's Squads are stood up, in tiles. */
@@ -284,9 +289,10 @@ const MARCH_TICK = 0;
  * Factions' forces mustered near their own Strongholds.
  *
  * Exported because it is what the harness Match is made of, and what a test
- * reads to see that the Squads it orders across the theatre are a dozen, six
- * each, standing on ground they can walk off — and that they are real Squads of
- * real types, whose Payroll and morale ride with them as they go.
+ * reads to see that the Squads it orders across the theatre are two bodies of
+ * two hundred and forty men, standing on ground they can walk off — and that they
+ * are real Squads of real types and real sizes, whose Payroll and morale ride
+ * with them as they go.
  *
  * @throws Error when the theatre has nowhere near a Stronghold to stand a force
  *   up — which no generated map is, and which is worth saying rather than
@@ -296,10 +302,13 @@ export function marchWorld(seed: number): EconomyWorld {
   const world = economyMatchRules.createWorld(seed);
 
   for (const side of marchSides(world.map)) {
-    for (const site of groundNear(world.map, side.from, MARCH_SQUADS_PER_FACTION)) {
+    const force = MARCH_FORCES[side.faction];
+
+    for (const site of groundNear(world.map, side.from, force.squads)) {
       musterSquad(world.economy, world.map, {
         faction: side.faction,
-        squadType: MARCH_TYPES[side.faction],
+        squadType: force.squadType,
+        men: force.men,
         x: site.x,
         y: site.y,
       });
@@ -345,7 +354,7 @@ export function marchLog(world: EconomyWorld): CommandLog<Command> {
  * economy's half of every Squad beside it. Since C3 the two forces meet in the
  * middle of that theatre, so the same hash covers the fight as well: the
  * survivors are the men who got through, and each of them still ends the March
- * on the Stronghold it was ordered to.
+ * near the Stronghold it was ordered to, at its allocated arrival (#68).
  */
 function playMarch(seed: number, ticks: number): MatchRun {
   const log: CommandLog<Command> = marchLog(marchWorld(seed));

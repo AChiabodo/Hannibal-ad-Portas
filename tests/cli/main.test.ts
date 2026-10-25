@@ -23,6 +23,8 @@ function match(...args: readonly string[]): Ran {
     cwd: ROOT,
     encoding: 'utf8',
     timeout: 30_000,
+    // The early patrol now contributes scored Commands on every tactical tick.
+    maxBuffer: 4 * 1024 * 1024,
   });
 
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -40,7 +42,8 @@ describe('one command plays a Match end to end, with no browser anywhere', () =>
     expect(ran.status).toBe(0);
     expect(ran.stderr).toBe('');
     const report = reportOf(ran);
-    expect(report.commands).toBe(3);
+    // Both opening patrols now start on tick zero (Market and recruit share a funded plan).
+    expect(report.commands).toBe(604);
     expect(report.decisions).toHaveLength(608);
     expect(report.decisions?.slice(0, 3).map((entry) => [entry.faction, entry.layer, entry.tick])).toEqual([
       ['rome', 'strategic', 0], ['rome', 'operational', 0], ['rome', 'tactical', 0],
@@ -51,7 +54,7 @@ describe('one command plays a Match end to end, with no browser anywhere', () =>
         expect.objectContaining({ id: 'idle', utility: 0, reason: 'Keep the current plan and emit no Commands.' }),
         expect.objectContaining({ behaviour: 'military', id: 'threat-map' }),
       ]),
-      selected: { behaviour: 'military', id: 'defend' },
+      selected: { behaviour: 'scouting', id: 'explore' },
     });
     expect(report.decisions?.[1]?.selected.behaviour).toBe('economy');
     expect(match('--seed', '1', '--ticks', '301', '--rules', 'ai').stdout).toBe(ran.stdout);

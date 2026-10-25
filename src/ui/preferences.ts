@@ -1,10 +1,14 @@
+export const PANEL_LAYOUTS = ['sidebar', 'dock', 'compact'] as const;
+export type PanelLayout = (typeof PANEL_LAYOUTS)[number];
+
 /** Only presentation preferences use this key; audio owns its separate settings (#30). */
 export interface UiPreferences {
+  readonly panelLayout: PanelLayout;
   readonly uiScale: number;
   readonly navigator: boolean;
   readonly guideDismissed: boolean;
 }
-export const DEFAULT_UI_PREFERENCES: UiPreferences = { uiScale: 2, navigator: true, guideDismissed: false };
+export const DEFAULT_UI_PREFERENCES: UiPreferences = { panelLayout: 'sidebar', uiScale: 2, navigator: true, guideDismissed: false };
 
 /** Keep the requested preference, but fit every control on the current desktop. */
 export function fittedUiScale(requested: number, size: { readonly width: number; readonly height: number }): number {
@@ -19,7 +23,8 @@ export function loadUiPreferences(): UiPreferences {
     const value: unknown = JSON.parse(localStorage.getItem(KEY) ?? 'null');
     if (value === null || typeof value !== 'object') return { ...DEFAULT_UI_PREFERENCES };
     const saved = value as Partial<UiPreferences>;
-    return { uiScale: [1, 2, 3].includes(saved.uiScale ?? 0) ? saved.uiScale! : 2,
+    return { panelLayout: PANEL_LAYOUTS.includes(saved.panelLayout!) ? saved.panelLayout! : 'sidebar',
+      uiScale: [1, 2, 3].includes(saved.uiScale ?? 0) ? saved.uiScale! : 2,
       navigator: typeof saved.navigator === 'boolean' ? saved.navigator : true,
       guideDismissed: typeof saved.guideDismissed === 'boolean' ? saved.guideDismissed : false };
   } catch { return { ...DEFAULT_UI_PREFERENCES }; }

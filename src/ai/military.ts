@@ -1,15 +1,19 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
-import type { Behaviour, Candidate } from './registry.ts';
+import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
 import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
+import type { AssaultObservation, AssaultReadiness } from './assault.ts';
+import { restingAtHome } from './recovery.ts';
 
 type Faction = Observation<unknown>['faction'];
 
 interface Enemy extends Site { readonly id: number; readonly type: string }
 interface Squad extends Enemy {
   readonly men: number;
+  /** The men it was recruited with: what its survivors and its power are read against. */
+  readonly capacity: number;
   readonly morale: number;
   readonly fatigue: number;
   readonly routing: boolean;
@@ -25,16 +29,20 @@ export interface MilitaryObservation {
   readonly squads: readonly Squad[];
   readonly enemies: readonly Enemy[];
   readonly contacts?: readonly Contact[];
+  readonly fronts?: AssaultObservation['fronts'];
 }
 
 interface MilitaryType {
   readonly id: string;
   readonly strength: number;
+  /** What one of its men is worth in a blow, against one man of the line (#66). */
+  readonly impact: number;
   readonly morale: number;
   readonly arm: string;
 }
 
 interface MilitaryContent {
+  readonly canContinueAssault?: AssaultReadiness;
   readonly squadTypes: readonly MilitaryType[];
   readonly matchup: Readonly<Record<string, Readonly<Record<string, string>>>>;
   readonly fatigueMax: number;
@@ -96,23 +104,59 @@ const SPENT_DIVISOR = 2;
 /** The fatigue scale: a fresh Squad keeps its whole power, a spent one half. */
 const FATIGUE_SCALE = 2;
 
-/** The morale an unread enemy type is priced at when the roster cannot name it. */
-const UNKNOWN_MORALE = 10;
-
 /** Only public content and the looking Faction's Observation enter this policy. */
 export function createMilitaryBehaviour(content: MilitaryContent, difficulty: Difficulty = DIFFICULTY.centurio):
 Behaviour<MilitaryObservation, MilitaryCommand> {
   const types = new Map(content.squadTypes.map((type) => [type.id, type]));
   const margin = attackPercent(difficulty);
-  const enemyPower = (enemy: Enemy) => (types.get(enemy.type)?.morale ?? UNKNOWN_MORALE) * PERCENT;
-  function power(squad: Squad): number {
+  const fresh = FATIGUE_SCALE * content.fatigueMax;
+  /**
+   * What an enemy the roster cannot name is priced at: the strongest body the
+   * public roster holds, at full nominal nerve, in the same units as a named one.
+   *
+   * A type is a compile-time id, so this is a raised code reaching a Controller
+   * and not an ordinary fight; pricing it at nothing would have a general march
+   * into a force he cannot read, and the roster's worst case is the conservative
+   * answer.
+   */
+  const unknown = content.squadTypes.reduce(
+    (worst, type) => Math.max(worst, type.strength * type.impact * type.morale * PERCENT),
+    0,
+  );
+  /**
+   * What one of its own Squads is worth: its bearing, its nerve and how fresh it
+   * is, all of them facts in its own Observation.
+   */
+  function power(squad: Squad, fatigue = squad.fatigue): number {
     const type = types.get(squad.type);
-    return type === undefined ? 0 : Math.floor(squad.men * squad.morale * PERCENT *
-      (FATIGUE_SCALE * content.fatigueMax - squad.fatigue) / (type.strength * FATIGUE_SCALE * content.fatigueMax));
+    if (type === undefined) return 0;
+
+    return Math.floor((squad.men * type.impact * squad.morale * PERCENT * (fresh - fatigue)) / fresh);
   }
-  function spent(squad: Squad): boolean {
+  // An approach from outside contact must carry its march, rather than being
+  // funded with rested power that triggers an immediate withdrawal on arrival.
+  const approachPower = (squad: Squad, target: Site) =>
+    power(squad, distance(squad, target) > CONTACT_RADIUS ? content.fatigueMax : squad.fatigue);
+  /**
+   * What an observed enemy Squad is worth: its **type's** nominal bearing and
+   * nerve, never its actual men.
+   *
+   * An enemy's headcount is not in this Faction's Observation (ADR-0020), and a
+   * Controller must not be handed it, so the estimate is the public roster's
+   * largest size at full nerve — the content table's fact, not the enemy's. It is
+   * the same estimate at every difficulty and to both Factions, which is what
+   * keeps this from being privileged vision; before #66 it read the type's morale
+   * alone and priced a 48-man body the same as a 120-man one.
+   */
+  const enemyPower = (enemy: Enemy) => {
+    const type = types.get(enemy.type);
+
+    return type === undefined ? unknown : type.strength * type.impact * type.morale * PERCENT;
+  };
+  function spent(squad: Squad, observation: Observation<MilitaryObservation>): boolean {
     const type = types.get(squad.type);
-    return type === undefined || squad.morale * SPENT_DIVISOR <= type.morale || squad.men * SPENT_DIVISOR <= type.strength;
+    return type === undefined || atHalfStrength(squad) || (squad.morale * SPENT_DIVISOR <= type.morale &&
+      !content.canContinueAssault?.(observation.faction, observation.visible, squad));
   }
 
   return {
@@ -155,7 +199,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
         squad.goal!.x === settlement.x && squad.goal!.y === settlement.y);
       // Decide support eligibility before local engagements: men who are leaving
       // or have lost their ability to fight cannot keep another Squad in contact.
-      const supportSquads = squads.filter((squad) => !spent(squad) && !fallingBack(squad));
+      const supportSquads = squads.filter((squad) => !spent(squad, observation) && !fallingBack(squad));
       const ready = squads.filter((squad) => {
         const returning = fallingBack(squad);
         if (returning && !squad.engaged) {
@@ -163,31 +207,39 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
           reasons.push(`Squad ${squad.id} continues its withdrawal to friendly quarters.`);
           return false;
         }
-        const exhausted = spent(squad);
+        const exhausted = spent(squad, observation);
         const enemies = visible.enemies.filter((enemy) => distance(squad, enemy) <= CONTACT_RADIUS);
+        const defendingHome = defence.some((task) => distance(squad, task.settlement) === 0 && task.enemies.length > 0);
+        if (!squad.engaged && !defendingHome &&
+          restingAtHome(squad, visible.settlements, types.get(squad.type)?.morale ?? 0)) {
+          assigned.add(squad.id);
+          reasons.push(`Squad ${squad.id} recovers its full morale in friendly quarters before another campaign.`);
+          return false;
+        }
         const support = supportSquads.filter((other) => distance(squad, other) <= CONTACT_RADIUS)
           .reduce((sum, other) => sum + power(other), 0);
         const threat = enemies.reduce((sum, enemy) => sum + enemyPower(enemy), 0);
         const lost = threat > support;
         if (!exhausted && !lost) return true;
         assigned.add(squad.id);
-        if (squad.engaged || (!returning && enemies.length > 0)) {
+        const sheltered = visible.settlements.some((settlement) => distance(squad, settlement) === 0);
+        if (squad.engaged || (!returning && (enemies.length > 0 || (exhausted && !sheltered)))) {
           commands.push({ kind: 'withdraw', faction, squads: [squad.id] });
-          reasons.push(`Withdraw Squad ${squad.id}: strength ${squad.men}, morale ${squad.morale}, local power ${support} against ${threat}; do not reinforce a lost engagement.`);
+          reasons.push(`Withdraw Squad ${squad.id}: strength ${squad.men}, morale ${squad.morale}, local power ${support} against ${threat}; recover in friendly quarters rather than remain spent in the field.`);
           withdrawing = true;
         }
         return false;
       });
       const reserve = ready.length > 1 ? ready.filter((squad) => !squad.engaged).at(-1) : undefined;
       const allocationOrder = [...ready.filter((squad) => squad !== reserve), ...(reserve === undefined ? [] : [reserve])];
-      function assign(squad: Squad, target: Enemy, reserveReason: string): number {
+      function assign(squad: Squad, target: Enemy, reserveReason: string, approaching = false): number {
         commands.push({ kind: 'attack', faction, squads: [squad.id], target: target.id });
         assigned.add(squad.id);
         if (squad === reserve) {
           committed = true;
           reasons.push(`Commit reserve ${squad.id} ${reserveReason}`);
         }
-        return power(squad);
+        return approaching ? approachPower(squad, target) : power(squad);
       }
       const covered = new Set<number>();
       for (const task of defence) {
@@ -195,7 +247,9 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
         const enemies = task.enemies.filter((enemy) => !covered.has(enemy.id));
         if (enemies.length === 0) continue;
         const threat = enemies.reduce((sum, enemy) => sum + enemyPower(enemy), 0);
-        const available = ready.filter((squad) => !assigned.has(squad.id)).reduce((sum, squad) => sum + power(squad), 0);
+        const available = ready.filter((squad) => !assigned.has(squad.id)).reduce((sum, squad) =>
+          sum + approachPower(squad, [...enemies].sort((a, b) =>
+            distance(squad, a) - distance(squad, b) || a.id - b.id)[0]!), 0);
         if (available < threat) {
           reasons.push(`Decline engagement at settlement ${settlement.id}: available ${available} against observed threat ${threat}. Retain the remaining line.`);
           continue;
@@ -204,7 +258,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
         for (const squad of allocationOrder) {
           if (assigned.has(squad.id) || allocated >= threat) continue;
           const target = [...enemies].sort((a, b) => distance(squad, a) - distance(squad, b) || a.id - b.id)[0]!;
-          allocated += assign(squad, target, `to settlement ${settlement.id}: the line alone cannot cover threat ${threat}.`);
+          allocated += assign(squad, target, `to settlement ${settlement.id}: the line alone cannot cover threat ${threat}.`, true);
         }
         reasons.push(`Defend settlement ${settlement.id}: observed threat ${threat}, allocation ${allocated}.`);
         for (const enemy of enemies) covered.add(enemy.id);

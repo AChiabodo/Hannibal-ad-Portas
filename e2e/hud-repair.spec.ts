@@ -43,6 +43,8 @@ test('an overflowing live list keeps selection through wheel, page keys, buttons
       fog: () => viewOf(fog), vision: (eyes: unknown) => refreshVision(fog, map, eyes),
     });
     game.hooks.pause();
+    stage.canvas.tabIndex = 0;
+    stage.canvas.focus();
     bindControls(stage, { ...game.hooks, zoom: () => 2, panBy: () => {}, zoomAbout: () => {},
       clearSelection: () => game.hooks.select(null),
       togglePause: () => game.hooks.paused() ? game.hooks.resume() : game.hooks.pause(),
@@ -58,8 +60,10 @@ test('an overflowing live list keeps selection through wheel, page keys, buttons
   await page.mouse.move(box.x + 40, box.y + first.list.y + 40);
   await page.mouse.wheel(0, 240);
   await expect.poll(async () => (await getLayout()).listScroll.offset).toBeGreaterThan(0);
+  const scrolled = (await getLayout()).listScroll;
+  await page.locator('#app canvas').focus();
   await page.keyboard.press('PageUp');
-  expect((await getLayout()).listScroll.offset).toBe(0);
+  expect((await getLayout()).listScroll.offset).toBe(Math.max(0, scrolled.offset - scrolled.page));
   await page.keyboard.press('a');
   const down = first.buttons.find((button) => button.action === 'listNext')!;
   await page.mouse.click(box.x + down.rect.x + 8, box.y + down.rect.y + 8);
@@ -136,13 +140,14 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 108
       await page.evaluate(() => window.__SPQR.game!.pause());
       for (const kind of ['squad', 'settlement'] as const) {
         const source = scene(faction, kind);
-        const model = { ...source, view: { ...source.view, desktop, uiScale: 2 } };
+        const model: HudModel = { ...source, tab: kind === 'settlement' ? 'construction' : source.tab,
+          view: { ...source.view, desktop, uiScale: 2, settlementPage: kind === 'settlement' ? 'works' : 'summary' } };
         const size = desktop ? viewport : { width: 640, height: 480 };
         const layout = hudLayout(model, size);
         expect(layout.listScroll.offset).toBeGreaterThan(0);
         expect(layout.rows.at(-1)!.selection).toEqual({ kind: 'squad', id: 80 });
-        expect(layout.priority.map((line) => line.text).join(' ')).toContain(kind === 'squad'
-          ? 'Ordine: Acque profonde' : 'Cantieri: Villa - In costruzione (123456789 tick)');
+        expect([...layout.priority, ...layout.text].map((line) => line.text).join(' ')).toContain(kind === 'squad'
+          ? 'Ordine: Acque profonde' : 'Villa: In costruzione: 12345679 s con personale');
         // Fixture rendering uses exactly the production PixelBuffer/Pixi adapter.
         // It supplies a filtered model, never a hidden-world rendering hook.
         await page.evaluate(async ({ model, size }: { model: HudModel; size: { width: number; height: number } }) => {

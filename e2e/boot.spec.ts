@@ -10,9 +10,10 @@ import { VIEWED_FACTION, DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_W
 import { renderTerrain, THEATRE_PIXELS, tilePixel } from '../src/render/terrain';
 import { siteSprite } from '../src/art/settlements';
 import { siteLook } from '../src/render/settlements';
+import { squadBlock } from '../src/render/squads';
 import { openingEyes } from '../src/render/opening';
 import { screenToStage, stageToScreen } from '../src/render/camera';
-import { covers, describeView, hudRects, samples, sites } from './hooks';
+import { covers, describeView, hudRects, samples, sites, squads } from './hooks';
 
 /**
  * The theatre on screen (ticket B3).
@@ -216,13 +217,24 @@ test('boots in a real browser and draws the generated theatre through software W
   const standing = await sites(page);
   const under = standing.find((site) => stageCentre.x >= site.rect.x && stageCentre.x < site.rect.x + site.rect.width
     && stageCentre.y >= site.rect.y && stageCentre.y < site.rect.y + site.rect.height);
-  const expected = under === undefined
+  let expected = under === undefined
     ? pixelAt(THEATRE, stageCentre.x, stageCentre.y)
     : pixelAt(
       siteSprite(siteLook(under)),
       stageCentre.x - under.rect.x,
       stageCentre.y - under.rect.y,
     );
+  // Purchased formations can overlap the boot camera's Stronghold. Its opaque
+  // Figure pixels are drawn above structures, so compose that same public art
+  // over the expected ground pixel rather than assuming the town is uncovered.
+  for (const squad of [...await squads(page)].sort((a, b) => a.y - b.y || a.id - b.id)) {
+    const x = stageCentre.x - squad.rect.x;
+    const y = stageCentre.y - squad.rect.y;
+    const block = squadBlock(squad);
+    if (x < 0 || y < 0 || x >= block.width || y >= block.height) continue;
+    const ink = pixelAt(block, x, y);
+    if (ink[3] === 255) expected = ink;
+  }
   expect(report.render.pixel).toEqual(expected);
   expect(under?.kind, 'the boot camera opens on the Stronghold').toBe('stronghold');
 

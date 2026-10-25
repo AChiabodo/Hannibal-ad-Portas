@@ -61,17 +61,22 @@ function middleOf(squad: SquadReport): Point {
   return { x: squad.rect.x + Math.floor(squad.rect.width / 2), y: squad.rect.y + Math.floor(squad.rect.height / 2) };
 }
 
-/** A walkable tile a few tiles east of a Squad, which is where the smoke sends it. */
-function targetNear(squad: SquadReport): Point {
+/** Nearby walkable ground outside the selected Squad's current interface panels. */
+function targetNear(squad: SquadReport, camera: Parameters<typeof stageToScreen>[0], covered: Awaited<ReturnType<typeof hudRects>>): Point {
   for (let across = 3; across < 12; across += 1) {
-    const x = squad.x + across;
-    if (x >= MAP_WIDTH) break;
-    if (!isWalkable(terrainAt(MAP, x, squad.y))) continue;
-
-    return tilePixel(x, squad.y);
+    for (const [dx, dy] of [[across, 0], [0, -across], [-across, 0], [0, across]] as const) {
+      const x = squad.x + dx, y = squad.y + dy;
+      if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_WIDTH) continue;
+      if (!isWalkable(terrainAt(MAP, x, y))) continue;
+      const target = tilePixel(x, y);
+      const screen = stageToScreen(camera, target.x, target.y);
+      if (screen.x < 0 || screen.x >= 1280 || screen.y < 0 || screen.y >= 720) continue;
+      if (covered.some((rect) => screen.x >= rect.x && screen.x < rect.x + rect.width && screen.y >= rect.y && screen.y < rect.y + rect.height)) continue;
+      return target;
+    }
   }
 
-  throw new Error(`no walkable tile east of (${String(squad.x)}, ${String(squad.y)})`);
+  throw new Error(`no uncovered walkable tile near (${String(squad.x)}, ${String(squad.y)})`);
 }
 
 /** A Squad whose block the interface does not cover, and where to click it. */
@@ -93,6 +98,8 @@ async function clickableSquad(page: Page): Promise<{ readonly squad: SquadReport
 
 test('boots the real entry, reports its renderer and paints the setup screen', async ({ page, spqr }) => {
   await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
@@ -134,27 +141,27 @@ test('picks a Squad and moves it with a real pointer gesture, and the Match appl
   expect(tab, 'the settlement has a recruitment page').toBeDefined();
   if (tab === undefined) throw new Error('no recruitment tab');
   await press(page, tab.rect);
-  const card = (await hudLayout(page)).commands.find((entry) => entry.order.id === 'recruit:hastati');
+  const card = (await hudLayout(page)).commands.find((entry) => entry.order.id === 'recruit:hastati:24');
   expect(card, 'a hastati line is on offer').toBeDefined();
   if (card === undefined) throw new Error('no hastati card');
   await press(page, card.rect);
-  await page.evaluate(() => window.__SPQR.game?.resume());
+  const purchase = (await hudLayout(page)).buttons.find((entry) => entry.action === 'purchase:recruit:hastati:24');
+  expect(purchase?.enabled, 'the inspected Hastati line can be purchased').toBe(true);
+  if (purchase === undefined) throw new Error('no Hastati purchase button');
+  await press(page, purchase.rect);
   await advance(page, 1);
-  await page.evaluate(() => window.__SPQR.game?.pause());
 
   const { squad, at } = await clickableSquad(page);
-  const view = await describeView(page);
   const origin = await canvasOrigin(page);
-  const target = targetNear(squad);
-  const order = stageToScreen(view.camera, target.x, target.y);
 
   await page.mouse.click(origin.x + at.x, origin.y + at.y);
   expect((await selection(page)).squads, 'the click picked the Squad the page drew').toEqual([squad.id]);
+  const selectedView = await describeView(page);
+  const target = targetNear(squad, selectedView.camera, await hudRects(page));
+  const order = stageToScreen(selectedView.camera, target.x, target.y);
 
   await page.mouse.click(origin.x + order.x, origin.y + order.y, { button: 'right' });
-  await page.evaluate(() => window.__SPQR.game?.resume());
   await advance(page, 1);
-  await page.evaluate(() => window.__SPQR.game?.pause());
 
   const ordered = (await squads(page)).find((candidate) => candidate.id === squad.id);
   expect(ordered?.goal, 'the right click gave the Squad a destination').not.toBeNull();

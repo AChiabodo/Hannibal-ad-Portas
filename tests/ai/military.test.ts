@@ -3,7 +3,7 @@ import { createAi } from '../../src/ai/controller.ts';
 import { createMilitaryBehaviour } from '../../src/ai/military.ts';
 import { createBehaviourRegistry } from '../../src/ai/registry.ts';
 import { DIFFICULTY } from '../../src/ai/difficulty.ts';
-import { militaryRegistry } from '../../src/cli/ai-match.ts';
+import { createArmyController, militaryRegistry } from '../../src/cli/ai-match.ts';
 import { SQUAD_TYPES } from '../../src/content/squads.ts';
 import { MATCHUP } from '../../src/content/arms.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
@@ -31,6 +31,117 @@ function battlefield(): SiegeVisible {
 }
 
 describe('the military Controller', () => {
+  it('funds a defensive approach with the power the line retains after marching', () => {
+    const base = battlefield();
+    for (const count of [2, 3]) {
+      const commands = ai().decide({ faction: 'rome', tick: 1, visible: { ...base,
+        squads: base.squads.slice(0, count).map((squad) => ({ ...squad, men: 24, capacity: 24 })),
+        enemies: [{ id: 10, type: 'gaul', x: 25, y: 20 }],
+      } });
+      const sent = commands.flatMap((command) => command.kind === 'attack' ? command.squads : []);
+      expect(sent).toEqual(count === 2 ? [] : [0, 1, 2]);
+    }
+  });
+
+  it('allows a rested-enough line to defend home while it is recovering for the next campaign', () => {
+    const base = battlefield();
+    const commands = ai().decide({ faction: 'rome', tick: 2101, visible: { ...base,
+      season: 'summer', squads: base.squads.map((squad) => ({ ...squad, morale: 6 })),
+      enemies: [{ id: 10, type: 'gaul', x: 25, y: 20 }],
+    } });
+    expect(commands).toContainEqual({ kind: 'attack', faction: 'rome', squads: [0], target: 10 });
+  });
+
+  it('does not divert the defensive line to economic expansion', () => {
+    const base = battlefield();
+    const visible: SiegeVisible = { ...base, season: 'summer',
+      squads: base.squads.map((squad) => squad.id === 2 ? { ...squad, x: 76, y: 80 } : squad),
+      enemies: [{ id: 10, type: 'gaul', x: 28, y: 20 }],
+      contacts: [{ kind: 'stronghold', id: 1, type: null, x: 80, y: 80, seen: 2100 },
+        { kind: 'settlement', id: 2, type: null, x: 40, y: 40, seen: 2000 }],
+      fronts: [{ settlement: 1, breached: false, besieger: null, siege: null, ram: null,
+        garrison: 4, hold: 0, structures: [] }],
+    };
+    const commands = createArmyController('centurio').decide({ faction: 'rome', tick: 2101, visible });
+    expect(commands).toContainEqual({ kind: 'attack', faction: 'rome', squads: [0], target: 10 });
+    expect(commands.some((command) => command.kind === 'move' && command.squads.includes(0))).toBe(false);
+  });
+
+  it('lets returned Squads recover fully before starting another campaign', () => {
+    const base = battlefield();
+    const controller = createArmyController('centurio');
+    const visible: SiegeVisible = { ...base, enemies: [],
+      contacts: [{ kind: 'stronghold', id: 1, type: null, x: 80, y: 80, seen: 0 }],
+      fronts: [{ settlement: 1, breached: true, besieger: null, siege: null, ram: null,
+        garrison: 0, hold: 0, structures: [] }],
+      squads: [{ ...base.squads[0]!, morale: 6 }],
+    };
+    const resting = controller.decide({ faction: 'rome', tick: 1, visible });
+    expect(resting.filter((command) => command.kind === 'move' || command.kind === 'assault' || command.kind === 'blockade'))
+      .toEqual([]);
+    const recovered = controller.decide({ faction: 'rome', tick: 2,
+      visible: { ...visible, squads: [{ ...visible.squads[0]!, morale: 10 }] } });
+    expect(recovered).toContainEqual({ kind: 'assault', faction: 'rome', squads: [0], settlement: 1 });
+  });
+
+  it('finishes a payable ram instead of withdrawing just before its shelter becomes available', () => {
+    const base = battlefield();
+    const target = { kind: 'stronghold', id: 1, type: null, x: 80, y: 80, seen: 840 } as const;
+    const visible = { ...base, enemies: [], contacts: [target],
+      squads: [{ ...base.squads[0]!, capacity: 24, men: 19, morale: 5, x: 80, y: 80, goal: { x: 80, y: 80 } }],
+      fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'assault',
+        ram: { hp: 60, remaining: 10, built: false }, garrison: 0, hold: 0, structures: [] }],
+    } satisfies SiegeVisible;
+    const controller = createArmyController('tiro');
+    const commands = controller.decide({ faction: 'rome', tick: 841, visible });
+    expect(commands).toContainEqual({ kind: 'assault', faction: 'rome', squads: [0], settlement: 1 });
+    expect(commands.some((command) => command.kind === 'withdraw')).toBe(false);
+  });
+
+  it('still withdraws when the ram cannot shelter the ring before it breaks or a superior enemy arrives', () => {
+    const base = battlefield();
+    for (const [morale, men, remaining, relief] of [[1, 19, 30, false], [5, 12, 10, false],
+      [5, 19, 10, true], [0, 19, 0, false]] as const) {
+      const visible: SiegeVisible = { ...base,
+        enemies: relief ? [{ id: 10, type: 'gaul', x: 80, y: 81 }] : [],
+        contacts: [{ kind: 'stronghold', id: 1, type: null, x: 80, y: 80, seen: 840 }],
+        squads: [{ ...base.squads[0]!, capacity: 24, men, morale, x: 80, y: 80, goal: { x: 80, y: 80 } }],
+        fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'assault',
+          ram: { hp: 60, remaining, built: remaining === 0 }, garrison: 0, hold: 0, structures: [] }],
+      };
+      expect(createArmyController('tiro').decide({ faction: 'rome', tick: 841, visible }))
+        .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [0] });
+    }
+  });
+
+  it('keeps an ongoing withdrawal owned by the field when the composed siege could use that Squad', () => {
+    const base = battlefield();
+    const controller = createArmyController('imperator');
+    const commands = controller.decide({ faction: 'rome', tick: 1, visible: { ...base,
+      enemies: [], contacts: [{ kind: 'stronghold', id: 1, type: null, x: 80, y: 80, seen: 0 }],
+      fronts: [{ settlement: 1, breached: false, besieger: null, siege: null, ram: null, garrison: 0, hold: 0, structures: [] }],
+      squads: [{ ...base.squads[0]!, x: 30, y: 30, goal: { x: 20, y: 20 } }],
+    } });
+    expect(commands.filter((command) => 'squads' in command && command.squads.includes(0))).toEqual([]);
+  });
+
+  it('recalls an exhausted scout outside combat and preserves its march home', () => {
+    const controller = ai();
+    const base = battlefield();
+    const visible = { ...base, enemies: [], contacts: [], squads: [{ ...base.squads[0]!,
+      x: 50, y: 50, morale: 5, goal: { x: 60, y: 50 } }] };
+    expect(controller.decide({ faction: 'rome', tick: 0, visible }))
+      .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [0] });
+    const continuing = controller.decide({ faction: 'rome', tick: 1, visible: { ...visible,
+      squads: [{ ...visible.squads[0]!, goal: { x: 20, y: 20 } }],
+    } });
+    expect(continuing.filter((command) => 'squads' in command && command.squads.includes(0))).toEqual([]);
+    const arrived = controller.decide({ faction: 'rome', tick: 2, visible: { ...visible,
+      squads: [{ ...visible.squads[0]!, x: 20, y: 20, goal: null }],
+    } });
+    expect(arrived.filter((command) => 'squads' in command && command.squads.includes(0))).toEqual([]);
+  });
+
   it('stands alone: registered without the economy or scouting, it still plans from its own contact memory', () => {
     const registry = createBehaviourRegistry<SiegeVisible, Command>([
       createMilitaryBehaviour({ squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX,
@@ -77,7 +188,9 @@ describe('the military Controller', () => {
     const controller = ai();
     const base = battlefield();
     const commands = controller.decide({ faction: 'rome', tick: 0, visible: { ...base,
-      enemies: [10, 11, 12].map((id) => ({ id, type: 'libyan-spear', x: 25, y: 20 })),
+      squads: base.squads.map((squad) => ({ ...squad, x: squad.id === 2 ? 23 : 24,
+        engaged: squad.id !== 2 })),
+      enemies: [10, 11, 12, 13, 14, 15].map((id) => ({ id, type: 'libyan-spear', x: 25, y: 20 })),
     } });
     expect(commands).toContainEqual({ kind: 'attack', faction: 'rome', squads: [2], target: 10 });
     const tactical = controller.readLog().find((entry) => entry.layer === 'tactical')!;
@@ -86,12 +199,19 @@ describe('the military Controller', () => {
       .toContain('Commit reserve 2');
   });
 
+  it('retains the same six-Spear threat as an unwinnable approach from five tiles away', () => {
+    const commands = ai().decide({ faction: 'rome', tick: 0, visible: { ...battlefield(),
+      enemies: [10, 11, 12, 13, 14, 15].map((id) => ({ id, type: 'libyan-spear', x: 25, y: 20 })),
+    } });
+    expect(commands.some((command) => command.kind === 'attack')).toBe(false);
+  });
+
   it('declines an overwhelming force instead of feeding the reserve into a lost engagement', () => {
     const base = battlefield();
     const controller = ai();
     const commands = controller.decide({ faction: 'rome', tick: 0, visible: { ...base,
       squads: base.squads.map((squad) => squad.id === 0 ? { ...squad, x: 24, engaged: true } : squad),
-      enemies: [10, 11, 12, 13, 14, 15].map((id) => ({ id, type: 'libyan-spear', x: 25, y: 20 })),
+      enemies: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19].map((id) => ({ id, type: 'libyan-spear', x: 25, y: 20 })),
     } });
     expect(commands).toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [0] });
     expect(commands.filter((command) => command.kind === 'attack')).toEqual([]);
@@ -110,10 +230,10 @@ describe('the military Controller', () => {
       visible: { ...developed, enemies: [{ id: 10, type, x: 25, y: 20 }], ...change },
     }).filter((command) => command.kind === 'recruit');
     expect(recruit('numidian-horse')).toEqual([
-      { kind: 'recruit', faction: 'rome', settlement: 0, squadType: 'triarii', count: 1 },
+      { kind: 'recruit', faction: 'rome', settlement: 0, squadType: 'triarii', men: 24, count: 1 },
     ]);
     expect(recruit('balearic-slinger')).toEqual([
-      { kind: 'recruit', faction: 'rome', settlement: 0, squadType: 'principes', count: 1 },
+      { kind: 'recruit', faction: 'rome', settlement: 0, squadType: 'principes', men: 60, count: 1 },
     ]);
     expect(recruit('numidian-horse', { treasury: 0 })).toEqual([]);
   });
@@ -160,7 +280,10 @@ describe('the military Controller', () => {
     const controller = ai();
     const commands = controller.decide({ faction: 'rome', tick: 0, visible: { ...base,
       squads: base.squads.slice(0, 2).map((squad) => ({ ...squad, x: 40, y: 40, engaged: squad.id === 0 })),
-      enemies: [10, 11].map((id) => ({ id, type: 'gaul', x: 41, y: 40 })),
+      // Four Gauls are 192 men priced at their own nerve: more than one Roman
+      // line is comfortable with at Centurio's 125% margin, and not more than two
+      // (#66 recalibrated what a body of men is worth).
+      enemies: [10, 11, 12, 13].map((id) => ({ id, type: 'gaul', x: 41, y: 40 })),
     } });
     expect(commands).toContainEqual({ kind: 'attack', faction: 'rome', squads: [1], target: 10 });
     expect(controller.readLog().find((entry) => entry.layer === 'tactical')?.selected.id).toBe('commit-reserve');
@@ -171,7 +294,9 @@ describe('the military Controller', () => {
     const commands = ai().decide({ faction: 'rome', tick: 0, visible: { ...base,
       squads: base.squads.map((squad) => ({ ...squad, x: 22, engaged: squad.id === 0,
         men: squad.id === 0 ? 120 : 60, goal: squad.id === 0 ? null : { x: 20, y: 20 } })),
-      enemies: [10, 11].map((id) => ({ id, type: 'gaul', x: 23, y: 20 })),
+      // Five Gauls are 240 men to this one line's 120, and the two half-strength
+      // Squads that could have helped are going home.
+      enemies: [10, 11, 12, 13, 14].map((id) => ({ id, type: 'gaul', x: 23, y: 20 })),
     } });
     expect(commands).toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [0] });
     expect(commands.some((command) => command.kind === 'hold' && command.squads.includes(0))).toBe(false);

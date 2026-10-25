@@ -31,7 +31,7 @@ export const ONE_OF_EACH: readonly Command[] = [
   garrison('rome', [1], 5),
   withdraw('rome', [1]),
   build('rome', 5, 'castrum'),
-  recruit('rome', 5, 'hastati', 2),
+  recruit('rome', 5, 'hastati', 60, 2),
   assault('rome', [1], 5),
   blockade('rome', [2], 5),
   formation('rome', [1, 2], 'column'),

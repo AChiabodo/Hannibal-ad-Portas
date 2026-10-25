@@ -6,8 +6,9 @@ import { createBehaviourRegistry } from '../../src/ai/registry.ts';
 
 const CONTENT = { canAssault: (faction: string) => faction === 'rome',
   ramCost: 15, siegeRadius: 1, reliefRadius: 3, garrisonEstimate: 1200, ticksPerSecond: 10,
-  squadTypes: [{ id: 'hastati', strength: 120, morale: 10 },
-    { id: 'gaul', strength: 140, morale: 6 }, { id: 'triarii', strength: 100, morale: 14 }] };
+  squadTypes: [{ id: 'hastati', strength: 120, impact: 1, morale: 10 },
+    { id: 'gaul', strength: 140, impact: 1, morale: 6 },
+    { id: 'triarii', strength: 100, impact: 1, morale: 14 }] };
 
 function controller(level: keyof typeof DIFFICULTY = 'centurio') {
   return createAi<SiegeObservation, SiegeCommand>({ ticksPerSecond: 10,
@@ -16,11 +17,11 @@ function controller(level: keyof typeof DIFFICULTY = 'centurio') {
     ]) });
 }
 
-interface Squad { x: number; y: number; id: number; type: string; men: number; morale: number;
+interface Squad { x: number; y: number; id: number; type: string; men: number; capacity: number; morale: number;
   routing: boolean; garrison: number | null; goal: { x: number; y: number } | null }
 
 function squad(id: number, x: number, y: number, overrides: Partial<Squad> = {}): Squad {
-  return { id, type: 'hastati', x, y, men: 120, morale: 10,
+  return { id, type: 'hastati', x, y, men: 120, capacity: 120, morale: 10,
     routing: false, garrison: null, goal: null, ...overrides };
 }
 
@@ -45,6 +46,22 @@ function decide(faction: 'rome' | 'carthage', visible: SiegeObservation,
 }
 
 describe('the siege Controller', () => {
+  it('does not emit an empty withdrawal for a front whose Squads are already returning', () => {
+    const { commands } = decide('rome', observation({ squads: [],
+      fronts: [{ settlement: 1, breached: false, besieger: 'rome', ram: null, garrison: 1 }],
+    }));
+    expect(commands).toEqual([]);
+  });
+
+  it('does not count a spent Squad as power available to sustain the ring', () => {
+    const { commands, selected } = decide('rome', observation({
+      squads: [squad(1, 80, 80), squad(2, 80, 80, { men: 60 })],
+      fronts: [{ settlement: 1, breached: false, besieger: 'rome', ram: null, garrison: 1 }],
+    }));
+    expect(selected).toBe('abandon');
+    expect(commands).toEqual([{ kind: 'withdraw', faction: 'rome', squads: [1, 2] }]);
+  });
+
   it('waits while no enemy Stronghold has been seen', () => {
     const { commands, selected } = decide('rome', observation({ contacts: [] }));
     expect(selected).toBe('idle');

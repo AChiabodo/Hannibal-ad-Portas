@@ -22,7 +22,7 @@
  * ## One wall section, four ways
  *
  * A Stronghold is a square enceinte, and the four sides are not four drawings:
- * the wall section is **one 40×7 buffer** — crenellations along its outer edge,
+ * the wall section is **one 56×7 buffer** — crenellations along its outer edge,
  * a wall walk, a face and a shadow — and `rotateQuarterTurns` is what puts it on
  * the four sides, exactly as B3's terrain turns one transition tile four ways.
  * Corner towers are one 8×8 buffer placed four times. The gate is one gatehouse
@@ -78,12 +78,12 @@ export type SettlementKind = (typeof SETTLEMENT_KINDS)[number];
 /**
  * The side of a settlement's art, in pixels.
  *
- * A settlement is two tiles square and a Stronghold three and a half, which is the
+ * A minor settlement spans three tiles and a Stronghold four and a half, which is the
  * same order of size as a Squad's block of men (three tiles tall): a Stronghold has
  * to be the largest thing on the map that is not the map, and a minor settlement
  * has to be smaller than it and larger than a resource marker's one tile.
  */
-export const SITE_SIZE: Readonly<Record<SettlementKind, number>> = { settlement: 32, stronghold: 56 };
+export const SITE_SIZE: Readonly<Record<SettlementKind, number>> = { settlement: 48, stronghold: 72 };
 
 /** Whether the Faction looks at a settlement now, or remembers it. */
 export const SITE_MEMORIES = ['seen', 'remembered'] as const;
@@ -123,6 +123,8 @@ export type SiteRam = (typeof SITE_RAMS)[number];
  * renderer's business, because which Faction that is depends on who is playing.
  */
 export interface SettlementLook {
+  /** A completed Castrum known through the permitted Observation. */
+  readonly camp?: boolean;
   /** Open settlement, or walled Stronghold. */
   readonly kind: SettlementKind;
 
@@ -202,13 +204,13 @@ const ENCEINTE: readonly {
   readonly y: number;
 }[] = [
   { side: 'north', turns: 0, x: 8, y: 3 },
-  { side: 'east', turns: 1, x: 46, y: 8 },
-  { side: 'south', turns: 2, x: 8, y: 45 },
+  { side: 'east', turns: 1, x: SITE_SIZE.stronghold - 10, y: 8 },
+  { side: 'south', turns: 2, x: 8, y: SITE_SIZE.stronghold - 11 },
   { side: 'west', turns: 3, x: 3, y: 8 },
 ];
 
 /** How long one wall section is, in pixels: the distance between two corner towers. */
-const WALL_LENGTH = 40;
+const WALL_LENGTH = SITE_SIZE.stronghold - 16;
 
 /** How thick the wall is, merlons aside: the walk, the face and the shadow. */
 const WALL_THICKNESS = 6;
@@ -224,11 +226,11 @@ const WALL_THICKNESS = 6;
  */
 const DAMAGE_SPANS: readonly { readonly first: number; readonly last: number }[] = [
   { first: 3, last: 11 },
-  { first: 28, last: 36 },
+  { first: WALL_LENGTH - 12, last: WALL_LENGTH - 4 },
 ];
 
 /** Where the south wall's gatehouse stands: on the wall, one row taller than it. */
-const GATE_TOP = 44;
+const GATE_TOP = SITE_SIZE.stronghold - 12;
 
 /** The side of a corner tower, in pixels. */
 const TOWER_SIZE = 8;
@@ -242,32 +244,32 @@ const TOWERS: readonly { readonly x: number; readonly y: number }[] = [
 ];
 
 /** The gatehouse: fourteen pixels wide, centred on the south wall. */
-const GATEHOUSE = { left: 21, width: 14 } as const;
+const GATEHOUSE = { left: Math.floor(SITE_SIZE.stronghold / 2) - 7, width: 14 } as const;
 
 /** Where the gate's passage runs, inside the gatehouse. */
-const GATE_PASSAGE = { x: 25, width: 6 } as const;
+const GATE_PASSAGE = { x: Math.floor(SITE_SIZE.stronghold / 2) - 3, width: 6 } as const;
 
 /** The ram's shed, drawn against the gate it is battering: narrow enough to leave the gate towers in sight. */
-const RAM_SHED = { x: 24, y: 45, width: 8, height: 11 } as const;
+const RAM_SHED = { x: Math.floor(SITE_SIZE.stronghold / 2) - 4, y: SITE_SIZE.stronghold - 11, width: 8, height: 11 } as const;
 
-/** The huts of a minor settlement: a scatter round a well, inside its two tiles. */
+/** The huts of a minor settlement: a scatter round a well, inside its three tiles. */
 const VILLAGE_HUTS: readonly Hut[] = [
-  { x: 4, y: 5, width: 9, height: 7 },
-  { x: 19, y: 6, width: 9, height: 7 },
-  { x: 5, y: 18, width: 9, height: 7 },
-  { x: 18, y: 19, width: 9, height: 7 },
+  { x: 4, y: 5, width: 14, height: 12 },
+  { x: 29, y: 6, width: 14, height: 12 },
+  { x: 5, y: 30, width: 14, height: 12 },
+  { x: 29, y: 30, width: 14, height: 12 },
 ];
 
 /** The houses sheltering inside a Stronghold's walls: four round a keep. */
 const TOWN_HOUSES: readonly Hut[] = [
-  { x: 12, y: 12, width: 8, height: 6 },
-  { x: 32, y: 13, width: 8, height: 6 },
-  { x: 13, y: 33, width: 8, height: 6 },
-  { x: 32, y: 32, width: 9, height: 6 },
+  { x: 12, y: 12, width: 12, height: 11 },
+  { x: 49, y: 13, width: 12, height: 11 },
+  { x: 13, y: 48, width: 12, height: 11 },
+  { x: 48, y: 48, width: 13, height: 11 },
 ];
 
 /** A keep: the largest roof inside the walls, which is what marks a Stronghold from afar. */
-const KEEP = { x: 21, y: 19, width: 14, height: 14 } as const;
+const KEEP = { x: 27, y: 25, width: 18, height: 20 } as const;
 
 /** One roofed building, in the art's own coordinates. */
 interface Hut {
@@ -299,6 +301,7 @@ export function siteLookKey(look: SettlementLook): string {
     look.gate ?? 'none',
     ...SITE_SIDES.map((side) => look.walls[side]),
     look.ram,
+    look.camp === true ? 'camp' : 'civil',
   ].join(':');
 }
 
@@ -337,6 +340,7 @@ function rememberedLook(look: SettlementLook): SettlementLook {
   return {
     kind: look.kind,
     owner: 'none',
+    camp: false,
     memory: 'remembered',
     gateSide: 'south',
     gate: null,
@@ -358,14 +362,16 @@ function minorSettlementSprite(look: SettlementLook): PixelBuffer {
   // The ground the settlement stands on: a little paving at its middle, so a cluster
   // of roofs reads as a settlement rather than as four roofs that happen to be near one
   // another. It is drawn first and everything else stands on it.
-  fillRect(sprite, 12, 12, 9, 9, INK.paving);
-  paintWell(sprite, 15, 15);
+  fillRect(sprite, 18, 18, 12, 12, INK.paving);
+  paintWell(sprite, 22, 22);
+  fillRect(sprite, 21, 8, 2, 33, INK.paving);
 
   for (const hut of VILLAGE_HUTS) paintHut(sprite, hut);
+  if (look.camp === true) paintCamp(sprite, 26, 30);
 
   // The banner stands at the north of the settlement, between the two front huts,
   // where nothing hides it.
-  paintBanner(sprite, 15, 1, look.owner);
+  paintBanner(sprite, 23, 1, look.owner);
   outline(sprite);
 
   return sprite;
@@ -379,10 +385,11 @@ function strongholdSprite(look: SettlementLook): PixelBuffer {
   // The courtyard, then what stands inside it, then the walls over both: the wall
   // is the nearest thing to the eye at every side, and what is behind it is
   // hidden by it.
-  fillRect(sprite, 10, 10, 36, 36, INK.earth);
-  paintWell(sprite, 26, 36);
+  fillRect(sprite, 10, 10, SITE_SIZE.stronghold - 20, SITE_SIZE.stronghold - 20, INK.earth);
+  paintWell(sprite, 34, 51);
   for (const house of TOWN_HOUSES) paintHut(sprite, house);
   paintKeep(sprite, look.owner);
+  if (look.camp === true) paintCamp(sprite, 44, 46);
 
   paintEnceinte(sprite, look);
   if (look.gate !== null) paintGatehouse(sprite, look.gate);
@@ -566,6 +573,8 @@ function paintHut(sprite: PixelBuffer, hut: Hut): void {
   fillRect(sprite, x + 1, y + height - 1, width, 1, INK.roofShadow);
   fillRect(sprite, x, y, width, roof, INK.roofBody);
   fillRect(sprite, x + Math.floor(width / 2) - 1, y, 2, roof, INK.roofLit);
+  // Tiled roof seams and a shaded eave, in the existing bronze ramp.
+  for (let tile = 2; tile < width - 1; tile += 3) setPixel(sprite, x + tile, y + 1, INK.roofShadow);
   fillRect(sprite, x, y + roof - 1, width, 1, INK.roofShadow);
   fillRect(sprite, x + 1, y + roof, width - 2, wall, INK.plaster);
   setPixel(sprite, x + Math.floor(width / 2), y + roof, INK.timberDark);
@@ -580,6 +589,10 @@ function paintKeep(sprite: PixelBuffer, owner: SiteOwner): void {
   fillRect(sprite, x, y, 2, height, INK.wallLit);
   fillRect(sprite, x + width - 2, y, 2, height, INK.wallMid);
   fillRect(sprite, x, y + height - 2, width, 2, INK.wallMid);
+  for (let row = 3; row < height - 2; row += 3) {
+    setPixel(sprite, x + 3 + row % 2, y + row, INK.wallShadow);
+    setPixel(sprite, x + width - 4, y + row, INK.wallLit);
+  }
   // A course of masonry and a door, so the keep reads as built at one-to-one zoom.
   fillRect(sprite, x + 3, y + 5, width - 6, 1, INK.wallMid);
   fillRect(sprite, x + Math.floor(width / 2) - 1, y + height - 5, 3, 3, INK.timberDark);
@@ -722,6 +735,7 @@ function walledSettlement(
  */
 export const SITE_SPECIMENS: readonly SiteSpecimen[] = [
   { name: 'site:settlement:rome:seen', look: openSettlement('rome') },
+  { name: 'site:settlement:rome:castrum', look: { ...openSettlement('rome'), camp: true } },
   { name: 'site:settlement:carthage:seen', look: openSettlement('carthage') },
   { name: 'site:settlement:none:seen', look: openSettlement('none') },
   {
@@ -796,3 +810,17 @@ const MARK = shadeAt(RAMPS.parchment, 6);
 
 /** The selection brackets already drawn, one per kind. */
 const MARKS = new Map<SettlementKind, PixelBuffer>();
+
+/** A palisade and two rows of pitched tents. Fits within the site's pick bounds. */
+function paintCamp(sprite: PixelBuffer, x: number, y: number): void {
+  fillRect(sprite, x, y, 20, 13, INK.earth);
+  for (let post = 0; post < 20; post += 2) {
+    fillRect(sprite, x + post, y, 1, 3, INK.timber);
+    fillRect(sprite, x + post, y + 11, 1, 2, INK.timberDark);
+  }
+  for (const down of [3, 7]) for (const across of [2, 11]) {
+    fillRect(sprite, x + across, y + down, 6, 3, INK.plaster);
+    fillRect(sprite, x + across + 2, y + down, 2, 3, INK.roofLit);
+    setPixel(sprite, x + across + 3, y + down + 2, INK.timberDark);
+  }
+}

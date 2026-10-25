@@ -50,11 +50,14 @@ it('takes a Stronghold through a human Siege Command, stops there and refuses fu
 for (const faction of ['rome', 'carthage'] as const) {
   it(`recruits as ${faction} and matches the headless driver on the same seed and Commands`, () => {
     const host = createBrowserMatch({ seed: 13, faction, difficulty: 'imperator', opponent: idleController<SiegeVisible>() });
-    const command = recruit(faction, faction === 'rome' ? 0 : 1, faction === 'rome' ? 'hastati' : 'gaul', 1);
+    const command = recruit(faction, faction === 'rome' ? 0 : 1, faction === 'rome' ? 'hastati' : 'gaul', 24, 1);
     expect(host.human.submit(command)).toBe(true);
     expect(host.human.submit({ ...command, faction: faction === 'rome' ? 'carthage' : 'rome' })).toBe(false);
     host.advance(1);
     expect(host.observe().squads).toHaveLength(1);
+    expect(host.observe().squads[0]).toMatchObject({
+      men: 24, capacity: 24, payroll: faction === 'rome' ? 3 : 2,
+    });
     const run = runMatch({ seed: 13, ticks: 1, rules: siegeMatchRules, observe: observeSiege, outcome: siegeMatchOutcome,
       players: [{ faction: 'rome', controller: scriptedController<SiegeVisible>(host.applied()) },
         { faction: 'carthage', controller: scriptedController<SiegeVisible>(host.applied()) }] });

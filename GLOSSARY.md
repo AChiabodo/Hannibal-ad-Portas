@@ -147,9 +147,14 @@ _UI_: Nebbia di guerra
 _Avoid_: Shroud, blackout, visibility mask, using "fog" for the unexplored state alone
 
 **Last known contact**:
-Where an enemy thing was standing when the Faction last saw it, kept after it marches out of view. The place is a memory and not a live position, and how stale that memory is matters.
+Where an enemy Squad or a settlement stood when the Faction last saw it, kept after sight is lost; an open settlement may belong to nobody. The place is a memory, not a live position or a claim about who owns it today, and how stale that memory is matters.
 _UI_: Ultimo contatto noto
 _Avoid_: Blip, tracker, calling a thing the rules can see right now a "contact" (that is an enemy in sight; only the fog's *memory* of one is a last known contact)
+
+**Enemy in sight**:
+An enemy field Squad currently covered by the Faction's eyes. Its visible body, formation and facing may be seen; its nerve, supplies and intentions remain private. Once sight is lost, only its last known contact remains.
+_UI_: Nemico avvistato
+_Avoid_: Calling a remembered position a live enemy, treating a visible formation as knowledge of its orders
 
 ### Command
 
@@ -181,6 +186,21 @@ _Avoid_: Unit, regiment, formation, group
 One drawn soldier of a Squad's type — a man, a horse and rider, or a beast — in one direction and one frame. A Squad is drawn as its figures in formation, and a type that is a single creature is drawn as one figure whatever its strength.
 _UI_: —
 _Avoid_: Sprite, model, unit (the drawing code's `soldier()` is the entry point for every figure, a beast included)
+
+**Capacity**:
+The men a Squad was raised with, fixed for its life. Survivors are read against it, so a 60-man Squad worn down to 30 reads as `30/60` and no loss can silently change the size that was bought. A Squad type offers real sizes (Rome's melee 24/60/120; Carthage's 24/48; one fixed size for a specialist); choosing one is part of the Recruit Command, and there is no split or merge.
+_UI_: Reclutati
+_Avoid_: Max strength, health, full strength (capacity is a purchase, not a condition)
+
+**Force**:
+The military weight a Squad brings, measured in the men it has left times what one of its men is worth: one for the infantry of both rosters and for the slingers, two for the Numidian horse, four for the elephant. A column brings a quarter of it. It is what a fight, a wall's defence, a blockade and a settlement's centre are all decided by, and it is why dividing the same men into more Squads buys nothing. "Bearing" is the code's word for the same number (`bearing`); the interface calls it `Forza`.
+_UI_: Forza
+_Avoid_: Power, strength (that is the men a Squad has left), weight
+
+**Force point**:
+The unit a blow is counted in: twelve make one man killed. A blow is summed over every Squad that landed on the same defender and floored once, which is what makes five 24-man Squads cost exactly what one 120-man Squad costs. The interface never prints it; the code's `POINTS_PER_MAN` is the twelve.
+_UI_: —
+_Avoid_: Damage, hit points, blow (a blow is the act, a force point is the unit)
 
 **Elephant**:
 A Squad of a single figure: one beast drawn in the same little box as a man, with the staying power of a body of men behind its strength. It is recruited, paid, ordered, flanked and routed like any other type; only its figure is extraordinary.
@@ -215,7 +235,7 @@ _UI_: Assalto
 _Avoid_: Attack, storm (reserve "attack" for combat between Squads)
 
 **Blockade**:
-The slow path of a Siege: cutting supply and starving a settlement into surrender, breakable by the besieged Faction's field army.
+The slow path of a Siege: cutting supply and starving a settlement into surrender, breakable by the besieged Faction's field army. A ring that outweighs the garrison starves it faster, up to twice the stated rate, because what a town loses a Season is the men camped outside it and not the number of Squads they are drawn as.
 _UI_: Blocco
 _Avoid_: Encirclement, investment, starvation
 
@@ -240,7 +260,7 @@ _UI_: Rifornimenti
 _Avoid_: Logistics, upkeep, in-supply/out-of-supply as a noun
 
 **Morale**:
-What a Squad has left to fight with, and the primary resource of a fight: it is what decides whether a Squad stands or breaks, as against its strength, which only decides how many men are still standing. Moved by the fight itself, by flanking and rear attacks, by fatigue, by Supply, and by Payroll.
+What a Squad has left to fight with, and the primary resource of a fight: it is what decides whether a Squad stands or breaks, as against its strength, which only decides how many men are still standing. Moved by the fight itself, by flanking and rear attacks, by fatigue, by Supply, and by Payroll. It is lost **once per body under attack**, not once per enemy attacking it: being pressed by five Squads is not five times the shock of being pressed by one.
 _UI_: Morale
 _Avoid_: Health, hit points, spirit, resolve
 
@@ -250,7 +270,7 @@ _UI_: Ariete
 _Avoid_: Battering ram, siege engine (that is the kind; the ram is the one v1 has), siege tower
 
 **Garrison**:
-The Squads a Faction puts inside a settlement's walls instead of in the field. A garrison is a posture of an ordinary Squad: it mans the walls, it is not fought by the contact rules, it is fed by the settlement's granary, and it surrenders rather than routing when a storm breaks it.
+The Squads a Faction puts inside a settlement's walls instead of in the field. A garrison is a posture of an ordinary Squad: it mans the walls, it is not fought by the contact rules, it is fed by the settlement's granary, and it surrenders rather than routing when a storm breaks it. What it does to a ram is its **force** and not the count of Squads on the wall.
 _UI_: Guarnigione
 _Avoid_: Defender (any Squad defending is not necessarily a garrison), reserve, stack
 
@@ -265,7 +285,7 @@ _UI_: Adunata
 _Avoid_: Recover, regroup, reform
 
 **Ammunition**:
-The volleys of missiles a Squad carries into a fight: a Squad with ammunition left adds a volley to each round it is in contact, and spends one doing it. A type with none fights with its arm alone, and what has been thrown comes back only when the Squad is resupplied in its own country at a Season boundary. "Volley" is the unit; "missile" is only what is thrown.
+The volleys of missiles a Squad carries into a fight: a Squad with ammunition left adds a volley to each round it is in contact, and spends one doing it. A volley is a weight of missiles **per man**, not per Squad, so splitting a body into five does not buy five bodies' worth of stones; a missile arm's volley is heavier than a line's. A type with none fights with its arm alone, and what has been thrown comes back only when the Squad is resupplied in its own country at a Season boundary. "Volley" is the unit; "missile" is only what is thrown.
 _UI_: Munizioni
 _Avoid_: Missiles, ammo, rounds, shots (a round is a tick of contact, not a thing thrown)
 
@@ -297,7 +317,7 @@ _Avoid_: Body, casualty marker, corpse pile (a corpse is one mark on one tile, n
 ### Economy
 
 **Payroll**:
-The denarii a Faction owes each Season for the Squads it keeps; for infantry, the amount follows troop type and surviving men. Unpaid Squads lose morale and eventually desert.
+The denarii a Faction owes each Season for the Squads it keeps; for infantry, the amount follows troop type and surviving men. A type's rate is denarii per 24 men, and a Squad's bill is that rate times its survivors, rounded up, so equivalent men cost the same wherever they stand and splitting them can never lower the bill. Unpaid Squads lose morale and eventually desert.
 _UI_: Soldo
 _Avoid_: Upkeep, maintenance, cost, salary
 

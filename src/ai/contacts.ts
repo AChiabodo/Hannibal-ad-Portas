@@ -17,7 +17,7 @@ const SQUAD_CONTACT_SECONDS = 120;
 /** How long a settlement sighting stays planning evidence, in seconds (D4). */
 const SETTLEMENT_CONTACT_SECONDS = 600;
 
-/** One remembered enemy thing, as a planning policy may read it: never a live position. */
+/** One remembered settlement or enemy Squad: never a live position or current ownership. */
 export interface Contact extends Site {
   readonly id: number;
   readonly kind: 'squad' | 'settlement' | 'stronghold';

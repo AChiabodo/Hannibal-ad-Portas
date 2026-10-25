@@ -197,18 +197,18 @@ describe('the world the Squads walk on', () => {
   it('leaves a recruited Squad standing in the settlement that raised it, at its type’s strength', () => {
     const world = economyMatchRules.createWorld(7);
     const stronghold = world.economy.settlements[0];
-    const hastati = squadTypeOf(squadTypeId('hastati'));
 
     play({
       world,
       ticks: 1,
-      rome: script([0, recruit('rome', 0, 'hastati', 1)]),
+      rome: script([0, recruit('rome', 0, 'hastati', 24, 1)]),
     });
 
     const raised = squadOf(world, 1);
     expect({ x: raised.x, y: raised.y }).toEqual({ x: stronghold?.x, y: stronghold?.y });
-    expect(raised.strength).toBe(hastati?.strength);
-    expect(seen(world)).toMatchObject({ x: stronghold?.x, y: stronghold?.y, men: hastati?.strength });
+    expect(raised.strength).toBe(24);
+    expect(raised.capacity).toBe(24);
+    expect(seen(world)).toMatchObject({ x: stronghold?.x, y: stronghold?.y, men: 24, capacity: 24 });
   });
 
   it('musters a Squad where a scenario says, and never gives two the same id', () => {
@@ -513,7 +513,7 @@ describe('movement that can be replayed', () => {
         garrison('rome', [squad.id], 1),
         withdraw('rome', [squad.id]),
         build('rome', 1, 'castrum'),
-        recruit('rome', 1, 'hastati', 2),
+        recruit('rome', 1, 'hastati', 24, 2),
         blockade('rome', [squad.id], 1),
         group('rome', 2, [squad.id]),
       ],
@@ -619,7 +619,10 @@ describe('the routes a theatre does not work out twice', () => {
     const second = place(world, 'hastati', 3, 3);
     const cache = createRouteCache(world.map);
 
-    applyMovementCommands(world.economy, world.map, [move('rome', [first.id, second.id], 30, 40)], cache);
+    // Separate single-Squad Commands deliberately share a destination. A group
+    // Command now reserves distinct arrivals (#68).
+    applyMovementCommands(world.economy, world.map,
+      [move('rome', [first.id], 30, 40), move('rome', [second.id], 30, 40)], cache);
 
     expect(squadOf(world, second.id).steps).toEqual(squadOf(world, first.id).steps);
     expect(cache.searches).toBe(1);
@@ -803,6 +806,7 @@ describe('what a Faction is shown of its Squads', () => {
       x: 5,
       y: 5,
       men: 120,
+      capacity: 120,
       figures: 120,
       formation: 'line',
       facing: 'east',
@@ -813,8 +817,9 @@ describe('what a Faction is shown of its Squads', () => {
       ammunition: 4,
       routing: false,
       engaged: false,
-      payroll: 3,
+      payroll: 15,
       unpaid: 0,
+      bearing: 120,
       garrison: null,
       home: 0,
       inTerritory: true,
@@ -848,7 +853,7 @@ describe('what a Faction is shown of its Squads', () => {
     marchTo(world, squad, 15, 5, 40);
 
     expect({ type: squad.type, home: squad.home, morale: squad.morale, owner: squad.owner }).toEqual(before);
-    expect(seen(world)).toMatchObject({ type: 'hastati', payroll: 3, morale: 10, home: 0, x: 15, y: 5 });
+    expect(seen(world)).toMatchObject({ type: 'hastati', payroll: 15, morale: 10, home: 0, x: 15, y: 5 });
   });
 
   it('is plain data: what a Faction is shown can be copied and handed to a Controller', () => {

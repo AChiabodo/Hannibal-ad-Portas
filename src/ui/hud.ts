@@ -52,7 +52,9 @@ import { SEASON_TICKS } from '../sim/season.ts';
 import { RESOURCE_KINDS, type ResourceKind } from '../sim/map.ts';
 import type { VisibleFront } from '../sim/siege.ts';
 import {
+  MAX_RECRUIT_COUNT,
   SETTLEMENT_TABS,
+  recruitCountInRange,
   groupSummary,
   knownEnemyFronts,
   knownFront,
@@ -70,12 +72,19 @@ import {
   MINIMAP_PLATE_HEIGHT,
   MINIMAP_PLATE_WIDTH,
 } from './minimap.ts';
+import { CAPTURE_HOLDS, CAPTURE_TICKS } from '../sim/siege.ts';
 import type { KnownSite } from './sites.ts';
 import type { Notice } from './conditions.ts';
+import { CONSTRUCTION_CATEGORIES, type ConstructionCategory } from './construction.ts';
+import { forecastTreasury, projectSettlement, settlementForecastLine } from './forecast.ts';
+import { nextBoundary } from './conditions.ts';
+import { TICK_HZ } from '../sim/clock.ts';
 import type { ForecastLine } from './forecast.ts';
 import type { GuidePanel } from './guide.ts';
 import { paintControl, paintFocus } from '../art/interface.ts';
 import { message, refusalLabel, resourceLabel, seasonLabel, squadLabel, translate, workLabel } from './strings.ts';
+import type { PanelLayout } from './preferences.ts';
+import { arrangePanelLayout } from './panel-layout.ts';
 
 /** What a Player has selected, or `null` for nothing. */
 export type Selection =
@@ -125,6 +134,10 @@ export interface HudDetail {
   readonly lines: readonly HudLine[];
   /** Indices of Order/refusal or the first active Work, above the scrolling figures. */
   readonly priority: readonly number[];
+  /** The selected settlement's seasonal account, shown beside the local overview. */
+  readonly ledger?: readonly HudLine[];
+  readonly summary?: readonly HudLine[];
+  readonly works?: readonly HudLine[];
 }
 
 /**
@@ -177,6 +190,7 @@ export interface HudSession {
   readonly faction?: Faction;
   /** Which page of a settlement's panel is open. */
   readonly tab?: SettlementTab;
+  readonly category?: ConstructionCategory;
   /** The armed action's id, or `null`. */
   readonly armed?: string | null;
   /** How many orders are queued. */
@@ -197,6 +211,8 @@ export interface HudSession {
   readonly forecast?: ForecastLine | null;
   /** The first-entry guide's panel, or `null` when it is closed (#59). */
   readonly guide?: GuidePanel | null;
+  /** How many Squads one recruitment press buys; the page's own memory, never state. */
+  readonly recruitCount?: number;
   /**
    * Every place the Faction may see, as `ui/sites.ts` reads its Observation (U6).
    *
@@ -210,6 +226,9 @@ export interface HudSession {
 
 /** Presentation memory only; never part of the Match. Offsets count bitmap text lines. */
 export interface HudView {
+  readonly panelLayout?: PanelLayout;
+  readonly inspectedOrder?: string | null;
+  readonly settlementPage?: 'summary' | 'balance' | 'works';
   readonly focus?: Rect | null;
   readonly hoveredOrder?: string | null;
   readonly desktop?: boolean;
@@ -233,6 +252,7 @@ export interface HudView {
 }
 
 export interface HudText {
+  readonly role?: 'pace';
   readonly text: string;
   readonly rect: Rect;
 }
@@ -243,7 +263,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose';
+export type HudAction = `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works' | 'catalogue'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore' | 'tutorialNext' | 'tutorialRetry' | 'tutorialExit' | 'tutorialHelp';
 
 export interface HudButton {
   readonly action: HudAction;
@@ -276,6 +296,9 @@ export interface HudModel {
   readonly commands: readonly OrderOption[];
   /** Which page of a settlement's panel is open. */
   readonly tab: SettlementTab;
+  readonly category: ConstructionCategory;
+  /** How many Squads one recruitment press buys. */
+  readonly recruitCount: number;
   /** The multi-selection summary, when more than one Squad is picked. */
   readonly group: GroupSummary | null;
   /** The numbered control groups, as visible controls. */
@@ -324,6 +347,9 @@ export interface ReadoutRect {
 
 /** The whole HUD, placed: every rectangle the renderer draws and the hit test reads. */
 export interface HudLayout {
+  readonly theatre?: Rect;
+  readonly extraPanels?: readonly Rect[];
+  readonly scrollRegions?: readonly { readonly region: 'detail' | 'commands' | 'notices'; readonly rect: Rect }[];
   readonly size: HudSize;
   readonly bar: Rect;
   readonly list: Rect;
@@ -376,6 +402,7 @@ export interface CommandRect {
 
 /** A settlement page's tab and where it stands. */
 export interface TabRect {
+  readonly text?: string;
   readonly tab: SettlementTab;
   readonly rect: Rect;
 }
@@ -441,7 +468,7 @@ const COMMAND_GAP = 2;
 const COMMAND_ROW_HEIGHT = ICON_TILE + 6;
 
 /** One settlement row: a badge, a name and its costs on a single line. */
-const ECONOMY_ROW_HEIGHT = LINE_STEP + 3;
+const ECONOMY_ROW_HEIGHT = 28;
 
 /** The small box a shortcut's letter stands in, at the top right of a command. */
 const KEY_BADGE_WIDTH = LINE_HEIGHT + 2;
@@ -510,8 +537,9 @@ export function hudModel(
     ? visible.settlements.find((candidate) => candidate.id === selected.id) ?? null
     : null;
   const group = selected?.kind === 'squad' && pickedSquadList.length > 1 ? groupSummary(pickedSquadList) : null;
+  const category = session.category ?? 'production';
   const commands = settlement !== null
-    ? settlementOrders(visible, faction, settlement, tab, ended)
+    ? settlementOrders(visible, faction, settlement, tab, ended, session.recruitCount ?? 1, category)
     : selected?.kind === 'settlement' ? [] : squadOrders(visible, faction, pickedSquadList, ended);
   const armed = session.armed == null ? null : commands.find((order) => order.id === session.armed) ?? null;
 
@@ -521,11 +549,13 @@ export function hudModel(
     rows: rows(visible, strongholds),
     detail: selected === null
       ? null
-      : group !== null ? groupDetail(group) : detail(visible, strongholds, selected, known),
+      : group !== null ? groupDetail(group) : detail(visible, strongholds, selected, known, view.tick ?? 0, ended),
     selected,
     picked: pickedRows,
     commands,
     tab,
+    category,
+    recruitCount: recruitCountInRange(session.recruitCount ?? 1),
     group,
     groups: session.groups ?? [],
     orders: {
@@ -536,7 +566,7 @@ export function hudModel(
       notice: session.notice ?? null,
     },
     notices: session.notices ?? [],
-    forecast: session.forecast ?? null,
+    forecast: ended ? null : session.forecast ?? null,
     guide: session.guide ?? null,
   };
 }
@@ -550,7 +580,14 @@ function pickedSquads(visible: EconomyVisible, ids: readonly number[]): readonly
 
 /** Where everything stands, given what the HUD says. */
 export function hudLayout(model: HudModel, size: HudSize): HudLayout {
-  if (model.view.desktop) return desktopLayout(model, size);
+  if (model.view.desktop) {
+    if (model.view.panelLayout) {
+      const chrome = desktopLayout({ ...model, forecast: null,
+        notices: [] }, size);
+      return arrangePanelLayout(model, size, chrome);
+    }
+    return desktopLayout(model, size);
+  }
   const readouts = placeReadouts(model.readouts, size);
   const rowsHeight = readouts.reduce((tallest, placed) => Math.max(tallest, placed.rect.y + placed.rect.height), 0);
   const pauseY = rowsHeight + PADDING;
@@ -636,6 +673,9 @@ export function hudLayout(model: HudModel, size: HudSize): HudLayout {
 
 /** Wraps every glyph, including a value with no spaces; nothing is ellipsised away. */
 export function wrapText(text: string, width: number): string[] {
+  if (/[\r\n]/.test(text)) {
+    return text.split(/\r\n|\r|\n/).flatMap((paragraph) => paragraph === '' ? [''] : wrapText(paragraph, width));
+  }
   const lines: string[] = [];
   let remaining = text;
   while (measureText(remaining) > width) {
@@ -748,7 +788,7 @@ export function hudHit(model: HudModel, size: HudSize, x: number, y: number): Hu
   const layout = hudLayout(model, size);
 
   for (const button of layout.guideButtons) {
-    if (contains(button.rect, x, y)) return { kind: 'button', action: button.action };
+    if (contains(button.rect, x, y)) return button.enabled ? { kind: 'button', action: button.action } : null;
   }
   for (const button of layout.buttons) {
     if (contains(button.rect, x, y)) return { kind: 'button', action: button.action };
@@ -791,6 +831,7 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
   panel(buffer, layout.bar);
   panel(buffer, layout.list);
   panel(buffer, layout.detail);
+  for (const rect of layout.extraPanels ?? []) panel(buffer, rect);
   // The notice strip is a panel like any other: opaque, so a warning reads over a
   // forest exactly as it reads over a field.
   if (layout.notices.height > 0) panel(buffer, layout.notices);
@@ -825,7 +866,7 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
 
   for (const tab of layout.tabs) {
     paintControl(buffer, tab.rect, tab.tab === model.tab ? 'selected' : 'idle');
-    drawText(buffer, translate(`tab.${tab.tab}`), tab.rect.x + PADDING * scale, tab.rect.y + 3 * scale,
+    drawText(buffer, tab.text ?? translate(`tab.${tab.tab}`), tab.rect.x + PADDING * scale, tab.rect.y + 3 * scale,
       tab.tab === model.tab ? HUD_VALUE : HUD_LABEL, scale);
   }
 
@@ -835,7 +876,7 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
     // The armed action stands on its own ground, inside the panel's edge, so a
     // Player can see which of several orders is the one waiting for a click.
     paintControl(buffer, rect, model.orders.armed?.id === order.id ? 'armed' : !order.enabled ? 'disabled'
-      : model.view.hoveredOrder === order.id ? 'selected' : 'idle');
+      : (model.view.inspectedOrder ?? model.view.hoveredOrder) === order.id ? 'selected' : 'idle');
     if (order.group === 'construction' || order.group === 'recruitment') drawEconomyRow(buffer, order, rect, scale);
     else drawCommandButton(buffer, order, rect, scale);
   }
@@ -854,13 +895,15 @@ export function renderPanels(model: HudModel, size: HudSize): PixelBuffer {
     drawText(buffer, line.text, line.rect.x, line.rect.y, line.title ? HUD_VALUE : HUD_LABEL, scale);
   }
   for (const button of layout.guideButtons) {
-    panel(buffer, button.rect);
-    drawText(buffer, button.text, button.rect.x + PADDING * scale, button.rect.y + 5 * scale, HUD_VALUE, scale);
+    if (button.enabled) panel(buffer, button.rect);
+    else paintControl(buffer, button.rect, 'disabled');
+    drawText(buffer, button.text, button.rect.x + PADDING * scale, button.rect.y + 5 * scale, button.enabled ? HUD_VALUE : HUD_BORDER, scale);
   }
 
   for (const button of layout.buttons) {
-    panel(buffer, button.rect);
-    drawText(buffer, button.text, button.rect.x + PADDING * scale, button.rect.y + 5 * scale, button.enabled ? HUD_VALUE : HUD_BORDER, scale);
+    if (button.action.startsWith('category:')) paintControl(buffer, button.rect, button.action === `category:${model.category}` ? 'selected' : 'idle');
+    else panel(buffer, button.rect);
+    drawText(buffer, fitText(button.text, button.rect.width - 2 * PADDING * scale, scale), button.rect.x + PADDING * scale, button.rect.y + 5 * scale, button.enabled ? HUD_VALUE : HUD_BORDER, scale);
   }
 
   if (model.view.focus) paintFocus(buffer, model.view.focus);
@@ -913,28 +956,28 @@ function drawKeyBadge(buffer: PixelBuffer, key: string, rect: Rect, ink: Rgba, s
 function drawEconomyRow(buffer: PixelBuffer, order: OrderOption, rect: Rect, scale: number): void {
   const ink = order.enabled ? HUD_VALUE : HUD_DISABLED;
   const badgeSize = BADGE_TILE * scale;
-  const centreY = rect.y + Math.floor((rect.height - LINE_HEIGHT * scale) / 2);
+  const nameY = rect.y + 2 * scale;
   const verb: BadgeName = order.group === 'construction' ? 'build' : 'recruit';
 
-  blitScaled(buffer, badgeIcon(verb), rect.x + 2 * scale, rect.y + Math.floor((rect.height - badgeSize) / 2), scale);
+  blitScaled(buffer, badgeIcon(verb), rect.x + 2 * scale, nameY, scale);
 
   let right = rect.x + rect.width - 3 * scale;
   if (!order.enabled) {
     blitScaled(buffer, badgeIcon('lock'), right - badgeSize,
-      rect.y + Math.floor((rect.height - badgeSize) / 2), scale);
+      nameY, scale);
     right -= badgeSize + COST_GAP * scale;
   }
 
-  const widths = order.costs.map((cost) => (BADGE_TILE + 2) * scale + measureText(String(cost.value), scale));
-  const total = widths.reduce((sum, width) => sum + width, 0) + Math.max(0, order.costs.length - 1) * COST_GAP * scale;
-  let x = right - total;
   const nameX = rect.x + (BADGE_TILE + 4) * scale;
-  drawText(buffer, fitText(order.short, x - nameX - COST_GAP * scale, scale), nameX, centreY, ink, scale);
+  drawText(buffer, fitText(order.short, right - nameX, scale), nameX, nameY, ink, scale);
 
-  for (const [index, cost] of order.costs.entries()) {
-    blitScaled(buffer, badgeIcon(cost.badge), x, rect.y + Math.floor((rect.height - badgeSize) / 2), scale);
-    drawText(buffer, String(cost.value), x + (BADGE_TILE + 2) * scale, centreY, ink, scale);
-    x += (widths[index] ?? 0) + COST_GAP * scale;
+  let x = rect.x + 2 * scale;
+  const costY = nameY + LINE_STEP * scale;
+  for (const cost of order.costs) {
+    const value = `${cost.value}${cost.badge === 'clock' ? 's' : ''}`;
+    blitScaled(buffer, badgeIcon(cost.badge), x, costY, scale);
+    drawText(buffer, value, x + (BADGE_TILE + 2) * scale, costY, ink, scale);
+    x += (BADGE_TILE + 2 + COST_GAP) * scale + measureText(value, scale);
   }
 }
 
@@ -1103,6 +1146,8 @@ function detail(
   strongholds: readonly number[],
   selected: Selection,
   known: KnownSite | null,
+  tick: number,
+  ended: boolean,
 ): HudDetail | null {
   if (selected.kind === 'settlement') {
     const settlement = visible.settlements.find((candidate) => candidate.id === selected.id);
@@ -1115,7 +1160,7 @@ function detail(
 
     return {
       title: message('ui.listItem', { name: settlementName(settlement, strongholds), id: settlement.id }),
-      ...settlementLines(visible, settlement),
+      ...settlementLines(visible, settlement, tick, ended),
     };
   }
 
@@ -1137,37 +1182,55 @@ function detail(
  * has an eye on (ADR-0020). A settlement remembered from a contact is not one of
  * those, so it gets no wall line at all rather than a remembered one.
  */
-function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement): Pick<HudDetail, 'lines' | 'priority'> {
+function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement, tick: number, ended: boolean): Pick<HudDetail, 'lines' | 'priority' | 'ledger' | 'summary' | 'works'> {
+  const economics = projectSettlement(settlement, visible.season);
+  const boundary = nextBoundary(visible.season, tick);
+  const future = projectSettlement(settlement, boundary.season);
   const lines: HudLine[] = [
+    { label: translate('ui.population'), value: message('economy.people', { population: settlement.population, housing: economics.housing }) },
+    { label: translate('economy.staffTitle'), value: message('economy.staff', {
+      staffed: economics.staffed, needed: economics.needed, land: RESOURCE_KINDS.reduce<number>((sum, kind) => sum + landOf(settlement, kind), 0) }) },
     { label: translate('ui.tier'), value: String(settlement.tier) },
-    { label: translate('ui.population'), value: String(settlement.population) },
   ];
 
   for (const kind of RESOURCE_KINDS) {
-    lines.push({ label: resourceLabel(kind), value: String(stockOf(settlement, kind)) });
+    lines.push({ label: resourceLabel(kind), value: message('economy.localStock', { amount: stockOf(settlement, kind), capacity: economics.storage }) });
   }
 
+  // Named allocations keep the resource order explicit while the detail scrolls.
   // The land is one line rather than four, in the resources' own order, so that
   // the panel reads as columns a Player compares instead of a list that grows.
   // The allocation is the economy's own: nobody moves these people by hand
   // (ADR-0005), so the line says so.
-  lines.push({
-    label: translate('ui.labourAuto'),
-    value: RESOURCE_KINDS.map((kind) => String(landOf(settlement, kind))).join('/'),
-  });
-
+  const landLine = {
+    label: translate('economy.landTitle'),
+    value: RESOURCE_KINDS.map((kind) => `${resourceLabel(kind)} ${landOf(settlement, kind)}`).join(', '),
+  };
+  lines.push(landLine);
+  const forecast = forecastTreasury(visible, tick);
+  const ledger: HudLine[] = [
+    { label: translate('economy.localForecast'), value: `${seasonLabel(boundary.season)}, ${Math.ceil(boundary.ticks / TICK_HZ)} s` },
+    { label: translate('economy.commonTreasury'), value: forecast.available
+      ? message('economy.treasuryChange', { current: visible.treasury, next: forecast.value.resulting }) : translate('forecast.blockaded') },
+    { label: translate('economy.incomeTitle'), value: forecast.available
+      ? message('economy.balance', { income: forecast.value.income, payroll: forecast.value.payroll }) : translate('forecast.blockaded') },
+    { label: translate('forecast.unpaidLabel'), value: forecast.available ? String(forecast.value.unpaid) : translate('ui.unknown') },
+    { label: translate('economy.stocksTitle'), value: settlementForecastLine(visible, settlement, tick) },
+    { label: translate('economy.localIncome'), value: forecast.available
+      ? message('economy.income', { income: future.income }) : translate('forecast.blockaded') },
+    { label: translate('forecast.title'), value: translate('economy.assumption') },
+  ];
   const workStart = lines.length;
   if (settlement.works.length === 0) {
     lines.push({ label: translate('ui.works'), value: translate('ui.none') });
   }
-  for (const work of settlement.works) {
+  for (const [index, work] of settlement.works.entries()) {
     lines.push({
-      label: translate('ui.works'),
-      value: `${workLabel(work.building)} - ${
-        work.standing
-          ? translate('ui.workStanding')
-          : message('ui.workProgress', { ticks: work.remaining })
-      }`,
+      label: workLabel(work.building),
+      value: !economics.workStaffing[index]
+        ? translate(work.standing ? 'economy.unstaffed' : 'economy.stalled')
+        : work.standing ? translate('economy.active')
+          : message('economy.workProgress', { seconds: Math.ceil(work.remaining / TICK_HZ) }),
     });
   }
 
@@ -1176,7 +1239,28 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement)
     lines.push(...frontLines(front));
   }
 
-  return { lines, priority: [workStart + Math.max(0, settlement.works.findIndex((work) => !work.standing))] };
+  const stalled = settlement.works.findIndex((_work, index) => !economics.workStaffing[index]);
+  const active = settlement.works.findIndex((work) => !work.standing);
+  const importantWork = stalled < 0 ? active : stalled;
+  const summary = [
+    { label: translate('economy.summaryPeopleLabel'), value: message('economy.summaryPeople', { population: settlement.population }) },
+    { label: translate('economy.summaryHousingLabel'), value: message('economy.summaryHousing', { housing: economics.housing }) },
+    { label: translate('economy.summaryStaffedLabel'), value: String(economics.staffed) },
+    { label: translate('economy.summaryNeededLabel'), value: String(economics.needed) },
+    ...RESOURCE_KINDS.map((kind) => ({ label: resourceLabel(kind), value: message('economy.summaryStock', { amount: stockOf(settlement, kind), capacity: economics.storage }) })),
+  ];
+  const workLines = settlement.works.map((_work, index) => lines[workStart + index]!);
+  const works = [
+    { label: translate('economy.developing'), value: String(settlement.works.filter((work) => !work.standing).length) },
+    ...workLines.filter((_line, index) => !settlement.works[index]!.standing),
+    { label: translate('economy.completed'), value: String(settlement.works.filter((work) => work.standing).length) },
+    ...workLines.filter((_line, index) => settlement.works[index]!.standing),
+  ];
+  return { lines, ledger: ended ? [
+    { label: translate('match.ended'), value: translate('match.finalKnown') },
+    { label: translate('economy.commonTreasury'), value: String(visible.treasury) },
+  ] : ledger, summary, works,
+    priority: importantWork < 0 ? [0] : [workStart + importantWork] };
 }
 
 /**
@@ -1201,6 +1285,11 @@ function knownSiteLines(site: KnownSite): Pick<HudDetail, 'lines' | 'priority'> 
     },
   ];
 
+  if (site.kind === 'settlement' && site.owner === null) {
+    lines.push({ label: translate('capture.label'), value: site.memory === 'seen'
+      ? message('capture.control', { hold: site.front?.hold ?? 0, total: CAPTURE_HOLDS }) : translate('capture.rediscover') });
+    lines.push({ label: translate('capture.instructions'), value: message('capture.quick', { holds: CAPTURE_HOLDS, seconds: CAPTURE_TICKS / TICK_HZ }) });
+  }
   if (site.front !== null) {
     lines.push(...frontLines(site.front));
   } else if (site.kind === 'stronghold') {
@@ -1228,10 +1317,10 @@ function siteName(site: KnownSite): string {
 function frontLines(front: VisibleFront): readonly HudLine[] {
   const standing = front.structures.filter((structure) => structure.standing).length;
   const gate = front.structures.find((structure) => structure.kind === 'gate');
-  const lines: HudLine[] = [
+  const lines: HudLine[] = front.structures.length ? [
     { label: translate('ui.walls'), value: message('ui.wallsStanding', { standing, total: front.structures.length }) },
     { label: translate('ui.breach'), value: translate(front.breached ? 'ui.breached' : 'ui.no') },
-  ];
+  ] : [{ label: translate('ui.walls'), value: translate('ui.none') }];
   if (gate !== undefined) {
     lines.push({
       label: translate('ui.gate'),
@@ -1274,7 +1363,11 @@ function squadLines(squad: VisibleSquad, visible: EconomyVisible): Pick<HudDetai
     { label: translate('ui.order'), value: orderLabel(squad) },
     { label: translate('ui.destination'), value: squad.goal === null ? translate('ui.none') : `${String(squad.goal.x)},${String(squad.goal.y)}` },
     { label: translate('ui.type'), value: squadLabel(squad.type) },
-    { label: translate('ui.men'), value: `${String(men.men)}/${String(men.max)}` },
+    { label: translate('ui.men'), value: `${String(men.men)}/${String(men.capacity)}` },
+    { label: translate('ui.capacity'), value: String(squad.capacity) },
+    // What the men are worth in a fight (#66): men times the type's impact, the
+    // same number the exchange, a wall's defence and the AI's estimate read.
+    { label: translate('ui.force'), value: String(squad.bearing) },
     { label: translate('ui.morale'), value: `${String(morale.morale)}/${String(morale.max)}` },
     { label: translate('ui.fatigue'), value: String(squad.fatigue) },
     { label: translate('ui.ammunition'), value: String(squad.ammunition) },
@@ -1300,7 +1393,7 @@ function squadLines(squad: VisibleSquad, visible: EconomyVisible): Pick<HudDetai
 
   // The Order is pinned, and so is a supply problem: a Squad outside its own
   // country is losing morale every Season, which is not a figure to scroll for.
-  return { lines, priority: squad.inTerritory ? [0] : [0, 7] };
+  return { lines, priority: squad.inTerritory ? [0] : [0, 8] };
 }
 
 /**
@@ -1465,10 +1558,16 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   const hasDetail = model.detail !== null || model.commands.length > 0;
   // Commands before scenery (#54): the panel is as tall as the actions in it,
   // and the navigator and the theatre yield to it rather than the other way.
-  const detailHeight = hasDetail
+  const compactOverview = model.tab === 'overview' && model.detail?.summary !== undefined;
+  const detailWidth = compactOverview ? Math.min(400, width - MINIMAP_PLATE_WIDTH) : width - MINIMAP_PLATE_WIDTH;
+  const inner = 4;
+  const textX = inner;
+  const stripWidth = detailWidth - 2 * inner - 46;
+  const groupStrip = model.groups.length === 0 ? 0 : groupStripRows(model.groups, stripWidth) * LINE_STEP + 4;
+  const detailHeight = compactOverview ? groupStrip + (model.view.settlementPage && model.view.settlementPage !== 'summary' ? 114 : 100) : hasDetail
     ? Math.max(DETAIL_MIN_HEIGHT, Math.min(DETAIL_MAX_HEIGHT, Math.round(height * DETAIL_SHARE))) + (model.groups.length > 0 ? 10 : 0) : 28;
-  const detail: Rect = { x: 0, y: height - detailHeight, width: width - MINIMAP_PLATE_WIDTH, height: detailHeight };
-  const minimap: Rect = { x: detail.width, y: height - MINIMAP_PLATE_HEIGHT, width: MINIMAP_PLATE_WIDTH, height: MINIMAP_PLATE_HEIGHT };
+  const detail: Rect = { x: 0, y: height - detailHeight, width: detailWidth, height: detailHeight };
+  const minimap: Rect = { x: width - MINIMAP_PLATE_WIDTH, y: height - MINIMAP_PLATE_HEIGHT, width: MINIMAP_PLATE_WIDTH, height: MINIMAP_PLATE_HEIGHT };
   const showNavigator = model.view.navigator !== false && (model.view.navigatorExpanded || (!model.view.scaleWarning && !model.view.smallWindow));
   const listLines = model.rows.flatMap((row) => wrapText(message('ui.listItem', { name: row.label, id: row.selection.id }), 146)
     .map((line) => ({ text: line, selection: row.selection })));
@@ -1488,7 +1587,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   const readouts = placeReadouts(model.readouts.slice(1, 4).map((line) => ({ ...line, label: `${line.label}: `, large: false, newRow: false })), { width, height });
   const progress = Math.floor(((model.view.tick ?? 0) % SEASON_TICKS) * 100 / SEASON_TICKS);
   text.push({ text: message('ui.seasonProgress', { progress }), rect: { x: 330, y: 4, width: 130, height: LINE_STEP } });
-  text.push({ text: translate(model.view.paused ? 'ui.paused' : 'ui.running'), rect: { x: 480, y: 4, width: 150, height: LINE_STEP } });
+  text.push({ role: 'pace', text: translate(model.view.paused ? 'ui.paused' : 'ui.running'), rect: { x: 480, y: 4, width: 150, height: LINE_STEP } });
   const actions = [
     ['pause', translate(model.view.ended ? 'match.ended' : model.view.paused ? 'ui.resume' : 'ui.pause'), 142],
     ['speed1', speedLabel(1, model.view.speed), 30], ['speed2', speedLabel(2, model.view.speed), 30],
@@ -1496,6 +1595,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     ['navigator', translate(showNavigator ? 'ui.hideNavigator' : 'ui.showNavigator'), 100],
     ['center', translate('ui.center'), 80],
     ['session', message('ui.options', { scale }), 110],
+    ['reference', translate('ref.open'), 102],
   ] as const;
   let x = 4;
   for (const [action, label, buttonWidth] of actions) {
@@ -1518,165 +1618,245 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     addScrollButtons(buttons, list, 'list', listScroll);
   }
 
-  // The detail panel is two columns and a strip: what is selected on the left,
-  // what can be done about it on the right, and the numbered groups underneath.
-  // A click has to land on the rectangle that was drawn, so both are placed once.
-  const inner = 4;
-  // The group strip is as many rows as nine digits actually need: a bound group
-  // that is not drawn is a bound group a Player cannot recall.
-  const stripWidth = detail.width - 2 * inner - 46;
-  const groupStrip = model.groups.length === 0 ? 0 : groupStripRows(model.groups, stripWidth) * LINE_STEP + 4;
-  const columnTop = detail.y + inner;
-  const columnHeight = detail.height - 2 * inner - groupStrip;
-  // Commands before prose: the card gets the wider half, because a picture and
-  // its one word do not wrap the way a sentence does.
-  const textWidth = Math.max(140, Math.floor((detail.width - 3 * inner) * 0.44));
-  const textX = detail.x + inner;
-  const commandX = textX + textWidth + inner;
-  const commandWidth = Math.max(80, detail.width - textWidth - 3 * inner);
-
-  let textY = columnTop;
-  let secondary: readonly string[] = [];
-  if (model.detail !== null) {
-    const main = [model.detail.title, ...model.detail.priority.flatMap((index) => {
-      const line = model.detail!.lines[index];
-      return line ? [`${line.label}: ${line.value}`] : [];
-    })];
-    for (const word of main.flatMap((line) => wrapText(line, textWidth))) {
-      priority.push({ text: word, rect: { x: textX, y: textY, width: textWidth, height: LINE_STEP } });
-      textY += LINE_STEP;
+  let detailScroll: HudScroll;
+  let commandScroll: HudScroll = { offset: 0, max: 0, page: 1 };
+  if (compactOverview) {
+    const inset = 6;
+    const contentWidth = detail.width - 2 * inset;
+    const tabWidth = Math.floor((contentWidth - 4) / 3);
+    for (const [index, tab] of SETTLEMENT_TABS.entries()) {
+      tabs.push({ tab, rect: { x: detail.x + inset + index * (tabWidth + 2), y: detail.y + 4, width: tabWidth, height: 16 } });
     }
-    secondary = compactLines(model.detail.lines.filter((_line, index) => !model.detail?.priority.includes(index))
-      .map((line) => `${line.label}: ${line.value}`), textWidth);
-    if (model.group !== null && model.group.exceptions.length > 0) {
-      text.push({ text: translate('ui.exceptions'), rect: { x: textX, y: textY, width: textWidth, height: LINE_STEP } });
-      textY += LINE_STEP;
-      for (const exception of model.group.exceptions) {
-        if (textY + LINE_STEP > columnTop + columnHeight) break;
-        const rect = { x: textX, y: textY, width: textWidth, height: LINE_STEP };
-        text.push({ text: message('ui.exception', { name: exception.name, reason: exception.reason }), rect });
-        exceptions.push({ selection: { kind: 'squad', id: exception.squad }, rect });
+    const page = model.view.settlementPage ?? 'summary';
+    const heading = page === 'summary' ? model.detail!.title
+      : `${translate(page === 'balance' ? 'economy.balanceTitle' : 'economy.worksTitle')} - ${model.detail!.title}`;
+    priority.push({ text: heading, rect: { x: detail.x + inset, y: detail.y + 24, width: contentWidth, height: LINE_STEP } });
+    const source = page === 'summary' ? model.detail!.summary! : page === 'balance' ? model.detail!.ledger! : model.detail!.works!;
+    const prose = source.flatMap((line) => wrapText(`${line.label}: ${line.value}`, contentWidth));
+    const room = detail.height - groupStrip - 64;
+    detailScroll = page === 'summary' ? { offset: 0, max: 0, page: prose.length }
+      : scrollWindow(model.view.detailOffset ?? 0, prose.length, room);
+    for (const [index, word] of prose.slice(detailScroll.offset, detailScroll.offset + detailScroll.page).entries()) {
+      text.push({ text: word, rect: { x: detail.x + inset, y: detail.y + 38 + index * LINE_STEP, width: contentWidth, height: LINE_STEP } });
+    }
+    const actions: readonly { action: HudAction; text: string; enabled: boolean }[] = page === 'summary'
+      ? [{ action: 'settlement:balance', text: translate('economy.balanceTitle'), enabled: true },
+        { action: 'settlement:works', text: translate('economy.worksTitle'), enabled: true }]
+      : [{ action: 'settlement:summary', text: translate('tab.overview'), enabled: true },
+        { action: 'detailPrevious', text: translate('ui.previous'), enabled: detailScroll.offset > 0 },
+        { action: 'detailNext', text: translate('ui.next'), enabled: detailScroll.offset < detailScroll.max }];
+    const actionWidth = Math.floor((contentWidth - (actions.length - 1) * 2) / actions.length);
+    for (const [index, action] of actions.entries()) {
+      buttons.push({ ...action, rect: { x: detail.x + inset + index * (actionWidth + 2), y: detail.y + detail.height - groupStrip - 22, width: actionWidth, height: 18 } });
+    }
+  } else {
+    // The detail panel is two columns and a strip: what is selected on the left,
+    // what can be done about it on the right, and the numbered groups underneath.
+    // A click has to land on the rectangle that was drawn, so both are placed once.
+    // The group strip is as many rows as nine digits actually need: a bound group
+    // that is not drawn is a bound group a Player cannot recall.
+    const columnTop = detail.y + inner;
+    const columnHeight = detail.height - 2 * inner - groupStrip;
+    // Commands before prose: the card gets the wider half, because a picture and
+    // its one word do not wrap the way a sentence does.
+    const economicPage = model.selected?.kind === 'settlement';
+    const textWidth = Math.max(140, Math.floor((detail.width - 3 * inner) * (economicPage ? 0.30 : 0.44)));
+    const commandX = textX + textWidth + inner;
+    const commandWidth = Math.max(80, detail.width - textWidth - 3 * inner);
+
+    let textY = columnTop;
+    let secondary: readonly string[] = [];
+    if (model.detail !== null) {
+      const main = [model.detail.title, ...model.detail.priority.flatMap((index) => {
+        const line = model.detail!.lines[index];
+        return line ? [`${line.label}: ${line.value}`] : [];
+      })];
+      for (const word of main.flatMap((line) => wrapText(line, textWidth))) {
+        priority.push({ text: word, rect: { x: textX, y: textY, width: textWidth, height: LINE_STEP } });
         textY += LINE_STEP;
       }
+      const inspectedOffer = model.commands.find((order) => order.id === model.view.hoveredOrder);
+      if (inspectedOffer && (inspectedOffer.kind === 'build' || inspectedOffer.kind === 'recruit')) {
+        secondary = wrapText(`${inspectedOffer.label}. ${inspectedOffer.reason ?? ''} ${inspectedOffer.note ?? ''}`, textWidth);
+      } else {
+        secondary = compactLines(model.detail.lines.filter((_line, index) => !model.detail?.priority.includes(index))
+          .map((line) => `${line.label}: ${line.value}`), textWidth);
+      }
+      if (model.group !== null && model.group.exceptions.length > 0) {
+        text.push({ text: translate('ui.exceptions'), rect: { x: textX, y: textY, width: textWidth, height: LINE_STEP } });
+        textY += LINE_STEP;
+        for (const exception of model.group.exceptions) {
+          if (textY + LINE_STEP > columnTop + columnHeight) break;
+          const rect = { x: textX, y: textY, width: textWidth, height: LINE_STEP };
+          text.push({ text: message('ui.exception', { name: exception.name, reason: exception.reason }), rect });
+          exceptions.push({ selection: { kind: 'squad', id: exception.squad }, rect });
+          textY += LINE_STEP;
+        }
+      }
+    } else if (model.commands.length === 0) {
+      text.push({ text: translate('ui.selectEntity'), rect: { x: textX, y: textY, width: textWidth, height: LINE_STEP } });
+      textY += LINE_STEP;
     }
-  } else if (model.commands.length === 0) {
-    text.push({ text: translate('ui.selectEntity'), rect: { x: textX, y: textY, width: textWidth, height: LINE_STEP } });
-    textY += LINE_STEP;
-  }
-  const secondaryTop = textY;
-  const secondaryRoom = Math.max(0, columnTop + columnHeight - secondaryTop);
-  const detailScroll = scrollWindow(model.view.detailOffset ?? 0, secondary.length,
-    secondary.length * LINE_STEP > secondaryRoom ? Math.max(0, secondaryRoom - 2 * LINE_STEP) : secondaryRoom);
-  for (const [index, word] of secondary.slice(detailScroll.offset, detailScroll.offset + detailScroll.page).entries()) {
-    text.push({ text: word, rect: { x: textX, y: secondaryTop + index * LINE_STEP, width: textWidth, height: LINE_STEP } });
-  }
-  addScrollButtons(buttons, { ...detail, x: textX - 1, width: textWidth + 2, height: detail.height - groupStrip },
-    'detail', detailScroll);
+    const secondaryTop = textY;
+    const secondaryRoom = Math.max(0, columnTop + columnHeight - secondaryTop);
+    detailScroll = scrollWindow(model.view.detailOffset ?? 0, secondary.length,
+      secondary.length * LINE_STEP > secondaryRoom ? Math.max(0, secondaryRoom - 2 * LINE_STEP) : secondaryRoom);
+    for (const [index, word] of secondary.slice(detailScroll.offset, detailScroll.offset + detailScroll.page).entries()) {
+      text.push({ text: word, rect: { x: textX, y: secondaryTop + index * LINE_STEP, width: textWidth, height: LINE_STEP } });
+    }
+    addScrollButtons(buttons, { ...detail, x: textX - 1, width: textWidth + 2, height: detail.height - groupStrip },
+      'detail', detailScroll);
 
-  // The commands column: the settlement's pages first, then what the last order
-  // did, then the offers themselves.
-  let commandY = columnTop;
-  const statusTop = commandY;
-  if (model.selected?.kind === 'settlement') {
-    const tabWidth = Math.floor((commandWidth - (SETTLEMENT_TABS.length - 1) * 2) / SETTLEMENT_TABS.length);
-    for (const [index, tab] of SETTLEMENT_TABS.entries()) {
-      tabs.push({ tab, rect: { x: commandX + index * (tabWidth + 2), y: commandY, width: tabWidth, height: LINE_STEP + 3 } });
+    // The commands column: the settlement's pages first, then what the last order
+    // did, then the offers themselves.
+    let commandY = columnTop;
+    const statusTop = commandY;
+    if (model.selected?.kind === 'settlement') {
+      const tabWidth = Math.floor((commandWidth - (SETTLEMENT_TABS.length - 1) * 2) / SETTLEMENT_TABS.length);
+      for (const [index, tab] of SETTLEMENT_TABS.entries()) {
+        tabs.push({ tab, rect: { x: commandX + index * (tabWidth + 2), y: commandY, width: tabWidth, height: LINE_STEP + 3 } });
+      }
+      commandY += LINE_STEP + 5;
+      if (model.tab === 'construction') {
+        const categoryWidth = Math.floor((commandWidth - 2) / 2);
+        for (const [index, category] of CONSTRUCTION_CATEGORIES.entries()) {
+          buttons.push({ action: `category:${category.id}`, text: translate(category.label), enabled: true,
+            rect: { x: commandX + index % 2 * (categoryWidth + 2), y: commandY + Math.floor(index / 2) * 15,
+              width: categoryWidth, height: 14 } });
+        }
+        commandY += 32;
+      }
+      // The recruitment page buys a number of Squads, not one: the count is one
+      // public control with two buttons, so a pointer and the F6/Tab focus reach
+      // the same choice (ADR-0026). It is presentation memory, never state.
+      if (model.tab === 'recruitment') {
+        const buttonWidth = Math.max(14, Math.floor(commandWidth / 6));
+        const countWidth = commandWidth - 2 * (buttonWidth + 2);
+        buttons.push({
+          action: 'recruitFewer', text: '-', enabled: model.recruitCount > 1,
+          rect: { x: commandX, y: commandY, width: buttonWidth, height: LINE_STEP + 3 },
+        });
+        text.push({
+          text: message('ui.countValue', { label: translate('ui.recruitCount'), count: model.recruitCount }),
+          rect: { x: commandX + buttonWidth + 2, y: commandY, width: countWidth, height: LINE_STEP },
+        });
+        buttons.push({
+          action: 'recruitMore', text: '+', enabled: model.recruitCount < MAX_RECRUIT_COUNT,
+          rect: { x: commandX + commandWidth - buttonWidth, y: commandY, width: buttonWidth, height: LINE_STEP + 3 },
+        });
+        commandY += LINE_STEP + 5;
+      }
+      if (model.tab === 'construction' && model.commands.length === 0) {
+        for (const word of wrapText(translate('economy.noOffers'), commandWidth)) {
+          text.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
+          commandY += LINE_STEP;
+        }
+      }
     }
-    commandY += LINE_STEP + 5;
-  }
-  if (model.orders.notice !== null) {
-    for (const word of wrapText(model.orders.notice, commandWidth).slice(0, 2)) {
-      status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
-      commandY += LINE_STEP;
+    if (model.orders.notice !== null) {
+      for (const word of wrapText(model.orders.notice, commandWidth).slice(0, 2)) {
+        status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
+        commandY += LINE_STEP;
+      }
     }
-  }
-  const armed = model.orders.armed;
-  if (armed !== null) {
-    const words = wrapText(`${message('ui.armed', { name: armed.label })} - ${armed.targetHint ?? ''}`, commandWidth);
-    for (const word of words) {
-      status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
-      commandY += LINE_STEP;
+    const armed = model.orders.armed;
+    if (armed !== null) {
+      const words = wrapText(`${message('ui.armed', { name: armed.label })} - ${armed.targetHint ?? ''}`, commandWidth);
+      for (const word of words) {
+        status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
+        commandY += LINE_STEP;
+      }
     }
-  }
-  const last = model.orders.last;
-  const inspected = model.commands.find((order) => order.id === model.view.hoveredOrder);
-  const inspectHint = model.selected?.kind === 'squad' && inspected !== undefined && inspected.label !== last?.name && armed === null && model.orders.notice === null;
-  if (last !== null && !inspectHint && armed === null && model.orders.notice === null) {
-    const words = wrapText(message('ui.submitted', { name: last.name }), commandWidth);
-    for (const word of words) {
-      status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
-      commandY += LINE_STEP;
+    const last = model.orders.last;
+    const inspected = model.commands.find((order) => order.id === model.view.hoveredOrder);
+    const inspectHint = model.selected?.kind === 'squad' && inspected !== undefined && inspected.label !== last?.name && armed === null && model.orders.notice === null;
+    if (last !== null && !inspectHint && armed === null && model.orders.notice === null) {
+      const words = wrapText(message('ui.submitted', { name: last.name }), commandWidth);
+      for (const word of words) {
+        status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
+        commandY += LINE_STEP;
+      }
     }
-  }
-  if (model.orders.pending > 0) {
-    const pending = message(model.view.paused ? 'ui.pendingPaused' : 'ui.pending', { count: model.orders.pending });
-    for (const word of wrapText(pending, commandWidth)) {
-      status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
-      commandY += LINE_STEP;
+    if (model.orders.pending > 0) {
+      const pending = message(model.view.paused ? 'ui.pendingPaused' : 'ui.pending', { count: model.orders.pending });
+      for (const word of wrapText(pending, commandWidth)) {
+        status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
+        commandY += LINE_STEP;
+      }
     }
-  }
-  if (model.orders.backToGroup) {
-    buttons.push({ action: 'groupBack', text: translate('cmd.groupBack'), enabled: true,
-      rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP + 3 } });
-    commandY += LINE_STEP + 5;
-  }
-  const hovered = inspected;
-  if ((status.length === 0 || inspectHint) && model.selected?.kind === 'squad') {
-    const hint = hovered === undefined ? translate('ui.commandHelp')
-      : `${hovered.label}${hovered.shortcut === null ? '' : ` [${hovered.shortcut}]`} - ${hovered.reason ?? hovered.targetHint ?? hovered.note ?? translate('ui.commandNow')}`;
-    for (const word of wrapText(hint, commandWidth).slice(0, 2)) {
-      status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
-      commandY += LINE_STEP;
+    if (model.orders.backToGroup) {
+      buttons.push({ action: 'groupBack', text: translate('cmd.groupBack'), enabled: true,
+        rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP + 3 } });
+      commandY += LINE_STEP + 5;
     }
-  }
-  if (model.selected?.kind === 'squad') commandY = Math.max(commandY, statusTop + 3 * LINE_STEP);
-  // The card: rows of pictures for a Squad's verbs, one full-width row per named
-  // thing for a settlement's pages. The two are different questions — "what can
-  // these men do?" and "what can this town raise?" — so they are laid out
-  // differently rather than squeezed into one shape. A Squad's rows *are* the
-  // kinds of decision: motion, orders and formation, and the Siege.
-  const commandArea = Math.max(0, columnTop + columnHeight - commandY);
-  const settlementPage = model.selected?.kind === 'settlement';
-  const cardRows = settlementPage
-    ? model.commands.map((order) => [order])
-    : commandRows(model.commands);
-  const rowHeight = settlementPage ? ECONOMY_ROW_HEIGHT : COMMAND_ROW_HEIGHT;
-  let rowsFit = Math.max(1, Math.floor(commandArea / rowHeight));
-  if (cardRows.length > rowsFit) rowsFit = Math.max(1, Math.floor((commandArea - 2 * LINE_STEP) / rowHeight));
-  const commandScroll = paginate(model.view.commandOffset ?? 0, cardRows.length, rowsFit);
-  const visibleRows = cardRows.slice(commandScroll.offset, commandScroll.offset + commandScroll.page);
-  // The card is anchored to the bottom of its column, the way a command card
-  // sits under the hand it is used with: the words that answer a click grow
-  // downwards from the top and the pictures stay where a Player last pressed.
-  const reservedForScroll = commandScroll.max > 0 ? 2 * LINE_STEP : 0;
-  const gridTop = commandY + Math.max(0, commandArea - reservedForScroll - visibleRows.length * rowHeight);
-  for (const [row, items] of visibleRows.entries()) {
-    const cellWidth = Math.max(1, Math.floor(commandWidth / items.length));
-    for (const [column, order] of items.entries()) {
-      commands.push({
-        order,
-        rect: {
-          x: commandX + column * cellWidth,
-          y: gridTop + row * rowHeight,
-          width: cellWidth - COMMAND_GAP,
-          height: rowHeight - COMMAND_GAP,
-        },
-      });
+    const hovered = inspected;
+    if ((status.length === 0 || inspectHint) && model.selected?.kind === 'squad') {
+      const hint = hovered === undefined ? translate('ui.commandHelp')
+        : `${hovered.label}${hovered.shortcut === null ? '' : ` [${hovered.shortcut}]`} - ${hovered.reason ?? hovered.targetHint ?? hovered.note ?? translate('ui.commandNow')}`;
+      for (const word of wrapText(hint, commandWidth).slice(0, 2)) {
+        status.push({ text: word, rect: { x: commandX, y: commandY, width: commandWidth, height: LINE_STEP } });
+        commandY += LINE_STEP;
+      }
     }
-    // A rule above every row but the card's own first: the motion commands, the
-    // orders and the Siege are different kinds of decision, and the rule says so.
-    if (!settlementPage && commandScroll.offset + row > 0) {
-      commandRules.push({
-        x: commandX,
-        y: gridTop + row * rowHeight - Math.ceil(COMMAND_GAP / 2),
-        width: commandWidth,
-        height: 1,
-      });
+    if (model.selected?.kind === 'squad') commandY = Math.max(commandY, statusTop + 3 * LINE_STEP);
+    // The card: rows of pictures for a Squad's verbs, one full-width row per named
+    // thing for a settlement's pages. The two are different questions — "what can
+    // these men do?" and "what can this town raise?" — so they are laid out
+    // differently rather than squeezed into one shape. A Squad's rows *are* the
+    // kinds of decision: motion, orders and formation, and the Siege.
+    const commandArea = Math.max(0, columnTop + columnHeight - commandY);
+    const settlementPage = model.selected?.kind === 'settlement';
+    const cardRows = settlementPage
+      ? model.commands.reduce<OrderOption[][]>((rows, order, index) => {
+        if (index % 2 === 0) rows.push([]);
+        rows[rows.length - 1]!.push(order);
+        return rows;
+      }, [])
+      : commandRows(model.commands);
+    const rowHeight = settlementPage ? ECONOMY_ROW_HEIGHT : COMMAND_ROW_HEIGHT;
+    let rowsFit = Math.max(1, Math.floor(commandArea / rowHeight));
+    if (cardRows.length > rowsFit) rowsFit = Math.max(1, Math.floor((commandArea - 2 * LINE_STEP) / rowHeight));
+    commandScroll = paginate(model.view.commandOffset ?? 0, cardRows.length, rowsFit);
+    const visibleRows = cardRows.slice(commandScroll.offset, commandScroll.offset + commandScroll.page);
+    // The card is anchored to the bottom of its column, the way a command card
+    // sits under the hand it is used with: the words that answer a click grow
+    // downwards from the top and the pictures stay where a Player last pressed.
+    const reservedForScroll = commandScroll.max > 0 ? 2 * LINE_STEP : 0;
+    const gridTop = commandY + Math.max(0, commandArea - reservedForScroll - visibleRows.length * rowHeight);
+    for (const [row, items] of visibleRows.entries()) {
+      const cellWidth = Math.max(1, Math.floor(commandWidth / (settlementPage ? 2 : items.length)));
+      for (const [column, order] of items.entries()) {
+        commands.push({
+          order,
+          rect: {
+            x: commandX + column * cellWidth,
+            y: gridTop + row * rowHeight,
+            width: cellWidth - COMMAND_GAP - (settlementPage ? 20 : 0),
+            height: rowHeight - COMMAND_GAP,
+          },
+        });
+        if (settlementPage) {
+          buttons.push({ action: `reference:${order.kind === 'build' ? 'building' : 'squad'}:${order.subject}`,
+            text: translate('ref.info'), enabled: true,
+            rect: { x: commandX + (column + 1) * cellWidth - 19, y: gridTop + row * rowHeight, width: 18, height: rowHeight - COMMAND_GAP } });
+        }
+      }
+      // A rule above every row but the card's own first: the motion commands, the
+      // orders and the Siege are different kinds of decision, and the rule says so.
+      if (!settlementPage && commandScroll.offset + row > 0) {
+        commandRules.push({
+          x: commandX,
+          y: gridTop + row * rowHeight - Math.ceil(COMMAND_GAP / 2),
+          width: commandWidth,
+          height: 1,
+        });
+      }
     }
-  }
-  if (commandScroll.max > 0) {
-    addScrollButtons(buttons, { x: commandX, y: commandY, width: commandWidth, height: commandArea },
-      'commands', commandScroll);
+    if (commandScroll.max > 0) {
+      addScrollButtons(buttons, { x: commandX, y: commandY, width: commandWidth, height: commandArea },
+        'commands', commandScroll);
+    }
+
   }
 
   // The numbered groups, along the bottom of the panel: a Player reads what a
@@ -1732,7 +1912,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     const buttonY = guidePanel.y + guidePanel.height - PADDING - guideButtonsHeight;
     for (const action of guide.actions) {
       const width = Math.min(guideBodyWidth, measureText(action.text) + 2 * PADDING + 2);
-      guideButtons.push({ action: action.action, text: action.text, enabled: true,
+      guideButtons.push({ action: action.action, text: action.text, enabled: action.enabled ?? true,
         rect: { x: buttonX, y: buttonY, width, height: guideButtonsHeight } });
       buttonX += width + 3;
     }
@@ -1813,7 +1993,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
  * true now, `>` is something that just happened and can be acted on. A notice
  * whose target has gone says so instead of pretending to still point somewhere.
  */
-function noticeLine(notice: Notice): string {
+export function noticeLine(notice: Notice): string {
   const text = notice.detail === null
     ? notice.label
     : message('notice.withDetail', { label: notice.label, detail: notice.detail });

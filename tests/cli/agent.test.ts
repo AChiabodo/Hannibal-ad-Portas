@@ -56,7 +56,7 @@ describe('an outside process plays a whole Match over the protocol', () => {
     expect(run.agent.commands).toBe(1);
     expect(run.log[0]).toMatchObject({
       tick: 0,
-      command: { kind: 'recruit', faction: 'carthage', squadType: 'libyan-spear' },
+      command: { kind: 'recruit', faction: 'carthage', squadType: 'libyan-spear', men: 24 },
     });
   }, 20_000);
 
@@ -73,7 +73,7 @@ describe('an outside process plays a whole Match over the protocol', () => {
     expect(run.result).toMatchObject({
       kind: 'victory',
       winner: 'rome',
-      reason: { kind: 'stronghold', path: 'assault' },
+      reason: { kind: 'stronghold', path: 'blockade' },
     });
     expect(run.agent.status).toBe('played');
     expect(run.agent.commands).toBeGreaterThan(0);

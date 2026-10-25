@@ -77,6 +77,7 @@ const VISIBLE: EconomyVisible = {
       x: 12,
       y: 8,
       men: 120,
+      capacity: 120,
       figures: 120,
       formation: 'line',
       facing: 'south',
@@ -89,6 +90,7 @@ const VISIBLE: EconomyVisible = {
       engaged: true,
       payroll: 3,
       unpaid: 1,
+      bearing: 0,
       garrison: null,
       home: 0,
       inTerritory: true,
@@ -100,6 +102,7 @@ const VISIBLE: EconomyVisible = {
       x: 40,
       y: 41,
       men: 114,
+      capacity: 120,
       figures: 114,
       formation: 'column',
       facing: 'north',
@@ -112,6 +115,7 @@ const VISIBLE: EconomyVisible = {
       engaged: false,
       payroll: 4,
       unpaid: 0,
+      bearing: 0,
       garrison: null,
       home: 0,
       inTerritory: true,
@@ -161,10 +165,10 @@ describe('the HUD model', () => {
 
     expect(model.detail?.title).toBe('Insediamento minore 2');
     expect(words).toContain(`${translate('ui.tier')} 2`);
-    expect(words).toContain(`${translate('ui.population')} 14`);
-    expect(words).toContain(`${translate('resource.grain')} 7`);
-    expect(words).toContain(`${translate('resource.iron')} 4`);
-    expect(words).toContain(`${translate('ui.labourAuto')} 3/3/2/0`);
+    expect(words).toContain(`${translate('ui.population')} 14/12 abitanti`);
+    expect(words).toContain(`${translate('resource.grain')} 7 / 30`);
+    expect(words).toContain(`${translate('resource.iron')} 4 / 30`);
+    expect(words).toContain('Lavoro sui terreni Grano 3, Legname 3, Pietra 2, Ferro 0');
     expect(words.join('\n')).toContain('Villa');
     expect(words.join('\n')).toContain(translate('ui.workBuilding'));
   });
@@ -187,6 +191,15 @@ describe('the HUD model', () => {
     expect(words).toContain(`${translate('ui.supply')} ${translate('supply.inTerritory')}`);
     expect(words).toContain(`${translate('ui.quarters')} ${translate('quarters.field')}`);
     expect(words).toContain(`${translate('ui.engaged')} ${translate('ui.yes')}`);
+  });
+
+  it('reads survivors against the capacity the Squad was recruited with', () => {
+    const hurt = { ...VISIBLE.squads[0]!, men: 30, capacity: 60, payroll: 4 };
+    const model = hudModel({ ...VISIBLE, squads: [hurt] }, STRONGHOLDS, { kind: 'squad', id: 1 });
+    const words = model.detail?.lines.map(lineText) ?? [];
+
+    expect(words).toContain(`${translate('ui.men')} 30/60`);
+    expect(words).toContain(`${translate('ui.capacity')} 60`);
   });
 
   it('reads a Squad’s destination and refusal as the answer to the click it gave', () => {
@@ -328,7 +341,7 @@ describe('the HUD on screen', () => {
   it('pins an active Work and makes all wrapped secondary text reachable', () => {
     const selected = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 2 });
     expect(hudLayout(selected, SIZE).priority.map((line) => line.text).join(' '))
-      .toContain('Cantieri: Villa - In costruzione (120 tick)');
+      .toContain('Villa: In costruzione: 12 s con personale');
     const long = { label: 'Una descrizione molto lunga del lavoro', value: '1234567890123456789012345678901234567890' };
     const model = { ...selected, detail: { ...selected.detail!, lines: [...selected.detail!.lines, long] } };
     const reached: string[] = [];
@@ -472,6 +485,7 @@ describe('the HUD on screen', () => {
         x: index,
         y: 40,
         men: 120,
+        capacity: 120,
         figures: 120,
         formation: 'line',
         facing: 'south',
@@ -484,6 +498,7 @@ describe('the HUD on screen', () => {
         engaged: false,
         payroll: 3,
         unpaid: 0,
+        bearing: 0,
         garrison: null,
         home: 0,
         inTerritory: true,
@@ -526,7 +541,7 @@ it('keeps desktop navigation and contextual detail apart at readable 2x scale', 
     { desktop: true, uiScale: 2, navigator: true });
   const layout = hudLayout(model, { width: 1280, height: 720 });
   expect(layout.detail.x).toBe(0);
-  expect(layout.detail.width).toBeGreaterThan(800);
+  expect(layout.detail.width).toBeLessThanOrEqual(800);
   expect(layout.minimap.x).toBeGreaterThanOrEqual(layout.detail.width);
   expect(layout.list.y + layout.list.height).toBeLessThanOrEqual(layout.detail.y);
   expect(layout.buttons.some((button) => button.action === 'center')).toBe(true);
@@ -626,6 +641,22 @@ describe('the contextual command panel', () => {
     expect(layout.tabs.map((tab) => tab.tab)).toEqual(['overview', 'construction', 'recruitment']);
     expect(model.commands.map((order) => order.id)).toContain('build:farm');
     expect(model.commands.every((order) => order.reason === null || order.enabled === false)).toBe(true);
+  });
+
+  it('offers every size on the recruitment page and a count the Player can change', () => {
+    const model = hudModel(VISIBLE, STRONGHOLDS, { kind: 'settlement', id: 0 }, [], DESKTOP_VIEW,
+      { faction: 'rome', tab: 'recruitment', recruitCount: 2 });
+    const layout = hudLayout(model, DESKTOP);
+    const ids = model.commands.map((order) => order.id);
+
+    expect(ids).toContain('recruit:hastati:24');
+    expect(ids).toContain('recruit:hastati:60');
+    expect(ids).toContain('recruit:hastati:120');
+    expect(model.recruitCount).toBe(2);
+    expect(model.commands.find((order) => order.id === 'recruit:hastati:24')).toMatchObject({ recruit: { men: 24, count: 2 } });
+    // Both ends of the count are real controls, reached by a pointer and by the
+    // F6/Tab focus that walks `layout.buttons`.
+    expect(layout.buttons.map((button) => button.action)).toEqual(expect.arrayContaining(['recruitFewer', 'recruitMore']));
   });
 
   it('shows numbered control groups as visible controls', () => {
@@ -795,7 +826,8 @@ it('keeps every numbered control group reachable, wrapping the chips rather than
   // A detail long enough to scroll, so the column's own scroll buttons exist in
   // the same band as the group strip: the two must not share a pixel.
   const long = Array.from({ length: 30 }, (_unused, index) => ({ label: `Riga ${String(index)}`, value: 'valore' }));
-  const model = { ...selected, detail: { ...selected.detail!, lines: [...selected.detail!.lines, ...long] } };
+  const model = { ...selected, view: { ...selected.view, settlementPage: 'works' as const },
+    detail: { ...selected.detail!, works: [...selected.detail!.works!, ...long] } };
   const layout = hudLayout(model, DESKTOP);
 
   expect(layout.groups.map((group) => group.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);

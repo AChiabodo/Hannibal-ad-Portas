@@ -26,6 +26,7 @@ import { failBoot, publishHooks, requireMount } from '../src/page.ts';
 const FACTION: Faction = 'rome';
 const SEED = 7;
 const params = new URLSearchParams(location.search);
+let captureSquad: number | null = null;
 const viewedFaction: Faction = params.get('view') === 'carthage' ? 'carthage' : 'rome';
 
 bootRenderer(requireMount('app'), {
@@ -36,9 +37,13 @@ bootRenderer(requireMount('app'), {
     ...siegeMatchRules,
     createWorld(seed: number): SiegeWorld {
       const world = siegeMatchRules.createWorld(seed);
-      deploy(world);
       const stage = params.get('stage');
-      if (stage !== null) {
+      if (stage === 'neutral') {
+        const site = world.map.settlements[0];
+        const tile = site && around(world.map, site, 1)[0];
+        if (tile) captureSquad = musterSquad(world.economy, world.map, { faction: viewedFaction, squadType: viewedFaction === 'rome' ? 'hastati' : 'libyan-spear', x: tile.x, y: tile.y }).id;
+      } else deploy(world);
+      if (stage !== null && stage !== 'neutral') {
         const target = world.siege.strongholds[1]!;
         const ids = world.economy.squads.filter((squad) => squad.owner === 0).map(({ id }) => id);
         applySiegeCommand(world, stage === 'blockade' ? blockade('rome', ids, target) : assault('rome', ids, target), routeCacheFor(world.map));
@@ -57,6 +62,7 @@ bootRenderer(requireMount('app'), {
     // Paused before the page publishes anything: the scene a test reads is the scene
     // the fixture arranged, and one frame of wall clock is not part of it.
     view.pause();
+    if (captureSquad !== null) { view.select({ kind: 'squad', id: captureSquad }); view.centerSelection(); }
     publishHooks({ boot: { booted: true, render: view.probe }, game: view, view, atelier: null });
   })
   .catch((error: unknown) => failBoot(error, 'app'));

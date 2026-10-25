@@ -13,7 +13,7 @@ const STRONGHOLD = 1;
 const SQUAD = 2;
 
 /**
- * What a remembered enemy is, as this rules layer names it: an open settlement or
+ * What a remembered sighting is: an open settlement, held or unowned, or
  * a Stronghold, or a Squad with the type index it was last seen as.
  *
  * The fog's memory holds one integer per contact (ADR-0006), so a contact's kind
@@ -45,6 +45,8 @@ export interface KnownContact {
   readonly y: number;
   readonly seen: number;
   readonly type: string | null;
+  /** A village nobody holds, confirmed by current vision only; never a hidden ownership report. */
+  readonly unowned?: true;
 }
 
 /** Writes knowledge during a tick, never while somebody reads an Observation. */
@@ -58,7 +60,7 @@ export function refreshSiegeFog(world: SiegeWorld, tick: number): void {
       .map((squad) => ({ id: squad.id, kind: contactCode({ kind: 'squad', type: squad.type }),
         x: squad.x, y: squad.y }));
     for (const settlement of world.economy.settlements) {
-      if (settlement.owner === UNOWNED || settlement.owner === owner) continue;
+      if (settlement.owner === owner) continue;
       sightings.push({ id: -settlement.id - 1,
         kind: contactCode({ kind: world.siege.strongholds.includes(settlement.id) ? 'stronghold' : 'settlement' }),
         x: settlement.x, y: settlement.y });
@@ -79,11 +81,14 @@ export function refreshSiegeFog(world: SiegeWorld, tick: number): void {
 export function siegeContacts(world: SiegeWorld, faction: Faction): KnownContact[] {
   return world.fog[faction].contacts.map((contact) => {
     const kind = contactKind(contact.kind);
+    const id = contact.id < 0 ? -contact.id - 1 : contact.id;
     return {
       kind: kind.kind,
-      id: contact.id < 0 ? -contact.id - 1 : contact.id,
+      id,
       x: contact.x, y: contact.y, seen: contact.seen,
       type: kind.kind === 'squad' ? squadTypeOf(kind.type)?.id ?? 'unknown' : null,
+      ...(kind.kind === 'settlement' && world.fog[faction].visible[contact.y * MAP_WIDTH + contact.x] === 1 &&
+        world.economy.settlements[id]?.owner === UNOWNED ? { unowned: true as const } : {}),
     };
   });
 }

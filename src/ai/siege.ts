@@ -1,9 +1,10 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
-import type { Behaviour, Candidate } from './registry.ts';
+import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
 import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
+import type { AssaultReadiness } from './assault.ts';
 
 type Faction = Observation<unknown>['faction'];
 
@@ -11,6 +12,8 @@ interface SiegeSquad extends Site {
   readonly id: number;
   readonly type: string;
   readonly men: number;
+  /** The men it was recruited with: what its survivors are read against. */
+  readonly capacity: number;
   readonly morale: number;
   readonly routing: boolean;
   readonly garrison: number | null;
@@ -21,7 +24,8 @@ interface VisibleSiegeFront {
   readonly settlement: number;
   readonly breached: boolean;
   readonly besieger: Faction | null;
-  readonly ram: { readonly built: boolean } | null;
+  readonly siege?: 'assault' | 'blockade' | null;
+  readonly ram: { readonly built: boolean; readonly hp?: number; readonly remaining?: number } | null;
   readonly garrison: number;
 }
 
@@ -39,6 +43,7 @@ export interface SiegeObservation {
 
 /** Content and constants supplied at composition; the AI imports no simulation value. */
 export interface SiegeContent {
+  readonly canContinueAssault?: AssaultReadiness;
   /** Whether a Faction can assault at all: the ram is Rome's alone (ADR-0008). */
   readonly canAssault: (faction: Faction) => boolean;
   /** What laying a ram down costs from the Faction's one treasury. */
@@ -51,8 +56,16 @@ export interface SiegeContent {
   readonly garrisonEstimate: number;
   /** The tick rate the age limits are counted in, shared with the other planning policies. */
   readonly ticksPerSecond: number;
-  /** The public roster: nominal strength and morale, for pricing an observed enemy. */
-  readonly squadTypes: readonly { readonly id: string; readonly strength: number; readonly morale: number }[];
+  /**
+   * The public roster: nominal strength, what a man is worth in a blow, and
+   * nominal morale, for pricing an observed enemy (#66).
+   */
+  readonly squadTypes: readonly {
+    readonly id: string;
+    readonly strength: number;
+    readonly impact: number;
+    readonly morale: number;
+  }[];
 }
 
 /** The three Commands a siege policy emits; the driver validates them like any other. */
@@ -71,7 +84,12 @@ export type SiegeCommand =
  * how much power the observed garrison and any relieving army can put up. It is
  * never made on hidden state: the garrison is what the front reports, the relief
  * is what ordinary vision shows, and a Stronghold nobody
- * has seen is not a target at all. The target is drawn from the same
+ * has seen is not a target at all.
+ *
+ * Since #66 power is **men brought to bear** — `strength × impact`, priced with
+ * nominal figures for an enemy whose headcount is not in the Observation — so a
+ * ring of five 24-man Squads is worth the 120 men it is and not five times one of
+ * them (ADR-0028). The target is drawn from the same
  * age-limited contact memory the other planning policies read, not from the raw
  * fog list: a sighting that has aged out is history, and no longer grounds for a
  * march. Every decision states how old the sighting it acted on is.
@@ -89,12 +107,17 @@ export function createSiegeBehaviour(
   const types = new Map(content.squadTypes.map((type) => [type.id, type]));
   const nominal = (typeId: string) => {
     const type = types.get(typeId);
-    return type === undefined ? content.garrisonEstimate : type.strength * type.morale;
+    return type === undefined ? content.garrisonEstimate : type.strength * type.impact * type.morale;
   };
-  const power = (squad: SiegeSquad) => Math.max(0, squad.men * squad.morale);
-  const spent = (squad: SiegeSquad) => {
+  const power = (squad: SiegeSquad) => {
     const type = types.get(squad.type);
-    return type !== undefined && (squad.men * 2 <= type.strength || squad.morale * 2 <= type.morale);
+
+    return Math.max(0, squad.men * (type?.impact ?? 1) * squad.morale);
+  };
+  const spent = (squad: SiegeSquad, observation: Observation<SiegeObservation>) => {
+    const type = types.get(squad.type);
+    return type !== undefined && (atHalfStrength(squad) || (squad.morale * 2 <= type.morale &&
+      !content.canContinueAssault?.(observation.faction, observation.visible, squad)));
   };
   const margin = attackPercent(difficulty);
 
@@ -121,14 +144,16 @@ export function createSiegeBehaviour(
       const atWalls = (squad: SiegeSquad) => distance(squad, place) <= content.siegeRadius ||
         (squad.goal !== null && squad.goal.x === place.x && squad.goal.y === place.y);
       const committed = field.filter(atWalls);
-      const reserve = field.filter((squad) => !atWalls(squad) && !spent(squad));
-      const willing = (squads: readonly SiegeSquad[]) => squads.filter((squad) => !spent(squad)).map((squad) => squad.id);
-      const committedPower = committed.reduce((sum, squad) => sum + power(squad), 0);
+      const reserve = field.filter((squad) => !atWalls(squad) && !spent(squad, observation));
+      const willing = (squads: readonly SiegeSquad[]) => squads.filter((squad) => !spent(squad, observation)).map((squad) => squad.id);
+      const committedPower = committed.filter((squad) => !spent(squad, observation))
+        .reduce((sum, squad) => sum + power(squad), 0);
       const totalPower = committedPower + reserve.reduce((sum, squad) => sum + power(squad), 0);
       const holds = (value: number) => value * 100 >= threat * margin;
       const besieging = committed.length > 0 || front?.besieger === faction;
 
       if (besieging && !holds(totalPower)) {
+        if (committed.length === 0) return [];
         return [candidate('abandon', stated(`Abandon settlement ${String(target.id)}: relief of ${String(reliefPower)} power ` +
           `answers our ${String(committedPower)} and no reserve can match it; withdraw rather than feed it.`),
         [{ kind: 'withdraw', faction, squads: committed.map((squad) => squad.id) }])];

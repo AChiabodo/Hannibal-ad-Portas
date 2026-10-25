@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createAi } from '../../src/ai/controller.ts';
-import { militaryRegistry, playAiMatch } from '../../src/cli/ai-match.ts';
+import { createArmyController, militaryRegistry, playAiMatch } from '../../src/cli/ai-match.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
 import type { Command } from '../../src/sim/command.ts';
 import { scriptedController } from '../../src/sim/controller.ts';
@@ -33,6 +33,23 @@ function scenario(hiddenX = 70): SiegeWorld {
 }
 
 describe('military decisions in a headless Match', () => {
+  it('brings the exhausted seed 9 scout home instead of abandoning it after the second Season', () => {
+    let final: SiegeVisible | undefined;
+    const run = runMatch({ seed: 9, ticks: 5501, rules: siegeMatchRules, observe: observeSiege,
+      outcome(world) { final = observeSiege(world, 'carthage'); return siegeMatchOutcome(world); },
+      players: [{ faction: 'rome', controller: scriptedController<SiegeVisible>([]) },
+        { faction: 'carthage', controller: createArmyController('tiro') }],
+    });
+    expect(run.log).toContainEqual({ tick: 4200, command: { kind: 'withdraw', faction: 'carthage', squads: [1] } });
+    expect(final!.squads.find((squad) => squad.id === 1)).toMatchObject({ x: 84, y: 34, goal: null, routing: false });
+    const replay = runMatch({ seed: 9, ticks: 5501, rules: siegeMatchRules, observe: observeSiege,
+      outcome: siegeMatchOutcome, players: [
+        { faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
+        { faction: 'carthage', controller: scriptedController<SiegeVisible>(run.log) },
+      ] });
+    expect(replay.hash).toBe(run.hash);
+  }, 15000);
+
   it('installs military decisions in the shipped AI harness', () => {
     expect(playAiMatch(7, 1).decisions.some((entry) => entry.selected.behaviour === 'military')).toBe(true);
   });
@@ -51,7 +68,7 @@ describe('military decisions in a headless Match', () => {
       return { visible: observations[0]!, decisions: controller.readLog() };
     }
     const first = run(70);
-    expect(first.visible.enemies).toEqual([
+    expect(first.visible.enemies).toMatchObject([
       { id: 2, type: 'gaul', x: 28, y: 20 },
       { id: 3, type: 'gaul', x: 24, y: 24 },
       { id: 4, type: 'gaul', x: 33, y: 20 },

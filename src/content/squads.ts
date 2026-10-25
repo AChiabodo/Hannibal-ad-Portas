@@ -27,14 +27,43 @@
  *
  * ## Figures, and a Squad of a single one
  *
- * `strength` is how many men a Squad is *counted as* — it is the number a fight
- * moves (C3) — and `figures` is how many are *drawn*: the men it has left, for a
- * body of men, so a Squad thins on screen as it is worn down; and one, for a
- * beast, whatever its `strength` has fallen to. An elephant is a Squad of a
- * single figure (ADR-0004): one creature with the staying power of a much larger
- * body of men, which is what its `strength` above one and its `figures` of one
- * say together. `figuresOf(type, strength)` is the one place the two are tied,
- * so a drawing code that asks how many figures to lay out cannot half-read it.
+ * `strength` is the *largest* size a Squad of the type may be raised at, and so
+ * the number a full-strength Squad is counted as; `sizes` is every real size a
+ * Recruit may name, from the smallest to `strength`. A Recruit buys one of
+ * those sizes, and the Squad remembers the men it was raised with as its
+ * capacity even after casualties reduce its surviving `strength` (ADR-0026).
+ * `figures` is how many soldiers are *drawn*: the men it has left, for a body of
+ * men, so a Squad thins on screen as it is worn down; and one, for a beast,
+ * whatever its `strength` has fallen to. An elephant is a Squad of a single
+ * figure (ADR-0004): one creature with the staying power of a much larger body
+ * of men, which is what its `strength` above one and its `figures` of one say
+ * together. `figuresOf(type, strength)` is the one place the two are tied, so a
+ * drawing code that asks how many figures to lay out cannot half-read it.
+ *
+ * ## Sizes, prices and the Payroll rate
+ *
+ * Rome raises its melee infantry at 24, 60 or 120 men; Carthage at 24 or 48;
+ * each specialist has one starting size (ADR-0026). A price is quoted for
+ * `COST_BASIS` men and scales in exact proportion — `1`, `2.5` and `5` times for
+ * Rome and `1` or `2` times for Carthage — with no bulk discount. `cost` is
+ * therefore the 24-man price, and `recruitCost` is the one reader that turns it
+ * into the bill for a size.
+ *
+ * `payroll` is the rate: the denarii the type owes each Season for every
+ * `PAYROLL_BASIS` men it keeps. A Squad's bill follows its *surviving* men and
+ * rounds *up*, so a Squad never pays less than its share and splitting the same
+ * men into more Squads can never create free Payroll (`payrollBill`).
+ *
+ * ## Bearing, and why `impact` is not `strength`
+ *
+ * A fight moves men and nerve in proportion to the men brought to bear, never in
+ * proportion to how many Squads those men are divided into — that is #66's rule,
+ * and `sim/combat.ts` is where it is written. The men a type brings are its
+ * surviving `strength`; the weight one of them carries is `impact`. `bearingOf`
+ * is the one reader that multiplies the two, so an observation, a Siege and a
+ * Controller all price a body of men the same way. Infantry carries `1`, the
+ * Numidian horse `2` and the elephant `4`; the numbers and the measurements
+ * behind them are in ADR-0028.
  *
  * ## The pace a type marches at
  *
@@ -81,8 +110,17 @@ export interface SquadType {
   /** The settlement tier that must exist before it can be raised. */
   readonly tier: Tier;
 
-  /** How many men a full-strength Squad of the type is counted as (ADR-0004). */
+  /** The largest size it may be raised at: a full-strength Squad is counted as this many men (ADR-0004). */
   readonly strength: number;
+
+  /**
+   * The real sizes a Recruit may name, smallest first and `strength` last.
+   *
+   * Rome's melee infantry offers 24, 60 and 120; Carthage's 24 and 48; a
+   * specialist has one starting size (ADR-0026). 64 is a visual comparison
+   * candidate and never a fourth size.
+   */
+  readonly sizes: readonly number[];
 
   /**
    * How many figures a full-strength Squad of the type is drawn as.
@@ -100,6 +138,28 @@ export interface SquadType {
    * (`arms.ts`), and therefore who it has the better of a fight against.
    */
   readonly arm: Arm;
+
+  /**
+   * What one of its men is worth in a blow, against one man of the line.
+   *
+   * A fight moves men and nerve, and #66's rule is that it moves them in
+   * proportion to **men brought to bear** rather than to how many Squads those
+   * men are divided into (`sim/combat.ts`). The bearing a Squad brings is
+   * `strength × impact`, so the field is the one place a type says that its men
+   * are worth more than their count:
+   *
+   * - **1** — the infantry of both rosters, and the slingers: a man is a man.
+   * - **2** — the Numidian horse, whose twelve riders are a charge and not a
+   *   dozen skirmishers; their `strength` stays the twelve men that are drawn.
+   * - **4** — the elephant, where one beast's twenty-four points of staying
+   *   power are worth more than four-score men's blows.
+   *
+   * It is deliberately *not* `strength`: `strength` is how many men (or figures)
+   * a Squad has and how it is drawn, and doubling it to make a horse hit harder
+   * would draw twelve riders as twenty-four. The two numbers answer two
+   * questions, and #66 measured both against the new infantry sizes.
+   */
+  readonly impact: number;
 
   /**
    * The morale a newly raised Squad starts with, and the most it recovers to.
@@ -130,11 +190,45 @@ export interface SquadType {
    */
   readonly pace: number;
 
-  /** The denarii it owes each Season: what Payroll is charged on (GLOSSARY: Payroll). */
+  /**
+   * The denarii it owes each Season for every `PAYROLL_BASIS` men it keeps.
+   *
+   * The rate is per `PAYROLL_BASIS` and not per Squad: a Squad's actual bill
+   * follows its surviving men (`payrollBill`), so equivalent men pay the same
+   * whether they stand in one Squad or several.
+   */
   readonly payroll: number;
 
-  /** What raising one costs the settlement that raises it, in its own four resources. */
+  /**
+   * The 24-man price of raising one, in the settlement's own four resources.
+   *
+   * A Recruit of another legal size pays in exact proportion (`recruitCost`),
+   * so the table stays small enough to read and no size enjoys a bulk discount.
+   */
   readonly cost: ResourceAmounts;
+}
+
+/**
+ * The men a type's `cost` is quoted for: every price scales from this size.
+ *
+ * Twenty-four is the smallest size any type may be raised at, so a 24-man
+ * Recruit pays exactly what the table says and every larger size is a multiple
+ * of it (ADR-0026).
+ */
+export const COST_BASIS = 24;
+
+/**
+ * The men a type's `payroll` is quoted for: the Payroll rate is denarii per this
+ * many surviving men.
+ *
+ * The same basis as the price, so a full Squad of 24 pays the table's rate in
+ * resources and in denarii, and a larger Squad pays in proportion.
+ */
+export const PAYROLL_BASIS = COST_BASIS;
+
+/** One amount scaled from the 24-man basis to `men`, in whole units. */
+function scaledByMen(amount: number, men: number): number {
+  return Math.ceil((amount * men) / COST_BASIS);
 }
 
 /**
@@ -158,6 +252,8 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     faction: 'rome',
     tier: 1,
     strength: 120,
+    sizes: [24, 60, 120],
+    impact: 1,
     arm: 'sword',
     morale: 10,
     ammunition: 4,
@@ -170,6 +266,8 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     faction: 'rome',
     tier: 2,
     strength: 120,
+    sizes: [24, 60, 120],
+    impact: 1,
     arm: 'sword',
     morale: 12,
     ammunition: 4,
@@ -181,7 +279,9 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     id: 'triarii',
     faction: 'rome',
     tier: 3,
-    strength: 100,
+    strength: 120,
+    sizes: [24, 60, 120],
+    impact: 1,
     arm: 'spear',
     morale: 14,
     ammunition: 0,
@@ -193,7 +293,9 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     id: 'libyan-spear',
     faction: 'carthage',
     tier: 1,
-    strength: 120,
+    strength: 48,
+    sizes: [24, 48],
+    impact: 1,
     arm: 'spear',
     morale: 9,
     ammunition: 0,
@@ -205,7 +307,9 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     id: 'gaul',
     faction: 'carthage',
     tier: 1,
-    strength: 140,
+    strength: 48,
+    sizes: [24, 48],
+    impact: 1,
     arm: 'sword',
     morale: 6,
     ammunition: 0,
@@ -217,7 +321,9 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     id: 'iberian-sword',
     faction: 'carthage',
     tier: 2,
-    strength: 120,
+    strength: 48,
+    sizes: [24, 48],
+    impact: 1,
     arm: 'sword',
     morale: 11,
     ammunition: 2,
@@ -229,7 +335,9 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     id: 'balearic-slinger',
     faction: 'carthage',
     tier: 2,
-    strength: 90,
+    strength: 24,
+    sizes: [24],
+    impact: 1,
     arm: 'archers',
     morale: 8,
     ammunition: 8,
@@ -241,7 +349,9 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     id: 'numidian-horse',
     faction: 'carthage',
     tier: 3,
-    strength: 60,
+    strength: 12,
+    sizes: [12],
+    impact: 2,
     arm: 'cavalry',
     morale: 10,
     ammunition: 6,
@@ -254,6 +364,8 @@ export const SQUAD_TYPES: readonly SquadType[] = [
     faction: 'carthage',
     tier: 3,
     strength: 24,
+    sizes: [24],
+    impact: 4,
     figures: 1,
     arm: 'cavalry',
     morale: 16,
@@ -294,6 +406,64 @@ const CODES: ReadonlyMap<string, SquadTypeCode> = new Map(
  */
 export function figuresOf(type: SquadType, strength: number): number {
   return type.figures === undefined ? strength : Math.min(type.figures, strength);
+}
+
+/**
+ * The bearing `men` of the type bring into a round of contact: how hard they
+ * strike and how heavily they press.
+ *
+ * Men times `impact`, and nothing else: a 120-man line of hastati brings 120,
+ * and five 24-man Squads of them bring 120 between them, which is the equivalence
+ * #66 asks for. The number is in *blow points* (`sim/combat.ts`: twelve of them
+ * make one man), and it is what a Siege's ram defence and a Controller's force
+ * estimate read as well as the exchange itself.
+ */
+export function bearingOf(type: Pick<SquadType, 'impact'>, men: number): number {
+  return Math.max(0, men) * Math.max(0, type.impact);
+}
+
+/**
+ * Whether `men` is a size the type may actually be raised at.
+ *
+ * A Recruit that names any other number is refused by the rules rather than
+ * rounded to a size the Player did not ask for: the roster's sizes are the
+ * contract, and 36, 64 and every other number between them are not.
+ */
+export function isLegalSize(type: Pick<SquadType, 'sizes'>, men: number): boolean {
+  return type.sizes.includes(men);
+}
+
+/**
+ * What raising one Squad of `men` of the type costs, in the settlement's own
+ * four resources.
+ *
+ * The table's `cost` is the 24-man price and every size is an exact multiple of
+ * it, with no bulk discount: a 60-man Roman Squad pays `2.5` times a 24-man
+ * Squad, and a 120-man one pays `5` times. The `ceil` only matters for a price
+ * the roster does not offer; every legal size of every shipped type lands on a
+ * whole resource (ADR-0026).
+ */
+export function recruitCost(type: Pick<SquadType, 'cost'>, men: number): ResourceAmounts {
+  return {
+    grain: scaledByMen(type.cost.grain, men),
+    timber: scaledByMen(type.cost.timber, men),
+    stone: scaledByMen(type.cost.stone, men),
+    iron: scaledByMen(type.cost.iron, men),
+  };
+}
+
+/**
+ * What one Squad of `men` of the type owes each Season: its Payroll bill.
+ *
+ * The table's `payroll` is a rate per `PAYROLL_BASIS` men, so the bill follows
+ * the **surviving** men rather than the Squad's recruited capacity. It rounds
+ * **up**, which is the property the ticket asks for: a Squad never pays less
+ * than its men's share, so splitting the same men across more Squads cannot
+ * create free Payroll; at worst it costs the same, and a leftover man can cost
+ * one denarius (ADR-0026, ADR-0027).
+ */
+export function payrollBill(type: Pick<SquadType, 'payroll'>, men: number): number {
+  return scaledByMen(type.payroll, men);
 }
 
 /** Every type one Faction may raise, in code order. */

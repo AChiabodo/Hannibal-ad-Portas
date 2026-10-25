@@ -47,7 +47,7 @@
  * their Commands. The interface reads only its chosen Faction's Observation.
  */
 import { type Container } from 'pixi.js';
-import { pixelAt, type Rgba } from '../art/pixel-buffer.ts';
+import { createPixelBuffer, pixelAt, type Rgba } from '../art/pixel-buffer.ts';
 import {
   attack,
   attackMove,
@@ -92,18 +92,23 @@ import {
   type Selection as PlayerSelection,
 } from '../input/selection.ts';
 import { createBrowserMatch, type BrowserMatchOptions } from '../input/match-host.ts';
+import type { BrowserMatch } from '../input/journey.ts';
+import type { Tutorial } from '../input/tutorial.ts';
+import { tutorialPanel } from '../ui/tutorial.ts';
 import type { MatchConfiguration } from '../input/match-setup.ts';
 import { type SiegeVisible } from '../sim/siege.ts';
 import {
   CONTROL_GROUPS,
 } from '../input/human.ts';
 import {
+  MAX_RECRUIT_COUNT,
   SETTLEMENT_TABS,
   controlGroupViews,
   enemyAt,
   enemyTargets,
   garrisonReach,
   settlementAt,
+  neutralMoveDestination,
   settlementTargets,
   type ControlGroupView,
   type OrderOption,
@@ -125,6 +130,8 @@ import {
 import { minimapPlate, type ViewportRect, type KnownMinimapSite } from '../ui/minimap.ts';
 import { knownSites, siteIdentities, type KnownSite } from '../ui/sites.ts';
 import { createNoticeBook, markedConditions, moraleOf, squadConditions, type Notice, type SquadCondition } from '../ui/conditions.ts';
+import { encyclopediaLayout, encyclopediaPlate, openReference, referenceAction, type EncyclopediaLayout, type ReferenceState } from '../ui/encyclopedia.ts';
+import { CONSTRUCTION_CATEGORIES, type ConstructionCategory } from '../ui/construction.ts';
 import { forecastLine } from '../ui/forecast.ts';
 import type { OrderMarkKind } from '../art/markers.ts';
 import { createHudLayer, type HudLayer } from './hud.ts';
@@ -133,11 +140,13 @@ import { textureOf } from './stage.ts';
 import { SETTLEMENT_LAYER, createSettlementLayer, type SettlementLayer } from './settlement-layer.ts';
 import { siteDepth, siteRect } from './settlements.ts';
 import { SQUAD_LAYER, createSquadLayer, type SquadLayer } from './squad-layer.ts';
-import { blockPlacement, blockSize, visualShape } from './squads.ts';
+import { siteSprite } from '../art/settlements.ts';
+import { siteLook } from './settlements.ts';
+import { blockPlacement, blockSize, squadBlock, squadFrameKey, visualShape } from './squads.ts';
 import { tileAt, tilePixel } from './terrain.ts';
 import { VIEWED_FACTION } from './view.ts';
 import type { PixelPoint, Stage } from './stage.ts';
-import { DEFAULT_UI_PREFERENCES, fittedUiScale, loadUiPreferences, saveUiPreferences, type UiPreferences } from '../ui/preferences.ts';
+import { PANEL_LAYOUTS, type PanelLayout, DEFAULT_UI_PREFERENCES, fittedUiScale, loadUiPreferences, saveUiPreferences, type UiPreferences } from '../ui/preferences.ts';
 import { matchMenu, desktopMatchMenu, menuPlate, contains, type MatchMenu } from '../ui/match-menu.ts';
 import { GUIDE_CLOSED, GUIDE_FIRST_ENTRY, guideNext, guidePanel, type GuideActionName, type GuideEvent, type GuideState } from '../ui/guide.ts';
 import { message, translate } from '../ui/strings.ts';
@@ -273,6 +282,7 @@ export interface GameSnapshot {
 /** What the page tells a test or an agent about the game it is playing. */
 export interface GameHooks {
   preferences(): UiPreferences;
+  setPanelLayout(layout: PanelLayout): void;
   setUiScale(scale: number): void;
   toggleNavigator(): void;
   toggleGuide(): void;
@@ -301,7 +311,7 @@ export interface GameHooks {
   hudLayout(): HudLayout;
   /** Highlights the command under the pointer and exposes its full name/help. */
   hoverAt(x: number, y: number): void;
-  /** F6 enters UI focus; Tab traverses, Enter/Space activate, Escape leaves. */
+  /** F6 enters UI focus; Tab traverses, Enter/Space activate; Escape opens or leaves the pause menu. */
   interfaceKey(key: string, reverse?: boolean): boolean;
   /** Scrolls a HUD region by bitmap text lines; presentation only. */
   scrollHud(region: 'list' | 'detail' | 'commands' | 'notices', lines: number): void;
@@ -325,6 +335,12 @@ export interface GameHooks {
   targetSettlement(settlement: number): boolean;
   /** Opens one page of a settlement's panel. */
   setTab(tab: SettlementTab): void;
+  setCategory(category: ConstructionCategory): void;
+  reference(): ReferenceState | null;
+  referenceLayout(): EncyclopediaLayout | null;
+  openReference(entry?: string): void;
+  closeReference(): void;
+  scrollReference(lines: number): boolean;
   /** Picks the group an individual exception was opened from. */
   groupBack(): boolean;
   /** The Faction's own Squads, with the rectangle each is drawn in. */
@@ -351,6 +367,7 @@ export interface GameHooks {
   notices(): readonly Notice[];
   /**
    * Centres a location-bearing notice, when the place it names is still known.
+   * An enemy sighting centres its recorded tile, never a hidden current position.
    *
    * A notice whose Squad has left the field or whose settlement the Faction no
    * longer knows is marked `lost` and answers `false`, so a stale target is
@@ -469,6 +486,8 @@ export interface Game {
   start(): void;
   /** Stops it. Idempotent. */
   stop(): void;
+  /** Restores the presentation and explicit Resume without losing the Guide pause. */
+  returnToMatch(): void;
 }
 
 /** What a game needs to exist: a stage, a seed, the viewport, the camera and the fog. */
@@ -481,6 +500,10 @@ export interface GameOptions {
   readonly opponent?: BrowserMatchOptions['opponent'];
   readonly restart?: () => void;
   readonly newMatch?: () => void;
+  readonly home?: () => void;
+  readonly host?: BrowserMatch;
+  readonly tutorial?: Tutorial;
+  readonly tutorialAction?: (action: 'next' | 'retry' | 'exit') => void;
   readonly ended?: () => void;
   /** A composed visual fixture can omit navigation chrome. Normal Matches always show it. */
   readonly sessionControls?: boolean;
@@ -531,7 +554,7 @@ export function createGame(options: GameOptions): Game {
   const config: MatchConfiguration = { seed: options.seed, faction: options.faction ?? PLAYER_FACTION,
     difficulty: options.difficulty ?? 'centurio' };
   const faction = config.faction;
-  const host = createBrowserMatch({ ...config, rules: options.rules, opponent: options.opponent });
+  const host = options.host ?? createBrowserMatch({ ...config, rules: options.rules, opponent: options.opponent });
   const match = host.match;
   const human = host.human;
   const pacing = host.pacing;
@@ -539,12 +562,16 @@ export function createGame(options: GameOptions): Game {
   const layer: HudLayer = createHudLayer(options.stage);
   const ground: SettlementLayer = createSettlementLayer(options.world);
   const field: SquadLayer = createSquadLayer(options.world);
+  const pickInk = new Map<number, { key: string; buffer: ReturnType<typeof squadBlock> }>();
+
   /** Every settlement on the theatre, by id: the map's own list, and what the minimap walks. */
   const identities = siteIdentities(match.state.world.map);
   const menu = options.stage.spriteOf(menuPlate(options.size, matchMenu(options.size, 0, config, 1, null)));
   options.stage.root.addChild(menu);
   menu.visible = options.sessionControls !== false;
   let sessionOpen = false;
+  let pausePage: 'main' | 'settings' = 'main';
+  let menuWasRunning = false;
   let resultDismissed = false;
   let navigatorExpanded = false;
   let notice = '';
@@ -562,8 +589,21 @@ export function createGame(options: GameOptions): Game {
   const applied: LoggedCommand<Command>[] = [];
   /** Which page of a settlement's panel is open (#55): the Player's, never the Match's. */
   let tab: SettlementTab = 'overview';
+  let category: ConstructionCategory = 'production';
+  let reference: ReferenceState | null = null;
+  let referencePaused = false;
+  let referenceReturnFocus: string | null = null;
+  let referenceReturnSession = false;
+  let referenceFocus = 'close';
+  const referenceSprite = options.stage.spriteOf(createPixelBuffer(options.size.width, options.size.height));
+  options.stage.root.addChild(referenceSprite);
+  referenceSprite.visible = false;
+  /** How many Squads one recruitment press buys: the page's memory, never Match state. */
+  let recruitCount = 1;
   let focusId: string | null = null;
   let hoveredOrder: string | null = null;
+  let inspectedOrder: string | null = null;
+  let settlementPage: 'summary' | 'balance' | 'works' = 'summary';
   /** The action waiting for a click, by its stable id, or `null`. */
   let armed: string | null = null;
   /** The last order given on this page, and whether the seam has taken it yet. */
@@ -618,6 +658,12 @@ export function createGame(options: GameOptions): Game {
 
   const hooks: GameHooks = {
     preferences: () => ({ ...preferences }),
+    setPanelLayout: (panelLayout) => {
+      if (!PANEL_LAYOUTS.includes(panelLayout)) throw new RangeError("Unknown panel layout");
+      detailOffset = 0;
+      commandOffset = 0;
+      updatePreferences({ ...preferences, panelLayout });
+    },
     setUiScale: (scale) => {
       if (![1, 2, 3].includes(scale)) throw new RangeError('UI scale must be 1, 2 or 3');
       updatePreferences({ ...preferences, uiScale: scale });
@@ -644,6 +690,7 @@ export function createGame(options: GameOptions): Game {
       if (site) { const at = tilePixel(site.x, site.y); options.centerOn?.(at.x, at.y); }
     },
     navigateMinimap: (x, y) => {
+      if (reference !== null || menu.visible) return false;
       const rect = hudLayout(model, options.size).minimap;
       if (!contains(rect, x, y)) return false;
       const scale = desktop ? model.view.uiScale ?? 2 : 1;
@@ -654,7 +701,8 @@ export function createGame(options: GameOptions): Game {
       return true;
     },
     doubleClickAt: (x, y) => {
-      if (menu.visible && contains(readMenu().rect, x, y)) return;
+      if (reference !== null) return;
+      if (menu.visible) return;
       if (hudHit(model, options.size, x, y)?.kind === 'selection') hooks.centerSelection();
     },
     submit: (command) => human.submit(command),
@@ -675,6 +723,25 @@ export function createGame(options: GameOptions): Game {
       }
     },
     hud: () => model,
+    reference: () => reference,
+    referenceLayout: () => reference === null ? null : readReference(),
+    openReference: (entry) => showReference(entry),
+    closeReference: () => closeReference(),
+    scrollReference: (lines) => {
+      if (reference === null) return false;
+      const layout = readReference();
+      reference = { ...reference, offset: Math.max(0, Math.min(layout.max, layout.offset + lines)) };
+      repaint();
+      return true;
+    },
+    setCategory: (next) => {
+      if (!CONSTRUCTION_CATEGORIES.some((item) => item.id === next)) throw new RangeError(`Unknown category: ${next}`);
+      category = next;
+      commandOffset = 0;
+      hoveredOrder = null;
+      commandNotice = null;
+      repaint();
+    },
     selection: () => human.selection,
     select: (next) => {
       human.select(asPicked(next));
@@ -683,12 +750,21 @@ export function createGame(options: GameOptions): Game {
     },
     hudRects: () => {
       const layout = hudLayout(model, options.size);
-      return [...interfaceRects(layout), ...(menu.visible ? [readMenu().rect] : [])];
+      return [...interfaceRects(layout), ...(menu.visible ? [{ x: 0, y: 0, width: options.size.width, height: options.size.height }] : []), ...(reference !== null ? [{ x: 0, y: 0, width: options.size.width, height: options.size.height }] : [])];
     },
     hudRows: () => hudLayout(model, options.size).rows,
     hudLayout: () => hudLayout(model, options.size),
     hoverAt: (x, y) => {
+      if (reference !== null) return;
+      if (menu.visible) {
+        const button = readMenu().buttons.find(({ rect }) => contains(rect, x, y));
+        const next = button ? `menu:${button.action}` : null;
+        if (focusId !== next) { focusId = next; repaint(); }
+        return;
+      }
       const hit = hudHit(model, options.size, x, y);
+      if (hit?.kind !== 'order' && contains(hudLayout(model, options.size).detail, x, y)
+        && model.commands.some((order) => order.id === hoveredOrder && (order.kind === 'build' || order.kind === 'recruit'))) return;
       const next = hit?.kind === 'order' && !(menu.visible && contains(readMenu().rect, x, y)) ? hit.order.id : null;
       if (next === hoveredOrder) return;
       hoveredOrder = next;
@@ -712,6 +788,8 @@ export function createGame(options: GameOptions): Game {
     setTab: (next) => {
       if (!SETTLEMENT_TABS.includes(next)) throw new RangeError(`"${String(next)}" is not a settlement page`);
       tab = next;
+      settlementPage = 'summary';
+      detailOffset = 0;
       commandOffset = 0;
       commandNotice = null;
       repaint();
@@ -776,6 +854,7 @@ export function createGame(options: GameOptions): Game {
       repaint();
     },
     resume: () => {
+      if (reference !== null) return;
       if (result !== null) return;
       // A Player who resumes the clock has begun the Match, which is what the
       // welcome line was waiting for; the guide moves on rather than sitting on a
@@ -816,11 +895,21 @@ export function createGame(options: GameOptions): Game {
     },
     start: startLoop,
     stop: stopLoop,
+    returnToMatch: () => {
+      reference = null; sessionOpen = false; pausePage = 'main';
+      menuWasRunning = false; focusId = null;
+      if (!guidePaused && result === null) pacing.resume();
+      else pacing.pause();
+      preferences = desktop ? loadUiPreferences() : preferences;
+      options.relayout?.(preferences);
+      repaint(); startLoop();
+    },
   };
 
   function updatePreferences(next: UiPreferences): void {
     preferences = next;
     saveUiPreferences(next);
+    repaint();
     options.relayout?.(next);
     repaint();
   }
@@ -849,6 +938,7 @@ export function createGame(options: GameOptions): Game {
     if (result !== null) return;
     guide = guideNext(guide, { kind: 'reopen' });
     sessionOpen = false;
+    if (menuWasRunning) { guidePaused = true; menuWasRunning = false; }
     if (!pacing.paused) {
       pacing.pause();
       guidePaused = true;
@@ -858,8 +948,8 @@ export function createGame(options: GameOptions): Game {
   /** Releases the pause the Guide took, and never one a Player took. */
   function releaseGuidePause(): void {
     if (!guidePaused || result !== null) return;
-    pacing.resume();
-    lastFrame = performance.now();
+    if (sessionOpen) menuWasRunning = true;
+    else { pacing.resume(); lastFrame = performance.now(); }
     guidePaused = false;
   }
 
@@ -1104,7 +1194,9 @@ export function createGame(options: GameOptions): Game {
 
     const target = notice.target;
     const observation = visible();
-    const at = target.kind === 'squad'
+    const at = target.kind === 'contact'
+      ? tilePixel(target.x, target.y)
+      : target.kind === 'squad'
       ? (() => {
         const squad = observation.squads.find((candidate) => candidate.id === target.id);
 
@@ -1143,15 +1235,21 @@ export function createGame(options: GameOptions): Game {
   function readModel(known: readonly KnownSite[], observation: SiegeVisible): HudModel {
     const next = hudModel(observation, strongholdIds(observation), panelSelection(), human.selection.squads,
       { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
-        noticesOpen, noticeOffset },
+        tick: match.state.tick, noticesOpen, noticeOffset },
       session(observation, known));
     if (next.selected?.id !== detailSelection?.id || next.selected?.kind !== detailSelection?.kind) {
       detailOffset = 0;
       commandOffset = 0;
+      settlementPage = 'summary';
+      inspectedOrder = null;
     }
+    if (!next.commands.some((order) => order.id === inspectedOrder)) inspectedOrder = null;
     detailSelection = next.selected;
-    return { ...next, view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
-      noticesOpen, noticeOffset,
+    options.tutorial?.present({ settlement: human.selection.settlement, squads: human.selection.squads,
+      tab, category, inspected: inspectedOrder, page: settlementPage });
+    return { ...next, guide: options.tutorial && !guide.open ? tutorialPanel(options.tutorial) : next.guide,
+      view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
+      noticesOpen, noticeOffset, settlementPage, inspectedOrder,
       desktop, navigatorExpanded, sessionOpen, speed: pacing.speed, ...preferences,
       uiScale: fittedUiScale(preferences.uiScale, windowSize()), tick: match.state.tick,
       scaleWarning: desktop && (windowSize().width < 640 * preferences.uiScale || windowSize().height < 360 * preferences.uiScale),
@@ -1173,10 +1271,14 @@ export function createGame(options: GameOptions): Game {
     readonly notices: readonly Notice[];
     readonly forecast: ReturnType<typeof forecastLine>;
     readonly guide: ReturnType<typeof guidePanel>;
+    readonly recruitCount: number;
+    readonly category: ConstructionCategory;
   } {
     return {
       faction,
       tab,
+      category,
+      recruitCount,
       armed,
       pending: human.pending,
       last: submission === null ? null : { ...submission, status: human.pending > 0 ? 'pending' : 'applied' },
@@ -1243,7 +1345,8 @@ export function createGame(options: GameOptions): Game {
     const window = visible();
     const ownership: KnownMinimapSite[] = window.settlements.map((site) => ({ ...site, owner: factionCode(faction) }));
     for (const contact of window.contacts) {
-      if (contact.kind !== 'squad') ownership.push({ ...contact, owner: factionCode(faction === 'rome' ? 'carthage' : 'rome') });
+      if (contact.kind !== 'squad') ownership.push({ ...contact,
+        owner: contact.unowned === true ? -1 : factionCode(faction === 'rome' ? 'carthage' : 'rome') });
     }
     for (const site of [...match.state.world.map.strongholds, ...match.state.world.map.settlements]) {
       if (knows(window.fog, site.x, site.y) === 2 && !ownership.some((known) => known.x === site.x && known.y === site.y)) ownership.push({ ...site, owner: -1 });
@@ -1274,6 +1377,7 @@ export function createGame(options: GameOptions): Game {
     ground.update({ sites: known, selected: human.selection.settlement });
     field.update({
       squads: visible().squads,
+      enemies: observation.enemies,
       selected: human.selection.squads,
       tick: match.state.tick,
       faction: faction,
@@ -1290,13 +1394,23 @@ export function createGame(options: GameOptions): Game {
     const oldMenu = menu.texture;
     menu.texture = textureOf(menuPlate(options.size, readMenu(), desktop ? model.view.uiScale ?? 2 : 1, model.view.focus ?? null));
     oldMenu.destroy(true);
-    options.stage.canvas.setAttribute('aria-label', [translate('ui.keyboard'), focused?.label ?? '', ...layout.readouts.map(({ line }) => `${line.label} ${line.value}`), ...layout.buttons.map(({ text }) => text), ...(guide.open ? [...layout.guideText.map(({ text }) => text), ...layout.guideButtons.map(({ text }) => text)] : []), ...(menu.visible ? [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)] : [])].join('. '));
+    referenceSprite.visible = reference !== null;
+    if (reference !== null) {
+      const oldReference = referenceSprite.texture;
+      referenceSprite.texture = textureOf(encyclopediaPlate(options.size, readReference(), model.view.uiScale ?? 2, referenceFocus));
+      oldReference.destroy(true);
+      options.stage.canvas.setAttribute('aria-label', [translate('ref.open'), ...readReference().text.map((line) => line.text),
+        ...readReference().controls.map((control) => control.text), translate('ref.help')].join('. '));
+      options.stage.render();
+      return;
+    }
+    options.stage.canvas.setAttribute('aria-label', [translate('ui.keyboard'), focused?.label ?? '', ...layout.readouts.map(({ line }) => `${line.label} ${line.value}`), ...layout.text.filter(({ rect }) => rect.y < layout.bar.height).map(({ text }) => text), ...layout.buttons.map(({ text }) => text), ...(model.guide !== null ? [...layout.guideText.map(({ text }) => text), ...layout.guideButtons.map(({ text }) => text)] : []), ...(menu.visible ? [...readMenu().lines, ...readMenu().buttons.map(({ text }) => text)] : [])].join('. '));
     options.stage.render();
   }
 
   function readMenu(): MatchMenu {
     return desktop
-      ? desktopMatchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice, preferences)
+      ? desktopMatchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice, preferences, pausePage, options.home !== undefined)
       : matchMenu(options.size, hudLayout(model, options.size).bar.height, config, pacing.speed, result, notice);
   }
 
@@ -1322,6 +1436,50 @@ export function createGame(options: GameOptions): Game {
     options.vision(eyes);
   }
 
+  function readReference(): EncyclopediaLayout {
+    return encyclopediaLayout(options.size, reference!, model.view.uiScale ?? 2);
+  }
+
+  function contextReference(): string {
+    const offer = model.commands.find((order) => order.id === (focusId?.startsWith('order:') ? focusId.slice(6) : inspectedOrder ?? hoveredOrder)) ?? model.commands[0];
+    if (offer?.kind === 'build') return `building:${offer.subject}`;
+    if (offer?.kind === 'recruit') return `squad:${offer.subject}`;
+    if (model.selected?.kind === 'settlement' && model.detail?.summary === undefined) return 'capture';
+    if (model.selected?.kind === 'settlement' && settlementPage !== 'summary') return settlementPage === 'balance' ? 'treasury' : 'labour';
+    return model.selected?.kind === 'squad' ? 'commands' : 'first-steps';
+  }
+
+  function showReference(entry = 'first-steps'): void {
+    const next = openReference(entry);
+    if (reference === null) {
+      referencePaused = !pacing.paused && result === null;
+      referenceReturnFocus = focusId;
+      referenceReturnSession = sessionOpen;
+      pacing.pause();
+    }
+    reference = next;
+    referenceFocus = 'close';
+    repaint();
+  }
+
+  function closeReference(): void {
+    if (reference === null) return;
+    reference = null;
+    focusId = referenceReturnFocus;
+    sessionOpen = referenceReturnSession;
+    if (referencePaused && result === null) { pacing.resume(); lastFrame = performance.now(); }
+    referencePaused = false;
+    repaint();
+  }
+
+  function activateReference(action: string): void {
+    if (reference === null) return;
+    if (action === 'close') { closeReference(); return; }
+    reference = referenceAction(reference, action, readReference());
+    referenceFocus = action;
+    repaint();
+  }
+
   /** The selection as the interface names one, which is what a click on a row knows. */
   function asPicked(selection: Selection | null): PlayerSelection {
     if (selection === null) return NOTHING_SELECTED;
@@ -1332,30 +1490,42 @@ export function createGame(options: GameOptions): Game {
 
   /** A click at a screen point: the interface's rows first, then the men on the map. */
   function pickAt(screenX: number, screenY: number, additive: boolean): void {
-    const wasFocused = focusId !== null;
-    focusId = null;
-    if (wasFocused) repaint();
+    if (reference !== null) {
+      const control = readReference().controls.find(({ rect }) => contains(rect, screenX, screenY));
+      if (control?.enabled) activateReference(control.id);
+      return;
+    }
     if (hooks.navigateMinimap(screenX, screenY)) return;
     const menuButton = menu.visible ? readMenu().buttons.find(({ rect }) => contains(rect, screenX, screenY)) : undefined;
     if (menuButton !== undefined) {
       if (!menuButton.enabled) return;
       if (menuButton.action === 'restart') hooks.restart();
       else if (menuButton.action === 'new') hooks.newMatch();
+      else if (menuButton.action === 'home') options.home?.();
       else if (menuButton.action === 'copy') void hooks.copySeed();
       else if (menuButton.action === 'scale') hooks.setUiScale(preferences.uiScale % 3 + 1);
+      else if (menuButton.action === 'panelLayout') hooks.setPanelLayout(PANEL_LAYOUTS[(PANEL_LAYOUTS.indexOf(preferences.panelLayout) + 1) % PANEL_LAYOUTS.length]!);
       else if (menuButton.action === 'reset') hooks.resetPreferences();
       else if (menuButton.action === 'guide') hooks.toggleGuide();
-      else if (menuButton.action === 'close') { sessionOpen = false; resultDismissed = true; repaint(); }
+      else if (menuButton.action === 'settings') { pausePage = 'settings'; focusId = 'menu:back'; repaint(); }
+      else if (menuButton.action === 'back') { pausePage = 'main'; focusId = 'menu:settings'; repaint(); }
+      else if (menuButton.action === 'reference') showReference('first-steps');
+      else if (menuButton.action === 'navigator') hooks.toggleNavigator();
+      else if (menuButton.action === 'close') closePauseMenu(result === null);
       else if (menuButton.speed !== undefined) hooks.setSpeed(menuButton.speed);
       return;
     }
-    if (menu.visible && contains(readMenu().rect, screenX, screenY)) return;
+    if (menu.visible) return;
     const layout = hudLayout(model, options.size);
     const hit = hudHit(model, options.size, screenX, screenY);
     if (hit !== null) {
       if (hit.kind === 'button') hudButton(hit.action);
       else if (hit.kind === 'notice') centerNotice(hit.id);
-      else if (hit.kind === 'order') perform(hit.order.id);
+      else if (hit.kind === 'order') {
+        if (desktop && (hit.order.kind === 'build' || hit.order.kind === 'recruit')) {
+          inspectedOrder = hit.order.id; detailOffset = 0; repaint();
+        } else perform(hit.order.id);
+      }
       else if (hit.kind === 'tab') hooks.setTab(hit.tab);
       else if (hit.kind === 'group') hooks.recallGroup(hit.index);
       else if (armed !== null && hit.selection.kind === 'settlement') targetSettlement(hit.selection.id);
@@ -1373,6 +1543,7 @@ export function createGame(options: GameOptions): Game {
       return;
     }
 
+    focusId = null;
     const at = screenToStage(options.camera(), screenX, screenY);
     human.select(selectAt(human.selection, pickables(), at, additive));
     groupMemory = null;
@@ -1382,6 +1553,7 @@ export function createGame(options: GameOptions): Game {
 
   /** Only visible controls participate; an options drawer owns its own focus. */
   function interfaceControls(): readonly { id: string; label: string; rect: Rect }[] {
+    if (reference !== null) return readReference().controls.map((control) => ({ id: control.id, label: control.text, rect: control.rect }));
     if (desktop && (sessionOpen || (result !== null && !resultDismissed))) {
       return readMenu().buttons.map((button) => ({ id: `menu:${button.action}`, label: button.text, rect: button.rect }));
     }
@@ -1389,7 +1561,7 @@ export function createGame(options: GameOptions): Game {
     const controls = [
       ...layout.buttons.map((button) => ({ id: `button:${button.action}`, label: button.text, rect: button.rect })),
       ...layout.rows.map((row) => ({ id: `row:${row.selection.kind}:${String(row.selection.id)}`, label: model.rows.find((r) => r.selection.id === row.selection.id && r.selection.kind === row.selection.kind)?.label ?? '', rect: row.rect })),
-      ...layout.tabs.map((tab) => ({ id: `tab:${tab.tab}`, label: translate(`tab.${tab.tab}`), rect: tab.rect })),
+      ...layout.tabs.map((tab) => ({ id: `tab:${tab.tab}`, label: tab.text ?? translate(`tab.${tab.tab}`), rect: tab.rect })),
       ...layout.commands.map(({ order, rect }) => ({ id: `order:${order.id}`, label: order.label, rect })),
       ...layout.groups.map((group) => ({ id: `group:${String(group.index)}`, label: `${translate('ui.groups')} ${String(group.index)}`, rect: group.rect })),
       ...layout.exceptions.map((row) => ({ id: `exception:${String(row.selection.id)}`, label: model.group?.exceptions.find((entry) => entry.squad === row.selection.id)?.name ?? '', rect: row.rect })),
@@ -1407,8 +1579,59 @@ export function createGame(options: GameOptions): Game {
     });
   }
 
+  function openPauseMenu(): void {
+    if (menu.visible) { closePauseMenu(menuWasRunning); return; }
+    menuWasRunning = !pacing.paused && result === null;
+    pacing.pause();
+    armed = null;
+    sessionOpen = true;
+    pausePage = 'main';
+    focusId = 'menu:close';
+    repaint();
+  }
+
+  function closePauseMenu(resume: boolean): void {
+    sessionOpen = false;
+    pausePage = 'main';
+    resultDismissed = true;
+    focusId = null;
+    if (resume && result === null && !guide.open) { pacing.resume(); lastFrame = performance.now(); }
+    menuWasRunning = false;
+    repaint();
+  }
+
   function interfaceKey(key: string, reverse: boolean): boolean {
-    if (!desktop || (key !== 'F6' && focusId === null)) return false;
+    if (key === 'F1') {
+      if (reference === null) showReference(contextReference());
+      else closeReference();
+      return true;
+    }
+    if (reference !== null) {
+      const controls = readReference().controls;
+      if (!controls.some((control) => control.id === referenceFocus)) referenceFocus = 'close';
+      if (key === 'Escape') closeReference();
+      else if (key === 'Tab' || key === 'F6') {
+        const index = controls.findIndex((control) => control.id === referenceFocus);
+        referenceFocus = controls[(index + (reverse ? -1 : 1) + controls.length) % controls.length]!.id;
+        repaint();
+      } else if (key === 'Enter' || key === ' ') activateReference(referenceFocus);
+      else if (key === 'PageUp' || key === 'PageDown') activateReference(key === 'PageDown' ? 'next' : 'previous');
+      else if (key === 'ArrowDown' || key === 'ArrowUp') {
+        reference = referenceAction(reference, key === 'ArrowDown' ? 'entryNext' : 'entryPrevious', readReference());
+        referenceFocus = `entry:${reference.entry}`;
+        repaint();
+      }
+      return true;
+    }
+    if (desktop && key === 'Escape') {
+      if (menu.visible && pausePage === 'settings') { pausePage = 'main'; focusId = 'menu:settings'; repaint(); }
+      else if (menu.visible) closePauseMenu(menuWasRunning);
+      else openPauseMenu();
+      return true;
+    }
+    // Lesson navigation must not steal the pause key advertised to a new Player.
+    if (options.tutorial && !menu.visible && key === ' ') return false;
+    if (!desktop || (key !== 'F6' && focusId === null && !menu.visible)) return false;
     const controls = interfaceControls();
     if (controls.length === 0) return false;
     if (key === 'F6' || key === 'Tab') {
@@ -1418,31 +1641,52 @@ export function createGame(options: GameOptions): Game {
       repaint();
       return true;
     }
-    if (key === 'Escape') {
-      focusId = null;
-      cancelTargeting();
-      repaint();
-      return true;
-    }
     if (key === 'Enter' || key === ' ') {
       const focused = controls.find(({ id }) => id === focusId);
       if (focused !== undefined) {
         pickAt(focused.rect.x + focused.rect.width / 2, focused.rect.y + focused.rect.height / 2, false);
+        // Navigation may detach or dispose this session synchronously.
+        if (!options.stage.canvas.isConnected) return true;
         focusId = focused.id;
         repaint();
       }
       return true;
     }
-    return false;
+    return menu.visible;
   }
 
   /** One of the bar's own buttons, pressed. */
   function hudButton(action: HudAction): void {
     const layout = hudLayout(model, options.size);
-    if (action === 'pause') {
+    if (action === 'tutorialHelp') showReference('first-steps');
+    else if (action === 'tutorialNext') {
+      const tutorial = options.tutorial;
+      if (!tutorial) return;
+      const complete = tutorial.complete;
+      if (tutorial.next()) {
+        if (complete) options.tutorialAction?.('next');
+        else repaint();
+      }
+    }
+    else if (action === 'tutorialRetry') options.tutorialAction?.('retry');
+    else if (action === 'tutorialExit') options.tutorialAction?.('exit');
+    else if (action.startsWith('purchase:')) perform(action.slice(9));
+    else if (action === 'closeInspection') { inspectedOrder = null; repaint(); }
+    else if (action.startsWith('settlement:')) {
+      const page = action.slice(11);
+      settlementPage = page === 'catalogue' ? 'summary' : page as typeof settlementPage;
+      tab = page === 'works' || page === 'catalogue' ? 'construction' : 'overview';
+      inspectedOrder = null;
+      detailOffset = 0;
+      repaint();
+    } else if (action.startsWith('category:')) {
+      hooks.setCategory(action.slice(9) as ConstructionCategory);
+    } else if (action === 'reference') showReference(contextReference());
+    else if (action.startsWith('reference:')) showReference(action.slice(10));
+    else if (action === 'pause') {
       if (pacing.paused) hooks.resume();
       else hooks.pause();
-    } else if (action === 'session') { sessionOpen = !sessionOpen; repaint(); }
+    } else if (action === 'session') openPauseMenu();
     else if (action === 'speed1') hooks.setSpeed(1);
     else if (action === 'speed2') hooks.setSpeed(2);
     else if (action === 'speed3') hooks.setSpeed(3);
@@ -1451,6 +1695,8 @@ export function createGame(options: GameOptions): Game {
     else if (action === 'groupBack') hooks.groupBack();
     else if (action === 'notices') hooks.toggleNotices();
     else if (action === 'guideBegin' || action === 'guideSkip' || action === 'guideClose') guideButton(action);
+    else if (action === 'recruitFewer') { recruitCount = Math.max(1, recruitCount - 1); repaint(); }
+    else if (action === 'recruitMore') { recruitCount = Math.min(MAX_RECRUIT_COUNT, recruitCount + 1); repaint(); }
     else {
       const region = action.startsWith('list') ? 'list' : action.startsWith('commands') ? 'commands'
         : action.startsWith('notices') ? 'notices' : 'detail';
@@ -1484,6 +1730,7 @@ export function createGame(options: GameOptions): Game {
    * a button and a hook from disagreeing about the rules.
    */
   function perform(orderId: string): boolean {
+    if (reference !== null) return false;
     const offer = model.commands.find((order) => order.id === orderId);
     if (offer === undefined) return false;
     if (!offer.enabled) {
@@ -1522,7 +1769,10 @@ export function createGame(options: GameOptions): Game {
     const tile = tileAt(at.x, at.y);
     if (tile.x < 0 || tile.y < 0 || tile.x >= MAP_WIDTH || tile.y >= MAP_HEIGHT) return false;
 
-    if (offer.target === 'ground') return submitOrder(offer, { kind: 'ground', x: tile.x, y: tile.y });
+    if (offer.target === 'ground') {
+      const destination = neutralMoveDestination(siteReports(), at, tile);
+      return submitOrder(offer, { kind: 'ground', ...destination });
+    }
     if (offer.target === 'enemy') {
       const enemy = enemyAt(enemyTargets(visible()), tile.x, tile.y);
       return enemy === null ? false : submitOrder(offer, { kind: 'enemy', squad: enemy.id });
@@ -1633,8 +1883,9 @@ export function createGame(options: GameOptions): Game {
         return offer.subject === null || human.selection.settlement === null
           ? null : build(faction, human.selection.settlement, offer.subject);
       case 'recruit':
-        return offer.subject === null || human.selection.settlement === null
-          ? null : recruit(faction, human.selection.settlement, offer.subject, 1);
+        return offer.subject === null || offer.recruit === undefined || human.selection.settlement === null
+          ? null
+          : recruit(faction, human.selection.settlement, offer.subject, offer.recruit.men, offer.recruit.count);
     }
   }
 
@@ -1663,9 +1914,10 @@ export function createGame(options: GameOptions): Game {
 
   /** Whether a screen point falls on one of the interface's panels rather than on the theatre. */
   function underInterface(x: number, y: number): boolean {
+    if (reference !== null) return true;
     const layout = hudLayout(model, options.size);
 
-    return [...interfaceRects(layout), ...(menu.visible ? [readMenu().rect] : [])].some(
+    return [...interfaceRects(layout), ...(menu.visible ? [{ x: 0, y: 0, width: options.size.width, height: options.size.height }] : [])].some(
       (rect) => x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height,
     );
   }
@@ -1678,7 +1930,7 @@ export function createGame(options: GameOptions): Game {
    * appears cannot cover a tile that the pointer still coordinates as bare ground.
    */
   function interfaceRects(layout: HudLayout): readonly Rect[] {
-    return [layout.bar, layout.list, layout.detail, layout.minimap,
+    return [layout.bar, layout.list, layout.detail, ...(layout.extraPanels ?? []), layout.minimap,
       ...(layout.notices.height > 0 ? [layout.notices] : []),
       ...(layout.guide.height > 0 ? [layout.guide] : [])];
   }
@@ -1705,12 +1957,25 @@ export function createGame(options: GameOptions): Game {
    * standing in a Stronghold is what a Player can see under the pointer, and so it
    * is the thing the click takes.
    */
+  function squadInk(squad: VisibleSquad): ReturnType<typeof squadBlock> {
+    const options = { tick: match.state.tick };
+    const key = squadFrameKey(squad, options);
+    const known = pickInk.get(squad.id);
+    if (known?.key === key) return known.buffer;
+    const buffer = squadBlock(squad, options);
+    pickInk.set(squad.id, { key, buffer });
+    return buffer;
+  }
+
   function pickables(): readonly Pickable[] {
+    const squads = squadReports();
+    const present = new Set(squads.map((squad) => squad.id));
+    for (const id of pickInk.keys()) if (!present.has(id)) pickInk.delete(id);
     return [
       ...siteReports().map((site) => ({ kind: 'settlement' as const, id: site.id, rect: site.rect,
-        depth: siteDepth(site), layer: SETTLEMENT_LAYER })),
-      ...squadReports().map((squad) => ({ kind: 'squad' as const, id: squad.id, rect: squad.rect,
-        depth: squad.y, layer: SQUAD_LAYER })),
+        ink: siteSprite(siteLook(site)), depth: siteDepth(site), layer: SETTLEMENT_LAYER })),
+      ...squads.map((squad) => ({ kind: 'squad' as const, id: squad.id, rect: squad.rect,
+        ink: squadInk(squad), depth: squad.y, layer: SQUAD_LAYER })),
     ];
   }
 

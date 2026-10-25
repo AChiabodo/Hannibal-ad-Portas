@@ -99,6 +99,7 @@ export interface ControlTarget {
   readonly hudLayout: () => HudLayout;
   /** Includes session chrome, so an armed map order cannot swallow a menu click. */
   readonly hudRects?: () => readonly Rect[];
+  readonly scrollReference?: (lines: number) => boolean;
   readonly scrollHud: (region: 'list' | 'detail' | 'commands' | 'notices', lines: number) => void;
 }
 
@@ -149,7 +150,10 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
 
     const at = local(event);
     const layout = target.hudLayout();
-    minimapPress = contains(layout.minimap, at.x, at.y);
+    const topmost = [...(target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap])].reverse()
+      .find((rect) => contains(rect, at.x, at.y));
+    minimapPress = contains(layout.minimap, at.x, at.y) && topmost?.x === layout.minimap.x && topmost.y === layout.minimap.y
+      && topmost.width === layout.minimap.width && topmost.height === layout.minimap.height;
     interfacePress = (target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap]).some((rect) => contains(rect, at.x, at.y));
     if (minimapPress) target.navigateMinimap(at.x, at.y);
     press = { pointerId: event.pointerId, button: event.button, fromX: event.clientX, fromY: event.clientY, appliedX: 0, appliedY: 0 };
@@ -245,10 +249,19 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
 
       const at = local(event);
       if (event.deltaY === 0) return;
+      if (target.scrollReference?.(event.deltaY < 0 ? -3 : 3)) return;
       const layout = target.hudLayout();
       const topmost = [...(target.hudRects?.() ?? [layout.bar, layout.list, layout.detail, layout.minimap])].reverse()
         .find((rect) => contains(rect, at.x, at.y));
+      if (layout.scrollRegions) {
+        const panels = [layout.notices, layout.detail, ...(layout.extraPanels ?? [])];
+        if (topmost && panels.some((r) => r.x === topmost.x && r.y === topmost.y && r.width === topmost.width && r.height === topmost.height)) {
+          const region = layout.scrollRegions.find(({ rect }) => contains(rect, at.x, at.y));
+          if (region) { target.scrollHud(region.region, event.deltaY < 0 ? -3 : 3); return; }
+        }
+      }
       for (const region of ['list', 'detail'] as const) {
+        if (region === 'detail' && layout.scrollRegions) continue;
         if (topmost && (topmost.x !== layout[region].x || topmost.y !== layout[region].y ||
           topmost.width !== layout[region].width || topmost.height !== layout[region].height)) continue;
         if (contains(layout[region], at.x, at.y)) {
@@ -264,7 +277,7 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
     { passive: false },
   );
 
-  window.addEventListener('keydown', (event) => {
+  stage.canvas.addEventListener('keydown', (event) => {
     // A key pressed inside a text field is a letter, not an order: nothing on
     // the page has one today, and the day it does this is already right.
     const element = event.target;
@@ -360,10 +373,10 @@ function showMarquee(
   from: { readonly x: number; readonly y: number },
   to: { readonly x: number; readonly y: number },
 ): Sprite {
-  const x = Math.min(from.x, to.x);
-  const y = Math.min(from.y, to.y);
-  const width = Math.max(1, Math.abs(to.x - from.x));
-  const height = Math.max(1, Math.abs(to.y - from.y));
+  const x = Math.floor(Math.min(from.x, to.x));
+  const y = Math.floor(Math.min(from.y, to.y));
+  const width = Math.max(1, Math.ceil(Math.max(from.x, to.x)) - x);
+  const height = Math.max(1, Math.ceil(Math.max(from.y, to.y)) - y);
   const texture = textureOf(marquee(width, height));
 
   if (sprite === null) {

@@ -63,7 +63,7 @@ import type { SiegeVisible, VisibleFront } from '../sim/siege.ts';
  * have nothing to say to each other, so the number is the first field an agent
  * reads and the one thing it cannot interpret.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /**
  * How often the harness asks the agent for Commands, in ticks, unless the
@@ -129,12 +129,24 @@ export interface WireSquadType {
   readonly id: string;
   readonly faction: Faction;
   readonly tier: number;
+  /** The largest size the type may be raised at: a full-strength Squad is counted as this. */
   readonly strength: number;
+  /** Every real size a `recruit` may name for it, smallest first (ADR-0026). */
+  readonly sizes: readonly number[];
+  /**
+   * What one of its men is worth in a blow, against one man of the line
+   * (ADR-0028): `1` for infantry and slingers, `2` for the Numidian horse, `4`
+   * for the elephant. An agent's own Squads also carry their `bearing`, which is
+   * `men × impact`; this is the roster fact it needs to price a purchase.
+   */
+  readonly impact: number;
   readonly arm: string;
   readonly morale: number;
   readonly ammunition: number;
   readonly pace: number;
+  /** The Payroll rate: denarii each Season per 24 surviving men (ADR-0027). */
   readonly payroll: number;
+  /** The 24-man resource price; a larger size scales in exact proportion. */
   readonly cost: ResourceAmounts;
 }
 
@@ -268,6 +280,8 @@ function asWireSquadType(type: (typeof SQUAD_TYPES)[number]): WireSquadType {
     faction: type.faction,
     tier: type.tier,
     strength: type.strength,
+    sizes: type.sizes,
+    impact: type.impact,
     arm: type.arm,
     morale: type.morale,
     ammunition: type.ammunition,

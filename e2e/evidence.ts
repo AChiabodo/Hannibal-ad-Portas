@@ -43,6 +43,8 @@ export const EVIDENCE_DIR = process.env.SPQR_VISUAL_DIR ?? join(tmpdir(), 'spqr-
  * that the per-issue `%TEMP%` folders used to carry.
  */
 export type EvidenceFolder =
+  | 'issue71'
+  | 'issue70'
   | 'issue52'
   | 'issue53'
   | 'issue54'
@@ -52,7 +54,9 @@ export type EvidenceFolder =
   | 'issue58'
   | 'issue59'
   | 'issue62'
-  | 'issue64';
+  | 'issue64'
+  | 'issue67'
+  | 'issue68' | 'issue69';
 
 /**
  * Presents the frame the page has just drawn and, when the run is producing

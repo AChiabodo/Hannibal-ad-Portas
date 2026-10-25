@@ -90,7 +90,7 @@ npm run match -- --rules ai --seed 1 --ticks 2101
 
 The default bound remains three game years. This harness runs two fresh AIs
 against the complete Siege Match rules and their existing filtered projections.
-The default `armyRegistry` installs economy, field, scouting and siege policies
+The default `armyRegistry` installs economy, field, scouting, expansion and siege policies
 at Centurio. `economyRegistry`, `militaryRegistry` and `scoutingRegistry` (D4's
 field and patrols, without a siege) remain available for isolated scenarios.
 An explicitly empty registry
@@ -102,12 +102,20 @@ still runs the foundation alone, ending at the bound without Commands.
 constants from the composition root, outside `ai/`. It reads only owned economic
 facts and observed fronts; it never imports the rules, world or hidden map.
 
-Rome's growth posture puts its Villa first. Carthage's commerce posture puts a
-Market first, then grows the labour pool and production needed for a Villa.
-Both pursue Tier 2 deliberately. A second Market waits until that Tier exists
+Both postures prioritize the first affordable detachment. Rome starts a Market
+to fund its first Payroll before spending the opening timber on a Villa;
+Carthage can initially afford a small Gaul detachment from ordinary taxes.
+Both pursue Tier 2 and then Tier 3 when resources and staffed food production
+can support the Villa and Forum. A second Market waits until Tier 2 exists
 so it cannot consume the labour needed to reach it. Housing follows population
 pressure; resource producers follow measured stock shortages and winter food
 needs, with utilities and reasons in the decision log.
+
+The first Roman Market and payable detachment can be planned together when
+construction finishes before Payroll. The combined purchase pays both costs,
+retains food and treasury reserves, and requires enough existing labour.
+Granaries receive priority when storage cannot hold the food floor plus an
+otherwise sustainable recruit. Difficulty never reduces that food floor.
 
 Labour allocation remains automatic: there is no assignment Command (ADR-0005).
 The policy changes the demand by choosing which work to raise, waits for current
@@ -115,12 +123,17 @@ construction, and rejects works it cannot staff. It keeps hands on land unless
 grain works can feed the population. This is the same allocation every Controller
 uses, with no AI-only production rule.
 
-Every operational decision recomputes recurring tax and staffed, standing Market
-income. Unfinished or unstaffed works and blockaded settlements contribute no
-Market income; blockaded settlements contribute no tax either. Recruitment emits
-one Squad at a time, requires total Payroll no greater than recurring income,
-retains two Seasons of the proposed Payroll plus `WORKING_TREASURY` (six)
-denarii, and leaves three Seasons of population food in stock. Unpaid Squads
+Every operational decision recomputes recurring tax and staffed Market income
+available by the next Payroll. A staffed Market still under construction counts
+only if its remaining work finishes before that boundary; the calendar owner
+supplies `ticksUntilSeason` through the composition root rather than the policy
+deriving Season boundaries. Unstaffed works and blockaded settlements contribute
+no Market income; blockaded settlements contribute no tax either. Recruitment prices
+every real size a type offers with the content table's own `recruitCost` and
+`payrollBill`, emits one Squad at a time, requires total Payroll no greater than
+recurring income, retains two Seasons of the proposed Payroll plus
+`WORKING_TREASURY` (six) denarii, and leaves three Seasons of population food in
+stock. It prefers the larger real size when the treasury and income can carry it. Unpaid Squads
 suspend recruitment and put
 the next strategic plan into recovery posture. Externally imposed bankruptcy
 still follows the ordinary morale and desertion rules; there is no rescue grant.
@@ -137,8 +150,9 @@ balance or browser rendering evidence.
 `createMilitaryBehaviour` receives the public Squad catalogue, matchup matrix
 and fatigue scale at composition. The complete Siege Observation now includes
 `enemies`: only enemy field Squads within the ordinary circular vision of owned
-settlements or Squads. Each record contains id, type and current tile; it carries
-no enemy treasury, stock, strength, morale or goal. Vision uses the same disc as
+settlements or Squads. Each record contains id, type, current tile and its visible
+formation appearance (men, capacity, figures, formation and facing; ADR-0029).
+It carries no enemy treasury, stock, morale, fatigue, ammunition or goal. Vision uses the same disc as
 terrain fog. Garrisons and enemies outside that disc are absent. D4 adds the
 Faction's authoritative `fog` and its decoded `contacts` beside current sight;
 reading the projection never refreshes memory. Since D4, a settlement's front is
@@ -154,6 +168,8 @@ that Observation. Unoccupied regions have zero threat. Friendly power scales
 the Squad's remaining strength and morale, discounted up to half by fatigue.
 Enemy power uses the observed type's full nominal morale, since its actual
 condition is private; an unknown type gets a conservative default estimate.
+The current military policy still uses nominal type strength; the appearance
+extension enables honest formation rendering without retuning this policy.
 An owned settlement's region also includes enemies within `DEFENCE_RADIUS` tiles of the
 settlement, including across region edges. Regions with the largest deficit
 between threat and friendly power receive defensive allocation first. The
@@ -197,7 +213,8 @@ or siege-prosecution evidence. Siege Commands belong to D5.
 
 The complete Siege Match owns two independent fog memories. It refreshes them
 at creation and after every tick, using the same circular settlement and Squad
-vision as current sight. Enemy field Squads and enemy-owned settlements enter
+vision as current sight. Enemy field Squads and non-owned settlements, including
+neutral villages, enter
 memory only in vision. A contact keeps its observed type, tile and tick after
 losing sight. Looking at its empty tile disproves it; hidden movement, death or
 capture cannot erase it. Settlement ids are negative within the fog's contact
@@ -205,7 +222,9 @@ namespace and Squad ids positive, so the two cannot overwrite each other. A
 contact's kind is a typed value (`ContactKind`) over the one integer the fog
 holds, so a reader never unpacks a category and a Squad type index by hand. The
 Observation decodes these records into `squad`, `settlement` or `stronghold`,
-without consulting the live enemy. Memory is state, hashed and replayed.
+without consulting the live enemy. `unowned: true` is added only to a currently
+visible neutral village; a remembered contact reports no current ownership.
+Memory is state, hashed and replayed.
 
 `createScoutingBehaviour` receives only public map dimensions, terrain codes,
 vision radius, tick rate, Squad catalogue and explicit eligible scout types.
@@ -221,9 +240,18 @@ reveal unexplored terrain. They score information gain against travel distance,
 prefer progress away from home and toward the interior, and spread detachments
 across different targets. A march continues while its destination can still
 reveal ground or refresh a contact. There is no random choice, hidden terrain
-lookup or enemy-position hint. After thirty seconds a remembered contact can
+lookup or enemy-position hint. Before finding the enemy, the first crossing is
+biased toward the region opposite its own home; once that region is observed,
+ordinary information-gain scoring resumes. This geographical heuristic can
+search the wrong latitude and does not guarantee a contact deadline.
+After thirty seconds a remembered contact can
 draw a patrol back within circular vision, refreshing it through the ordinary
 Match rules. Exploration continues after discovery.
+
+The fixed passive-human pressure matrix, retained failures and changed
+AI-vs-AI outcome baseline are in
+[the #71 diagnostic report](reviews/issue-71-visible-pressure.md).
+Neither discovery tests nor headless pacing prove normal-browser visual pressure.
 
 The search is the most expensive thing the AI does, and it is done on every tick:
 a whole-theatre walk per light Squad, asking of every tile how much unknown ground
@@ -320,6 +348,27 @@ A siege owns the Squads it commits. `scoutingRegistry` remains the D4 field and
 its patrols; `difficultyRegistry` adds the siege, and its candidate outranks the
 field's so a `hold` cannot stand down a Squad already at the walls. A field
 `withdraw` is the one exception, and the siege releases the men it names.
+Recovery also owns an existing march to friendly quarters on subsequent ticks.
+Spent scouts receive that march even outside combat; at home they remain out of
+scouting and siege until eligible again. Siege force excludes spent and returning
+Squads before choosing its path, and an empty ring never emits an empty withdrawal.
+
+The half-morale recovery threshold accounts for an existing Assault's paid ram:
+the field and siege share `createAssaultReadiness`. A ring can continue when its
+visible remaining construction will shelter it before morale reaches zero. The
+completion round is already protected. Half-strength Squads and a force that
+cannot match observed relief still withdraw. Returning men rest to full morale
+at home before another offensive campaign; they can still defend a threatened
+home through the ordinary defence allocation.
+
+After the first Payroll, `createExpansionBehaviour` can occupy an observed open
+settlement when the main siege is not sustainable. It uses recent contact memory,
+avoids known garrisons and approaches threatened by observed or remembered troops,
+and keeps a detachment on the centre until capture. Non-hold field orders and
+recovery retain their Squads. Newly owned settlements then use the same ordinary
+economy policy. This is exploration and capture through the existing rules, with
+no neutral coordinates or ownership granted through hidden ground. Discovery
+patrols keep their enemy/Stronghold refresh task; villages belong to expansion.
 
 ## The three difficulty levels (D5)
 
@@ -332,6 +381,7 @@ Each has four axes and nothing else:
 | Aggression (`attackPercent`) | 130% | 125% | 115% |
 | Planning horizon (Seasons of reserve) | 1 | 2 | 3 |
 | Scouting quota (`scoutsPer`/`scoutsPerFound`) | 5/12 | 3/8 | 2/5 |
+| Minimum opening patrols, when available | 1 | 1 | 2 |
 | Contact refresh | 60 s | 30 s | 15 s |
 
 Reaction time is `createAi`'s `operationalSeconds`; the default 30 is Centurio,
@@ -341,6 +391,11 @@ Aggression sets the margin the field needs before attacking and biases the siege
 toward the fast path. Horizon is the Seasons of Payroll the economy holds back
 and one less than its grain floor. Scouting quality is how large a share of the
 army explores and how soon a contact is worth refreshing.
+
+Before finding the enemy, patrols favor the opposite end of the theatre in
+longitude, exploring unknown ground across latitudes. They do not assume that
+the enemy's latitude mirrors their home. Multiple patrols choose distinct goals;
+neither hidden coordinates nor a seed-specific route enters the policy.
 
 Difficulty changes the opponent's thinking and nothing else. It never grants
 resources, production or vision: every value is a threshold or a clock the
@@ -354,12 +409,19 @@ Carthaginian blockade, reinforcement, abandonment and the age limit through the
 Controller.
 `tests/ai/difficulty.test.ts` checks the four axes, the operational clock, and
 that every level sees the same rule-filtered Observation. `tests/ai/siege-match.test.ts`
-plays whole Matches with no human: Rome takes the Stronghold by Assault on seed 1
-and Carthage by Blockade on seed 7, a Stronghold still falls at Tiro and
-Imperator, the Command log replays to the same hash, the
+plays whole Matches with no human. Its retained historical seeds now end with
+real conquests, including the previously stalled Centurio seeds 1, 7 and 6;
+see [the recovery report](reviews/issue-21-24-ai-recovery.md).
+The Command log replays to the same hash, the
 decisions do not move when a hidden army moves, and the three levels' decision
 logs are distinguishable on one seed. These are deterministic policy checks, not
 tournament balance: the balance numbers are E3's and F1's.
+
+Defensive allocation prices an approach from outside local contact with the
+power the men retain at maximum marching Fatigue. It therefore does not send a
+fresh-looking line that it will immediately recall as too weak after the march.
+Current local contact retains its observed power; the enemy estimate and force
+rules are unchanged.
 
 ## The import fence
 

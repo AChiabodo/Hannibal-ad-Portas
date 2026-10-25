@@ -151,6 +151,8 @@ export interface RecruitCommand extends CommandBase {
   readonly settlement: number;
   /** A Squad type id from the content table (C4). */
   readonly squadType: string;
+  /** The men each Squad is raised with: one of the type's real sizes (ADR-0026). */
+  readonly men: number;
   /** How many Squads to raise; at least one. */
   readonly count: number;
 }
@@ -303,14 +305,15 @@ export function build(faction: Faction, settlement: number, building: string): B
   return readBuild({ kind: 'build', faction, settlement, building }, ROOT);
 }
 
-/** Builds a Recruit Command. @throws CommandValidationError when the count is not positive or the type has no id. */
+/** Builds a Recruit Command. @throws CommandValidationError when the size or count is not positive, or the type has no id. */
 export function recruit(
   faction: Faction,
   settlement: number,
   squadType: string,
+  men: number,
   count: number,
 ): RecruitCommand {
-  return readRecruit({ kind: 'recruit', faction, settlement, squadType, count }, ROOT);
+  return readRecruit({ kind: 'recruit', faction, settlement, squadType, men, count }, ROOT);
 }
 
 /** Builds an Assault Command. @throws CommandValidationError when it names no Squad or no settlement. */
@@ -493,6 +496,7 @@ function readRecruit(value: Candidate, path: string): RecruitCommand {
     FACTION_FIELD,
     'settlement',
     'squadType',
+    'men',
     'count',
   ]);
 
@@ -501,6 +505,7 @@ function readRecruit(value: Candidate, path: string): RecruitCommand {
     faction: requireFaction(value.faction, `${path}.faction`),
     settlement: requireId(value.settlement, `${path}.settlement`, 'settlement'),
     squadType: requireContentId(value.squadType, `${path}.squadType`, 'Squad type'),
+    men: requirePositive(value.men, `${path}.men`, 'size'),
     count: requirePositive(value.count, `${path}.count`, 'count'),
   };
 }

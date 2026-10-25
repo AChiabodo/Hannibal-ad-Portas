@@ -31,6 +31,7 @@
  */
 import { Container, Sprite, Texture } from 'pixi.js';
 import type { VisibleSquad } from '../sim/economy-match.ts';
+import type { SiegeVisible } from '../sim/siege.ts';
 import type { Corpse } from '../sim/residue.ts';
 import type { Facing } from '../sim/squad.ts';
 import type { OrderMarkKind } from '../art/markers.ts';
@@ -52,7 +53,7 @@ import {
   markerPlacement,
 } from './indicators.ts';
 import { textureOf } from './stage.ts';
-import { blockPlacement, squadBlock, squadFrameKey, visualShape } from './squads.ts';
+import { blockPlacement, squadBlock, squadFrameKey, visualShape, type SquadDrawing } from './squads.ts';
 import { tilePixel } from './terrain.ts';
 import { standardInsignia } from '../art/figures.ts';
 
@@ -60,6 +61,8 @@ import { standardInsignia } from '../art/figures.ts';
 export interface SquadField {
   /** The Faction's own Squads, as its Observation names them. */
   readonly squads: readonly VisibleSquad[];
+  /** Currently sighted enemy formations. Historical contacts never become sprites. */
+  readonly enemies?: SiegeVisible['enemies'];
 
   /** The Squad ids the Player has picked, which are ringed on the map. */
   readonly selected: readonly number[];
@@ -193,18 +196,25 @@ export function createSquadLayer(parent: Container): SquadLayer {
     },
 
     update(field) {
-      const afield = new Set(field.squads.map((squad) => squad.id));
+      const formations: { squad: SquadDrawing & { x: number; y: number }; own?: VisibleSquad; faction: 'rome' | 'carthage' }[] =
+        field.squads.map((squad) => ({ squad, own: squad, faction: field.faction }));
+      for (const enemy of field.enemies ?? []) {
+        if (!enemy.appearance) continue;
+        formations.push({ squad: { id: enemy.id, type: enemy.type, x: enemy.x, y: enemy.y,
+          ...enemy.appearance, goal: null }, faction: field.faction === 'rome' ? 'carthage' : 'rome' });
+      }
+      const afield = new Set(formations.map(({ squad }) => squad.id));
 
-      for (const squad of field.squads) {
-        const selected = field.selected.includes(squad.id);
-        const key = squadFrameKey(squad, { tick: field.tick, faction: field.faction, selected });
+      for (const { squad, own, faction } of formations) {
+        const selected = own !== undefined && field.selected.includes(squad.id);
+        const key = squadFrameKey(squad, { tick: field.tick, faction, selected });
         const drawn = squads.get(squad.id);
         const shape = visualShape(squad);
         const at = blockPlacement(tilePixel(squad.x, squad.y), shape);
         const placement = markerPlacement(tilePixel(squad.x, squad.y), shape);
 
         if (drawn === undefined) {
-          const sprite = new Sprite(textureOf(squadBlock(squad, { tick: field.tick, faction: field.faction, selected })));
+          const sprite = new Sprite(textureOf(squadBlock(squad, { tick: field.tick, faction, selected })));
           sprite.position.set(at.x, at.y);
           sprite.zIndex = squad.y;
           root.addChild(sprite);
@@ -214,7 +224,7 @@ export function createSquadLayer(parent: Container): SquadLayer {
             // A new shape: a new texture, and the one before it let go rather
             // than kept. A marching block re-draws on the tick it steps, so a
             // page left open for an hour is not an hour of textures.
-            const next = textureOf(squadBlock(squad, { tick: field.tick, faction: field.faction, selected }));
+            const next = textureOf(squadBlock(squad, { tick: field.tick, faction, selected }));
             drawn.sprite.texture.destroy(true);
             drawn.sprite.texture = next;
             drawn.key = key;
@@ -223,10 +233,10 @@ export function createSquadLayer(parent: Container): SquadLayer {
           drawn.sprite.zIndex = squad.y;
         }
 
-        standard(standards, standardSprites, standardTextures, squad, field.faction, placement.standard);
-        annotate(annotations, {
+        standard(standards, standardSprites, standardTextures, squad, faction, placement.standard);
+        if (own) annotate(annotations, {
           plates, plateTextures, pins, pinTextures, facings, facingTextures, destinationTextures, marks,
-        }, squad, selected, placement, field.orderMarks?.[squad.id] ?? 'move');
+        }, own, selected, placement, field.orderMarks?.[squad.id] ?? 'move');
       }
 
       for (const [id, drawn] of squads) {
@@ -309,7 +319,7 @@ function standard(
   parent: Container,
   sprites: Map<number, Sprite>,
   textures: Map<string, Texture>,
-  squad: VisibleSquad,
+  squad: Pick<VisibleSquad, 'id' | 'y'>,
   faction: 'rome' | 'carthage',
   at: { readonly x: number; readonly y: number },
 ): void {

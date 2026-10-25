@@ -109,6 +109,8 @@ test.describe('setup explains the Match being configured', () => {
     test(`states Faction, difficulty and the objective at ${String(size.width)}x${String(size.height)}`, async ({ page }) => {
       await page.setViewportSize({ width: size.width, height: size.height });
       await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
       await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
       const label = await page.locator('#app canvas').getAttribute('aria-label');
       expect(label).toContain(translate('match.objective'));
@@ -184,19 +186,23 @@ test('the four acts are performed through the pointed-at interface, and their re
   await press(page, recruitment.rect);
 
   const offers = (await hud(page)).commands;
-  const line = offers.find((order) => order.id === 'recruit:hastati');
+  const line = offers.find((order) => order.id === 'recruit:hastati:24');
   expect(line, 'the Recruitment page offers hastati').toBeDefined();
   expect(line?.enabled, 'the opening resources can raise the first line').toBe(true);
   if (line === undefined) throw new Error('no hastati offer');
 
   // 2. Recruiting: the card itself, one press.
-  const card = (await hudLayout(page)).commands.find((command) => command.order.id === 'recruit:hastati');
+  const card = (await hudLayout(page)).commands.find((command) => command.order.id === 'recruit:hastati:24');
   expect(card, 'the card is drawn where the panel says').toBeDefined();
   if (card === undefined) throw new Error('no card to press');
   await press(page, card.rect);
+  await press(page, (await hudLayout(page)).buttons.find((button) => button.action === 'purchase:recruit:hastati:24')!.rect);
   expect((await guide(page))?.stage, 'a submitted recruit moves the guide to selection').toBe('select');
   expect((await hud(page)).orders.last?.status, 'a paused order is queued, not applied').toBe('pending');
-  expect((await hudLayout(page)).status.map((entry) => entry.text).join(' ')).toContain(translate('ui.submitted').replace('{name}', 'Astati'));
+  expect((await hud(page)).orders.pending).toBe(1);
+  const pendingLayout = await hudLayout(page);
+  expect([...pendingLayout.status, ...pendingLayout.text, ...pendingLayout.priority].map((entry) => entry.text).join(' '))
+    .toContain(translate('ui.pendingPaused').replace('{count}', '1'));
   await capture(page, 'recruit-pending-1280x720', 'issue59');
 
   await advance(page, 1);
@@ -321,6 +327,7 @@ test('a skipped guide stays dismissed across Matches and reopens from the option
   expect(options, 'the bar has an options control').toBeDefined();
   if (options === undefined) return;
   await press(page, options.rect);
+  await press(page, await page.evaluate(() => window.__SPQR.game!.matchLayout().buttons.find((button) => button.action === 'settings')!.rect));
   const reopen = (await page.evaluate(() => window.__SPQR.game!.matchLayout().buttons
     .find((button) => button.action === 'guide')?.text));
   expect(reopen).toBe(translate('ui.openGuide'));

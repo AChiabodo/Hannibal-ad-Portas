@@ -65,7 +65,7 @@ export const VIEW_HOOKS = [
  * seam, so a button is never a second way into the Match (#55).
  */
 export const GAME_HOOKS = [
-  'preferences', 'setUiScale', 'toggleNavigator', 'toggleGuide', 'resetPreferences', 'centerSelection', 'navigateMinimap', 'doubleClickAt',
+  'preferences', 'setPanelLayout', 'setUiScale', 'toggleNavigator', 'toggleGuide', 'resetPreferences', 'centerSelection', 'navigateMinimap', 'doubleClickAt',
   'submit',
   'configuration',
   'matchLayout',
@@ -87,6 +87,7 @@ export const GAME_HOOKS = [
   'targetAt',
   'targetSettlement',
   'setTab',
+  'setCategory', 'reference', 'referenceLayout', 'openReference', 'closeReference', 'scrollReference',
   'groupBack',
   'squads',
   'corpses',
@@ -131,7 +132,7 @@ export const GAME_HOOKS = [
  * itself when it started — and it belongs to `GameView` in `render/boot.ts`
  * rather than to either half.
  */
-export const GAME_PAGE_HOOKS = ['probe', ...VIEW_HOOKS, ...GAME_HOOKS] as const;
+export const GAME_PAGE_HOOKS = ['probe', 'suspend', 'activate', 'dispose', ...VIEW_HOOKS, ...GAME_HOOKS] as const;
 
 /**
  * The Atelier's inspection surface — `AtelierHooks` in `render/atelier.ts`.

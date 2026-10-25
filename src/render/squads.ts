@@ -1,44 +1,9 @@
 /**
- * A Squad, drawn: its soldiers in formation (ticket C2, ADR-0004, PLAN §4).
- *
- * The simulation holds a Squad as **one block** — a tile, a formation, a facing
- * and a strength — and it holds its men's places only as a *derivation*
- * (`sim/squad.ts`: `menOf`, `frontage`, `depth`). This module is the other end
- * of that derivation: it takes the same shape the rules take, asks the same
- * function where a representative figure stands. The UI draws three figures per
- * four men, rounded up, at the original soldier size and with five-pixel spacing
- * (#62, explicit Player preference). Strength and formation rules remain the
- * simulation's; this projection only makes the silhouettes easier to see.
- * Losses shorten the representative list from its back, without shuffling.
- *
- * ## Where the drawing lives
- *
- * `art/` draws one soldier and knows nothing about the game; `sim/` knows where
- * the men stand and nothing about pixels. This module is the seam between them,
- * exactly as `render/terrain.ts` is the seam between the map's terrains and the
- * art library's materials: the two vocabularies (a `Formation` and a figure's
- * `FigureLook`, a `Facing` and a `FigureFacing`) are married here, in one place,
- * by tables a test can walk to prove they are total.
- *
- * Everything here is **pure**: no engine, no clock, no state. A block is a
- * function of the Squad it draws and of the tick it is drawn on, so it can be
- * composed in Node, hashed by a test, and compared with what the browser drew —
- * which is the only way "the formation on screen is the formation the simulation
- * holds" is a checked claim rather than a hope.
- *
- * ## Two decisions worth stating
- *
- * **Men are drawn back rank first.** A man further from the front stands higher
- * on the screen, and a later rank must be painted *before* an earlier one or the
- * front rank would be hidden by the men behind it. The drawing order is
- * therefore the reverse of the list, and it is the one thing about a block that
- * depends on where the front is.
- *
- * **A block is drawn from its own geometry.** The buffer is as big as the men in
- * it, and the caller is told where its bottom edge belongs: a Squad stands on
- * one tile (ADR-0004) and its men stand *up* from that tile, so the block is
- * anchored by its ground line rather than by its middle. That is what keeps a
- * line of one man and a column of forty level with each other.
+ * Pure presentation of aggregate Squads (#67, ADR-0004/0026).
+ * Purchased capacity fixes the slot grid; survivors remove a deterministic
+ * prefix of a visual casualty ordering. No soldier state or simulation RNG.
+ * Bounds retain vacant slots. Figures keep upright screen-space silhouettes;
+ * only their ground positions rotate. Paint order follows screen y, then x.
  */
 import {
   FIGURE_FACTION,
@@ -61,13 +26,11 @@ import {
 import type { VisibleSquad } from '../sim/economy-match.ts';
 import { TILE_SIZE } from '../sim/map.ts';
 import type { Formation } from '../sim/command.ts';
-import {
-  formationCode,
-  frontage,
-  menOf,
-  type Facing,
-  type Shape,
-} from '../sim/squad.ts';
+import type { Facing } from '../sim/squad.ts';
+import { formationShape } from '../content/formation.ts';
+
+/** The geometric data a procedural formation needs; private condition is irrelevant. */
+export type SquadDrawing = Pick<VisibleSquad, 'id' | 'type' | 'capacity' | 'figures' | 'formation' | 'facing' | 'goal'>;
 
 /**
  * Which figure each Squad type is drawn as: both rosters, named for their types.
@@ -118,10 +81,10 @@ export const FIGURE_FACING_OF_FACING: Readonly<Record<Facing, FigureFacing>> = {
  * shields overlapping, not a row of men with gaps between them, and the overlap
  * is what makes a hundred and twenty men read as one block at the lowest zoom.
  */
-export const FILE_STEP = 5;
+export const FILE_STEP = 4;
 
 /**
- * How far apart two ranks stand, in pixels: the same, for the same reason.
+ * How far apart two ranks stand, in pixels: enough to retain heads and equipment.
  *
  * A rank stands *behind* the one in front of it, which in a top-down view is a
  * few pixels up the screen; the overlap is what makes a column deep rather than
@@ -129,20 +92,18 @@ export const FILE_STEP = 5;
  */
 export const RANK_STEP = 5;
 
-/** Three representative figures per four men; beasts stay one figure. UI only. */
-export function visualShape(squad: Pick<VisibleSquad, 'figures' | 'formation' | 'facing'>): BlockShape {
-  return { men: Math.ceil(squad.figures * 3 / 4), formation: squad.formation, facing: squad.facing };
+/** One Figure per survivor, and one beast regardless of abstract strength. */
+export function visualShape(squad: Pick<VisibleSquad, 'id' | 'type' | 'capacity' | 'figures' | 'formation' | 'facing'>): BlockShape {
+  return { men: squad.figures, capacity: squad.type === 'elephant' ? 1 : squad.capacity,
+    seed: squad.id, formation: squad.formation, facing: squad.facing };
 }
 
-/**
- * The shape of a block, as the words a drawing code speaks: a formation, a
- * number of men and a facing.
- *
- * `sim/squad.ts` holds a shape as integer codes (state, ADR-0006); this is the
- * same shape in the vocabulary a reader uses, and `blockMen` translates on the
- * way in rather than making the renderer carry two spellings of one thing.
- */
+/** Recruited presentation geometry, independent of simulation combat frontage. */
 export interface BlockShape {
+  /** Purchased slots, unchanged by losses. Defaults to men for standalone art. */
+  readonly capacity?: number;
+  /** Squad identity decorrelates illustrative casualties without simulation RNG. */
+  readonly seed?: number;
   /** The shape it holds. */
   readonly formation: Formation;
 
@@ -165,10 +126,10 @@ export interface PlacedMan {
   /** Which rank he stands in, 0 is the front rank. */
   readonly rank: number;
 
-  /** The x his figure is drawn at, before the block is cropped to its men. */
+  /** The x his figure is drawn at, before translation into the purchased buffer. */
   readonly x: number;
 
-  /** The y his figure is drawn at, before the block is cropped to its men. */
+  /** The y his figure is drawn at, before translation into the purchased buffer. */
   readonly y: number;
 }
 
@@ -178,42 +139,40 @@ export interface BlockSize {
   readonly height: number;
 }
 
-/**
- * Where every man of a block stands, in block pixels.
- *
- * The men come from `sim/squad.ts` — the same list the rules derive — and are
- * laid out front rank first, left to right, and then *turned* to the way the
- * Squad faces. The turn is a rotation of the layout rather than of each figure:
- * a block facing east has its front rank on the right-hand edge of the block and
- * its files running down the screen, which is what a column seen from the side
- * looks like.
- *
- * @throws RangeError when the block holds no men, or a formation no Squad can
- *   hold: there is no shape to a block of nobody.
- */
+/** Survivors in their original purchased slots, with stable interior gaps. */
 export function blockMen(shape: BlockShape): readonly PlacedMan[] {
-  const held: Shape = { formation: formationCode(shape.formation), strength: shape.men };
-  const front = frontage(held);
+  const slots = recruitedSlots(shape);
+  const lost = slots.length - shape.men;
+  // Sort a fixed capacity-sized list, never the survivors. Further losses remove
+  // a prefix of the same ordering: existing empty slots cannot refill.
+  const casualties = new Set(slots.map((_slot, index) => ({ index,
+    score: Math.imul(index + 1, 0x45d9f3b) ^ Math.imul((shape.seed ?? 0) + index, 0x119de1f3),
+  })).sort((a, b) => (a.score >>> 0) - (b.score >>> 0) || a.index - b.index)
+    .slice(0, lost).map(({ index }) => index));
+  return slots.filter((_slot, index) => !casualties.has(index));
+}
 
-  return menOf(held).map((man) => {
-    // The front rank is the block's origin and the ranks grow *behind* it, so a
-    // Squad that loses a rank loses the men furthest from where it stands and
-    // nobody shuffles; the files are centred on the frontage, which only changes
-    // when the last few men are left. Whole pixels, rounded down, so the
-    // same shape and facing is the same layout on every engine.
-    const along = Math.floor(((2 * man.file - (front - 1)) * FILE_STEP) / 2);
-    const behind = man.rank * RANK_STEP;
-
-    return { ...man, ...turned(shape.facing, along, behind) };
+/** Canonical purchased geometry; no simulation frontage/combat rule is changed. */
+function recruitedSlots(shape: BlockShape): readonly PlacedMan[] {
+  const capacity = shape.capacity ?? shape.men;
+  if (!Number.isInteger(capacity) || !Number.isInteger(shape.men) || shape.men < 1 || shape.men > capacity) {
+    throw new RangeError('a block needs surviving men within its purchased capacity');
+  }
+  if (shape.formation !== 'line' && shape.formation !== 'column') throw new RangeError('unknown block formation');
+  const { files } = formationShape(capacity, shape.formation);
+  return Array.from({ length: capacity }, (_unused, index) => {
+    const file = index % files;
+    const rank = Math.floor(index / files);
+    const along = Math.floor(((2 * file - (files - 1)) * FILE_STEP) / 2);
+    return { file, rank, ...turned(shape.facing, along, rank * RANK_STEP) };
   });
 }
 
-/** How big the block is: its men's places, and the size of one figure. */
+/** Bounds include vacant purchased slots, keeping the anchor and plates stable. */
 export function blockSize(shape: BlockShape): BlockSize {
-  const men = blockMen(shape);
+  const men = recruitedSlots(shape);
   const xs = men.map((man) => man.x);
   const ys = men.map((man) => man.y);
-
   return {
     width: Math.max(...xs) - Math.min(...xs) + FIGURE_WIDTH,
     height: Math.max(...ys) - Math.min(...ys) + FIGURE_HEIGHT,
@@ -284,7 +243,7 @@ export const SELECTION_INK: Rgba = shadeAt(RAMPS.parchment, 6);
  * @throws RangeError when the Squad's type is not one the content table knows:
  *   a Squad the roster cannot draw is worth refusing loudly.
  */
-export function squadBlock(squad: VisibleSquad, options: BlockOptions = {}): PixelBuffer {
+export function squadBlock(squad: SquadDrawing, options: BlockOptions = {}): PixelBuffer {
   const figure = FIGURE_OF_SQUAD[squad.type];
   if (figure === undefined) {
     throw new RangeError(`"${squad.type}" is not a Squad type the rosters draw`);
@@ -294,17 +253,17 @@ export function squadBlock(squad: VisibleSquad, options: BlockOptions = {}): Pix
   const men = blockMen(shape);
   const size = blockSize(shape);
   const block = createPixelBuffer(size.width, size.height);
-  const left = Math.min(...men.map((man) => man.x));
-  const top = Math.min(...men.map((man) => man.y));
+  const slots = recruitedSlots(shape);
+  const left = Math.min(...slots.map((man) => man.x));
+  const top = Math.min(...slots.map((man) => man.y));
   const faction = clothOf(figure, options.faction);
 
   if (options.selected === true) {
     ring(block, 0, 0, block.width, block.height);
   }
 
-  // The reverse of the list is the rear rank first, which is the order a block
-  // is painted in: a man behind another must not cover him.
-  for (const man of [...men].reverse()) {
+  // Screen depth rather than slot order: east/north facings still overlap correctly.
+  for (const man of [...men].sort((a, b) => a.y - b.y || a.x - b.x)) {
     const frame = frameFor(squad, man, options.tick ?? 0);
     blit(block, soldier(figure, FIGURE_FACING_OF_FACING[squad.facing], frame, faction), man.x - left, man.y - top);
   }
@@ -320,12 +279,14 @@ export function squadBlock(squad: VisibleSquad, options: BlockOptions = {}): Pix
  * twenty soldiers sixty times a second. It is exported so that the page's own
  * loop and this module cannot disagree about when a block is stale.
  */
-export function squadFrameKey(squad: VisibleSquad, options: BlockOptions = {}): string {
+export function squadFrameKey(squad: SquadDrawing, options: BlockOptions = {}): string {
   return [
     squad.type,
     squad.facing,
     squad.formation,
     squad.figures,
+    squad.capacity,
+    squad.id,
     clothOf(FIGURE_OF_SQUAD[squad.type], options.faction),
     frameStepOf(squad, options.tick ?? 0),
     options.selected === true ? 'selected' : 'plain',
@@ -358,7 +319,7 @@ function clothOf(figure: FigureName | undefined, override?: 'rome' | 'carthage')
  * at the 10 Hz clock: fast enough to read as walking, slow enough for a block of
  * men not to shimmer.
  */
-export function frameStepOf(squad: VisibleSquad, tick: number): number {
+export function frameStepOf(squad: SquadDrawing, tick: number): number {
   return squad.goal === null ? -1 : Math.floor(tick / 2) % 2;
 }
 
@@ -366,7 +327,7 @@ export function frameStepOf(squad: VisibleSquad, tick: number): number {
  * One man's frame: the Squad's frame, offset by where he stands, so that the men
  * of a marching block are not in lockstep.
  */
-function frameFor(squad: VisibleSquad, man: PlacedMan, tick: number): FigureFrame {
+function frameFor(squad: SquadDrawing, man: PlacedMan, tick: number): FigureFrame {
   const step = frameStepOf(squad, tick);
   if (step < 0) return figureFrame('idle', 0);
 
@@ -379,17 +340,8 @@ function ring(block: PixelBuffer, x: number, y: number, width: number, height: n
 }
 
 /**
- * Where the block's sprite goes, in theatre pixels, when its Squad stands on the
- * tile whose top-left corner is `at`.
- *
- * A Squad stands on one tile (ADR-0004) and its block is anchored by the one
- * point on it that does not move: **the middle of the front rank's ground
- * line**. The front rank's men therefore stand on the tile the simulation says
- * they are on, the ranks behind them are drawn behind, and a Squad that has lost
- * a rank loses men at the back of the block rather than having every survivor
- * shift half a step. That is what "a Squad that has lost men stands exactly
- * where it did" means on screen, and it is what lets a Player watch a Squad thin
- * out over a fight instead of watching it shudder.
+ * Places the front rank's foot centre on the Tile. Bounds include every
+ * purchased slot, so further casualties never shift the buffer or survivors.
  */
 export function blockPlacement(
   at: { readonly x: number; readonly y: number },
@@ -404,19 +356,14 @@ export function blockPlacement(
 }
 
 /**
- * Where the middle of the front rank's ground line stands inside a drawn block,
- * in buffer pixels.
- *
- * The one point a block is placed by. It is derived from the same layout the men
- * are drawn from — nothing is stored and nothing can drift — and it is
- * `turned`'s own arithmetic, so a Squad facing east is anchored by the middle of
- * its eastern face and not by its middle.
+ * Centre of the front rank feet, relative to the purchased buffer. A Figure
+ * stays upright on screen even when the grid turns, so its own feet do not turn.
  */
 export function blockAnchor(shape: BlockShape): { readonly x: number; readonly y: number } {
-  const men = blockMen(shape);
-  const left = Math.min(...men.map((man) => man.x));
-  const top = Math.min(...men.map((man) => man.y));
-  const anchor = turned(shape.facing, Math.floor(FIGURE_WIDTH / 2), FIGURE_HEIGHT);
+  const slots = recruitedSlots(shape);
+  const left = Math.min(...slots.map((man) => man.x));
+  const top = Math.min(...slots.map((man) => man.y));
+  const anchor = { x: Math.floor(FIGURE_WIDTH / 2), y: FIGURE_HEIGHT };
 
   return { x: anchor.x - left, y: anchor.y - top };
 }

@@ -9,6 +9,8 @@
         color-scheme: dark;
       }
 
+      a { color: inherit; }
+
       body {
         margin: 0;
         min-height: 100vh;
@@ -39,6 +41,11 @@
     </style>
   </head>
   <body>
+    <nav aria-label="Studi di Atelier" style="padding:8px">
+      <a href="?">Catalogo</a> &middot; <a href="?study=67&amp;scene=formations">Formazioni #67</a> &middot;
+      <a href="?study=67&amp;scene=proportions">Proporzioni 60/64</a> &middot;
+      <a href="?study=67&amp;treatment=compact">Compatto</a> &middot; <a href="?study=67&amp;treatment=fine&amp;zoom=3">Sorgente doppia, zoom 3</a>
+    </nav>
     <div id="app"></div>
     <script type="module" src="/src/atelier.ts"></script>
   </body>

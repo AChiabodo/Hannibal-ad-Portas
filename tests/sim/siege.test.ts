@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createFogs } from '../../src/sim/fog.ts';
-import { assault, blockade, garrison, hold, type Command } from '../../src/sim/command';
+import { assault, blockade, garrison, hold, move, type Command } from '../../src/sim/command';
 import { engagedPairs } from '../../src/sim/combat';
 import { idleController } from '../../src/sim/controller';
 import { runMatch, type MatchSetup } from '../../src/sim/driver';
@@ -44,6 +44,21 @@ const CARTHAGE: Site = { x: 85, y: 85 };
 
 /** A tile one step from Carthage's Stronghold: where a besieging army stands at the walls. */
 const AT_THE_GATE: Site = { x: 84, y: 85 };
+
+it('shows only the real visual formation of an enemy currently in sight, without its private condition or orders', () => {
+  const world = stage();
+  const enemy = musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', x: 12, y: 10, men: 24 });
+  enemy.strength = 9;
+  const observed = observeSiege(world, 'rome').enemies;
+  expect(observed).toMatchObject([{ id: enemy.id, type: 'gaul', x: 12, y: 10,
+    appearance: { men: 9, capacity: 24, figures: 9, formation: 'line', facing: 'south' } }]);
+  expect(Object.keys(observed[0]!).sort()).toEqual(['appearance', 'id', 'type', 'x', 'y']);
+  expect(Object.keys(observed[0]!.appearance!).sort()).toEqual(['capacity', 'facing', 'figures', 'formation', 'men']);
+  const match = matchOn(world);
+  match.step([move('carthage', [enemy.id], 70, 10)]);
+  run(match, 80);
+  expect(observeSiege(match.state.world, 'rome').enemies).toEqual([]);
+});
 
 /**
  * A hand-built theatre: two Strongholds on plain ground, an optional minor
@@ -450,8 +465,12 @@ describe('a minor settlement, and nothing razed', () => {
 
   it('is not held while an enemy stands on its centre too: the centre has to be won first', () => {
     const world = stage({ minor: { x: 40, y: 40 } });
-    muster(world, 'rome', 'principes', { x: 40, y: 40 }, 2);
+    // Two bodies of the same men and the same arm, with neither side carrying
+    // missiles: the hold is decided on men alone, and this test is about the
+    // hold being a contest and not about which arm wins it (#66).
+    muster(world, 'rome', 'triarii', { x: 40, y: 40 }, 2);
     const defenders = muster(world, 'carthage', 'libyan-spear', { x: 40, y: 40 }, 2);
+    for (const squad of defenders) Object.assign(squad, { strength: 120, capacity: 120 });
     const match = matchOn(world);
 
     // A check falls on tick 0, with both Factions standing on the centre: nobody
@@ -566,4 +585,16 @@ describe('the Siege a seed opens', () => {
     expect(again.hash).toBe(once.hash);
     expect(siegeMatchOutcome(once.world)).toBeNull();
   });
+});
+
+it('captures a neutral settlement after a group actually marches to its centre, for either Faction', () => {
+  for (const faction of ['rome', 'carthage'] as const) {
+    const world = stage({ minor: { x: 40, y: 40 } });
+    const squads = muster(world, faction, faction === 'rome' ? 'hastati' : 'libyan-spear', { x: 35, y: 40 }, 2);
+    const match = matchOn(world);
+    match.step([move(faction, squads.map((squad) => squad.id), 40, 40)]);
+    run(match, 600);
+    expect(world.economy.settlements[2]?.owner).toBe(faction === 'rome' ? 0 : 1);
+    expect(squads.some((squad) => squad.x === 40 && squad.y === 40)).toBe(true);
+  }
 });

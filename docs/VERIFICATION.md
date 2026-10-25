@@ -34,6 +34,7 @@ complete acceptance runs.
 | `npm run test:focus -- src/ui/strings.ts` | Vitest's import graph from one or more changed paths | 11.6 s (14 files, 186 tests) |
 | `npm run test:focus -- src/sim/state.ts` | The same, on the most connected module there is | 51.8 s (42 files, 510 tests) |
 | `npm run test:unit` | Every non-browser test | 63.2 s warm; not a 60-second promise |
+| `npm run test:ai-pressure` | Fixed 60-case passive-human AI matrix, Replay, contact and actual pressure | Non-browser; separate from the focus budget |
 | `npm run test:smoke` | `e2e/smoke.spec.ts`: real boot, one Command, rendering, console health and the Atelier | 8.3 s warm (10.9 s with the provisioning pre-step) |
 | `npm run test:feature -- <name>` | One browser responsibility from the table below | 10 s (`orders`) up to a few minutes (`squads`, `terrain`) |
 | `npm run test:accept` | Every browser spec; no screenshots | 503 s, 148 tests, all passed |
@@ -44,6 +45,11 @@ A *responsibility* is what the code calls a `FEATURES` entry: the name after
 `test:feature`. The focused budget holds even for the worst case measured, a hub
 module whose import graph reaches 42 files; the whole unit suite is a different,
 unbudgeted profile.
+
+`npm run verify` includes `test:ai-pressure` after the unit suite. Every declared
+seed 1–10, human Faction and difficulty must pass; a failure exits nonzero.
+This headless gate neither launches Chromium nor replaces interactive browser
+acceptance, and does not authorize any browser profile.
 
 Extra Playwright arguments pass through. Use the `--flag=value` form for a value
 with spaces, because npm re-splits a command line:
@@ -72,13 +78,14 @@ acceptance and still does not.
 | `smoke` | `e2e/smoke.spec.ts` | Real boot, one ordinary gesture, frame and console health | no |
 | `boot` | `e2e/boot.spec.ts` | The theatre, the camera, every integer zoom, panning and dragging | no |
 | `commands` | `e2e/commands.spec.ts` | The shared human submission surface, contextual panels, queued/applied Commands | yes |
-| `orders` | `e2e/orders.spec.ts` | Click and box selection, Move/Attack-move/Hold/Withdraw, control groups | no |
+| `economy` | `e2e/economy-reference.spec.ts` | Both Factions and resolutions, categories, locked/available offers, Encyclopedia pointer/keyboard return and canonical boundary values | yes (`economy-reference`) |
+| `orders` | `e2e/orders.spec.ts`, `e2e/group-orders.spec.ts` | Click and box selection, Move/Attack-move/Hold/Withdraw, control groups, normal-Match group arrivals for both Factions at both reference resolutions | yes (`group-orders`) |
 | `hud` | `e2e/hud.spec.ts`, `e2e/hud-repair.spec.ts` | Italian interface, rows, scrolling, pause, minimap, narrow rooms | yes (`hud-repair`) |
 | `fog` | `e2e/fog.spec.ts` | Three knowledge states, faction-filtered sight, no reveal | no |
 | `settlements` | `e2e/settlements.spec.ts` | Structures, picking, remembered settlements, gate damage | yes |
-| `squads` | `e2e/squads.spec.ts`, `e2e/readability.spec.ts` | Drawn formations, plates, standards, notices, Fatigue scene | yes (`readability`) |
+| `squads` | `e2e/squads.spec.ts`, `e2e/readability.spec.ts`, `e2e/formation-art.spec.ts` | Drawn formations, purchased slots, alpha picking, comparative art, plates, standards, notices, Fatigue scene | yes (`readability`, `formation-art`) |
 | `terrain` | `e2e/terrain-readability.spec.ts` | The quietened ground and the figures above it | yes |
-| `host` | `e2e/setup.spec.ts`, `e2e/first-entry.spec.ts`, `e2e/match.spec.ts`, `e2e/inspect.spec.ts`, `e2e/surface.spec.ts`, `e2e/desktop.spec.ts` | Setup, the first-entry guide, a whole Match, the debug surface, desktop presentation | yes (`setup`, `first-entry`, `desktop`) |
+| `host` | `e2e/pressure.spec.ts`, `e2e/journey.spec.ts`, `e2e/setup.spec.ts`, `e2e/first-entry.spec.ts`, `e2e/match.spec.ts`, `e2e/inspect.spec.ts`, `e2e/surface.spec.ts`, `e2e/desktop.spec.ts` | Ordinary paced AI pressure, entry-to-conflict journeys, setup, the first-entry guide, a whole Match, debug surface, desktop presentation | yes (`pressure`, `setup`, `first-entry`, `desktop`) |
 | `atelier` | `e2e/atelier.spec.ts` | The generated catalogue and its magnifications | no |
 | `acceptance` | `e2e/acceptance.spec.ts`, `e2e/appearance.spec.ts` | The reference-resolution matrices, for both Factions | yes |
 

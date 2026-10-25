@@ -40,6 +40,9 @@ interface Building {
   readonly yields: Resources;
   readonly denarii: number;
   readonly housing: number;
+  readonly raisesTier: number;
+  readonly storage: number;
+  readonly buildTicks: number;
   readonly maxPerSettlement: number;
 }
 
@@ -49,7 +52,7 @@ interface Settlement {
   readonly population: number;
   readonly stocks: Resources;
   readonly land: Resources;
-  readonly works: readonly { readonly building: string; readonly standing: boolean }[];
+  readonly works: readonly { readonly building: string; readonly standing: boolean; readonly remaining: number }[];
 }
 
 /** Only owned economic facts, plus the fronts the Faction can already observe. */
@@ -67,7 +70,7 @@ type EconomyCommand = {
   readonly kind: 'build'; readonly faction: Faction; readonly settlement: number; readonly building: string;
 } | {
   readonly kind: 'recruit'; readonly faction: Faction; readonly settlement: number;
-  readonly squadType: string; readonly count: number;
+  readonly squadType: string; readonly men: number; readonly count: number;
 };
 
 /** Content is supplied at composition; the AI has no path to simulation modules. */
@@ -78,11 +81,19 @@ export function createEconomyBehaviour(content: {
   readonly buildings: readonly Building[];
   readonly grainPerHead: number;
   readonly baseHousing: number;
+  readonly baseStorage: number;
   readonly taxPerDenarius: number;
+  /** Projection supplied by the calendar owner; policies do not derive Season boundaries. */
+  readonly ticksUntilPayroll: (tick: number) => number;
   readonly squadTypes: readonly {
     readonly id: string; readonly faction: Faction; readonly tier: number;
+    readonly strength: number; readonly sizes: readonly number[];
     readonly payroll: number; readonly cost: Resources;
   }[];
+  /** The content table's own price for a real size, so the AI quotes what the rules charge. */
+  readonly recruitCost: (type: { readonly cost: Resources }, men: number) => Resources;
+  /** The content table's own survivor-based bill, so affordability uses the paid number. */
+  readonly payrollBill: (type: { readonly payroll: number }, men: number) => number;
 }, difficulty: Difficulty = DIFFICULTY.centurio): Behaviour<EconomyObservation, EconomyCommand> {
   const buildings = new Map(content.buildings.map((building) => [building.id, building]));
   const horizon = difficulty.horizonSeasons;
@@ -91,19 +102,25 @@ export function createEconomyBehaviour(content: {
   // plus one: Centurio's three Seasons are `food * 3`, exactly as D2 shipped.
   const grainFloorSeasons = horizon + 1;
   const grainFloor = (food: number) => food * grainFloorSeasons;
+  const blockaded = (observation: Observation<EconomyObservation>, settlement: number) =>
+    observation.visible.fronts?.some((front) => front.settlement === settlement &&
+      front.siege === 'blockade' && front.besieger !== null && front.besieger !== observation.faction) ?? false;
   function budget(observation: Observation<EconomyObservation>) {
     const visible = observation.visible;
     let income = 0;
     for (const settlement of visible.settlements) {
-      if (visible.fronts?.some((front) => front.settlement === settlement.id &&
-        front.siege === 'blockade' && front.besieger !== null && front.besieger !== observation.faction)) continue;
+      if (blockaded(observation, settlement.id)) continue;
       let available = settlement.population;
       income += Math.floor(settlement.population / content.taxPerDenarius);
       for (const work of settlement.works) {
         const building = buildings.get(work.building);
         if (building === undefined || building.labour > available) continue;
         available -= building.labour;
-        if (work.standing) income += building.denarii;
+        // Payroll is charged at the next Season boundary. A staffed market
+        // finishing before then can fund that bill; it need not be standing
+        // on the recruitment tick. No future population growth is assumed.
+        const untilPayroll = content.ticksUntilPayroll(observation.tick);
+        if (work.standing || work.remaining < untilPayroll) income += building.denarii;
       }
     }
     const payroll = visible.squads.reduce((sum, squad) => sum + squad.payroll, 0);
@@ -121,21 +138,34 @@ export function createEconomyBehaviour(content: {
       const candidates: Candidate<EconomyCommand>[] = [];
       const funds = budget(observation);
       for (const settlement of observation.visible.settlements) {
+        const food = Math.max(1, Math.floor(settlement.population / content.grainPerHead));
+        let grainCapacityNeeded = grainFloor(food);
         if (!observation.visible.squads.some((squad) => squad.unpaid > 0)) {
           for (const type of content.squadTypes) {
-            const payroll = funds.payroll + type.payroll;
-            const food = Math.max(1, Math.floor(settlement.population / content.grainPerHead));
-            if (type.faction !== observation.faction || type.tier > settlement.tier ||
-              payroll > funds.income || observation.visible.treasury < requiredReserve(payroll) ||
-              settlement.stocks.grain - type.cost.grain < grainFloor(food) ||
-              Object.entries(type.cost).some(([key, amount]) => settlement.stocks[key as keyof Resources] < amount)) continue;
+            if (type.faction !== observation.faction || type.tier > settlement.tier) continue;
             const count = observation.visible.squads.filter((squad) => squad.type === type.id).length;
             const preference = content.recruitmentPreference?.(observation, type.id);
-            candidates.push({ id: `recruit-${settlement.id}-${type.id}`,
-              utility: 45 + type.tier * 5 - count * 4 + (preference?.utility ?? 0),
-              reason: `Payroll ${payroll} is covered by income ${funds.income}; retain ${requiredReserve(payroll)} denarii.${preference === undefined ? '' : ` ${preference.reason}`}`,
-              commands: [{ kind: 'recruit', faction: observation.faction, settlement: settlement.id, squadType: type.id, count: 1 }],
-            });
+            // A type offers several real sizes; the AI prices each one with the
+            // content table's own arithmetic and keeps only the ones its
+            // Observation says it can afford now and keep each Season.
+            for (const men of type.sizes) {
+              const cost = content.recruitCost(type, men);
+              const payroll = funds.payroll + content.payrollBill(type, men);
+              if (payroll > funds.income || observation.visible.treasury < requiredReserve(payroll) ||
+                Object.entries(cost).some(([key, amount]) => key !== 'grain' &&
+                  settlement.stocks[key as keyof Resources] < amount)) continue;
+              grainCapacityNeeded = Math.max(grainCapacityNeeded, cost.grain + grainFloor(food));
+              if (settlement.stocks.grain - cost.grain < grainFloor(food)) continue;
+              candidates.push({ id: `recruit-${settlement.id}-${type.id}-${men}`,
+                // Establish eyes in the field before spending the opening stocks on a Tier.
+                utility: (observation.visible.squads.length === 0 ? 100 : 45) + type.tier * 5 - count * 4 +
+                  Math.floor((10 * men) / type.strength) +
+                  (preference?.utility ?? 0),
+                reason: `Payroll ${payroll} is covered by income ${funds.income}; retain ${requiredReserve(payroll)} denarii.${preference === undefined ? '' : ` ${preference.reason}`}`,
+                commands: [{ kind: 'recruit', faction: observation.faction, settlement: settlement.id,
+                  squadType: type.id, men, count: 1 }],
+              });
+            }
           }
         }
         if (settlement.works.some((work) => !work.standing)) continue;
@@ -144,9 +174,9 @@ export function createEconomyBehaviour(content: {
           return building === undefined ? [] : [building];
         });
         const available = settlement.population - works.reduce((sum, work) => sum + work.labour, 0);
-        const food = Math.max(1, Math.floor(settlement.population / content.grainPerHead));
         const grain = works.reduce((sum, work) => sum + work.yields.grain, 0);
         const housing = content.baseHousing + works.reduce((sum, work) => sum + work.housing, 0);
+        const storage = content.baseStorage + works.reduce((sum, work) => sum + work.storage, 0);
         for (const building of content.buildings) {
           if (building.tier > settlement.tier ||
             (building.faction !== undefined && building.faction !== observation.faction) ||
@@ -158,14 +188,17 @@ export function createEconomyBehaviour(content: {
           if (building.labour > 0 && (spare < 0 || (spare < LABOUR_FLOOR && grain + building.yields.grain < food))) continue;
           let utility = 0;
           let reason = '';
-          if (building.id === 'villa' && settlement.tier < TIER_TWO) {
-            utility = plan.posture === 'growth' ? 80 : 60;
-            reason = 'Pursue Tier 2 to field the next roster.';
+          if (building.id === 'granary' && storage < grainCapacityNeeded) {
+            utility = 105;
+            reason = `Storage ${storage} cannot hold the ${grainCapacityNeeded} grain needed for reserves and sustainable recruitment.`;
+          } else if (building.raisesTier > settlement.tier) {
+            utility = building.raisesTier > TIER_TWO || plan.posture === 'growth' ? 80 : 60;
+            reason = `Pursue Tier ${building.raisesTier} to field the next roster.`;
           } else if (building.id === 'market') {
             const markets = works.filter((work) => work.denarii > 0).length;
             // A second market must not consume the hands reserved for the villa.
             utility = markets > 0 && settlement.tier < TIER_TWO ? 0
-              : markets === 0 && plan.posture === 'commerce' ? 90 : 50;
+              : markets === 0 ? 90 : 50;
             reason = 'Recurring denarii fund Payroll.';
           } else if (building.id === 'house' && settlement.population >= housing - HOUSING_HEADROOM) {
             utility = 110;
@@ -186,9 +219,35 @@ export function createEconomyBehaviour(content: {
             }
           }
           if (utility === 0) continue;
+          const commands: EconomyCommand[] = [{ kind: 'build', faction: observation.faction,
+            settlement: settlement.id, building: building.id }];
+          // If the first army cannot be paid from existing income, a work that
+          // finishes before Payroll may fund it in the same plan. Both purchases
+          // are priced together; no resource or completion is assumed for free.
+          if (observation.visible.squads.length === 0 && building.denarii > 0 &&
+            !blockaded(observation, settlement.id) &&
+            building.buildTicks < content.ticksUntilPayroll(observation.tick) &&
+            !candidates.some((candidate) => candidate.commands.some((command) => command.kind === 'recruit'))) {
+            firstDetachment: for (const type of content.squadTypes) {
+              if (type.faction !== observation.faction || type.tier > settlement.tier) continue;
+              for (const men of type.sizes) {
+                const cost = content.recruitCost(type, men);
+                const payroll = funds.payroll + content.payrollBill(type, men);
+                if (payroll > funds.income + building.denarii || observation.visible.treasury < requiredReserve(payroll) ||
+                  settlement.stocks.grain - building.cost.grain - cost.grain < grainFloor(food) ||
+                  Object.entries(cost).some(([key, amount]) =>
+                    settlement.stocks[key as keyof Resources] < amount + building.cost[key as keyof Resources])) continue;
+                commands.push({ kind: 'recruit', faction: observation.faction, settlement: settlement.id,
+                  squadType: type.id, men, count: 1 });
+                utility += 100;
+                reason += ` Complete before Payroll and fund the first ${men}-man detachment; retain ${requiredReserve(payroll)} denarii.`;
+                break firstDetachment;
+              }
+            }
+          }
           candidates.push({ id: `build-${settlement.id}-${building.id}`, utility,
             reason: `${plan.posture}: ${reason}`,
-            commands: [{ kind: 'build', faction: observation.faction, settlement: settlement.id, building: building.id }],
+            commands,
           });
         }
       }

@@ -164,6 +164,9 @@ export interface ViewHooks {
 export interface GameView extends ViewHooks, GameHooks {
   /** What the renderer did when the page booted. */
   readonly probe: FrameReport;
+  suspend(): void;
+  activate(): void;
+  dispose(): void;
 }
 
 /**
@@ -171,7 +174,18 @@ export interface GameView extends ViewHooks, GameHooks {
  * both, the Match and its interface over everything, one frame drawn, and the
  * hooks Playwright and, later, an external agent drive it with.
  */
-export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserMatchOptions> & { readonly sessionControls?: boolean; readonly firstEntry?: boolean } = {}): Promise<GameView> {
+export interface BrowserViewOptions extends Partial<BrowserMatchOptions> {
+  readonly sessionControls?: boolean;
+  readonly firstEntry?: boolean;
+  readonly host?: import('../input/journey.ts').BrowserMatch;
+  readonly home?: () => void;
+  readonly tutorial?: import('../input/tutorial.ts').Tutorial;
+  readonly tutorialAction?: (action: 'next' | 'retry' | 'exit') => void;
+  readonly newMatch?: () => void;
+  readonly restart?: () => void;
+}
+
+export async function bootRenderer(mount: HTMLElement, options: BrowserViewOptions = {}): Promise<GameView> {
   const config: MatchConfiguration = { seed: options.seed ?? DEFAULT_SEED, faction: options.faction ?? 'rome', difficulty: options.difficulty ?? 'centurio' };
   const map = generateMap(config.seed);
   const theatre = renderTerrain(map);
@@ -252,12 +266,16 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     relayout,
     centerOn,
     ...config,
+    host: options.host,
+    home: options.home,
+    tutorial: options.tutorial,
+    tutorialAction: options.tutorialAction,
     rules: options.rules,
     opponent: options.opponent,
     sessionControls: options.sessionControls,
     firstEntry: options.firstEntry,
-    restart: () => leave(matchAddress(config, ENTRY_PATH)),
-    newMatch: () => leave(`${ENTRY_PATH}?previous=${String(config.seed)}`),
+    restart: options.restart ?? (() => leave(matchAddress(config, ENTRY_PATH))),
+    newMatch: options.newMatch ?? (() => leave(`${ENTRY_PATH}?previous=${String(config.seed)}`)),
     ended: () => {
       watch = null;
       inspection = false;
@@ -273,20 +291,21 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
       refresher();
     },
     viewport: (layout): ViewportRect => {
-      const left = desktop ? layout?.list.width ?? 0 : 0;
-      const top = desktop ? layout?.bar.height ?? 0 : 0;
-      const bottom = desktop ? layout?.detail.y ?? stage.height : stage.height;
+      const area = desktop && layout ? theatreArea(layout) : { x: 0, y: 0, width: stage.width, height: stage.height };
+      const left = area.x, top = area.y, bottom = area.y + area.height;
       return { x: camera.x + Math.floor(left / camera.zoom), y: camera.y + Math.floor(top / camera.zoom),
-        width: Math.floor((stage.width - left) / camera.zoom), height: Math.floor((bottom - top) / camera.zoom) };
+        width: Math.floor(area.width / camera.zoom), height: Math.floor((bottom - top) / camera.zoom) };
     },
   });
 
   const moveTo = (next: Camera): void => {
     if (desktop) {
       const layout = game.hooks.hudLayout();
-      bounds.height = layout.detail.y;
-      bounds.insetLeft = layout.list.width;
-      bounds.insetTop = layout.bar.height;
+      const area = theatreArea(layout);
+      bounds.width = area.x + area.width;
+      bounds.height = area.y + area.height;
+      bounds.insetLeft = area.x;
+      bounds.insetTop = area.y;
     }
     camera = clampTo(next, bounds);
     applyCamera(world, camera);
@@ -309,7 +328,12 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     game.sync();
   };
 
+  let active = true;
+  const lifecycle = new AbortController();
   const view: GameView = {
+    suspend: () => { active = false; game.stop(); options.host?.pacing.pause(); stage.canvas.hidden = true; stage.canvas.remove(); },
+    activate: () => { active = true; mount.appendChild(stage.canvas); stage.canvas.hidden = false; game.returnToMatch(); stage.canvas.focus(); },
+    dispose: () => { active = false; game.stop(); lifecycle.abort(); stage.destroy(); },
     ...game.hooks,
     probe: frameReport(stage),
     panBy: (dx, dy) => {
@@ -393,6 +417,7 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     },
     hudLayout: () => view.hudLayout(),
     hudRects: () => view.hudRects(),
+    scrollReference: (lines) => view.scrollReference(lines),
     scrollHud: (region, lines) => view.scrollHud(region, lines),
   });
 
@@ -402,20 +427,26 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     Object.assign(size, next);
     bounds.width = next.width;
     const layout = game.hooks.hudLayout();
-    bounds.height = desktop ? layout.detail.y : next.height;
-    bounds.insetLeft = desktop ? layout.list.width : 0;
-    bounds.insetTop = desktop ? layout.bar.height : 0;
+    const area = theatreArea(layout);
+    bounds.width = desktop ? area.x + area.width : next.width;
+    bounds.height = desktop ? area.y + area.height : next.height;
+    bounds.insetLeft = desktop ? area.x : 0;
+    bounds.insetTop = desktop ? area.y : 0;
     camera = clampTo(camera, bounds);
     applyCamera(world, camera);
   }
 
+  function theatreArea(layout: ReturnType<typeof game.hooks.hudLayout>) {
+    return layout.theatre ?? { x: layout.list.width, y: layout.bar.height,
+      width: stage.width - layout.list.width, height: layout.detail.y - layout.bar.height };
+  }
+
   function centerOn(x: number, y: number): void {
     const layout = game.hooks.hudLayout();
-    const left = layout.list.width;
-    const top = layout.list.y;
-    const bottom = layout.detail.y;
+    const area = theatreArea(layout);
+    const left = area.x, top = area.y, bottom = area.y + area.height;
     moveTo({ zoom: camera.zoom,
-      x: Math.floor(x - (left + (stage.width - left) / 2) / camera.zoom),
+      x: Math.floor(x - (left + area.width / 2) / camera.zoom),
       y: Math.floor(y - (top + (bottom - top) / 2) / camera.zoom) });
   }
 
@@ -423,12 +454,12 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     const home = map.strongholds[config.faction === 'rome' ? 0 : 1];
     const at = tilePixel(home.x, home.y);
     centerOn(at.x, at.y);
-    window.addEventListener('resize', () => { relayout(); game.sync(); });
+    window.addEventListener('resize', () => { if (active) { relayout(); game.sync(); } }, { signal: lifecycle.signal });
   }
   game.start();
   stage.canvas.tabIndex = 0;
   stage.canvas.focus();
-  window.addEventListener('keydown', (event) => {
+  stage.canvas.addEventListener('keydown', (event) => {
     if (options.sessionControls === false) return;
     if (!['F2', 'F3', 'F4'].includes(event.key)) return;
     event.preventDefault();
@@ -449,10 +480,10 @@ export async function bootRenderer(mount: HTMLElement, options: Partial<BrowserM
     location.assign(address);
   }
   window.addEventListener('beforeunload', (event) => {
-    if (leaving || game.hooks.result() !== null) return;
+    if (options.home || leaving || game.hooks.result() !== null) return;
     event.preventDefault();
     event.returnValue = '';
-  });
+  }, { signal: lifecycle.signal });
 
   return view;
 }

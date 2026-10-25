@@ -9,8 +9,8 @@ import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from './view.ts';
 import { ENTRY_PATH } from './entry-path.ts';
 
 /** The setup uses the same glyphs, pixels and upload adapter as the HUD. */
-export async function showSetup(mount: HTMLElement): Promise<void> {
-  const stage = await createStage(mount, { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT, background: BASE.night });
+export async function showSetup(mount: HTMLElement, navigation?: { start: (config: MatchConfiguration) => void; back: () => void }): Promise<{ dispose(): void }> {
+  const stage = await createStage(mount, { width: VIEWPORT_WIDTH, height: navigation ? 540 : VIEWPORT_HEIGHT, background: BASE.night });
   const entropy = crypto.getRandomValues(new Uint32Array(1))[0]!;
   const source = makeRng(entropy);
   const previous = new URLSearchParams(location.search).get('previous');
@@ -33,7 +33,7 @@ export async function showSetup(mount: HTMLElement): Promise<void> {
   function model(): SetupModel {
     return { config, proposed, seedText, focus, invalid: seedText !== '' && explicitSeed(seedText) === null };
   }
-  function layout() { return setupLayout(size, model()); }
+  function layout() { return setupLayout(size, model(), navigation !== undefined); }
   function repaint(): void {
     const old = sprite.texture;
     sprite.texture = textureOf(setupPlate(size, layout(), focus));
@@ -51,7 +51,10 @@ export async function showSetup(mount: HTMLElement): Promise<void> {
   }
   function start(): void {
     const seed = seedText === '' ? proposed : explicitSeed(seedText);
-    if (seed !== null) location.assign(matchAddress({ ...config, seed }, ENTRY_PATH));
+    if (seed !== null) {
+      if (navigation) navigation.start({ ...config, seed });
+      else location.assign(matchAddress({ ...config, seed }, ENTRY_PATH));
+    }
   }
   stage.canvas.addEventListener('paste', (event) => {
     if (focus !== 2) return;
@@ -67,21 +70,24 @@ export async function showSetup(mount: HTMLElement): Promise<void> {
     focus = index;
     replaceSeed = true;
     if (focus < 2) change(1);
-    if (focus === 3) start();
+    if (focus === 3) { start(); return; }
+    if (focus === 4) { navigation?.back(); return; }
     repaint();
     stage.canvas.focus();
   });
   stage.canvas.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && navigation) { navigation.back(); return; }
     if (event.key === 'Tab') {
       event.preventDefault();
-      focus = (focus + (event.shiftKey ? 3 : 1)) % 4;
+      focus = (focus + (event.shiftKey ? layout().buttons.length - 1 : 1)) % layout().buttons.length;
       replaceSeed = true;
     } else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
       event.preventDefault();
       change(event.key === 'ArrowRight' ? 1 : -1);
     } else if (event.key === 'Enter' || (event.key === ' ' && focus !== 2)) {
       event.preventDefault();
-      if (focus === 3) start();
+      if (focus === 3) { start(); return; }
+      else if (focus === 4) { navigation?.back(); return; }
       else change(1);
     } else if (focus === 2) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
@@ -99,4 +105,5 @@ export async function showSetup(mount: HTMLElement): Promise<void> {
     }
     repaint();
   });
+  return { dispose: () => stage.destroy() };
 }

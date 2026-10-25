@@ -11,7 +11,7 @@
  *
  * The rectangle is the **drawn** extent and not the tile: a settlement stands on
  * one tile of the simulation (ADR-0004's rule for a Squad, and B1's `Site` for a
- * settlement) but is drawn two tiles across, and a Stronghold three and a half. That is
+ * settlement) but is drawn three tiles across, and a Stronghold four and a half. That is
  * the same liberty `render/squads.ts` takes with a block of men, and it changes
  * nothing about the rules: no footprint in the simulation moves, no route is
  * priced differently, and `sim/` cannot see this file. A Player simply clicks what
@@ -104,6 +104,7 @@ export function siteLook(site: KnownSite): SettlementLook {
   if (site.kind === 'settlement') {
     return {
       kind: 'settlement',
+      camp: seen && site.camp === true,
       owner,
       memory: site.memory,
       gateSide: 'south',
@@ -118,6 +119,7 @@ export function siteLook(site: KnownSite): SettlementLook {
 
   return {
     kind: 'stronghold',
+    camp: seen && site.camp === true,
     owner,
     memory: site.memory,
     gateSide,

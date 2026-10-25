@@ -41,6 +41,7 @@ function squadOf(options: Partial<VisibleSquad> = {}): VisibleSquad {
     x: 10,
     y: 10,
     men: 120,
+    capacity: 120,
     figures: 120,
     formation: 'line',
     facing: 'south',
@@ -53,6 +54,7 @@ function squadOf(options: Partial<VisibleSquad> = {}): VisibleSquad {
     engaged: false,
     payroll: 3,
     unpaid: 0,
+    bearing: 0,
     garrison: null,
     home: 0,
     inTerritory: true,
@@ -77,6 +79,21 @@ function visibleOf(options: Partial<SiegeVisible> = {}): SiegeVisible {
     ...options,
   };
 }
+
+it('announces a newly visible enemy with a camera target, without tracking it through fog', () => {
+  const book = createNoticeBook();
+  book.read(visibleOf(), 0);
+  const enemy = { id: 9, type: 'gaul', x: 30, y: 20 };
+  const contact = book.read(visibleOf({ enemies: [enemy] }), 1).find((notice) => notice.kind === 'contact');
+  expect(contact).toMatchObject({ label: 'Nemico avvistato', raised: 1,
+    target: { kind: 'contact', id: 9, x: 30, y: 20 } });
+  expect(book.read(visibleOf({ enemies: [{ ...enemy, x: 31 }] }), 2)
+    .filter((notice) => notice.kind === 'contact')).toHaveLength(1);
+  const hidden = book.read(visibleOf(), 3).find((notice) => notice.kind === 'contact');
+  expect(hidden?.target).toEqual(contact?.target);
+  expect(book.read(visibleOf({ contacts: [{ ...enemy, kind: 'squad', seen: 1 }] }), 4)
+    .filter((notice) => notice.kind === 'contact')).toHaveLength(1);
+});
 
 /** A held settlement, as its owner reads it. */
 function settlementOf(id = 4): VisibleSettlement {
@@ -143,6 +160,7 @@ describe('the conditions the rules own', () => {
       morale: 0,
       routing: true,
       unpaid: 2,
+      bearing: 0,
       inTerritory: false,
       fatigue: 20,
       type: 'balearic-slinger',

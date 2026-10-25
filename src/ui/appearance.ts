@@ -15,10 +15,10 @@ const VISIBLE: EconomyVisible = {
   settlements: [{ id: 0, x: 10, y: 10, tier: 1, population: 10,
     stocks: { grain: 60, timber: 60, stone: 60, iron: 60 },
     land: { grain: 4, timber: 2, stone: 1, iron: 1 }, works: [] }],
-  squads: [{ id: 1, type: 'hastati', x: 11, y: 10, men: 120, figures: 120,
+  squads: [{ id: 1, type: 'hastati', x: 11, y: 10, men: 120, capacity: 120, figures: 120,
     formation: 'line', facing: 'south', goal: null, refused: null, morale: 10,
-    fatigue: 0, ammunition: 4, routing: false, engaged: false, payroll: 3,
-    unpaid: 0, garrison: null, home: 0, inTerritory: true, inCamp: false }],
+    fatigue: 0, ammunition: 4, routing: false, engaged: false, payroll: 15,
+    unpaid: 0, bearing: 120, garrison: null, home: 0, inTerritory: true, inCamp: false }],
 };
 
 function crop(source: PixelBuffer, rect: Rect): PixelBuffer {
@@ -40,7 +40,7 @@ function specimen(name: (typeof UI_SPECIMENS)[number]): PixelBuffer {
   if (name === 'options' || name === 'result') {
     const result = name === 'result' ? { kind: 'victory', winner: 'rome', tick: 62,
       reason: { kind: 'stronghold', stronghold: 1, path: 'assault' } } as const : null;
-    const menu = desktopMatchMenu(SIZE, 0, CONFIG, 1, result, '', { uiScale: 1, navigator: true, guideDismissed: true });
+    const menu = desktopMatchMenu(SIZE, 0, CONFIG, 1, result, '', { panelLayout: 'sidebar', uiScale: 1, navigator: true, guideDismissed: true });
     return crop(menuPlate(SIZE, menu), menu.rect);
   }
   const model = hudModel(VISIBLE, [0], { kind: name === 'construction' ? 'settlement' : 'squad', id: name === 'construction' ? 0 : 1 },

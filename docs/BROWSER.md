@@ -13,6 +13,26 @@ Two pages publish the same shape. The game is `/`, the catalogue of generated ar
 `/atelier.html`, and whichever of `view`, `game` and `atelier` is not this page is
 `null` — so one inspection routine reads either.
 
+## Entry and practice (#70)
+
+The bare entry opens the bitmap main menu. Gioca opens configuration, Tutorial
+opens repeatable independent chapters, and Enciclopedia/Opzioni work before a
+Match exists. These destinations publish `game: null` and `view: null`.
+`data-spqr-screen` names `menu`, `setup`, `chapters`, `reference`, `options`,
+`match` or `practice`. Valid configured direct addresses retain their behavior.
+
+Menu principale in the pause menu suspends the normal Match in memory. Riprendi
+returns to its same clock, log, selection and camera. Practice publishes its own
+ordinary Match hooks and leaves the normal Match untouched. Tutorial objectives
+are visible as `hud().guide`; its step number and action status are public.
+Avanti acknowledges an explanation or an action already completed; it stays disabled for an unperformed action.
+Messages never advance automatically, and Capitoli returns after the final summary.
+Retry discards only the current practice. F1 and Aiuto open the existing reference.
+Reload or page closure loses the suspended Match; there is no persistent save.
+
+The browser owner is `e2e/journey.spec.ts` in the `host` profile. Its Chromium runs
+and actual-frame evidence require an explicit user request under AGENTS.md.
+
 ## Opening the page
 
 `npm run dev` serves both pages. A page marks itself booted on the body, and says
@@ -50,6 +70,9 @@ the camera's hooks and the Match's hooks, and nothing else:
 | Hook | Signature | Page | What it does |
 | --- | --- | --- | --- |
 | `probe` | — | both | The frame report the page booted with: engine, viewport, centre pixel |
+| `suspend` | `()` | game | Stops this view while its Match is retained in the journey |
+| `activate` | `()` | game | Reattaches the retained view and starts its animation loop |
+| `dispose` | `()` | game | Stops the loop and releases the view's renderer and event handlers |
 | `panBy` | `(dx, dy)` | view | Moves the camera by whole stage pixels; refuses anything else |
 | `zoomTo` | `(zoom)` | view | Sets a whole-number magnification, keeping the viewport's middle where it is |
 | `zoomAbout` | `(zoom, screenX, screenY)` | view | Sets a magnification, keeping one screen pixel where it is |
@@ -58,6 +81,7 @@ the camera's hooks and the Match's hooks, and nothing else:
 | `describe` | `() → ViewState` | view | Where the camera is, how big the viewport is, the seed, the map, the watch and the fog |
 | `samples` | `(points) → Rgba[]` | view | Reads the current frame's pixels at canvas points, in the art library's own RGBA |
 | `preferences` | `() -> UiPreferences` | Read presentation preferences |
+| `setPanelLayout` | `(layout) -> void` | Select saved sidebar (B), dock (A), or compact (C) presentation |
 | `setUiScale` | `(scale) -> void` | Request independent integer UI scale |
 | `toggleNavigator` | `() -> void` | Toggle the navigator |
 | `toggleGuide` | `() -> void` | Open the first-entry guide, or put it away |
@@ -78,7 +102,7 @@ the camera's hooks and the Match's hooks, and nothing else:
 | `hudRows` | `() → RowRect[]` | game | Where each selectable row stands, so a test presses the row a Player would |
 | `hudLayout` | `() → HudLayout` | game | The text, button rectangles, enabled states and scroll windows actually drawn |
 | `hoverAt` | `(x, y)` | game | Highlights the pointer's command and shows its full name, shortcut and requirement above the compact card; presentation only |
-| `interfaceKey` | `(key, reverse?) → boolean` | game | F6 enters UI focus; Tab/Shift+Tab traverse visible controls, Enter/Space press the focused rectangle, Escape leaves focus and cancels targeting. Returns whether the UI consumed the key; `hud().view.focus` is its drawn rectangle. Plain Tab retains navigator toggling outside UI focus. |
+| `interfaceKey` | `(key, reverse?) → boolean` | game | F6 enters UI focus; Tab/Shift+Tab traverse visible controls, Enter/Space press the focused rectangle, Escape opens the modal pause menu, returns from Settings, or closes the menu. An open Encyclopedia handles Escape first. Returns whether the UI consumed the key; `hud().view.focus` is its drawn rectangle. Plain Tab retains navigator toggling outside UI focus. |
 | `scrollHud` | `(region, lines)` | game | Scrolls `list`, `detail`, `commands` or `notices` by whole bitmap text lines, without changing selection or the Match |
 | `perform` | `(orderId) → boolean` | game | Performs one contextual action: arms it when it needs a target, submits it otherwise, through the shared human Controller |
 | `cancelTargeting` | `() → boolean` | game | Cancels the armed action and nothing else: a Command already submitted is never taken back |
@@ -86,6 +110,12 @@ the camera's hooks and the Match's hooks, and nothing else:
 | `targetAt` | `(screenX, screenY) → boolean` | game | Completes the armed action on the tile, enemy or settlement under a screen point |
 | `targetSettlement` | `(settlement) → boolean` | game | Completes the armed action on a settlement a list row named |
 | `setTab` | `(tab) → void` | game | Opens one page of a settlement's panel: `overview`, `construction` or `recruitment` |
+| `setCategory` | `(category)` | game | Selects `production`, `economy`, `development` or `military`; preserves the settlement and resets command scrolling |
+| `reference` | `()` | game | Current Encyclopedia entry and text/navigation offsets, or null |
+| `referenceLayout` | `()` | game | Exact rendered reference text, controls and scroll windows, or null |
+| `openReference` | `(entry?)` | game | Opens a canonical entry (default `seasons`), suspends time and remembers return focus and pause state; F1 and contextual links use this path |
+| `closeReference` | `()` | game | Restores selection, focus and previous pause state; Escape and the return control use this path |
+| `scrollReference` | `(lines)` | game | Scrolls reference text while open and returns whether it consumed the gesture |
 | `groupBack` | `() → boolean` | game | Picks the control group an individual exception was opened from |
 | `squads` | `() → SquadReport[]` | game | The Faction's Squads, each with the theatre rectangle its men are drawn in |
 | `corpses` | `() → Corpse[]` | game | The men who fell lately where this Faction can see them, as residue |
@@ -178,8 +208,15 @@ It holds an Observation and its drawing, and no part of the rules' own state.
 
 ## Pause, fast-forward and the end of a Match
 
-The top bar always says `IN PAUSA` or `IN CORSO`. Its visible pause/resume control,
+The resource bar says `IN PAUSA`, `IN CORSO` or `CONCLUSA`, beside the current speed.
 Space and the `pause`/`resume` hooks update the same state and redraw immediately.
+`Menu [Esc]` opens the centered pause menu and suspends live ticks. Its Settings
+page owns speed, panel layout, scale, navigator and guide preferences. Escape
+returns from Settings, then closes the menu and restores the previous pause.
+The explicit Resume control resumes a live Match; an open first-entry Guide
+retains its own pause. The modal backdrop blocks pointer, wheel, minimap and
+non-menu keyboard input. Opening the Encyclopedia from the menu returns to it
+without resuming time. Layout changes and closing the menu retain selection.
 The list headings include entity counts. Use its Su/Giu controls, the wheel over
 the column, or PageUp/PageDown to reach overflow. Shift+PageUp/PageDown scrolls
 secondary detail; the Order/refusal or first active Work stays above it. Scrolling
@@ -318,7 +355,8 @@ seam and reaches the result with actual Commands, never a fabricated UI verdict.
 
 | Hook | Meaning |
 | --- | --- |
-| `preferences()` | Copy of UI scale, requested navigator visibility and guide dismissal. |
+| `preferences()` | Copy of saved panel layout, UI scale, requested navigator visibility and guide dismissal. |
+| `setPanelLayout(layout)` | Choose `sidebar`, `dock` or `compact` without changing selection or Match state. Defaults to B (`sidebar`); options cycles B, A, C. |
 | `setUiScale(scale)` | Request integer 1x, 2x or 3x UI scale independently of map zoom. |
 | `toggleNavigator()` | Toggle the navigator preference (Tab). Limited space collapses it temporarily. |
 | `toggleGuide()` | Opens the first-entry guide at its welcome line (pausing the clock it now holds), or closes it and records the dismissal (U8, Q11). Its stage and lines are read from `hud().guide`; its controls are `hudLayout().guideButtons`. |
@@ -334,10 +372,26 @@ recommendation is shown. Only `spqr.ui.v1` presentation preferences are saved; a
 state and tactical selection are excluded. Storage failure falls back to defaults without blocking play.
 
 
-The desktop HUD keeps calendar, Treasury, pause and speed above the theatre. The compact navigator
-ends after its contents when they fit. Selecting an entity opens two columns of contextual detail;
-with no selection only a short hint remains. The Minimap stays available beside this area. Use
-**Opzioni / UI** for seed/session actions, scale, reset and the first-entry guide's dismissal or
-reopen. This drawer can be closed without changing the Match. The camera centres inside the unobstructed theatre,
-including at map edges and zoom 1; the Minimap camera outline covers that theatre rather than the HUD.
+The desktop resource bar shows the faction Treasury and four settlement-local
+stocks, with the settlement's name below them. Unknown stocks use `?`, never an
+invented zero or a hidden value. Calendar/progress and pace form the second band;
+only Menu, Encyclopedia and Notices remain in the bar. Centering and navigator
+keyboard shortcuts remain available outside the modal menu.
+
+B's right sidebar has no surface or input rectangle without a selection, and the
+theatre regains its whole width. Selecting a neutral place opens its observed
+centre-control count, practical capture instructions and a direct F1 link; it
+has no unusable construction/recruitment tabs. A move/right-click on a currently
+visible neutral structure uses the structure's canonical centre, even when its
+roof is drawn over a different terrain tile. Remembered or unseen ownership is
+not inferred. Group movement and the three five-second capture checks are still
+the existing rules. The paused `e2e/siege-fixture.html?stage=neutral&view=rome`
+(or `view=carthage`) arranges a real-rule manual scene near a neutral place; it
+runs no browser automation by itself.
+
+A settlement's Recruitment page lists real sizes and exact local bills and
+recurring Payroll, with a Reparti count control (1 to 9). Choosing a proposal
+opens its facts; the separate purchase button submits it. A Squad panel reads
+survivors against recruited capacity and shows the next Payroll. The camera
+centres inside the available theatre and the minimap outlines that area.
 A collapsed navigator can be reopened even below the recommended window size.

@@ -96,7 +96,7 @@ Who the agent is, what it may say, and what it is looking at.
 | Field           | What it carries                                                                    |
 | --------------- | ---------------------------------------------------------------------------------- |
 | `type`          | `"hello"`                                                                          |
-| `protocol`      | The protocol version: `1`. An agent that does not know it has nothing to say.       |
+| `protocol`      | The protocol version: `2`. An agent that does not know it has nothing to say.       |
 | `faction`       | The Faction the agent plays: `"rome"` or `"carthage"`.                              |
 | `seed`          | The Match's seed: the run's, not your Faction's. Every report this project prints carries it, and it lets an agent re-run the same Match — but it is not knowledge of the enemy, which only an Observation carries. |
 | `ticks`         | The tick bound the Match will not run past.                                        |
@@ -119,12 +119,14 @@ Each entry of `squadTypes` — what a `recruit` may name, and what it will cost:
 | `id`          | The Squad type's id: exactly what a `recruit` Command's `squadType` takes. |
 | `faction`     | The Faction that raises it: always yours.                                  |
 | `tier`        | The settlement tier it needs: a tier-3 type is not raised in a villa.      |
-| `strength`    | The men a Squad of it is counted as.                                       |
+| `strength`    | The largest size it may be raised at: a full-strength Squad is counted as this many men. |
+| `sizes`       | Every real size a `recruit` may name for it, smallest first (ADR-0026).    |
+| `impact`      | What one of its men is worth in a blow, against one man of the line: `1` for infantry and slingers, `2` for the Numidian horse, `4` for the elephant (ADR-0028). |
 | `arm`         | What it fights with: `"sword"`, `"spear"`, `"lance"`, `"bow"`, `"sling"` or `"beast"`. |
 | `morale`      | The nerve it comes with.                                                   |
 | `ammunition`  | Volleys of missiles it carries.                                            |
 | `pace`        | Tiles' worth of ground per tile's cost: `1` on foot, `2` mounted.           |
-| `payroll`     | What it owes each Season.                                                  |
+| `payroll`     | Its Payroll rate: denarii owed each Season per 24 surviving men.           |
 | `cost`        | What raising one takes from a settlement's stocks: `{ grain, timber, stone, iron }`. |
 <!-- squad-type:end -->
 
@@ -169,8 +171,8 @@ outside it. What is not here, the Faction cannot know.
 | `settlements` | The settlements you hold, one record each: below.                                      |
 | `squads`      | The Squads you keep, one record each: below.                                           |
 | `fog`         | What you have seen of the ground, and what you see now.                                |
-| `contacts`    | The enemies you have seen, at the tile you last saw them: `kind` (`squad`, `settlement`, `stronghold`), `id`, `x`, `y`, `seen` (the tick), `type` (for a Squad, or `null`). A place is a memory, not a live position. |
-| `enemies`     | Enemy field Squads **in your sight right now**: `id`, `type`, `x`, `y`.                |
+| `contacts`    | Enemy Squads and settlements you have seen, including unowned villages: `kind` (`squad`, `settlement`, `stronghold`), `id`, `x`, `y`, `seen` (the tick), `type` (for a Squad, or `null`). Optional `unowned: true` confirms a village has no owner **in current vision only**; it is absent in memory. A remembered place does not report live position or ownership. |
+| `enemies`     | Enemy field Squads **in your sight right now**: `id`, `type`, `x`, `y`, and `appearance` (`men`, `capacity`, `figures`, `formation`, `facing`). Appearance exists only in current sight; it is never retained in `contacts`. No enemy morale, fatigue, ammunition, stocks or goal is exposed (ADR-0029). |
 | `fronts`      | The Sieges you can read (see below).                                                   |
 <!-- observation:end -->
 
@@ -197,6 +199,7 @@ Each entry of `squads`:
 | `type`        | Its Squad type, by the id a `recruit` would name.                                  |
 | `x`, `y`      | The tile it stands on.                                                             |
 | `men`         | How many men are left in it: what a fight moves and what an army is worth.          |
+| `capacity`    | The men it was recruited with: its capacity, fixed even after casualties (ADR-0026). |
 | `figures`     | How many figures it is drawn as — its men, or one for a Beast.                     |
 | `formation`   | `"line"` or `"column"`: the shape it holds.                                        |
 | `facing`      | The side it faces: `"north"`, `"east"`, `"south"` or `"west"`.                     |
@@ -207,8 +210,9 @@ Each entry of `squads`:
 | `ammunition`  | Volleys of missiles it still carries: the first rounds of a contact are worth more. |
 | `routing`     | Whether it has broken and is running.                                               |
 | `engaged`     | Whether an enemy Squad is in contact with it right now.                             |
-| `payroll`     | What it owes each Season.                                                          |
+| `payroll`     | What it owes at the next Season boundary, priced on the men still standing.        |
 | `unpaid`      | Seasons in a row it has gone unpaid.                                               |
+| `bearing`     | The force it brings into a fight: its men times its type's `impact`. It is the number the exchange, a wall's defence and a Controller's estimate all read, and this field is about **your own** Squad only. Enemy appearance now reports visible men (ADR-0029), without private condition or a bearing field. |
 | `garrison`    | The settlement it is manning, or `null` when it is in the field.                    |
 | `home`        | The settlement that raised it.                                                     |
 | `inTerritory` | Whether it stands on ground of yours, where it draws supply.                        |
@@ -285,7 +289,7 @@ The Commands to apply on the tick that was asked about, in the vocabulary of
 <!-- replies:start -->
 ```jsonl
 { "type": "commands", "tick": 0, "commands": [] }
-{ "type": "commands", "tick": 10, "commands": [ { "kind": "recruit", "faction": "rome", "settlement": 0, "squadType": "hastati", "count": 2 } ] }
+{ "type": "commands", "tick": 10, "commands": [ { "kind": "recruit", "faction": "rome", "settlement": 0, "squadType": "hastati", "men": 24, "count": 2 } ] }
 { "type": "commands", "tick": 3400, "commands": [ { "kind": "assault", "faction": "rome", "squads": [1, 2], "settlement": 1 } ] }
 ```
 <!-- replies:end -->
@@ -294,6 +298,9 @@ Three things are worth knowing about what an agent may say:
 
 - **Only your own Faction.** A Command stamped with the other Faction is not a
   clever order, it is a message this protocol cannot read (see *Malformed*).
+- **A Recruit names a real size.** `men` is required and must be one of the
+  type's `sizes`; a reply from before P2 with no `men` is malformed rather than
+  defaulted, because a default would silently buy a different Squad (ADR-0027).
 - **A Command the rules cannot honour is ignored**, exactly as it is for a human
   clicking: an order to a Squad that has broken, a tile in the river, a building
   nobody can pay for. The protocol answers nothing about legality — only the tick
@@ -385,7 +392,7 @@ harness writes every Command it applied, stamped with the tick it applied on, in
 application order, with `--log`:
 
 ```
-{"tick":0,"command":{"kind":"recruit","faction":"rome","settlement":0,"squadType":"hastati","count":2}}
+{"tick":0,"command":{"kind":"recruit","faction":"rome","settlement":0,"squadType":"hastati","men":24,"count":2}}
 {"tick":10,"command":{"kind":"move","faction":"rome","squads":[1,2],"x":4,"y":60}}
 ```
 
@@ -448,6 +455,6 @@ which men are, so a first order is a `recruit` beside one and a `move` of the
 other — and `docs/COMMANDS.md` is the twelve things you may say.
 
 `examples/agent.ts` is the next step up: raise two Squads, sweep the theatre
-until the enemy Stronghold is seen, then assault it. It writes its plan in about
+until the enemy Stronghold is seen, then blockade it. It writes its plan in about
 two hundred lines and imports nothing from this repository, which is what an
 "agent that is not this codebase" means.

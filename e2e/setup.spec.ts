@@ -6,15 +6,17 @@ import { setupLayout } from '../src/ui/match-menu';
 import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
 
 /** Where setup puts its controls, read from the same layout the page draws. */
-const SETUP = setupLayout({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT }, {
+const SETUP = setupLayout({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT + 60 }, {
   config: { seed: 0, faction: 'rome', difficulty: 'centurio' }, proposed: 0, seedText: '', focus: 0, invalid: false,
-});
+}, true);
 const SEED = SETUP.buttons[2]!.rect;
 const START = SETUP.buttons[3]!.rect;
 
 test('the explicit seed field accepts a pasted zero seed', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
   await expect(page.locator('canvas')).toHaveAttribute('aria-label', /conquistare la Roccaforte nemica/);
   await page.evaluate(() => navigator.clipboard.writeText('0'));
@@ -55,6 +57,10 @@ async function pressMenu(page: Page, action: string): Promise<void> {
     const canvas = (await page.locator('canvas').boundingBox())!;
     await page.mouse.click(canvas.x + open.x + 8, canvas.y + open.y + 8);
   }
+  if (!await page.evaluate((action) => window.__SPQR.game!.matchLayout().buttons.some((b) => b.action === action), action)) {
+    const route = await page.evaluate(() => window.__SPQR.game!.matchLayout().buttons.find((b) => b.action === 'back' || b.action === 'settings')!.action);
+    await pressMenu(page, route);
+  }
   const rect = await page.evaluate((wanted) => window.__SPQR.game!.matchLayout().buttons.find((button) => button.action === wanted)!.rect, action);
   const box = (await page.locator('canvas').boundingBox())!;
   await page.mouse.click(box.x + rect.x + 8, box.y + rect.y + 8);
@@ -68,6 +74,8 @@ async function openMatch(page: Page, faction = 'rome', seed = 7): Promise<void> 
 
 test('keyboard setup selects Carthage, difficulty and an explicit seed; restart preserves them', async ({ page }) => {
   await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Tab');
@@ -93,6 +101,8 @@ test('keyboard setup selects Carthage, difficulty and an explicit seed; restart 
 test('pointer setup, invalid and empty seeds, copy, pacing, pause and fresh New Match', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
   const box = (await page.locator('canvas').boundingBox())!;
   // The visible seed field; typing replaces its proposed value.
@@ -117,22 +127,20 @@ test('pointer setup, invalid and empty seeds, copy, pacing, pause and fresh New 
     await pressMenu(page, `speed${String(speed)}`);
     expect(await page.evaluate(() => window.__SPQR.game!.speed())).toBe(speed);
   }
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
   const tick = await page.evaluate(() => window.__SPQR.game!.tick());
   await page.waitForTimeout(400);
   expect(await page.evaluate(() => window.__SPQR.game!.tick())).toBe(tick);
   await page.keyboard.press('Space');
   await expect.poll(() => page.evaluate(() => window.__SPQR.game!.tick())).toBeGreaterThan(tick);
   await page.keyboard.press('Space');
-  page.once('dialog', (dialog) => { void dialog.dismiss(); });
-  await page.keyboard.press('a');
-  await pressMenu(page, 'new');
-  expect(await page.evaluate(() => window.__SPQR.game!.configuration())).toEqual(config);
-  page.once('dialog', (dialog) => { void dialog.accept(); });
   await pressMenu(page, 'new');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
+  page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.keyboard.press('Enter');
   await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'match');
   expect((await page.evaluate(() => window.__SPQR.game!.configuration())).seed).not.toBe(config.seed);
@@ -143,6 +151,8 @@ for (const faction of ['rome', 'carthage'] as const) {
     test(`real rules, human submission, final knowledge and bitmap controls: ${faction} at ${String(width)}`, async ({ page, spqr }) => {
       await page.setViewportSize({ width, height: width === 1280 ? 720 : 1080 });
       await page.goto('/');
+  await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+  await page.keyboard.press('Enter');
       await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
       await capture(page, `setup-${String(width)}`, 'issue64');
       await openMatch(page, faction);
@@ -154,7 +164,7 @@ for (const faction of ['rome', 'carthage'] as const) {
       const home = faction === 'rome' ? 0 : 1;
       await page.evaluate(({ side, settlement }) => {
         window.__SPQR.game!.submit({ kind: 'build', faction: side, settlement, building: 'farm' });
-        window.__SPQR.game!.submit({ kind: 'recruit', faction: side, settlement, squadType: side === 'rome' ? 'hastati' : 'gaul', count: 1 });
+        window.__SPQR.game!.submit({ kind: 'recruit', faction: side, settlement, squadType: side === 'rome' ? 'hastati' : 'gaul', men: 24, count: 1 });
         window.__SPQR.game!.advance(1);
         window.__SPQR.game!.select({ kind: 'settlement', id: settlement });
       }, { side: faction, settlement: home });
@@ -220,7 +230,7 @@ for (const faction of ['rome', 'carthage'] as const) {
         reason: { kind: 'stronghold', stronghold: 1, path: 'assault' } });
       expect((await page.evaluate(() => window.__SPQR.game!.matchLayout())).lines).toContain(faction === 'rome' ? 'VITTORIA' : 'SCONFITTA');
       expect((await page.evaluate(() => window.__SPQR.game!.matchLayout())).buttons.filter(({ action }) => action.startsWith('speed')).every(({ enabled }) => !enabled)).toBe(true);
-      expect((await page.evaluate(() => window.__SPQR.game!.hudLayout())).buttons.find(({ action }) => action === 'pause')!.enabled).toBe(false);
+      expect((await page.evaluate(() => window.__SPQR.game!.hudLayout())).text.some(({ text }) => text.startsWith('CONCLUSA'))).toBe(true);
       await page.keyboard.press('Space');
       await pressMenu(page, 'speed3');
       await page.evaluate(() => {
@@ -241,6 +251,8 @@ for (const faction of ['rome', 'carthage'] as const) {
       let dialogs = 0;
       page.on('dialog', (dialog) => { dialogs += 1; void dialog.accept(); });
       await pressMenu(page, 'new');
+      await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
+      await page.keyboard.press('Enter');
       await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
       expect(dialogs).toBe(0);
       const diagnosis = await spqr.diagnosis();

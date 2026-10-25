@@ -84,6 +84,7 @@ export interface Stage {
    */
   resize(width: number, height: number): void;
   extract(): PixelBuffer;
+  destroy(): void;
 }
 
 /**
@@ -116,6 +117,7 @@ export async function createStage(mount: HTMLElement, options: StageOptions): Pr
   const gl = readGl(app.renderer);
 
   return {
+    destroy: () => app.destroy(true, { children: true, texture: true, textureSource: true }),
     root: app.stage as Container,
     canvas: app.canvas,
     renderer: {

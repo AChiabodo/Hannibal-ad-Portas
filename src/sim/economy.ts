@@ -66,7 +66,10 @@ import {
   amountOf,
   buildingCode,
   buildingOf,
+  isLegalSize,
   pay,
+  payrollBill,
+  recruitCost,
   squadTypeCode,
   squadTypeOf,
   stockAt,
@@ -211,6 +214,16 @@ export interface Squad extends Block {
 
   /** Its type, as a content code. */
   readonly type: number;
+
+  /**
+   * The men it was raised with: its recruited capacity, fixed for its life.
+   *
+   * Kept apart from `strength`, which is the men still standing, so a Squad that
+   * has lost half its men still knows what it was bought as — what a panel reads
+   * its survivors against, and what a replay hashes. Payroll does **not** use
+   * it: the bill follows the survivors (ADR-0026, ADR-0027).
+   */
+  readonly capacity: number;
 
   /** The settlement that raised it: where Payroll and desertion say it belongs. */
   readonly home: number;
@@ -606,10 +619,12 @@ export function advanceConstruction(map: MapGrid, economy: Economy): void {
  *
  * Squads are paid in the order they were raised, out of one treasury, until it
  * runs out: a Faction that cannot cover its army pays the oldest first, and the
- * rest go unpaid. An unpaid Squad loses morale and counts the Seasons it has
- * been owed; a paid one recovers a point of it, up to the most its type comes
- * with. A Squad whose morale reaches none **deserts** — it leaves the list, and
- * the id it held is not reused.
+ * rest go unpaid. A bill is `payrollBill(type, squad.strength)`: the type's rate
+ * per 24 *surviving* men, rounded up, not the men the Squad was recruited with
+ * (ADR-0027). An unpaid Squad loses morale and counts the Seasons it has been
+ * owed; a paid one recovers a point of it, up to the most its type comes with. A
+ * Squad whose morale reaches none **deserts** — it leaves the list, and the id it
+ * held is not reused.
  *
  * Deterministic on purpose: a treasury and a list in id order decide everything,
  * so the same Season pays the same Squads on every engine.
@@ -626,7 +641,7 @@ export function chargePayroll(economy: Economy): void {
       }
 
       const type = squadTypeOf(squad.type);
-      const owed = type?.payroll ?? 0;
+      const owed = type === undefined ? 0 : payrollBill(type, squad.strength);
 
       if (available >= owed) {
         available -= owed;
@@ -705,8 +720,9 @@ function applyRecruit(economy: Economy, command: RecruitCommand): boolean {
   const type = squadTypeOf(code);
   if (type === undefined || type.faction !== command.faction) return false;
   if (type.tier > settlement.tier) return false;
+  if (!isLegalSize(type, command.men)) return false;
 
-  const payment = pay(settlement.stocks, times(type.cost, command.count));
+  const payment = pay(settlement.stocks, times(recruitCost(type, command.men), command.count));
   if (!payment.affordable) return false;
 
   settled(settlement, payment.remaining);
@@ -714,12 +730,14 @@ function applyRecruit(economy: Economy, command: RecruitCommand): boolean {
   for (let raised = 0; raised < command.count; raised += 1) {
     economy.squads.push({
       // A Squad leaves the settlement it was raised in, standing where it is
-      // with the men its type is counted as: from there it is C1's block, and
-      // the first order it is given moves it off the square.
-      ...standingAt(settlement.x, settlement.y, type.strength, type.ammunition),
+      // with the men it was bought as: from there it is C1's block, and the
+      // first order it is given moves it off the square. Its capacity is those
+      // same men, and its strength starts there too — C3 is what separates them.
+      ...standingAt(settlement.x, settlement.y, command.men, type.ammunition),
       id: economy.nextSquadId,
       owner: factionCode(command.faction),
       type: code,
+      capacity: command.men,
       home: settlement.id,
       morale: type.morale,
       unpaid: 0,

@@ -57,6 +57,13 @@ export const SEASONS_PER_YEAR = 4;
  */
 export const SEASON_TICKS = 210 * TICK_HZ;
 
+/** Time from an observed Match tick to the next Payroll/production boundary. */
+export function ticksUntilSeason(tick: number): number {
+  // advanceCalendar resolves tick + 1: observing a boundary means its
+  // production and Payroll have already been charged.
+  return SEASON_TICKS - tick % SEASON_TICKS;
+}
+
 /** How many ticks a game year lasts: four Seasons, fourteen minutes of Match time. */
 export const YEAR_TICKS = SEASON_TICKS * SEASONS_PER_YEAR;
 

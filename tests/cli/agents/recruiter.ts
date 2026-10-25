@@ -46,7 +46,7 @@ for await (const line of input) {
   const commands =
     raised || home === undefined
       ? []
-      : [{ kind: 'recruit', faction, settlement: home.id, squadType, count: 1 }];
+      : [{ kind: 'recruit', faction, settlement: home.id, squadType, men: 24, count: 1 }];
   raised = true;
 
   process.stdout.write(`${JSON.stringify({ type: 'commands', tick: message.tick, commands })}\n`);

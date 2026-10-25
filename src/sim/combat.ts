@@ -10,6 +10,8 @@
  *
  * | Lever                  | What it does                                                   |
  * | ---------------------- | -------------------------------------------------------------- |
+ * | the men brought to bear | `bearing` — men times `impact` — in **force points**, twelve to a man |
+ * | the shape it holds     | a line brings all of it and a column a quarter (ADR-0028)       |
  * | the matchup matrix     | `content/arms.ts` — who has the better of the pair, ×3/2 or ×2/3 |
  * | flank and rear         | more damage **and** more morale shock; and the flanked side strikes weaker |
  * | terrain                | a hill is harder to assault, a ford disorders whoever stands in it |
@@ -35,21 +37,54 @@
  * "resolves deterministically from the same state" means (ADR-0006), and it is
  * why no die is rolled for a casualty.
  *
+ * ## A blow is counted in men brought to bear, not in Squads (ADR-0028)
+ *
+ * A Squad's blow is `bearing`: its surviving men times its type's `impact`
+ * (`content/squads.ts`), scaled by its formation, the matchup, the angle, the
+ * ground and its fatigue. Men scale the blow and bodies of men do not: five
+ * 24-man Squads bring five times a 24-man Squad's blow and exactly a 120-man
+ * Squad's, which is P3's equivalence. The chain starts from men rather than from
+ * `frontage` for that reason — a full line saturates at twelve files, and a
+ * strike read off the file count lets a Player buy five times the damage by
+ * splitting one body into five Squads.
+ *
+ * Two rules finish the job, and both are about *the body*, not about the entity:
+ *
+ * - **A Squad's attention is divided.** Its blow is split among the enemies it
+ *   is in contact with, so a block fighting on three sides inflicts its force
+ *   once and not three times.
+ * - **Shock is counted once per defender.** How much nerve a round costs depends
+ *   on the men pressing it against the men holding it, not on how many Squads
+ *   the attackers happen to be. Five 24-man Squads shake exactly as much nerve
+ *   as one 120-man Squad, and a body at five-to-one odds shakes five times as
+ *   much.
+ *
+ * ## Force points, and a rounding that does not depend on the split
+ *
+ * A blow is counted in **force points**, twelve of which make one man. That scale
+ * exists so that splitting a body into Squads cannot change the arithmetic:
+ * twelve points of a 24-man Squad's twenty-four are 1.5 men, and 60 points of
+ * five such Squads are five men, which is what 120 points of one 120-man Squad
+ * are. Casualties are floored **once per defender per round**, from the summed
+ * points of every blow that landed on it, and a defender that was struck at all
+ * always loses at least one man — counted once, however many Squads struck it.
+ *
  * ## Rounding, in one place
  *
- * Every modifier is a ratio of whole numbers (`Ratio`) applied by
- * `scaledBy`, which multiplies then divides and floors. Rounding once per step
- * of a chain is not the same as rounding at the end, so the order of the chain
- * is fixed and written down — the files that can reach, the matrix, where the
- * blow lands, how well the striker is guarding itself, the ground, then fatigue,
- * with the volley added last as plain men — and a test can predict a number by
- * hand from it.
+ * Every modifier is a ratio of whole numbers (`Ratio`) applied by `scaledBy`,
+ * which multiplies then divides and floors. Rounding once per step of a chain is
+ * not the same as rounding at the end, so the order of the chain is fixed and
+ * written down — the men brought to bear, the shape they hold, the matrix, where
+ * the blow lands, how well the striker is guarding itself, the ground, then
+ * fatigue, with the volley added last as plain points — and a test can predict a
+ * number by hand from it. Points are fine enough that a step's flooring is worth
+ * at most a twelfth of a man on the sizes this roster sells.
  *
  * ## Breaking, running, and forming up again
  *
  * A Squad whose morale reaches none has **broken**: it is `routed`, it runs for
  * the nearest settlement its Faction holds, it strikes with a third of its
- * weight, and it gives no morale shock at all because it is not pressing home.
+ * force, and it gives no morale shock at all because it is not pressing home.
  * It is not annihilated while it has somewhere to run: its strength floors at one
  * man for as long as it still has steps to walk, which is the plan's "breaks
  * rather than dies to the last man" made mechanical.
@@ -77,15 +112,15 @@
  * the ones that do not, at the same Season boundary this module's own Supply
  * charges their nerve.
  */
-import { matchupOf, squadTypeOf, type Advantage, type Arm } from '../content/index.ts';
-import type { Command } from './command.ts';
+import { bearingOf, matchupOf, squadTypeOf, type Advantage, type Arm } from '../content/index.ts';
+import type { Command, Formation } from './command.ts';
 import { factionCode } from './faction.ts';
 import type { Economy, Squad } from './economy.ts';
 import { TERRAIN, terrainAt, type MapGrid, type Site } from './map.ts';
 import { orderedSquads, orderSquadTo } from './movement.ts';
 import type { RouteCache } from './route.ts';
 import type { Fallen } from './residue.ts';
-import { FATIGUE_MAX, facingOf, FIELD, frontage, isRouting, ROUTING, type Facing } from './squad.ts';
+import { FATIGUE_MAX, facingOf, FIELD, formationOf, isRouting, ROUTING, type Facing } from './squad.ts';
 import { holdsTerritory, territoryOf } from './territory.ts';
 
 /**
@@ -120,23 +155,55 @@ export function scaledBy(value: number, ratio: Ratio): number {
 }
 
 /**
- * What a full front rank does to the men opposite it in one round: three men
- * for every four files, so twelve files kill nine men a round at parity.
+ * How many force points make one man: twelve.
  *
- * Twelve files is a full line, so an even fight costs a line nine men a round
- * and its hundred and twenty men last thirteen rounds — longer than its morale
- * does, which is the whole point: Squads break before they are destroyed.
+ * The scale a blow is counted on (`forcePointsOf`), and the reason splitting a
+ * body of men into Squads cannot change the arithmetic: a 24-man Squad at parity
+ * lands twenty-four points, which is two men, and five of them land a hundred and
+ * twenty, which is exactly one 120-man Squad's ten. A man for every point would
+ * leave nothing between a 24-man Squad's one man and two, and the rounding would
+ * then depend on how the men were divided.
  */
-export const STRIKE: Ratio = { times: 3, of: 4 };
+export const POINTS_PER_MAN = 12;
 
 /**
- * The extra men one volley kills, on top of the blow (GLOSSARY: Ammunition).
+ * What the shape a Squad holds does to the blows it lands: a line lands all of
+ * them and a column a quarter.
  *
- * The volley is a fixed weight of missiles rather than another multiplier: what
- * a Squad carries is what it bought before the campaign, and five volleys are
- * worth the same five volleys whatever the angle and the ground.
+ * A column is a march formation — three files abreast, however many ranks deep —
+ * and a body caught in one has a quarter of a line's front to strike with. The
+ * quarter is the ratio the file counts always had (three files against twelve),
+ * kept because it is the meaning a Formation Command has always had in a fight.
+ * `frontage` still says how wide a block is drawn and how wide it stands; what a
+ * blow *is*, is the men behind the front (`forcePointsOf`).
  */
-export const VOLLEY_STRIKE = 4;
+export const FORMATION_STRIKE: Readonly<Record<Formation, Ratio>> = {
+  line: EVEN,
+  column: { times: 1, of: 4 },
+};
+
+/**
+ * The extra force points one volley lands, per point of bearing: the volley of a
+ * body of men at parity, and of a missile arm.
+ *
+ * A volley is a weight of missiles rather than another multiplier, so it is
+ * added last and as points. What a body carries is what it bought before the
+ * campaign (`ammunition`), and it is spent in the first rounds of contact and
+ * never comes back until the Squad is resupplied in its own country.
+ *
+ * The two rates are stated per *bearing* rather than flat, because a flat volley
+ * would have been a second way to buy missiles by splitting a body: five 24-man
+ * Squads each throwing the flat weight would out-shoot the 120-man Squad they
+ * were part of. `archers` is heavier because a slinger's volley is what the
+ * slinger is for — its melee blows are a body of twenty-four men's.
+ */
+export const VOLLEY_STRIKE: Readonly<Record<Arm, Ratio>> = {
+  spear: { times: 2, of: 5 },
+  sword: { times: 2, of: 5 },
+  cavalry: { times: 2, of: 5 },
+  light: { times: 2, of: 5 },
+  archers: { times: 3, of: 2 },
+};
 
 /** How much ammunition a Squad spends in a round it is in contact: one volley's worth. */
 export const AMMUNITION_PER_VOLLEY = 1;
@@ -297,16 +364,28 @@ export interface Exchange {
   /** The Squad being struck. */
   readonly defender: Squad;
 
-  /** Men the blow kills. */
+  /**
+   * The blow, in force points: `POINTS_PER_MAN` of them make one man.
+   *
+   * This is the number the chain below produces, and the one `woundsOf` adds up
+   * across every Squad that struck a defender, so a round's casualties do not
+   * depend on how the striking men were divided into Squads.
+   */
+  readonly points: number;
+
+  /** Men the blow kills, counting this attacker as the defender's only one. */
   readonly men: number;
 
-  /** Morale the blow costs: the count towards breaking. */
+  /** Morale the blow costs, counting this attacker as the defender's only one. */
   readonly morale: number;
 }
 
 /** What a round of blows costs one Squad: the men it loses and the nerve it loses with them. */
 export interface Wound {
-  /** Men the blows kill. */
+  /** Force points taken this round, from every Squad that struck it. */
+  points: number;
+
+  /** Men the blows kill: the points, floored once per man. */
   men: number;
 
   /** Morale the blows cost, counted towards breaking. */
@@ -316,27 +395,66 @@ export interface Wound {
 /**
  * What `attacker` does to `defender` in one round, as the state stands now.
  *
- * The chain is fixed and worked in this order: the files that can reach, the
- * matrix, where the blow lands (`ASPECT_STRIKE`), how well the attacker can
- * guard itself while landing it (`ASPECT_GUARD`), the ground, then fatigue; the
- * volley is added last, as men rather than as a multiplier, because a volley is
- * a fixed weight of missiles and not another percentage. A routed attacker works
- * the same chain scaled by `ROUTED_STRIKE` and gives no shock at all.
+ * The chain is fixed and worked in this order: the men brought to bear, the
+ * shape they hold, the matrix, where the blow lands (`ASPECT_STRIKE`), how well
+ * the attacker can guard itself while landing it (`ASPECT_GUARD`), the ground,
+ * then fatigue; the volley is added last, as points rather than as a multiplier,
+ * because a volley is a fixed weight of missiles and not another percentage. A
+ * routed attacker works the same chain scaled by `ROUTED_STRIKE` and gives no
+ * shock at all.
+ *
+ * The answer is what this Squad does when the defender is the only body it is
+ * fighting; a Squad fighting on three sides divides its blow among them
+ * (`woundsOf`).
  */
 export function exchangeOf(attacker: Squad, defender: Squad, map: MapGrid): Exchange {
+  const points = forcePointsOf(attacker, defender, map);
+
   return {
     attacker,
     defender,
-    men: casualtiesOf(attacker, defender, map),
-    morale: isRouting(attacker) ? 0 : shockOf(attacker, defender, map),
+    points,
+    men: menOfPoints(points),
+    morale: shockOf([attacker], defender, map),
   };
 }
 
-/** The men one round of `attacker`'s blows takes off `defender`. */
-function casualtiesOf(attacker: Squad, defender: Squad, map: MapGrid): number {
-  const order = isRouting(attacker) ? ROUTED_STRIKE : STRIKE;
-  const blows = scaledBy(frontage(attacker), order);
-  const armed = scaledBy(blows, ADVANTAGE_RATIO[matchupOf(armOfType(attacker.type), armOfType(defender.type))]);
+/**
+ * The men `points` buy: floored once, from every blow that landed on one body.
+ *
+ * A share smaller than a twelfth of a man kills nobody, and deliberately so: a
+ * minimum "one man per blow" would let a single small body deal a casualty to
+ * each of five enemies it is spread across, which is the same entity-count
+ * exploit this scale exists to close, seen from the attacking side. A body that
+ * divides its force gets a share of *casualties* in proportion, and a share that
+ * rounds away is a force too small to press with.
+ */
+export function menOfPoints(points: number): number {
+  return Math.max(0, Math.floor(points / POINTS_PER_MAN));
+}
+
+/**
+ * The **force** a Squad brings into a round of contact.
+ *
+ * Its surviving men, times its type's `impact` (`content/squads.ts`): the number
+ * the fight is counted from, and the one number a Siege's ram defence, a
+ * blockade, a settlement's centre and a Controller's estimate all read — so the
+ * rules, the interface and the AI cannot drift apart on it. This is the only
+ * reader of the two; a caller that has neither a Squad nor its type's code has
+ * no business pricing a body of men.
+ */
+export function bearing(squad: Squad): number {
+  const type = squadTypeOf(squad.type);
+
+  return type === undefined ? squad.strength : bearingOf(type, squad.strength);
+}
+
+/** The force points one Squad lands on one enemy in a round, before its attention is divided. */
+function forcePointsOf(attacker: Squad, defender: Squad, map: MapGrid): number {
+  const order = isRouting(attacker) ? ROUTED_STRIKE : EVEN;
+  const force = scaledBy(bearing(attacker), order);
+  const formed = scaledBy(force, FORMATION_STRIKE[formationOf(attacker.formation)]);
+  const armed = scaledBy(formed, ADVANTAGE_RATIO[matchupOf(armOfType(attacker.type), armOfType(defender.type))]);
   const landing = scaledBy(armed, ASPECT_STRIKE[aspectOf(attacker, defender)]);
   const guarding = scaledBy(landing, ASPECT_GUARD[aspectOf(defender, attacker)]);
   const grounded = scaledBy(guarding, groundRatio(map, attacker, defender));
@@ -345,18 +463,41 @@ function casualtiesOf(attacker: Squad, defender: Squad, map: MapGrid): number {
   return pressed + volleyOf(attacker);
 }
 
-/** The morale one round of `attacker`'s blows costs `defender`. */
-function shockOf(attacker: Squad, defender: Squad, map: MapGrid): number {
-  const edge = matchupOf(armOfType(attacker.type), armOfType(defender.type)) === 'advantage' ? MATCHUP_SHOCK : 0;
-  const missiles = volleyOf(attacker) > 0 ? VOLLEY_SHOCK : 0;
+/**
+ * The morale one round of blows costs `defender`, from every Squad pressing it.
+ *
+ * Counted once per defender and not once per attacker, which is what keeps five
+ * 24-man Squads from shaking five times the nerve of the 120-man Squad they
+ * would add up to: a body under attack loses `BASE_SHOCK` a round whether one
+ * Squad or five are pressing it, and the levers on top are the worst angle among
+ * the attackers, whether any of them has the matrix's better arm, whether any of
+ * them still has missiles, and the ground the defender stands on.
+ *
+ * Odds are deliberately **not** a lever. More men already kill more men, so
+ * pressing a body with twice the numbers would otherwise be counted twice, and
+ * a bigger body would be rewarded for its size in nerve as well as in force —
+ * which is exactly the snowball that leaves a coalition of small bodies unable to
+ * fight at all (ADR-0028).
+ */
+export function shockOf(attackers: readonly Squad[], defender: Squad, map: MapGrid): number {
+  const pressing = attackers.filter((attacker) => !isRouting(attacker));
+  if (pressing.length === 0) return 0;
+
+  const angle = Math.max(...pressing.map((attacker) => ASPECT_SHOCK[aspectOf(attacker, defender)]));
+  const edge = pressing.some(
+    (attacker) => matchupOf(armOfType(attacker.type), armOfType(defender.type)) === 'advantage',
+  ) ? MATCHUP_SHOCK : 0;
+  const missiles = pressing.some((attacker) => attacker.ammunition > 0) ? VOLLEY_SHOCK : 0;
   const disordered = terrainAt(map, defender.x, defender.y) === TERRAIN.ford ? FORD_SHOCK : 0;
 
-  return BASE_SHOCK + ASPECT_SHOCK[aspectOf(attacker, defender)] + edge + missiles + disordered;
+  return BASE_SHOCK + angle + edge + missiles + disordered;
 }
 
-/** Men the volley of missiles `attacker` has left adds: none when it has none. */
+/** The blow points one volley of missiles `attacker` adds: none when it has none. */
 function volleyOf(attacker: Squad): number {
-  return attacker.ammunition > 0 ? VOLLEY_STRIKE : 0;
+  if (attacker.ammunition <= 0) return 0;
+
+  return scaledBy(bearing(attacker), VOLLEY_STRIKE[armOfType(attacker.type)]);
 }
 
 /** What the ground under the two Squads does to the blow, as one ratio. */
@@ -580,23 +721,65 @@ export function fight(
  * because a Siege's storm is the same arithmetic between the men who came
  * through a breach and the men who man it (C5), and a second copy of it would be
  * a second place for the fight to change.
+ *
+ * Two rules make the answer a fact about bodies of men rather than about Squads:
+ *
+ * - **A Squad's attention is divided.** Its blow against each enemy is computed
+ *   as the chain says, then split by the number of enemies it is fighting, with
+ *   the remainder handed to the first of them in the economy's own order. A
+ *   block pressed from three sides inflicts its force once, not three times.
+ * - **Casualties are floored once per defender.** The points of every blow that
+ *   landed on a defender are summed, and only then turned into men, so five
+ *   24-man Squads kill what one 120-man Squad kills and not five times as many.
  */
 export function woundsOf(
   pairs: readonly (readonly [Squad, Squad])[],
   map: MapGrid,
 ): ReadonlyMap<Squad, Wound> {
-  const wounds = new Map<Squad, Wound>();
+  // Contact is symmetric, so one list per Squad answers both questions: the
+  // enemies it lands its force on are the enemies pressing it.
+  const engaged = new Map<Squad, Squad[]>();
 
   for (const [first, second] of pairs) {
-    for (const exchange of [exchangeOf(first, second, map), exchangeOf(second, first, map)]) {
-      const wound = wounds.get(exchange.defender) ?? { men: 0, morale: 0 };
-      wound.men += exchange.men;
-      wound.morale += exchange.morale;
-      wounds.set(exchange.defender, wound);
+    listOf(engaged, first).push(second);
+    listOf(engaged, second).push(first);
+  }
+
+  const points = new Map<Squad, number>();
+
+  for (const [attacker, targets] of engaged) {
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      if (target === undefined) continue;
+
+      const force = forcePointsOf(attacker, target, map);
+      const share = Math.floor(force / targets.length) + (index < force % targets.length ? 1 : 0);
+      points.set(target, (points.get(target) ?? 0) + share);
     }
   }
 
+  const wounds = new Map<Squad, Wound>();
+
+  for (const [defender, taken] of points) {
+    wounds.set(defender, {
+      points: taken,
+      men: menOfPoints(taken),
+      morale: shockOf(engaged.get(defender) ?? [], defender, map),
+    });
+  }
+
   return wounds;
+}
+
+/** The list a Squad is filed under, made when it is first named. */
+function listOf(lists: Map<Squad, Squad[]>, squad: Squad): Squad[] {
+  const known = lists.get(squad);
+  if (known !== undefined) return known;
+
+  const fresh: Squad[] = [];
+  lists.set(squad, fresh);
+
+  return fresh;
 }
 
 /** Every blow a round contains, both directions of every engagement, from the state as it was. */

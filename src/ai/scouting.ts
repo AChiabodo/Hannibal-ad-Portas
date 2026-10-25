@@ -1,9 +1,10 @@
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
-import type { Behaviour } from './registry.ts';
+import { atHalfStrength, type Behaviour } from './registry.ts';
 import { planningContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
+import { restingAtHome } from './recovery.ts';
 
 export interface ScoutingObservation {
   readonly year: number;
@@ -13,7 +14,7 @@ export interface ScoutingObservation {
   readonly settlements: readonly Site[];
   readonly enemies: readonly Site[];
   readonly squads: readonly (Site & {
-    readonly id: number; readonly type: string; readonly men: number; readonly morale: number;
+    readonly id: number; readonly type: string; readonly men: number; readonly capacity: number; readonly morale: number;
     readonly routing: boolean; readonly engaged: boolean; readonly garrison: number | null;
     readonly goal: Site | null; readonly refused: string | null;
   })[];
@@ -108,14 +109,19 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
   }
   return { id: 'scouting', tactical: ({ observation }) => {
     const { visible, tick, faction } = observation;
-    const contacts = planningContacts(visible.contacts, tick, content.ticksPerSecond);
+    // Open settlements belong to expansion; stationary villages must not pull
+    // the discovery patrol away from the enemy's Stronghold on every refresh.
+    const contacts = planningContacts(visible.contacts, tick, content.ticksPerSecond)
+      .filter((contact) => contact.kind !== 'settlement');
     const found = contacts.some((contact) => contact.kind === 'stronghold');
-    const quota = Math.max(1, Math.ceil(visible.squads.length / (found ? difficulty.scoutsPerFound : difficulty.scoutsPer)));
+    const quota = Math.max(found ? 1 : difficulty.openingScouts,
+      Math.ceil(visible.squads.length / (found ? difficulty.scoutsPerFound : difficulty.scoutsPer)));
     const scouts = visible.squads.filter((squad) => {
       const type = types.get(squad.type);
       const light = type !== undefined && content.scoutTypes.includes(type.id);
       return light && !squad.routing && !squad.engaged && squad.garrison === null &&
-        squad.men * 2 > type.strength && squad.morale * 2 > type.morale &&
+        !restingAtHome(squad, visible.settlements, type.morale) &&
+        !atHalfStrength(squad) && squad.morale * 2 > type.morale &&
         !visible.enemies.some((enemy) => distance(squad, enemy) <= vision + 1) &&
         !(squad.goal !== null && visible.settlements.some((home) => distance(home, squad.goal!) === 0));
     }).sort((a, b) => (types.get(b.type)!.pace - types.get(a.type)!.pace) || a.id - b.id).slice(0, quota);
@@ -160,8 +166,13 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
               const central = Math.min(site.x, width - 1 - site.x, site.y, height - 1 - site.y);
               const home = visible.settlements[0] ?? squad;
               const outward = distance(home, site);
+              // Search the opposite end of the theatre across all latitudes.
+              // Home's latitude says nothing about where the opponent lives.
+              // Only own home, public dimensions and explored terrain enter this prior.
+              const acrossX = width - 1 - home.x - site.x;
+              const across = -(acrossX * acrossX);
               const score = Math.floor(((unknown + (refresh ? 60 : 0)) * 100 + central * 10) *
-                (10 + outward) / (travel + 10));
+                (10 + outward) / (travel + 10)) + (!found ? across * 100 : 0);
               if (score > best) { best = score; target = site; }
             }
           }

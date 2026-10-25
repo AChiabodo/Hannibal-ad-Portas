@@ -189,13 +189,17 @@ describe('the march Match, which is what CI gates movement and combat with', () 
     return world;
   }
 
-  it('musters a dozen Squads onto the theatre, six each, all of them on ground they can walk off', () => {
+  it('musters two equal forces of unequal Squads, all of them on ground they can walk off', () => {
     const world = marchWorld(1);
     const owners = world.economy.squads.map((squad) => squad.owner);
+    const men = (faction: 'rome' | 'carthage') => world.economy.squads
+      .filter((squad) => squad.owner === factionCode(faction))
+      .reduce((total, squad) => total + squad.strength, 0);
 
-    expect(world.economy.squads).toHaveLength(12);
-    expect(owners.filter((owner) => owner === factionCode('rome'))).toHaveLength(6);
-    expect(owners.filter((owner) => owner === factionCode('carthage'))).toHaveLength(6);
+    expect(world.economy.squads).toHaveLength(7);
+    expect(owners.filter((owner) => owner === factionCode('rome'))).toHaveLength(2);
+    expect(owners.filter((owner) => owner === factionCode('carthage'))).toHaveLength(5);
+    expect(men('rome')).toBe(men('carthage'));
 
     for (const squad of world.economy.squads) {
       expect(isWalkable(terrainAt(world.map, squad.x, squad.y))).toBe(true);
@@ -207,16 +211,19 @@ describe('the march Match, which is what CI gates movement and combat with', () 
     const [rome, carthage] = world.map.strongholds;
     const log = marchLog(world);
 
+    // Two Roman lines of 120 and five Carthaginian bodies of 48: the same two
+    // hundred and forty men a side, and not the same number of Squads (#66).
     expect(log).toEqual([
-      { tick: 0, command: { kind: 'move', faction: 'rome', squads: [1, 2, 3, 4, 5, 6], ...carthage } },
-      { tick: 0, command: { kind: 'move', faction: 'carthage', squads: [7, 8, 9, 10, 11, 12], ...rome } },
+      { tick: 0, command: { kind: 'move', faction: 'rome', squads: [1, 2], ...carthage } },
+      { tick: 0, command: { kind: 'move', faction: 'carthage', squads: [3, 4, 5, 6, 7], ...rome } },
     ]);
+    expect(world.economy.squads.reduce((men, squad) => men + squad.strength, 0)).toBe(480);
 
     const squares = world.economy.settlements.slice(0, 2).map((settlement) => ({ x: settlement.x, y: settlement.y }));
     expect(squares).toEqual([rome, carthage]);
   });
 
-  it('marches the two armies across, and every survivor stands on the Stronghold it was sent to', () => {
+  it('marches the two armies across, and every survivor arrives near the Stronghold it was sent to', () => {
     const world = marchWorld(1);
     const [rome, carthage] = world.map.strongholds;
     const mustered = new Map(
@@ -231,16 +238,17 @@ describe('the march Match, which is what CI gates movement and combat with', () 
       const from = mustered.get(squad.id);
 
       // It crossed the theatre: the ground it mustered on is behind it, and the
-      // Stronghold it was ordered to is the tile it stands on.
-      expect({ x: squad.x, y: squad.y }).toEqual({ x: target.x, y: target.y });
+      // Stronghold it was ordered to anchors its distributed arrival (#68).
+      expect(Math.max(Math.abs(squad.x - target.x), Math.abs(squad.y - target.y))).toBeLessThanOrEqual(12);
       expect({ x: squad.x, y: squad.y }).not.toEqual({ x: from?.x, y: from?.y });
       expect(squad.steps).toEqual([]);
     }
 
     // The two armies met on the way: a march across a theatre with an enemy on
-    // it is a fight as well as a march (C3), so the survivors are the men who
-    // got through and not the twelve that set out.
-    expect(after.economy.squads.length).toBeLessThan(12);
+    // it is a fight as well as a march (C3), so the men who arrive are not the
+    // men who set out — and since #66 the two forces bring the same two hundred
+    // and forty men, so neither is wiped out on the road.
+    expect(after.economy.squads.length).toBeLessThanOrEqual(7);
     expect(new Set(after.economy.squads.map((squad) => squad.owner)).size).toBe(2);
     expect(
       after.economy.squads.some((squad) => squad.strength < (mustered.get(squad.id)?.men ?? 0)),
@@ -435,14 +443,14 @@ describe('the Attrition Match, where the country an army stands in is the whole 
     }
 
     // Four Season boundaries: summer, autumn, winter and spring. The army in its
-    // own country behind a camp pays none of it; the one in the field loses two
-    // men in summer, two in autumn, six for the winter and two in spring — a
-    // hundred and twenty men down to a hundred and eight.
+    // own country behind a camp pays none of it; the one in the field is a
+    // forty-eight-man Carthaginian line after P2, and losses two percent, two
+    // percent, six percent and two percent take it down to forty-three.
     expect(world.winters).toBe(1);
     expect(world.autumns).toBe(1);
     expect(roman.strength).toBe(120);
     expect(inCamp(world.economy, roman)).toBe(true);
-    expect(carthaginian.strength).toBe(108);
+    expect(carthaginian.strength).toBe(43);
     expect(inCamp(world.economy, carthaginian)).toBe(false);
   });
 
