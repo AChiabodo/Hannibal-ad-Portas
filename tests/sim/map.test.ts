@@ -44,7 +44,7 @@ function problemsOver(seeds: readonly number[], check: (map: MapGrid) => readonl
 }
 
 describe('a map nobody drew', () => {
-  it('is a 96×96 grid of tiles, every one of them a terrain the map knows', () => {
+  it('is a full theatre of tiles, every one of them a terrain the map knows', () => {
     expect(problemsOver(SEEDS, terrainProblems)).toEqual([]);
 
     const map = generateMap(1);
