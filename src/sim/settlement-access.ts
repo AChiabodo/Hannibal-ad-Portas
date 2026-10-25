@@ -66,11 +66,12 @@ export function advanceGarrisonJourneys(world: SiegeWorld, send: Send): void {
     }
     if (journey.phase === 1) {
       ticket(economy, journey);
-      if (!queueHead(economy, squad, journey)) continue;
+      if (!queueHead(economy, squad, journey)) { journey.reason = 1; continue; }
+      delete journey.reason;
       const occupied = economy.squads.filter((other) => other.garrison === site.id).reduce((men, other) => men + other.strength, 0);
       if (occupied + squad.strength > garrisonCapacity(site.tier)) { fail(squad, 'garrison-full'); continue; }
       const target = admissionPoint(world, site, squad);
-      if (target === undefined) continue;
+      if (target === undefined) { journey.reason = 1; continue; }
       journey.phase = 2;
       journey.remaining = assemblyTicks(squad);
       journey.goalX = target.x;
@@ -93,9 +94,10 @@ export function advanceGarrisonJourneys(world: SiegeWorld, send: Send): void {
     if (journey.phase === 3) {
       if (squad.garrison !== FIELD) {
         ticket(economy, journey);
-        if (!queueHead(economy, squad, journey)) continue;
+        if (!queueHead(economy, squad, journey)) { journey.reason = 1; continue; }
         const position = departurePoint(world, site, squad, journey);
-        if (position === undefined) continue;
+        if (position === undefined) { journey.reason = 2; continue; }
+        delete journey.reason;
         squad.x = position.x;
         squad.y = position.y;
         squad.facing = position.facing;
@@ -121,7 +123,11 @@ function ticket(economy: Economy, journey: Journey): void {
 }
 
 function queueHead(economy: Economy, squad: Squad, journey: Journey): boolean {
+  if (squad.access?.yielding) return false;
   return !economy.squads.some((other) => {
+    const access = other.access;
+    if (other.id !== squad.id && access?.settlement === journey.settlement && access.passage === 0 &&
+      (access.active === 1 || access.ticket < journey.ticket)) return true;
     const waiting = other.garrisonJourney;
     if (other.id === squad.id || waiting === undefined || waiting.settlement !== journey.settlement) return false;
     if (waiting.phase === 2 || (waiting.phase === 3 && other.garrison === FIELD)) return true;

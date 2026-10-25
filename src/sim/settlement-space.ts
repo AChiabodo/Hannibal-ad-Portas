@@ -26,6 +26,26 @@ export function bindSiegeSpace(map: MapGrid, siege: Siege): Siege {
 }
 
 export function hasPhysicalSpace(map: MapGrid): boolean { return SPACES.has(map); }
+export interface PhysicalAccess { readonly settlement: number; readonly passage: number; readonly rect: GroundRect }
+
+/** Main Gate and destroyed Wall sections are separate physical lanes. */
+export function physicalAccesses(map: MapGrid, owner: number): readonly PhysicalAccess[] {
+  const space = SPACES.get(map);
+  if (space === undefined) return [];
+  const result: PhysicalAccess[] = [];
+  for (const site of space.economy.settlements.slice(0, 2)) {
+    const front = space.siege?.fronts[site.id];
+    const gate = front?.structures.find((structure) => structure.kind === 0);
+    if (front === undefined || gate === undefined) continue;
+    const rectAt = (side: number, tangent: number): GroundRect => side % 2 === 0 ?
+      { x: site.x + tangent - 1, y: site.y + (side === 0 ? -7 : 7), width: 3, height: 1 } :
+      { x: site.x + (side === 1 ? 7 : -7), y: site.y + tangent - 1, width: 1, height: 3 };
+    if (owner === site.owner || gate.hp <= 0) result.push({ settlement: site.id, passage: 0, rect: rectAt(gate.side, 0) });
+    for (const wall of front.structures) if (wall.kind === 1 && wall.hp <= 0)
+      result.push({ settlement: site.id, passage: wall.side + 1, rect: rectAt(wall.side, wall.side === gate.side ? -4 : 0) });
+  }
+  return result;
+}
 export function physicalSignature(map: MapGrid): string { return SPACES.get(map)?.signature ?? ''; }
 
 export function refreshPhysicalSpace(map: MapGrid): void {
@@ -89,14 +109,14 @@ export function canOccupy(map: MapGrid, squad: Squad, x: number, y: number, form
 }
 
 /** Do not pull a column's tail through a wall by restoring line too early. */
-export function crossingPerimeter(map: MapGrid, squad: Squad): boolean {
+export function crossingPerimeter(map: MapGrid, squad: Squad, x = squad.x, y = squad.y, formation = squad.formation, facing = squad.facing): boolean {
   const space = SPACES.get(map);
   if (space === undefined) return false;
-  const rect = squadGround(squad);
+  const rect = squadGround(squad, x, y, formation, facing);
   return space.economy.settlements.slice(0, 2).some((site) => {
     const bounds = coreOf(space.economy, site);
     const core = { x: bounds.x + 1, y: bounds.y + 1, width: bounds.width - 2, height: bounds.height - 2 };
-    return intersects(rect, core) && !(containsTile(core, rect.x, rect.y) &&
+    return intersects(rect, bounds) && !(containsTile(core, rect.x, rect.y) &&
       containsTile(core, rect.x + rect.width - 1, rect.y + rect.height - 1));
   });
 }
@@ -143,6 +163,16 @@ export function squadGround(squad: Squad, x = squad.x, y = squad.y, formation = 
 
 export function occupiedGround(economy: Economy, rect: GroundRect, except = -1): boolean {
   return economy.squads.some((squad) => squad.id !== except && squad.garrison === FIELD && intersects(rect, squadGround(squad)));
+}
+
+/** Rotations and formation changes cannot create overlap beside a busy access. */
+export function clearFieldBody(map: MapGrid, squad: Squad, x = squad.x, y = squad.y, formation = squad.formation, facing = squad.facing): boolean {
+  const space = SPACES.get(map);
+  if (space === undefined) return true;
+  const rect = squadGround(squad, x, y, formation, facing);
+  const near = physicalAccesses(map, squad.owner).some((access) => intersects(rect,
+    { x: access.rect.x - 10, y: access.rect.y - 10, width: access.rect.width + 20, height: access.rect.height + 20 }));
+  return !near || !occupiedGround(space.economy, rect, squad.id);
 }
 
 /** Active foundations and finished roofs have the same physical footprint. */

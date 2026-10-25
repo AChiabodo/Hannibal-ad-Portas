@@ -303,6 +303,9 @@ function requireStrength(shape: Shape): number {
  * like, how wide it stands, where its men stand in it — is derived from these.
  */
 export interface Block extends Shape {
+  /** Shared FIFO for physical Gate/Breach passage; all values are authoritative integers. */
+  access?: { settlement: number; passage: number; ticket: number; active: number; reason: number;
+    yielding: number; goalX: number; goalY: number };
   /** Aggregate admission/departure; no individual soldier state. */
   garrisonJourney?: {
     settlement: number;
@@ -312,6 +315,7 @@ export interface Block extends Shape {
     goalX: number;
     goalY: number;
     fromOutside: number;
+    reason?: number;
   };
   /** Requested shape retained while a real marching column clears an access. */
   marchFormation?: number;
