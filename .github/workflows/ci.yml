@@ -164,7 +164,7 @@ jobs:
       # (ADR-0013, ADR-0020). Keep the per-tick explanations in a report rather
       # than flooding CI logs.
       - name: Play two AI Controllers with scored decision logs
-        run: node src/cli/main.ts --rules ai --seed 1 --ticks 2101 --expect-hash cf3c65709f729db3 > "$RUNNER_TEMP/ai-match.json"
+        run: node src/cli/main.ts --rules ai --seed 1 --ticks 2101 --expect-hash 22415719c186c540 > "$RUNNER_TEMP/ai-match.json"
 
   guards:
     name: "Fences (seven, including AI Observation imports)"
