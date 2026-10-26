@@ -185,6 +185,15 @@ describe('the offers a selection has', () => {
 });
 
 describe('the offers a settlement has', () => {
+  it('lets the Player queue an unpaid offer and counts pending buildings against the copy limit', () => {
+    const poor = { ...SETTLEMENT, stocks: { grain: 0, timber: 0, stone: 0, iron: 0 } };
+    const farm = settlementOrders(visible(), 'rome', poor, 'construction').find((order) => order.id === 'build:farm');
+    expect(farm).toMatchObject({ enabled: true, reason: null });
+    expect(farm?.note).toContain(translate('pending.offer'));
+    const queued = { ...poor, pending: [{ id: 7, kind: 'build' as const, building: 'forum', squadType: '', men: 0, count: 0, reason: 'resources' as const }] };
+    expect(settlementOrders(visible(), 'rome', queued, 'construction').find((order) => order.id === 'build:forum'))
+      .toMatchObject({ enabled: false, reason: translate('reason.maxWorks') });
+  });
   it('shows construction costs and times from the content tables', () => {
     const orders = settlementOrders(visible(), 'rome', SETTLEMENT, 'construction');
     const farm = orders.find((order) => order.id === 'build:farm');
@@ -201,8 +210,9 @@ describe('the offers a settlement has', () => {
     // The fixture is tier 2 and the forum needs tier 2 as well; the villa is the
     // tier-raising work, so it is offered — what must not happen is a building
     // the Faction cannot raise at all being shown as available.
-    expect(forum?.enabled).toBe(false);
-    expect(forum?.reason).toBe(translate('reason.cost'));
+    expect(forum?.enabled).toBe(true);
+    expect(forum?.reason).toBeNull();
+    expect(forum?.note).toContain(translate('pending.offer'));
 
     const castrum = orders.find((order) => order.id === 'build:castrum');
     expect(castrum?.enabled).toBe(true);
@@ -248,7 +258,7 @@ describe('the offers a settlement has', () => {
 
     // The stock covers the 24-man bill exactly and nothing larger.
     expect(rome.find((order) => order.id === 'recruit:hastati:60')).toMatchObject({
-      enabled: false, reason: translate('reason.cost'),
+      enabled: true, reason: null,
     });
 
     const triarii = rome.find((order) => order.id === 'recruit:triarii:24');
@@ -279,7 +289,8 @@ describe('the offers a settlement has', () => {
     const poor: VisibleSettlement = { ...SETTLEMENT, stocks: { grain: 0, timber: 0, stone: 0, iron: 0 } };
     const hastati = settlementOrders(visible(), 'rome', poor, 'recruitment').find((order) => order.id === 'recruit:hastati:24');
 
-    expect(hastati).toMatchObject({ enabled: false, reason: translate('reason.cost') });
+    expect(hastati).toMatchObject({ enabled: true, reason: null });
+    expect(hastati?.note).toContain(translate('pending.offer'));
   });
 
   it('offers no command on the overview page, which is about what the settlement has', () => {

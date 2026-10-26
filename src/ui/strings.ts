@@ -413,6 +413,7 @@ export const STRINGS = {
   'settlement.cancel': { it: "Annulla", en: undefined },
   'pending.space': { it: "Spazio occupato", en: undefined },
   'pending.resources': { it: "Risorse insufficienti", en: undefined },
+  'pending.offer': { it: "Puoi ordinare ora: attende le risorse senza addebiti fino all'avvio.", en: undefined },
   'pending.cost': { it: "; costo {cost}", en: undefined },
   'observed.finished': { it: "Completato (osservato)", en: undefined },
   'observed.incomplete': { it: "Cantiere in costruzione (osservato)", en: undefined },

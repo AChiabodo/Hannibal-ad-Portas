@@ -9,6 +9,7 @@ import { projectSettlement, forecastTreasury } from '../../src/ui/forecast';
 import { BUILDINGS } from '../../src/content/buildings';
 import { CONSTRUCTION_CATEGORIES } from '../../src/ui/construction';
 import { settlementOrders } from '../../src/ui/orders';
+import { translate } from '../../src/ui/strings';
 import { measureText } from '../../src/art/font';
 
 const visible: EconomyVisible = {
@@ -105,7 +106,8 @@ describe('the economic decision panel', () => {
       expect(seen.sort()).toEqual(BUILDINGS.filter((building) => !building.faction || building.faction === faction)
         .map((building) => building.id).sort());
       const empty = { ...visible.settlements[0]!, stocks: { grain: 0, timber: 0, stone: 0, iron: 0 } };
-      expect(settlementOrders(visible, faction, empty, 'construction').every((offer) => !offer.enabled && offer.reason)).toBe(true);
+      expect(settlementOrders(visible, faction, empty, 'construction').every((offer) =>
+        offer.enabled ? offer.note?.includes(translate('pending.offer')) : offer.reason !== null)).toBe(true);
     }
   });
   it.each(['rome', 'carthage'] as const)('quotes real Season stocks, population and Treasury for %s', (faction) => {

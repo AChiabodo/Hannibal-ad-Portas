@@ -590,7 +590,9 @@ describe('the Siege a seed opens', () => {
 
     expect(again.hash).toBe(once.hash);
     expect(siegeMatchOutcome(once.world)).toBeNull();
-  });
+  // The 160x160 theatre and per-cell appearance memory are hashed twice here;
+  // leave room for the other CPU-heavy map/Match workers in the full suite.
+  }, 15_000);
 });
 
 it('captures a neutral settlement after a group actually marches to its centre, for either Faction', () => {

@@ -355,12 +355,12 @@ export function settlementOrders(
 /** Every building this Faction could raise here, in content order. */
 function constructionOrders(faction: Faction, settlement: VisibleSettlement): readonly OrderOption[] {
   return BUILDINGS.filter((building) => building.faction === undefined || building.faction === faction).map((building) => {
-    const built = settlement.works.filter((work) => work.building === building.id).length;
+    const built = settlement.works.filter((work) => work.building === building.id).length +
+      (settlement.pending ?? []).filter((order) => order.kind === 'build' && order.building === building.id).length;
     const affordable = pay(stockOf(settlement.stocks), building.cost).affordable;
     const reason = building.tier > settlement.tier
       ? message('reason.tier', { tier: building.tier })
-      : built >= building.maxPerSettlement ? translate('reason.maxWorks')
-        : !affordable ? translate('reason.cost') : null;
+      : built >= building.maxPerSettlement ? translate('reason.maxWorks') : null;
 
     return {
       id: `build:${building.id}`,
@@ -370,7 +370,7 @@ function constructionOrders(faction: Faction, settlement: VisibleSettlement): re
       short: workLabel(building.id),
       costs: [...resourceCosts(building.cost), { badge: 'clock', value: building.buildTicks / TICK_HZ }],
       subject: building.id,
-      note: buildingDescription(building),
+      note: buildingDescription(building) + (!affordable ? '\n' + translate('pending.offer') : ''),
       shortcut: null,
       target: 'none' as const,
       targetHint: null,
@@ -402,8 +402,7 @@ function recruitmentOrders(
     const affordable = pay(stockOf(settlement.stocks), total).affordable;
     const bill = payrollBill(type, men) * squads;
     const reason = type.tier > settlement.tier
-      ? message('reason.tier', { tier: type.tier })
-      : !affordable ? translate('reason.cost') : null;
+      ? message('reason.tier', { tier: type.tier }) : null;
     const name = squadLabel(type.id);
 
     return {
@@ -424,7 +423,7 @@ function recruitmentOrders(
         payrollLabel: translate('ui.payroll'),
         payroll: bill,
         perSeason: translate('ui.perSeason'),
-      }),
+      }) + (!affordable ? '\n' + translate('pending.offer') : ''),
       shortcut: null,
       target: 'none' as const,
       targetHint: null,

@@ -32,26 +32,32 @@ export function advancePendingOrders(economy: Economy): void {
 function startOrder(economy: Economy, site: Settlement, order: PendingOrder): boolean {
   const building = order.kind === 0 ? buildingOf(order.content) : undefined;
   const type = order.kind === 1 ? squadTypeOf(order.content) : undefined;
-  if (building === undefined && type === undefined) return true;
+  if (type !== undefined) return startRecruitment(economy, site, order);
+  if (building === undefined) return true;
   const cost = pendingOrderCost(order);
   const payment = pay(site.stocks, cost);
   if (!payment.affordable) { order.reason = 2; return false; }
-  let raised: Squad[] = [];
-  if (building !== undefined) {
-    const lot = workGround(economy, site, building.id, order.ordinal);
-    if (lot === undefined) return true;
-    if (occupiedGround(economy, lot)) { order.reason = 1; return false; }
-  } else if (type !== undefined) {
-    raised = musterPositions(economy, site, order);
-    if (raised.length !== order.count) { order.reason = 1; return false; }
-  }
+  const lot = workGround(economy, site, building.id, order.ordinal);
+  if (lot === undefined) return true;
+  if (occupiedGround(economy, lot)) { order.reason = 1; return false; }
   site.stocks.splice(0, site.stocks.length, ...payment.remaining);
-  if (building !== undefined) {
-    site.works.push({ building: order.content, remaining: building.buildTicks, ordinal: order.ordinal, origin: order.owner });
-    invalidateSpace(economy);
-  } else {
+  site.works.push({ building: order.content, remaining: building.buildTicks, ordinal: order.ordinal, origin: order.owner });
+  invalidateSpace(economy);
+  return true;
+}
+
+/** Each purchased Squad remains atomic; a batch can leave its unpaid remainder queued. */
+function startRecruitment(economy: Economy, site: Settlement, order: PendingOrder): boolean {
+  while (order.count > 0) {
+    const single = { ...order, count: 1 };
+    const payment = pay(site.stocks, pendingOrderCost(single));
+    if (!payment.affordable) { order.reason = 2; return false; }
+    const raised = musterPositions(economy, site, single);
+    if (raised.length === 0) { order.reason = 1; return false; }
+    site.stocks.splice(0, site.stocks.length, ...payment.remaining);
     economy.squads.push(...raised);
-    economy.nextSquadId += raised.length;
+    economy.nextSquadId += 1;
+    order.count -= 1;
   }
   return true;
 }

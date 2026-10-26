@@ -332,7 +332,7 @@ export interface PendingOrder {
   readonly content: number;
   readonly ordinal: number;
   readonly men: number;
-  readonly count: number;
+  count: number;
   /** 1: occupied ground; 2: insufficient stock. */
   reason: number;
 }

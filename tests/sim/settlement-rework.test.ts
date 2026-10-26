@@ -19,6 +19,20 @@ function stage() {
 }
 
 describe('the shared settlement rules (#74)', () => {
+  it('starts a large recruitment batch one whole Squad at a time as muster space becomes free', () => {
+    const { world, match } = stage();
+    world.economy.settlements[0]!.stocks.fill(100);
+    match.step([recruit('rome', 0, 'hastati', 120, 2)]);
+    const first = observeSiege(match.state.world, 'rome');
+    expect(first.squads).toHaveLength(1);
+    expect(first.settlements[0]).toMatchObject({ stocks: { grain: 60, iron: 90 },
+      pending: [{ count: 1, reason: 'space', cost: { grain: 40, iron: 10 } }] });
+    match.step([move('rome', [first.squads[0]!.id], 45, 25)]);
+    for (let tick = 0; tick < 250; tick += 1) match.step();
+    const after = observeSiege(match.state.world, 'rome');
+    expect(after.squads).toHaveLength(2);
+    expect(after.settlements[0]).toMatchObject({ stocks: { grain: 20, iron: 80 }, pending: [] });
+  });
   it('does not reserve Garrison capacity for a distant Squad and rejects it explicitly on arrival', () => {
     const { world, match } = stage();
     const distant = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 60, x: 55, y: 25 });

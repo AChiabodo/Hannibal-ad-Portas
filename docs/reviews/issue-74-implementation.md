@@ -53,6 +53,8 @@ Implementation authorized on 2026-10-25 after the Q1–Q40 design interview.
 
 ## Evidence log
 
+- Integration follow-up: legal unaffordable HUD offers can be queued, and pending building copies count towards the per-kind limit. A recruitment batch starts one complete Squad at a time; `count` and quoted `cost` retain only its unpaid remainder. This avoids a permanent wait when two 120-man bodies cannot both fit the Muster area. Red/green at Command/Match/Observation and public offer-model seams; 54 focused tests passed in three files, with 148 tests passed in the preceding economy/HUD slice.
+
 - Initial red/green: `tests/render/settlement-growth.test.ts` checks all 25 permanent lots, non-overlap, reserved capture/muster/assembly space and interior/exterior assignment. This is foundational geometry, not completion of the integrated map or rendering requirements.
 
 - Q40 complete: pure generator matrix produced by 

@@ -470,6 +470,8 @@ Owned settlements may include `pending`: unpaid build/recruit requests with stab
 (`space` or `resources`) and the quoted resource `cost`. Cancel a request with
 `cancelPending`, naming the settlement and observed order ID. Active construction
 remains in `works`; an occupied lot prevents a pending construction from starting.
+For a recruitment batch, `count` and `cost` describe its unpaid remainder:
+each complete Squad starts and is paid separately as muster space becomes free.
 
 `appearances` records only observed portions of each settlement. Its `tiles` use
 row-major cells within 25 by 25 grounds centred on the settlement. Each cell has
