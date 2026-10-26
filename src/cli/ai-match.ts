@@ -32,7 +32,7 @@ const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
   recruitCost, payrollBill,
   grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, baseStorage: BASE_STORAGE, taxPerDenarius: TAX_PER_DENARIUS,
   ticksUntilPayroll: ticksUntilSeason };
-const canContinueAssault = createAssaultReadiness({ siegeRadius: SIEGE_RADIUS, settlementRadius: 7,
+const canContinueAssault = createAssaultReadiness({ squadTypes: SQUAD_TYPES, siegeRadius: SIEGE_RADIUS, settlementRadius: 7,
   assaultTicks: ASSAULT_TICKS, wallShock: WALL_SHOCK });
 const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ,
   canContinueAssault, settlementRadius: 7 };

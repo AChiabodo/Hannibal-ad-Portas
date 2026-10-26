@@ -5,12 +5,12 @@ import type { Season } from './calendar.ts';
 import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
 import { planningContacts, permittedContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
-import { distance, type Site } from './site.ts';
+import { distance, bodyPerimeterDistance, type Site, type FormationSite } from './site.ts';
 import type { AssaultReadiness } from './assault.ts';
 
 type Faction = Observation<unknown>['faction'];
 
-interface SiegeSquad extends Site {
+interface SiegeSquad extends FormationSite {
   readonly id: number;
   readonly type: string;
   readonly men: number;
@@ -152,7 +152,7 @@ export function createSiegeBehaviour(
       const threat = garrison * content.garrisonEstimate + reliefPower;
 
       const field = visible.squads.filter((squad) => !squad.routing && squad.garrison === null);
-      const atWalls = (squad: SiegeSquad) => Math.max(0, distance(squad, place) - (content.settlementRadius ?? 0)) <= content.siegeRadius ||
+      const atWalls = (squad: SiegeSquad) => bodyPerimeterDistance(squad, place, content.settlementRadius ?? 0, types.get(squad.type)?.figures === 1 ? 1 : squad.capacity) <= content.siegeRadius ||
         (squad.goal !== null && (squad.goal.x === place.x && squad.goal.y === place.y ||
           front?.besieger === faction && (content.settlementRadius ?? 0) > 0 &&
           perimeterArrival(squad.goal, types.get(squad.type)?.figures === 1 ? 1 : squad.capacity, place,

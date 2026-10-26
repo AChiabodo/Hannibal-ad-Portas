@@ -177,3 +177,12 @@ it('keeps an accepted physical perimeter approach assigned to its active siege (
     fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'assault', ram: null, garrison: 0 }] });
   expect(ai.decide({ faction: 'rome', tick: 0, visible })).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
 });
+
+
+it('counts a real body already adjacent to a wall rather than only its anchor (#74)', () => {
+  const ai = createAi<SiegeObservation, SiegeCommand>({ ticksPerSecond: 10,
+    registry: createBehaviourRegistry([createSiegeBehaviour({ ...CONTENT, settlementRadius: 7 })]) });
+  const visible = observation({ squads: [{ ...squad(1, 70, 80), formation: 'line', facing: 'south' }],
+    fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'assault', ram: null, garrison: 0 }] });
+  expect(ai.decide({ faction: 'rome', tick: 0, visible })).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
+});
