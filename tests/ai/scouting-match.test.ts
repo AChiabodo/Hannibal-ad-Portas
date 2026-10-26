@@ -93,7 +93,7 @@ describe('scouting through a Match Observation', () => {
     const world = siegeMatchRules.createWorld(7);
     const before = structuredClone(observeSiege(world, 'rome'));
     const hidden = world.economy.settlements.find((settlement) => settlement.id > 1 &&
-      before.fog.visible[settlement.y * 96 + settlement.x] === 0)!;
+      before.fog.visible[settlement.y * MAP_WIDTH + settlement.x] === 0)!;
     world.siege.fronts[hidden.id]!.hold = 2;
     expect(observeSiege(world, 'rome')).toEqual(before);
   });
@@ -106,13 +106,15 @@ describe('scouting through a Match Observation', () => {
       runMatch({ seed, ticks: bound, rules: { ...siegeMatchRules, createWorld(seed) {
         const world = siegeMatchRules.createWorld(seed);
         const home = world.economy.settlements[0]!;
-        for (let i = 0; i < 3; i += 1) musterSquad(world.economy, world.map, {
-          faction: 'rome', squadType: 'hastati', x: home.x, y: home.y,
+        for (const [dx, dy] of [[15, 0], [-3, -3], [-3, 3]]) musterSquad(world.economy, world.map, {
+          faction: 'rome', squadType: 'hastati', men: 24, x: home.x + dx!, y: home.y + dy!,
         });
         return world;
       } }, observe: observeSiege, outcome: () => null,
       players: [{ faction: 'rome', controller: { decide(observation) {
-        if (observation.visible.contacts.some((contact) => contact.kind === 'stronghold')) {
+        if (observation.visible.contacts.some((contact) => contact.kind === 'stronghold') ||
+          observation.visible.appearances?.some((site) => site.kind === 'stronghold' &&
+            !observation.visible.settlements.some((own) => own.id === site.id) && site.tiles.some((tile) => tile.structure !== undefined))) {
           found = Math.min(found, observation.tick);
         }
         return controller.decide(observation);
@@ -131,12 +133,12 @@ describe('scouting through a Match Observation', () => {
     expect(observeSiege(world, 'rome').contacts).toEqual([]);
     const enemy = world.economy.settlements[1]!;
     musterSquad(world.economy, world.map, {
-      faction: 'rome', squadType: 'hastati', x: enemy.x + 3, y: enemy.y,
+      faction: 'rome', squadType: 'hastati', men: 24, x: enemy.x - 9, y: enemy.y,
     });
     match.step();
-    expect(observeSiege(world, 'rome').contacts).toContainEqual({
-      kind: 'stronghold', id: 1, x: enemy.x, y: enemy.y, seen: 1, type: null,
-    });
+    const known = observeSiege(world, 'rome');
+    expect(known.contacts.some((contact) => contact.kind === 'stronghold')).toBe(false);
+    expect(known.appearances?.some((site) => site.id === 1 && site.tiles.some((tile) => tile.structure !== undefined))).toBe(true);
     expect(observeSiege(world, 'carthage').contacts.some((contact) => contact.kind === 'stronghold')).toBe(false);
   });
 });
