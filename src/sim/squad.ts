@@ -40,6 +40,7 @@
  */
 import { FORMATIONS, type Formation } from './command.ts';
 import { NO_REFUSAL } from './route.ts';
+import type { Facing } from '../content/formation.ts';
 
 /**
  * The four directions a Squad can face, as state holds them.
@@ -58,7 +59,7 @@ export const FACING = {
 } as const;
 
 /** One of the four directions a Squad can face. */
-export type Facing = keyof typeof FACING;
+export type { Facing } from '../content/formation.ts';
 
 /** The four facings, in code order: what a report, a dump or a drawing walks. */
 export const FACINGS: readonly Facing[] = ['north', 'east', 'south', 'west'];

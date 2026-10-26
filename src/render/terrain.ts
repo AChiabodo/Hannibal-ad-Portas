@@ -5,13 +5,13 @@
  * place the two meet and the map becomes pixels. It is the *composition* half of
  * B3, and it is deliberately not a tile-per-sprite renderer: the whole theatre is
  * composed once, into one `PixelBuffer`, and the game puts that single texture
- * under the camera. Panning and zooming a 96×96 map is then one container
+ * under the camera. Panning and zooming a 160×160 map is then one container
  * moving, which is why the ticket's "stays responsive" is a property of the
  * design rather than a hope about the engine.
  *
  * ## The dual grid, in one paragraph
  *
- * The logical grid is 96×96 tiles. The rendering grid is offset half a tile in
+ * The logical grid is 160×160 tiles. The rendering grid is offset half a tile in
  * both directions and has one cell more in each: cell `(i, j)` covers the corner
  * where logical tiles `(i−1, j−1)`, `(i, j−1)`, `(i, j)` and `(i−1, j)` meet, and
  * its four quadrants are exactly those four tiles' nearest quarters. Every

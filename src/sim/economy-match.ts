@@ -463,7 +463,8 @@ export const observeEconomy: MatchSetup<EconomyWorld, EconomyVisible>['observe']
  * Squads that march between them (PLAN §4, B4).
  *
  * Vision is a rule and not a drawing decision, so the radii are `fog.ts`'s and
- * the composition — a settlement sees eight tiles, a Squad four — is here, where
+ * the composition — a settlement watches its centre and core corners with radius
+ * eight, a Squad its own position with radius four — is here, where
  * the settlements and the Squads are both in hand. The page refreshes its fog
  * from exactly this list, which is what makes what a Player sees on the map and
  * what the Faction's Controller is allowed to know one answer rather than two.

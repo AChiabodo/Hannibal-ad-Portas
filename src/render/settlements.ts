@@ -39,9 +39,8 @@ const INTACT_WALLS: Readonly<Record<SiteSide, SiteCondition>> = {
 /**
  * The theatre rectangle a settlement occupies: its art, centred on the tile it stands on.
  *
- * Centred, because a settlement is one tile in the rules and every direction out of it
- * is equally its own; the half-tile offset the theatre's dual grid already has
- * (`tilePixel`) is the one the rest of the map is drawn against.
+ * Canonical appearances cover the reserved grounds around the centre. The half-tile
+ * offset of the theatre's dual grid (`tilePixel`) aligns their cells with terrain.
  */
 export function siteRect(site: SiteIdentity & Pick<Partial<KnownSite>, 'appearance'>): PickRect {
   const size = site.appearance === undefined ? SITE_SIZE[site.kind] : settlementLayout(site.kind).grounds.width * TILE_SIZE;

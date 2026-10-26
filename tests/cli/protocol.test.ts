@@ -97,6 +97,7 @@ describe('the Observation on the wire: the projection, and nothing else', () => 
         'contacts',
         'enemies',
         'fronts',
+        'appearances',
       ].sort(),
     );
   });

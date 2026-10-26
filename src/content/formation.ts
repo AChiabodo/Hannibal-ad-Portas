@@ -1,6 +1,7 @@
-import type { Formation } from '../sim/command.ts';
-import type { Facing } from '../sim/squad.ts';
 import type { GroundRect } from './settlement-layout.ts';
+
+export type Formation = 'line' | 'column';
+export type Facing = 'north' | 'east' | 'south' | 'west';
 
 export const FIGURE_FILE_STEP = 4;
 export const FIGURE_RANK_STEP = 5;

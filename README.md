@@ -159,7 +159,7 @@ in review.
 ## The map
 
 A Match begins on a map nobody drew. `generateMap(seed)` — `src/sim/map.ts` —
-is a pure function of its seed, returning a 96×96 grid of 16×16 tiles: terrain,
+is a pure function of its seed, returning a 160×160 grid of 16×16 tiles: terrain,
 one or two rivers crossed by fords, resource nodes of grain, timber, stone and
 iron, four to six capturable minor settlements, a Stronghold for each Faction,
 and roads joining the nodes to one another. The map is integer state like
@@ -206,6 +206,7 @@ npm run match -- --seed 7 --map
 ```
 
 ```
+Historical pre-#74 example (the current theatre is 160×160):
 seed 7 — 96×96 tiles of 16×16 pixels
 
 Rome's Stronghold at (14, 70); Carthage's at (88, 89); 76 tiles apart
@@ -366,7 +367,7 @@ Three files carry the rest (`src/sim/route.ts`, `squad.ts` and `movement.ts`):
   The price is divided by the *walker's* pace (C4): a horse's tile is
   `ceil(cost / pace)`, and the search weighs a route in the same currency, so a
   fast Squad is not merely quicker along a footsoldier's road.
-- **The way there.** A* over the 96×96 grid, four-connected, with a Manhattan
+- **The way there.** A* over the 160×160 grid, four-connected, with a Manhattan
   heuristic times the cheapest tile — admissible and consistent, so a tile
   leaving the frontier is settled. Every number is an integer and ties break on
   the order tiles were queued, never on a heap's internal shape: the same
@@ -926,7 +927,7 @@ pixels reads the same at low zoom whatever the colours are — so no two of the 
 share a profile, and the colours only confirm what the shapes already say.
 
 **The whole theatre is one texture** (`render/terrain.ts`). The map is composed
-once, on boot, into a 1552×1552 `PixelBuffer` — the logical map translated by half
+once, on boot, into a 2576×2576 `PixelBuffer` — the logical map translated by half
 a tile, with a half-tile margin of edge tile around it — and drawn as a single
 sprite under the camera. Panning and zooming move one container: no tile is culled
 and no sprite is created, so the work per frame is the same at the corner of the

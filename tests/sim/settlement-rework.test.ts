@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { build, move, garrison, validateCommand, type Command } from '../../src/sim/command';
+import { build, move, garrison, recruit, validateCommand, type Command } from '../../src/sim/command';
 import { createMatch } from '../../src/sim/match';
 import { createFogs } from '../../src/sim/fog';
 import { createEconomy } from '../../src/sim/economy';
@@ -19,6 +19,35 @@ function stage() {
 }
 
 describe('the shared settlement rules (#74)', () => {
+  it('does not reserve Garrison capacity for a distant Squad and rejects it explicitly on arrival', () => {
+    const { world, match } = stage();
+    const distant = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 60, x: 55, y: 25 });
+    const nearby = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 37, y: 25 });
+    match.step([garrison('rome', [distant.id, nearby.id], 0)]);
+    for (let tick = 0; tick < 500; tick += 1) match.step();
+    const seen = observeSiege(match.state.world, 'rome');
+    expect(seen.squads.find((squad) => squad.id === nearby.id)?.garrison).toBe(0);
+    expect(seen.squads.find((squad) => squad.id === distant.id)).toMatchObject({ garrison: null, refused: 'garrison-full' });
+    expect(seen.squads.find((squad) => squad.id === distant.id)?.passage).toBeUndefined();
+  });
+  it('keeps recruitment unpaid until its entire new formation fits the muster area', () => {
+    const { world, match } = stage();
+    world.economy.settlements[0]!.stocks.fill(100);
+    const blocker = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 120, x: 30, y: 25 });
+    blocker.facing = 1;
+    const before = observeSiege(world, 'rome').settlements[0]!.stocks;
+    match.step([recruit('rome', 0, 'hastati', 120, 1)]);
+    const waiting = observeSiege(match.state.world, 'rome');
+    expect(waiting.squads).toHaveLength(1);
+    expect(waiting.settlements[0]).toMatchObject({ stocks: before, pending: [{ kind: 'recruit', reason: 'space', men: 120 }] });
+    match.step([move('rome', [blocker.id], 45, 25)]);
+    for (let tick = 0; tick < 250; tick += 1) match.step();
+    const after = observeSiege(match.state.world, 'rome');
+    expect(after.settlements[0]?.pending).toEqual([]);
+    expect(after.squads).toHaveLength(2);
+    expect(after.squads.find((squad) => squad.id !== blocker.id)).toMatchObject({ capacity: 120, men: 120, garrison: null });
+    expect(after.squads.find((squad) => squad.id !== blocker.id)?.x).not.toBe(25);
+  });
   it('marches an outside Squad through its Gate before granting Garrison protection', () => {
     const { world, match } = stage();
     const squad = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 40, y: 25 });

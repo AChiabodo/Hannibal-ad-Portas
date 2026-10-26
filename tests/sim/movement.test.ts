@@ -830,6 +830,7 @@ describe('what a Faction is shown of its Squads', () => {
       home: 0,
       inTerritory: true,
       inCamp: false,
+      inQuarters: false,
     });
 
     expect(seen(world, 'carthage')).toMatchObject({ id: 2, type: 'libyan-spear', goal: null });

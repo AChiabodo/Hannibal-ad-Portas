@@ -49,7 +49,7 @@
  * A Squad winters under cover when it is in **quarters**:
  *
  * - inside one of its Faction's settlements — garrisoned in it, or standing on
- *   its centre; or
+ *   within its inhabited core; or
  * - holding position within `CAMP_RADIUS` of a settlement its Faction holds that
  *   has a standing **Castrum** (`content/buildings.ts`).
  *
@@ -400,7 +400,7 @@ function hasCamp(settlement: Settlement): boolean {
   return settlement.works.some((work) => work.remaining === 0 && work.building === CAMP);
 }
 
-/** Whether a Squad stands inside one of its Faction's settlements: on its centre, or garrisoned. */
+/** A whole field body inside an owned inhabited core, or a protected wall defender. */
 function insideSettlement(economy: Economy, squad: Squad): boolean {
   if (squad.garrison !== FIELD) return true;
   const body = squadGround(squad);

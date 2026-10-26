@@ -3,7 +3,7 @@
  *
  * A Squad is ordered to a tile; what it needs is the cheapest sequence of tiles
  * to walk to get there, or a reason why there is none. That is `findRoute`, and
- * it is A* over the 96×96 grid, four-connected, with the terrain's cost as its
+ * it is A* over the 160×160 grid, four-connected, with the terrain's cost as its
  * edge weight — which is the plan's decision, taken when a dozen Squads on one
  * theatre were known to be the whole demand for pathfinding.
  *

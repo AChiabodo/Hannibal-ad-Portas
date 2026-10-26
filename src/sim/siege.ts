@@ -33,8 +33,8 @@
  *
  * ## A garrison is a posture, not a second army
  *
- * A Squad told to `garrison` stands at its settlement's centre but is *inside*
- * the walls: `combat.ts`'s contact rules skip it (`squad.ts`'s `Block.garrison`),
+ * A Squad told to `garrison` reaches the access and enters completely before
+ * joining the wall defenders: contact rules then skip it (`Block.garrison`),
  * because the wall, not the man, is what an enemy at the gate is facing. So the
  * fight over a breach is the same exchange as any other fight — the men who came
  * over the wall against the men who man it (`combat.ts`'s `woundsOf`) — and a
@@ -371,7 +371,7 @@ export interface VisibleFront {
   /** Capture checks the holder has held the centre. */
   readonly hold: number;
 
-  /** How many Squads are garrisoning it. */
+  /** Own roster count; an enemy front reports only observable presence (0 or 1). */
   readonly garrison: number;
   readonly garrisonMen?: number;
   readonly garrisonCapacity?: number;
@@ -1104,7 +1104,7 @@ function storm(world: SiegeWorld, front: Front, besiegers: readonly Squad[], tic
  * A capture check: whether the Faction holding a settlement's centre has held it
  * long enough to have taken it.
  *
- * Holding means standing on the centre tile with the field, uncontested, and the
+ * Holding means standing in the visible capture square with the field, uncontested, and the
  * count is continuous: a Faction that loses the tile — or whose enemy arrives on
  * it — starts again from nothing. A walled settlement is only open to this once
  * it has been breached; an open one has no such gate, which is the whole of "a
@@ -1326,7 +1326,9 @@ function filteredFront(world: SiegeWorld, front: Front, owner: number, eyes: Ret
   let ramSeen = false;
   for (let y = ramRect.y; y < ramRect.y + ramRect.height; y += 1)
     for (let x = ramRect.x; x < ramRect.x + ramRect.width; x += 1) ramSeen ||= sees(x, y);
-  const { garrisonMen: _men, garrisonCapacity: _capacity, ...publicFront } = full;
+  const publicFront = { ...full };
+  delete publicFront.garrisonMen;
+  delete publicFront.garrisonCapacity;
   return { ...publicFront, structures, breached: structures.some((structure) => !structure.standing),
     ram: ramSeen ? full.ram : null, hold: sees(site.x, site.y) ? full.hold : 0,
     garrison: structures.length > 0 && full.garrison > 0 ? 1 : 0 };

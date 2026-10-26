@@ -30,6 +30,7 @@
  * hand on the Match through the object it handed over.
  */
 import { FACTIONS, isFaction, type Faction } from './faction.ts';
+import type { Formation } from '../content/formation.ts';
 
 /** The field every Command carries: the Faction that issued it. */
 const FACTION_FIELD = 'faction';
@@ -70,7 +71,7 @@ export class CommandValidationError extends Error {
  * C1 owns what each shape means for movement and combat. The vocabulary names
  * only that the choice exists, because a Controller has to be able to make it.
  */
-export type Formation = 'line' | 'column';
+export type { Formation } from '../content/formation.ts';
 
 /**
  * The part every Command shares: the Faction it is addressed to.
