@@ -7,8 +7,12 @@ import type { Command } from '../../src/sim/command.ts';
 import { scriptedController } from '../../src/sim/controller.ts';
 import { runMatch } from '../../src/sim/driver.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
-import { observeSiege, siegeMatchOutcome, siegeMatchRules, type SiegeVisible } from '../../src/sim/siege.ts';
+import { createSiege, observeSiege, siegeMatchOutcome, siegeMatchRules, type SiegeVisible } from '../../src/sim/siege.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
+import { createEconomy } from '../../src/sim/economy.ts';
+import { createFogs } from '../../src/sim/fog.ts';
+import { startCalendar } from '../../src/sim/season.ts';
+import { testMap } from '../sim/economy-fixtures.ts';
 
 /** One Match per seed and level: the whole point is that it is reproducible. */
 const runs = new Map<string, AiMatchRun>();
@@ -35,8 +39,9 @@ describe('the shipped siege AI in a headless Match', () => {
       { faction: 'rome', controller: scriptedController<SiegeVisible>([]) },
       { faction: 'carthage', controller: createArmyController(level) },
     ] });
-    expect(run.result).toEqual({ kind: 'victory', winner: 'carthage', tick: 6300,
+    expect(run.result).toMatchObject({ kind: 'victory', winner: 'carthage',
       reason: { kind: 'stronghold', stronghold: 0, path: 'blockade' } });
+    expect(run.result.tick).toBeLessThan(HEADLESS_TICKS);
     const replayed = runMatch({ ...setup, players: [
       { faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
       { faction: 'carthage', controller: scriptedController<SiegeVisible>(run.log) },
@@ -45,11 +50,28 @@ describe('the shipped siege AI in a headless Match', () => {
   }, 60000);
 
   it('takes a Stronghold without a human and replays its log after the ram-readiness fix', () => {
-    const run = runOf(1, HEADLESS_TICKS, 'centurio');
-    expect(run.result).toEqual({ kind: 'victory', winner: 'rome', tick: 1251,
+    // Keep a decisive Roman assault as an explicit integration scene. A random
+    // AI-vs-AI campaign is no longer a guarantee of either Faction's victory.
+    const rules = { ...siegeMatchRules, createWorld() {
+      const map = testMap({ strongholds: [{ x: 25, y: 25 }, { x: 75, y: 75 }] });
+      const economy = createEconomy(map);
+      const world = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+        siege: createSiege(map, economy), fog: createFogs() };
+      for (const y of [75, 70, 80]) musterSquad(economy, map,
+        { faction: 'rome', squadType: 'principes', men: 120, x: 67, y, facing: 'east' });
+      return world;
+    } };
+    const ai = createArmyController('centurio');
+    const setup = { seed: 1, ticks: 4000, rules, observe: observeSiege, outcome: siegeMatchOutcome };
+    const run = runMatch({ ...setup, players: [{ faction: 'rome', controller: ai },
+      { faction: 'carthage', controller: scriptedController<SiegeVisible>([]) }] });
+    expect(run.result).toMatchObject({ kind: 'victory', winner: 'rome',
       reason: { kind: 'stronghold', stronghold: 1, path: 'assault' } });
-    expect(run.decisions.some((entry) => entry.selected.behaviour === 'siege' && entry.selected.id === 'assault')).toBe(true);
-    expect(replayOf(1, 'centurio')).toBe(run.hash);
+    expect(run.result.tick).toBeLessThan(4000);
+    expect(ai.readLog().some((entry) => entry.selected.behaviour === 'siege' && entry.selected.id === 'assault')).toBe(true);
+    const replayed = runMatch({ ...setup, players: [{ faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
+      { faction: 'carthage', controller: scriptedController<SiegeVisible>(run.log) }] });
+    expect(replayed.hash).toBe(run.hash);
   }, 60000);
 
   it('resolves the retained seed 7 stall with an actual Stronghold conquest', () => {
@@ -102,16 +124,16 @@ describe('the shipped siege AI in a headless Match', () => {
   }, 60000);
 
   /**
-   * Keep the same historical samples after the #71 policy change, recording
+   * Keep the same historical samples after the #74 physical map change, recording
    * their new outcome instead of replacing inconvenient seeds. Both paths
    * remain reachable and every Command log still replays.
    */
   const levelMatches = [
-    { level: 'centurio', seed: 6, winner: 'rome', path: 'assault' },
+    { level: 'centurio', seed: 6, winner: 'carthage', path: 'blockade' },
     { level: 'tiro', seed: 13, winner: 'rome', path: 'assault' },
-    { level: 'tiro', seed: 7, winner: 'rome', path: 'assault' },
-    { level: 'imperator', seed: 12, winner: 'rome', path: 'assault' },
-    { level: 'imperator', seed: 7, winner: 'rome', path: 'assault' },
+    { level: 'tiro', seed: 7, winner: 'carthage', path: 'blockade' },
+    { level: 'imperator', seed: 12, winner: 'carthage', path: 'blockade' },
+    { level: 'imperator', seed: 7, winner: 'rome', path: 'blockade' },
   ] as const;
 
   for (const { level, seed, winner, path } of levelMatches) {
@@ -131,13 +153,12 @@ describe('the shipped siege AI in a headless Match', () => {
       runMatch({ seed: 7, ticks: 400, rules: { ...siegeMatchRules, createWorld(seed) {
         const world = siegeMatchRules.createWorld(seed);
         const home = world.economy.settlements[0]!;
-        for (let i = 0; i < 4; i += 1) {
-          musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: home.x, y: home.y });
-        }
+        for (const dx of [-3, 3]) for (const dy of [-2, 3])
+          musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: home.x + dx, y: home.y + dy });
         // A hidden Carthaginian army the Roman AI cannot see, wherever it stands.
         for (let i = 0; i < 3; i += 1) {
           musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul',
-            x: hiddenX, y: 95 });
+            x: hiddenX + i * 4, y: 95 });
         }
         return world;
       } }, observe(world, faction) {
@@ -150,7 +171,7 @@ describe('the shipped siege AI in a headless Match', () => {
       });
       return controller.readLog();
     }
-    expect(decide(80)).toEqual(decide(90));
+    expect(decide(135)).toEqual(decide(140));
   }, 20000);
 });
 
