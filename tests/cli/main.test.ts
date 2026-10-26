@@ -42,8 +42,8 @@ describe('one command plays a Match end to end, with no browser anywhere', () =>
     expect(ran.status).toBe(0);
     expect(ran.stderr).toBe('');
     const report = reportOf(ran);
-    // Both opening patrols now start on tick zero (Market and recruit share a funded plan).
-    expect(report.commands).toBe(604);
+    // Physical muster traffic adds real waits between the two funded opening patrols.
+    expect(report.commands).toBe(516);
     expect(report.decisions).toHaveLength(608);
     expect(report.decisions?.slice(0, 3).map((entry) => [entry.faction, entry.layer, entry.tick])).toEqual([
       ['rome', 'strategic', 0], ['rome', 'operational', 0], ['rome', 'tactical', 0],

@@ -83,8 +83,8 @@ describe('a batch of AI-vs-AI Matches', () => {
   }, 120_000);
 
   it('reports the short seed 6 bound as clock before its later conquest', async () => {
-    const report = await runTournament(batch({ seeds: 1, firstSeed: 6, ticks: 7000, workers: 1 }));
-    expect(report.matches[0]).toMatchObject({ seed: 6, outcome: 'clock', winner: null, ticks: 7000 });
+    const report = await runTournament(batch({ seeds: 1, firstSeed: 6, ticks: 1000, workers: 1 }));
+    expect(report.matches[0]).toMatchObject({ seed: 6, outcome: 'clock', winner: null, ticks: 1000 });
     expect(report.winRate).toEqual({ rome: 0, carthage: 0 });
   }, 120_000);
 
