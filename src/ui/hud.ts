@@ -1359,7 +1359,7 @@ function frontLines(front: VisibleFront): readonly HudLine[] {
     value: front.siege === null ? translate('ui.none') : translate(front.siege === 'assault' ? 'cmd.assault' : 'cmd.blockade'),
   });
   if (front.besieger !== null) lines.push({ label: translate('ui.besieger'), value: translate(front.besieger === 'rome' ? 'faction.rome' : 'faction.carthage') });
-  lines.push({ label: translate('ui.garrisonCount'), value: front.garrisonMen === undefined ? String(front.garrison) :
+  lines.push({ label: translate('ui.garrisonCount'), value: front.garrisonKnown === false ? translate('ui.unknown') : front.garrisonMen === undefined ? String(front.garrison) :
     message('settlement.capacityValue', { men: front.garrisonMen, capacity: front.garrisonCapacity ?? '?' }) });
 
   return lines;

@@ -373,6 +373,8 @@ export interface VisibleFront {
 
   /** Own roster count; an enemy front reports only observable presence (0 or 1). */
   readonly garrison: number;
+  /** False when current sight covers no wall; zero then carries no absence claim. */
+  readonly garrisonKnown?: boolean;
   readonly garrisonMen?: number;
   readonly garrisonCapacity?: number;
 }
@@ -1302,6 +1304,7 @@ function visibleFront(economy: Economy, front: Front): VisibleFront {
       : null,
     hold: front.hold,
     garrison: garrisonOf(economy, front.settlement).length,
+    garrisonKnown: true,
     garrisonMen: garrisonOf(economy, front.settlement).reduce((men, squad) => men + squad.strength, 0),
     garrisonCapacity: garrisonCapacity(economy.settlements[front.settlement]?.tier ?? 1),
   };
@@ -1332,6 +1335,7 @@ function filteredFront(world: SiegeWorld, front: Front, owner: number, eyes: Ret
   delete publicFront.garrisonCapacity;
   return { ...publicFront, structures, breached: structures.some((structure) => !structure.standing),
     ram: ramSeen ? full.ram : null, hold: sees(site.x, site.y) ? full.hold : 0,
+    garrisonKnown: structures.length > 0,
     garrison: structures.length > 0 && full.garrison > 0 ? 1 : 0 };
 }
 

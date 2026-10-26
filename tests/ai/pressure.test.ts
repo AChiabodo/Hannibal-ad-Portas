@@ -51,7 +51,10 @@ for (const faction of ['rome', 'carthage'] as const) {
       expect(noticed).not.toBeNull();
       expect(noticed!).toBeLessThanOrEqual(limit.contact * 600);
       expect(host.match.hash()).toBe(diagnosePressure(1, faction, difficulty).hash);
-    }, 15000);
+    // Host pacing plus an independent headless run and Replay on the larger
+    // theatre measured 41/26 seconds at Tiro/Centurio under full-suite load.
+    // Contact and pressure deadlines above remain the original simulation ticks.
+    }, difficulty === 'tiro' ? 75_000 : difficulty === 'centurio' ? 60_000 : 30_000);
   }
 }
 

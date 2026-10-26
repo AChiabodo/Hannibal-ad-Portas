@@ -486,4 +486,7 @@ Own squads may carry `passage`: the named settlement, `phase` (`approaching`,
 Only non-null `garrison` denotes protection on the walls. A refused admission is
 explicit (`garrison-full` or `garrison-type`); waiting for a doorway is distinct.
 Fronts may report `garrisonMen` and `garrisonCapacity`; surviving men occupy
-60/120/240 places at tiers I/II/III for either faction.
+60/120/240 places at tiers I/II/III for either faction. An enemy front reports
+presence rather than roster size;
+`garrisonKnown: false` means no wall is currently observed, so a zero does not
+claim that defenders are absent. Stored architectural sightings remain historical.

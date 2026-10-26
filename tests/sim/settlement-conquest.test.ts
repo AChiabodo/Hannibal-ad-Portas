@@ -9,6 +9,22 @@ import { blockade, type Command } from '../../src/sim/command';
 import { testMap } from './economy-fixtures';
 import { buildingCode } from '../../src/content/buildings';
 
+it('marks defenders unknown when the observed plaza reveals no wall', () => {
+  const map = testMap({ strongholds: [{ x: 25, y: 25 }, { x: 75, y: 75 }] });
+  const economy = createEconomy(map);
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    fog: createFogs(), siege: createSiege(map, economy) };
+  world.siege.fronts[1]!.structures[0]!.hp = 0;
+  const hidden = musterSquad(economy, map, { faction: 'carthage', squadType: 'libyan-spear', men: 24, x: 75, y: 75 });
+  hidden.garrison = 1;
+  musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x: 73, y: 75 });
+  const match = createMatch<SiegeWorld, Command>({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step();
+  const front = observeSiege(match.state.world, 'rome').fronts.find((current) => current.settlement === 1);
+  expect(front).toMatchObject({ structures: [], garrisonKnown: false });
+  expect(front?.garrisonMen).toBeUndefined();
+});
+
 it('reports the observed gate front without requiring sight of the hidden settlement centre', () => {
   const map = testMap({ strongholds: [{ x: 25, y: 25 }, { x: 75, y: 75 }] });
   const economy = createEconomy(map);
