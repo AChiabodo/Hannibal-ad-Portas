@@ -31,6 +31,12 @@ export function breachTile(gateSide: number, side: number, tangent: number): boo
   return Math.abs(tangent - (side === gateSide ? -4 : 0)) <= 1;
 }
 
+/** Chebyshev separation between occupied tile rectangles (zero when touching cells overlap). */
+export function rectDistance(a: GroundRect, b: GroundRect): number {
+  return Math.max(0, a.x - (b.x + b.width - 1), b.x - (a.x + a.width - 1),
+    a.y - (b.y + b.height - 1), b.y - (a.y + a.height - 1));
+}
+
 export function containsTile(rect: GroundRect, x: number, y: number): boolean {
   return x >= rect.x && y >= rect.y && x < rect.x + rect.width && y < rect.y + rect.height;
 }
