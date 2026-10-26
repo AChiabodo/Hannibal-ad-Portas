@@ -252,9 +252,8 @@ export function generateMap(seed: number): MapGrid {
   const strongholds = chooseStrongholds(terrain, rng);
   const halves = halfTiles(strongholds);
   const settlements = chooseSettlements(terrain, rng, strongholds, halves);
-  const grounds = reservedGrounds([...strongholds, ...settlements]);
   const reservations = siteReservations([...strongholds, ...settlements]);
-  const rivers = carveRivers(terrain, rng, grounds);
+  const rivers = carveRivers(terrain, rng, reservations.grounds);
   plantFords(terrain, rng, rivers);
   spreadFarmland(terrain, rng, [...strongholds, ...settlements]);
   const resources = placeResources(terrain, rng, halves, [...strongholds, ...settlements], reservations.resources);
@@ -760,8 +759,9 @@ function reservedGrounds(sites: readonly Site[]): Uint8Array {
 }
 
 /** Future roofs/walls and always-free civic ground are reserved independently. */
-function siteReservations(sites: readonly Site[]): { readonly structures: Uint8Array; readonly resources: Uint8Array } {
+function siteReservations(sites: readonly Site[]): { readonly structures: Uint8Array; readonly resources: Uint8Array; readonly grounds: Uint8Array } {
   const structures = new Uint8Array(TILE_COUNT);
+  const grounds = reservedGrounds(sites);
   const publicGround: GroundRect[] = [];
   for (const [id, site] of sites.entries()) {
     const plan = settlementLayout(id < 2 ? 'stronghold' : 'settlement');
@@ -788,10 +788,16 @@ function siteReservations(sites: readonly Site[]): { readonly structures: Uint8A
     }
     publicGround.push(at(plan.capture), at(plan.muster), at({ ...plan.assembly, width: 1, height: 1 }),
       at({ x: -1, y: 4, width: 3, height: 11 }));
+    if (id < 2) {
+      // The first outside queue position is ten Tiles from the centre. Its
+      // seven-Tile column tail needs dry ground beyond the final site grounds.
+      markRect(grounds, at({ x: -3, y: 8, width: 7, height: 10 }));
+      publicGround.push(at({ x: -1, y: 8, width: 3, height: 10 }));
+    }
   }
   const resources = structures.slice();
   for (const area of publicGround) markRect(resources, area);
-  return { structures, resources };
+  return { structures, resources, grounds };
 }
 
 function markRect(mask: Uint8Array, rect: GroundRect): void {

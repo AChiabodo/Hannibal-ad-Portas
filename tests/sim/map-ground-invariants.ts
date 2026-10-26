@@ -75,6 +75,14 @@ export function settlementGroundProblems(map: MapGrid): readonly string[] {
     mark(publicGround, plan.at(plan.layout.muster));
     mark(publicGround, plan.at({ ...plan.layout.assembly, width: 1, height: 1 }));
     mark(publicGround, plan.at({ x: -1, y: 4, width: 3, height: 11 }));
+    if (index < 2) {
+      mark(publicGround, plan.at({ x: -1, y: 8, width: 3, height: 10 }));
+      const pad = plan.at({ x: -3, y: 8, width: 7, height: 10 });
+      for (let y = pad.y; y < pad.y + pad.height; y += 1) for (let x = pad.x; x < pad.x + pad.width; x += 1) {
+        const terrain = map.terrain[tileIndex(x, y)];
+        if (terrain === TERRAIN.river || terrain === TERRAIN.ford) problems.push(`Stronghold ${index} has no dry column-tail pad`);
+      }
+    }
     if (index < 2 && !map.roads.some((road) => road.tiles.some((tile) => containsTile(plan.gate, tileX(tile), tileY(tile)))))
       problems.push(`Stronghold ${index} has no road through its Gate`);
   }

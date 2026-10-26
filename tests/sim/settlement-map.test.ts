@@ -4,6 +4,18 @@ import { generateMap, isWalkable, MAP_HEIGHT, MAP_WIDTH, MIN_FORDS_PER_RIVER, TE
 import { plans, tileInFutureStructure } from './map-ground-invariants';
 
 describe('generated settlement grounds (#74)', () => {
+  it('leaves a dry manoeuvring pad beyond each Gate for the full column tail', () => {
+    for (let seed = 0; seed < 24; seed += 1) {
+      const map = generateMap(seed);
+      for (const plan of plans(map).slice(0, 2)) {
+        const pad = plan.at({ x: -3, y: 8, width: 7, height: 10 });
+        for (let y = pad.y; y < pad.y + pad.height; y += 1) for (let x = pad.x; x < pad.x + pad.width; x += 1) {
+          const here = map.terrain[tileIndex(x, y)];
+          expect(here === TERRAIN.river || here === TERRAIN.ford, `seed ${seed}: ${x},${y}`).toBe(false);
+        }
+      }
+    }
+  });
   it('reserves every complete plan on dry ground with room between neighbouring settlements', () => {
     for (let seed = 0; seed < 12; seed += 1) {
       const map = generateMap(seed);
