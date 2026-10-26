@@ -100,7 +100,7 @@ Who the agent is, what it may say, and what it is looking at.
 | `faction`       | The Faction the agent plays: `"rome"` or `"carthage"`.                              |
 | `seed`          | The Match's seed: the run's, not your Faction's. Every report this project prints carries it, and it lets an agent re-run the same Match — but it is not knowledge of the enemy, which only an Observation carries. |
 | `ticks`         | The tick bound the Match will not run past.                                        |
-| `map`           | `{ "width": 96, "height": 96 }`: the theatre in tiles.                              |
+| `map`           | `{ "width": 160, "height": 160 }`: the theatre in tiles.                              |
 | `ticksPerSecond`| `10`: how many ticks a second of Match time holds.                                 |
 | `decisionTicks` | How often the agent will be asked, in ticks.                                       |
 | `deadlineMs`    | How long the harness waits for a reply, in milliseconds.                            |
@@ -174,6 +174,7 @@ outside it. What is not here, the Faction cannot know.
 | `contacts`    | Enemy Squads and settlements you have seen, including unowned villages: `kind` (`squad`, `settlement`, `stronghold`), `id`, `x`, `y`, `seen` (the tick), `type` (for a Squad, or `null`). Optional `unowned: true` confirms a village has no owner **in current vision only**; it is absent in memory. A remembered place does not report live position or ownership. |
 | `enemies`     | Enemy field Squads **in your sight right now**: `id`, `type`, `x`, `y`, and `appearance` (`men`, `capacity`, `figures`, `formation`, `facing`). Appearance exists only in current sight; it is never retained in `contacts`. No enemy morale, fatigue, ammunition, stocks or goal is exposed (ADR-0029). |
 | `fronts`      | The Sieges you can read (see below).                                                   |
+| `appearances` | Observed settlement portions and their last seen architecture, Works and conditions. |
 <!-- observation:end -->
 
 Each entry of `settlements`:
@@ -188,6 +189,7 @@ Each entry of `settlements`:
 | `stocks`     | What it holds of each resource: `{ grain, timber, stone, iron }`.            |
 | `land`       | How its labour is divided between the works and the land, same four fields.  |
 | `works`      | Its buildings in the order it raised them: `{ building, remaining, standing }`, where `remaining` is the ticks of work left. |
+| `pending`    | Unpaid requests awaiting space or resources, including their cost and cancellation id. |
 <!-- settlement:end -->
 
 Each entry of `squads`:
@@ -217,6 +219,7 @@ Each entry of `squads`:
 | `home`        | The settlement that raised it.                                                     |
 | `inTerritory` | Whether it stands on ground of yours, where it draws supply.                        |
 | `inCamp`      | Whether it stands in a camp, which counts as quarters for the winter.               |
+| `inQuarters`  | Whether its whole body is sheltered in an owned inhabited core or a usable camp. |
 <!-- squad:end -->
 
 `fog`:
@@ -252,20 +255,20 @@ it is taken by standing on its centre rather than stormed.
 
 ### A grid
 
-Three of an Observation's fields are 96×96 grids of small integers — `territory`,
+Three of an Observation's fields are 160×160 grids of small integers — `territory`,
 `fog.terrain` and `fog.visible` — and they are **run-length encoded**, one string
 per row, each a comma-separated list of `<count>x<value>` runs that adds up to
-96:
+160:
 
 <!-- grids:start -->
 ```jsonl
-"96x0"
-"4x0,90x1,2x0"
+"160x0"
+"4x0,154x1,2x0"
 ```
 <!-- grids:end -->
 
-`"96x0"` is a row that is one value all the way across, and
-`"4x0,90x1,2x0"` is four 0s, ninety 1s and two more 0s.
+`"160x0"` is a row that is one value all the way across, and
+`"4x0,154x1,2x0"` is four 0s, 154 ones and two more 0s.
 
 Row 0 is `y = 0`, the top of the theatre, and tile `(x, y)` is the `x`-th tile of
 row `y`. The encoding exists because a quarter of a megabyte of JSON arrays, once a

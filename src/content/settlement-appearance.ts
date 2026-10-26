@@ -13,7 +13,6 @@ export interface ObservedSettlementTile {
   readonly origin?: 'rome' | 'carthage';
   readonly tier?: number;
   readonly owner?: 'rome' | 'carthage' | 'none';
-  readonly origin?: 'rome' | 'carthage';
   readonly work?: ObservedWork;
   readonly structure?: {
     readonly kind: 'gate' | 'wall';

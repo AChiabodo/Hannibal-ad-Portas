@@ -181,6 +181,7 @@ export interface WireObservation {
   readonly contacts: readonly KnownContact[];
   readonly enemies: SiegeVisible['enemies'];
   readonly fronts: readonly VisibleFront[];
+  readonly appearances?: SiegeVisible['appearances'];
 }
 
 /** The harness's question: what the Faction may see, on the tick being decided. */
@@ -333,6 +334,7 @@ export function wireObservation(visible: SiegeVisible): WireObservation {
     contacts: visible.contacts,
     enemies: visible.enemies,
     fronts: visible.fronts,
+    ...(visible.appearances === undefined ? {} : { appearances: visible.appearances }),
   };
 }
 

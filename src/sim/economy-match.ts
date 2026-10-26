@@ -95,6 +95,7 @@ import {
   attritionSeasons,
   holdsTerritory,
   inCamp,
+  inQuarters,
   territoryOf,
   territoryView,
   type Territory,
@@ -313,6 +314,7 @@ export interface VisibleSquad {
    * changed hands with the village it stands in is not Carthage's to winter in.
    */
   readonly inCamp: boolean;
+  readonly inQuarters?: boolean;
 }
 
 /** Everything a Faction may know of the economy: its own, and nothing of the other's. */
@@ -472,7 +474,8 @@ export function eyesOfEconomy(world: EconomyWorld, faction: Faction): readonly E
   return [
     ...world.economy.settlements
       .filter((settlement) => settlement.owner === owner)
-      .map((settlement) => eyeOf(settlement, SETTLEMENT_VISION)),
+      .flatMap((settlement) => [eyeOf(settlement, SETTLEMENT_VISION), ...[-6, 6].flatMap((dx) => [-6, 6].map((dy) =>
+        eyeOf({ x: settlement.x + dx, y: settlement.y + dy }, SETTLEMENT_VISION)))]),
     ...world.economy.squads
       .filter((squad) => squad.owner === owner)
       .map((squad) => eyeOf(squad, SQUAD_VISION)),
@@ -518,6 +521,15 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
       settlement: squad.garrisonJourney.settlement,
       phase: (['approaching', 'waiting', 'entering', 'leaving'] as const)[squad.garrisonJourney.phase] ?? 'waiting',
       remaining: squad.garrisonJourney.remaining,
+      ...(squad.garrisonJourney.reason === 1 ? { reason: 'access-busy' as const } :
+        squad.garrisonJourney.reason === 2 ? { reason: 'exit-blocked' as const } : {}),
+    } }),
+    ...(squad.garrisonJourney !== undefined || squad.access === undefined ? {} : { passage: {
+      settlement: squad.access.settlement,
+      phase: squad.access.active === 1 ? 'entering' as const : 'waiting' as const,
+      remaining: 0,
+      ...(squad.access.reason === 1 ? { reason: 'access-busy' as const } :
+        squad.access.reason === 2 ? { reason: 'exit-blocked' as const } : {}),
     } }),
     type: type?.id ?? 'unknown',
     x: squad.x,
@@ -541,6 +553,7 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
     home: squad.home,
     inTerritory: holdsTerritory(territory, squad.owner, squad),
     inCamp: inCamp(economy, squad),
+    inQuarters: inQuarters(economy, squad),
   };
 }
 

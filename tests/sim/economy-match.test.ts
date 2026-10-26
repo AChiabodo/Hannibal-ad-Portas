@@ -133,7 +133,7 @@ describe('what a Faction reads of the economy', () => {
 
     const works = observeEconomy(world, 'rome').settlements[0]?.works ?? [];
 
-    expect(works).toEqual([{ building: 'lumber-camp', remaining: 12, standing: false }]);
+    expect(works).toEqual([{ building: 'lumber-camp', remaining: 12, standing: false, ordinal: 0, origin: 'rome' }]);
   });
 });
 
@@ -458,9 +458,11 @@ describe('the eyes a Faction has in this world', () => {
 
     const eyes = eyesOfEconomy(world, 'rome');
 
-    expect(eyes).toHaveLength(2);
+    expect(eyes).toHaveLength(6);
     expect(eyes[0]).toEqual({ x: stronghold.x, y: stronghold.y, radius: SETTLEMENT_VISION });
-    expect(eyes[1]).toEqual({ x: 4, y: 4, radius: SQUAD_VISION });
+    expect(eyes[1]).toEqual({ x: stronghold.x - 6, y: stronghold.y - 6, radius: SETTLEMENT_VISION });
+    expect(eyes[4]).toEqual({ x: stronghold.x + 6, y: stronghold.y + 6, radius: SETTLEMENT_VISION });
+    expect(eyes[5]).toEqual({ x: 4, y: 4, radius: SQUAD_VISION });
   });
 
   it('has no eyes for the other Faction’s things', () => {

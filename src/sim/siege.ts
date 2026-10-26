@@ -70,7 +70,9 @@
  */
 import { bearingOf, figuresOf, stockAt, squadTypeOf } from '../content/index.ts';
 import { fortificationHp, garrisonCapacity } from '../content/fortifications.ts';
-import { bindSiegeSpace } from './settlement-space.ts';
+import { bindSiegeSpace, siteRect, invalidateSpace, canOccupy, occupiedGround, squadGround, coreOf } from './settlement-space.ts';
+import { containsTile, settlementLayout, intersects, type GroundRect } from '../content/settlement-layout.ts';
+import { perimeterDistance, outsideCore, insideCore, rectDistance } from './settlement-siege-geometry.ts';
 import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import { advanceGarrisonJourneys, requestGarrison } from './settlement-access.ts';
 import { TICK_HZ } from './clock.ts';
@@ -90,6 +92,7 @@ import { UNOWNED, type Economy, type Settlement, type Squad, type Supplied } fro
 import { factionCode, factionOf, type Faction } from './faction.ts';
 import { createFogs, eyeCovers, viewOf, type Fog, type FogView } from './fog.ts';
 import { refreshSiegeFog, siegeContacts, type KnownContact } from './siege-fog.ts';
+import { settlementAppearances } from './settlement-knowledge.ts';
 import { RESOURCE, type MapGrid, type Site } from './map.ts';
 import type { MatchRules } from './match.ts';
 import { goalOf, orderedSquads, orderSquadTo, routeCacheFor } from './movement.ts';
@@ -620,6 +623,7 @@ export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (wo
 
   return {
     ...seen,
+    appearances: settlementAppearances(world.fog[faction]),
     fog: viewOf(world.fog[faction]),
     contacts: siegeContacts(world, faction),
     enemies: world.economy.squads
@@ -639,7 +643,7 @@ export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (wo
         return settlement.owner === owner || front.besieger === owner ||
           eyes.some((eye) => eyeCovers(eye, settlement));
       })
-      .map((front) => visibleFront(world.economy, front)),
+      .map((front) => filteredFront(world, front, owner, eyes)),
   };
 };
 
@@ -745,9 +749,19 @@ function laySiege(
   const squads = orderedSquads(world.economy, owner, ids);
   if (squads.length === 0) return false;
 
+  const reserved: GroundRect[] = [];
+  let accepted = false;
   for (const squad of squads) {
-    orderSquadTo(world.map, squad, { x: settlement.x, y: settlement.y }, routes);
+    const target = path === SIEGE.assault && breached(front) ? { x: settlement.x, y: settlement.y } :
+      siegePosition(world, settlement, squad, reserved);
+    if (target !== undefined) {
+      orderSquadTo(world.map, squad, target, routes);
+      if (squad.refused !== -1) continue;
+      reserved.push(squadGround(squad, target.x, target.y));
+      accepted = true;
+    }
   }
+  if (!accepted) return false;
 
   front.besieger = owner;
   front.path = path;
@@ -816,7 +830,8 @@ function besiegersOf(world: SiegeWorld, front: Front): readonly Squad[] {
       squad.owner === front.besieger &&
       squad.garrison === FIELD &&
       !isRouting(squad) &&
-      inReach(squad, settlement, SIEGE_RADIUS),
+      (front.path === SIEGE.assault && breached(front) && insideCore(world.economy, settlement, squad) ||
+        outsideCore(world.economy, settlement, squad) && perimeterDistance(world.economy, settlement, squad) <= SIEGE_RADIUS),
   );
 }
 
@@ -836,7 +851,11 @@ function onTheWay(world: SiegeWorld, front: Front, settlement: Settlement): bool
 
     const goal = goalOf(squad);
 
-    return goal !== null && goal.x === settlement.x && goal.y === settlement.y;
+    if (goal === null) return false;
+    const body = squadGround(squad, goal.x, goal.y);
+    const core = coreOf(world.economy, settlement);
+    return !intersects(core, body) && rectDistance(core, body) <= SIEGE_RADIUS ||
+      front.path === SIEGE.assault && breached(front) && containsTile(core, goal.x, goal.y);
   });
 }
 
@@ -852,13 +871,33 @@ function onTheWay(world: SiegeWorld, front: Front, settlement: Settlement): bool
 function relieved(world: SiegeWorld, settlement: Settlement): boolean {
   if (settlement.owner === UNOWNED) return false;
 
-  return world.economy.squads.some(
+  const relief = world.economy.squads.filter(
     (squad) =>
       squad.owner === settlement.owner &&
       squad.garrison === FIELD &&
       !isRouting(squad) &&
-      inReach(squad, settlement, RELIEF_RADIUS),
+      outsideCore(world.economy, settlement, squad) && perimeterDistance(world.economy, settlement, squad) <= RELIEF_RADIUS,
   );
+  const front = frontAt(world.siege, settlement.id);
+  return front !== undefined && forceOf(relief) > forceOf(besiegersOf(world, front));
+}
+
+/** Distinct exterior destinations keep a siege army off roofs, walls and other bodies. */
+function siegePosition(world: SiegeWorld, site: Settlement, squad: Squad, reserved: readonly GroundRect[]): Site | undefined {
+  if (outsideCore(world.economy, site, squad) && perimeterDistance(world.economy, site, squad) <= SIEGE_RADIUS) return squad;
+  const core = coreOf(world.economy, site);
+  const options: Site[] = [];
+  for (let y = site.y - 16; y <= site.y + 16; y += 1) {
+    for (let x = site.x - 16; x <= site.x + 16; x += 1) {
+      const body = squadGround(squad, x, y);
+      if (intersects(core, body) || rectDistance(core, body) > SIEGE_RADIUS ||
+        !canOccupy(world.map, squad, x, y) || occupiedGround(world.economy, body, squad.id) ||
+        reserved.some((other) => intersects(body, other))) continue;
+      options.push({ x, y });
+    }
+  }
+  return options.sort((a, b) => Math.max(Math.abs(a.x - squad.x), Math.abs(a.y - squad.y)) -
+    Math.max(Math.abs(b.x - squad.x), Math.abs(b.y - squad.y)) || a.y - b.y || a.x - b.x)[0];
 }
 
 /** One round of an Assault: the ram, the walls, the price of standing under them. */
@@ -883,7 +922,15 @@ function assaultRound(
     if (!rammed(front)) punish(world, besiegers, tick);
   }
 
-  if (breached(front)) storm(world, front, besiegers, tick);
+  if (breached(front)) {
+    const site = world.economy.settlements[front.settlement];
+    if (site === undefined) return;
+    for (const squad of besiegers) {
+      if (!insideCore(world.economy, site, squad) && goalOf(squad) === null)
+        orderSquadTo(world.map, squad, site, routeCacheFor(world.map));
+    }
+    storm(world, front, besiegers.filter((squad) => insideCore(world.economy, site, squad)), tick);
+  }
 }
 
 /**
@@ -1069,7 +1116,7 @@ function captureRound(world: SiegeWorld): void {
     if (settlement === undefined) continue;
 
     const holder = holderOf(world.economy, settlement);
-    if (holder === UNOWNED || !openTo(front)) {
+    if (holder === UNOWNED || !openTo(front) || garrisonOf(world.economy, settlement.id).some((squad) => !isRouting(squad))) {
       front.holder = UNOWNED;
       front.hold = 0;
       continue;
@@ -1105,7 +1152,8 @@ function holderOf(economy: Economy, settlement: Settlement): number {
 
   for (const squad of economy.squads) {
     if (squad.garrison !== FIELD || isRouting(squad)) continue;
-    if (squad.x !== settlement.x || squad.y !== settlement.y) continue;
+    const square = siteRect(economy, settlement, settlementLayout(settlement.id < 2 ? 'stronghold' : 'settlement').capture);
+    if (!containsTile(square, squad.x, squad.y)) continue;
 
     present += 1;
     force.set(squad.owner, (force.get(squad.owner) ?? 0) + bearing(squad));
@@ -1147,7 +1195,12 @@ function take(
   taker: number,
   path: SiegeCode,
 ): void {
+  const previous = settlement.owner;
+  settlement.origin ??= previous === 1 ? 1 : 0;
+  for (const work of settlement.works) work.origin ??= settlement.origin;
   settlement.owner = taker;
+  world.economy.pending = world.economy.pending?.filter((order) => order.settlement !== settlement.id || order.owner !== previous) ?? [];
+  invalidateSpace(world.economy);
   world.economy.squads = world.economy.squads.filter((squad) => squad.garrison !== settlement.id);
 
   stand(front);
@@ -1253,6 +1306,32 @@ function visibleFront(economy: Economy, front: Front): VisibleFront {
   };
 }
 
+/** Seeing one wall cannot reveal a breach, ram or defenders on the opposite side. */
+function filteredFront(world: SiegeWorld, front: Front, owner: number, eyes: ReturnType<typeof eyesOfEconomy>): VisibleFront {
+  const full = visibleFront(world.economy, front);
+  const site = world.economy.settlements[front.settlement];
+  if (site === undefined || site.owner === owner) return full;
+  const sees = (x: number, y: number) => eyes.some((eye) => eyeCovers(eye, { x, y }));
+  const structures = full.structures.filter((structure) => {
+    const side = FACINGS.indexOf(structure.side);
+    for (let tangent = -7; tangent <= 7; tangent += 1) {
+      if (structure.kind === 'gate' && Math.abs(tangent) > 1) continue;
+      const x = site.x + (side === 1 ? 7 : side === 3 ? -7 : tangent);
+      const y = site.y + (side === 0 ? -7 : side === 2 ? 7 : tangent);
+      if (sees(x, y)) return true;
+    }
+    return false;
+  });
+  const ramRect = siteRect(world.economy, site, { x: -1, y: 9, width: 3, height: 2 });
+  let ramSeen = false;
+  for (let y = ramRect.y; y < ramRect.y + ramRect.height; y += 1)
+    for (let x = ramRect.x; x < ramRect.x + ramRect.width; x += 1) ramSeen ||= sees(x, y);
+  const { garrisonMen: _men, garrisonCapacity: _capacity, ...publicFront } = full;
+  return { ...publicFront, structures, breached: structures.some((structure) => !structure.standing),
+    ram: ramSeen ? full.ram : null, hold: sees(site.x, site.y) ? full.hold : 0,
+    garrison: structures.length > 0 && full.garrison > 0 ? 1 : 0 };
+}
+
 /** The word for a structure code. @throws RangeError when it names none. */
 function structureKindOf(code: number): StructureKind {
   const kind = STRUCTURE_KINDS[code];
@@ -1275,11 +1354,4 @@ function facingOfSide(code: number): Facing {
   if (side === undefined) throw new RangeError(`${String(code)} is not a side of a settlement`);
 
   return side;
-}
-
-/** Whether a Squad is within `radius` tiles of a settlement, counting Chebyshev. */
-function inReach(squad: Site, settlement: Site, radius: number): boolean {
-  return (
-    Math.max(Math.abs(squad.x - settlement.x), Math.abs(squad.y - settlement.y)) <= radius
-  );
 }

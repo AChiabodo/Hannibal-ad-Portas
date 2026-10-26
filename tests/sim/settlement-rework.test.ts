@@ -110,9 +110,14 @@ describe('the shared settlement rules (#74)', () => {
     world.economy.settlements[site]!.tier = tier;
     const at = world.economy.settlements[site]!;
     const squadType = faction === 'rome' ? 'hastati' : 'libyan-spear';
-    const admitted = sizes.map((men) => musterSquad(world.economy, world.map, { faction, squadType, men, x: at.x, y: at.y }));
+    const admitted = sizes.map((men) => {
+      const squad = musterSquad(world.economy, world.map, { faction, squadType, men, x: at.x, y: at.y });
+      match.step([garrison(faction, [squad.id], site)]);
+      for (let tick = 0; tick < 200; tick += 1) match.step();
+      return squad;
+    });
     const overflow = musterSquad(world.economy, world.map, { faction, squadType, men: 24, x: at.x, y: at.y });
-    match.step([garrison(faction, [...admitted, overflow].map((squad) => squad.id), site)]);
+    match.step([garrison(faction, [overflow.id], site)]);
     for (let tick = 0; tick < 200; tick += 1) match.step();
     const seen = observeSiege(match.state.world, faction);
     expect(seen.fronts.find((front) => front.settlement === site)?.garrisonCapacity).toBe(limit);
@@ -123,8 +128,10 @@ describe('the shared settlement rules (#74)', () => {
     const { world, match } = stage();
     const worn = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 120, x: 25, y: 25 });
     worn.strength = 50;
+    match.step([garrison('rome', [worn.id], 0)]);
+    for (let tick = 0; tick < 200; tick += 1) match.step();
     const next = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 26, y: 25 });
-    match.step([garrison('rome', [worn.id, next.id], 0)]);
+    match.step([garrison('rome', [next.id], 0)]);
     for (let tick = 0; tick < 200; tick += 1) match.step();
     const seen = observeSiege(match.state.world, 'rome');
     expect(seen.squads.find((squad) => squad.id === worn.id)?.garrison).toBe(0);

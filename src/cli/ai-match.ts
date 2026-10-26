@@ -32,10 +32,10 @@ const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
   recruitCost, payrollBill,
   grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, baseStorage: BASE_STORAGE, taxPerDenarius: TAX_PER_DENARIUS,
   ticksUntilPayroll: ticksUntilSeason };
-const canContinueAssault = createAssaultReadiness({ siegeRadius: SIEGE_RADIUS,
+const canContinueAssault = createAssaultReadiness({ siegeRadius: SIEGE_RADIUS, settlementRadius: 7,
   assaultTicks: ASSAULT_TICKS, wallShock: WALL_SHOCK });
 const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ,
-  canContinueAssault };
+  canContinueAssault, settlementRadius: 7 };
 const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
   vision: SQUAD_VISION, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
   scoutTypes: ['hastati', 'gaul', 'numidian-horse'] };
@@ -45,7 +45,7 @@ const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, 
 // in the same units as the rest of a Controller's power.
 const garrisonEstimate = Math.max(...SQUAD_TYPES.filter((type) => type.tier === 1)
   .map((type) => type.strength * type.impact * type.morale));
-const siegeContent = { canAssault, canContinueAssault, ramCost: RAM_COST, siegeRadius: SIEGE_RADIUS, reliefRadius: RELIEF_RADIUS,
+const siegeContent = { canAssault, canContinueAssault, ramCost: RAM_COST, siegeRadius: SIEGE_RADIUS, reliefRadius: RELIEF_RADIUS, settlementRadius: 7,
   garrisonEstimate, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES };
 
 /** Economy alone at one difficulty: what `economyRegistry` is to Centurio. */

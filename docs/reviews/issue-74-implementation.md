@@ -18,13 +18,13 @@ Implementation authorized on 2026-10-25 after the Q1–Q40 design interview.
 - [ ] **Q6** — Edifici economici senza distruzione individuale
 - [ ] **Q7** — Presidio tramite avvicinamento reale
 - [ ] **Q8** — Cantieri visibili dall'avvio
-- [ ] **Q9** — Informazioni ottenute esplorando
+- [x] **Q9** — Informazioni ottenute esplorando
 - [ ] **Q10** — Distribuzione dentro e fuori
 - [ ] **Q11** — Attraversare è diverso da presidiare
 - [x] **Q12** — Capienza obbligatoria dalla prima implementazione
 - [ ] **Q13** — Presidio visibile e gestibile
-- [ ] **Q14** — Ultimo aspetto visto nella memoria
-- [ ] **Q15** — Livelli con resistenza effettiva
+- [x] **Q14** — Ultimo aspetto visto nella memoria
+- [x] **Q15** — Livelli con resistenza effettiva
 - [x] **Q16** — Contano i superstiti
 - [x] **Q17** — Capienza iniziale uguale per fazione
 - [x] **Q18** — Ammessi al presidio
@@ -34,21 +34,21 @@ Implementation authorized on 2026-10-25 after the Q1–Q40 design interview.
 - [ ] **Q22** — Linguaggi architettonici delle fazioni
 - [ ] **Q23** — Nessuna nuova adiacenza economica ai giacimenti
 - [ ] **Q24** — Colonna reale nelle strettoie
-- [ ] **Q25** — Visione parziale
+- [x] **Q25** — Visione parziale
 - [ ] **Q26** — Capienza all'ingresso, senza prenotazione durante la marcia
 - [ ] **Q27** — Scala ancorata ai soldati
 - [ ] **Q28** — Porta e brecce come accessi reali
 - [ ] **Q29** — Confine atomico della protezione
-- [ ] **Q30** — Conquista tramite piazza visibile
+- [x] **Q30** — Conquista tramite piazza visibile
 - [x] **Q31** — Parametri iniziali della resistenza e prezzi
-- [ ] **Q32** — Quartieri d'inverno riconoscibili
+- [x] **Q32** — Quartieri d'inverno riconoscibili
 - [ ] **Q33** — Zona di raduno dei reclutati
 - [ ] **Q34** — Lista degli ordini in attesa
 - [ ] **Q35** — Traffico degli accessi
 - [ ] **Q36** — Presidio dall'interno
-- [ ] **Q37** — Geometria delle distanze dell'assedio
-- [ ] **Q38** — Soccorso con peso militare reale
-- [ ] **Q39** — Conquista e storia dell'architettura
+- [x] **Q37** — Geometria delle distanze dell'assedio
+- [x] **Q38** — Soccorso con peso militare reale
+- [x] **Q39** — Conquista e storia dell'architettura
 - [x] **Q40** — Calibrazione delegata e confronto iniziale
 
 ## Evidence log
@@ -64,3 +64,7 @@ ode scripts/settlement-comparison.mjs at artifacts/issue-74/initial-comparison.p
 
 - Q19/Q31 complete: Walls 60/90/120 and Gate 120/180/240, proportional integrity at Villa/Forum completion, destroyed structures remain open. Observation exports maxHp and the renderer uses it for condition thresholds. Villa/Forum prices and timers unchanged. Shared rules tests: 9 passed, covering both upgrades; TypeScript previously passed.
 
+
+- Q15/Q30/Q32/Q37/Q38/Q39: resistenza per Tier, piazza di conquista 3x3 con presidio attivo bloccante, quartieri sull'intero nucleo abitato (corpo completo), distanze dal perimetro e soccorso esterno strettamente superiore, conservazione di Tier/Works/origini e annullamento degli ordini non pagati del precedente proprietario. Cinque casi pubblici Match/Observation in tests/sim/settlement-conquest.test.ts verdi; regressioni di integrazione ancora in corso.
+
+- Q9/Q14/Q25: memoria autorevole numerica per cella, scritta soltanto sotto visione corrente; proiezione senza accesso al mondo nascosto. Completamenti, Tier, conquista, danni, presidio e ariete restano congelati nelle porzioni non riosservate; il terreno esterno vuoto non scopre il sito. Filtrate anche le strutture dell'Observation nemica. Test integrati knowledge/conquista/protocollo: 16 verdi in 3 file. Rendering e picking usano le medesime celle filtrate.

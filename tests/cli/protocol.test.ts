@@ -72,7 +72,8 @@ describe('the greeting: what an agent is, and what it may say', () => {
     const hello = helloMessage(HELLO);
 
     expect(hello.commands).toContain('assault');
-    expect(hello.commands).toHaveLength(12);
+    expect(hello.commands).toHaveLength(13);
+    expect(hello.commands).toContain('cancelPending');
     expect(hello.formations).toEqual(['line', 'column']);
     expect(hello.terrain).toContainEqual({ id: 'plain', code: 0 });
     expect(hello.terrain).toContainEqual({ id: 'unseen', code: UNSEEN });
@@ -206,24 +207,24 @@ describe('the end of a Match', () => {
 
 describe('the wire’s grid encoding', () => {
   it('reads a row that is one value all the way across', () => {
-    expect(gridOf(Array.from({ length: MAP_HEIGHT }, () => '96x0'))).toEqual(
+    expect(gridOf(Array.from({ length: MAP_HEIGHT }, () => '160x0'))).toEqual(
       new Uint8Array(MAP_WIDTH * MAP_HEIGHT),
     );
   });
 
   it('reads several runs in a row, in order', () => {
-    const rows = [...Array.from({ length: MAP_HEIGHT - 1 }, () => '96x0'), '4x0,90x1,2x0'];
+    const rows = [...Array.from({ length: MAP_HEIGHT - 1 }, () => '160x0'), '4x0,154x1,2x0'];
     const grid = gridOf(rows);
     const last = (MAP_HEIGHT - 1) * MAP_WIDTH;
 
-    expect(Array.from(grid.slice(last, last + 96))).toEqual([
+    expect(Array.from(grid.slice(last, last + 160))).toEqual([
       ...Array.from({ length: 4 }, () => 0),
-      ...Array.from({ length: 90 }, () => 1),
+      ...Array.from({ length: 154 }, () => 1),
       ...Array.from({ length: 2 }, () => 0),
     ]);
   });
 
   it('writes a row that is one value all the way across as one run', () => {
-    expect(rowsOf(new Uint8Array(MAP_WIDTH * MAP_HEIGHT))[0]).toBe('96x0');
+    expect(rowsOf(new Uint8Array(MAP_WIDTH * MAP_HEIGHT))[0]).toBe('160x0');
   });
 });
