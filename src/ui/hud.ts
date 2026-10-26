@@ -1391,7 +1391,7 @@ function squadLines(squad: VisibleSquad, visible: EconomyVisible): Pick<HudDetai
     { label: translate('ui.fatigue'), value: String(squad.fatigue) },
     { label: translate('ui.ammunition'), value: String(squad.ammunition) },
     { label: translate('ui.supply'), value: translate(supply) },
-    { label: translate('ui.quarters'), value: translate(squad.inCamp ? 'quarters.camp' : 'quarters.field') },
+    { label: translate('ui.quarters'), value: translate((squad as VisibleSquad & { readonly inQuarters?: boolean }).inQuarters ? 'quarters.settlement' : squad.inCamp ? 'quarters.camp' : 'quarters.field') },
     { label: translate('ui.engaged'), value: translate(squad.engaged ? 'ui.yes' : 'ui.no') },
     { label: translate('ui.payroll'), value: String(squad.payroll) },
     { label: translate('ui.unpaid'), value: String(squad.unpaid) },

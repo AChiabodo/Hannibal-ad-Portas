@@ -402,6 +402,7 @@ export const STRINGS = {
   'refusal.offMap': { it: 'Fuori mappa', en: 'Off the map' },
   'refusal.water': { it: 'Acque profonde', en: 'Deep water' },
   'refusal.unreachable': { it: 'Nessuna via', en: 'No way through' },
+  'quarters.settlement': { it: 'Nel nucleo abitato', en: undefined },
   'settlement.management': { it: "Gestione", en: undefined },
   'settlement.managementTitle': { it: "Presidio e ordini - {title}", en: undefined },
   'settlement.capacity': { it: "Presidio: {men}/{capacity} uomini", en: undefined },

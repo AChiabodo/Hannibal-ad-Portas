@@ -1,3 +1,4 @@
+import { rememberSettlements } from './settlement-knowledge.ts';
 import { squadTypeOf } from '../content/squads.ts';
 import { eyesOfEconomy } from './economy-match.ts';
 import { FACTIONS, factionCode, type Faction } from './faction.ts';
@@ -74,6 +75,7 @@ export function refreshSiegeFog(world: SiegeWorld, tick: number): void {
       return now === undefined || now.x !== contact.x || now.y !== contact.y;
     }).map((contact) => contact.id));
     observeContacts(fog, sightings, tick);
+    rememberSettlements(world, fog, tick);
   }
 }
 

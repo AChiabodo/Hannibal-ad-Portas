@@ -17,6 +17,7 @@ interface Squad extends Enemy {
   readonly morale: number;
   readonly fatigue: number;
   readonly inCamp?: boolean;
+  readonly inQuarters?: boolean;
   readonly routing: boolean;
   readonly engaged: boolean;
   readonly garrison: number | null;
@@ -211,7 +212,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
         }
         const exhausted = spent(squad, observation);
         const enemies = visible.enemies.filter((enemy) => distance(squad, enemy) <= CONTACT_RADIUS);
-        const defendingHome = defence.some((task) => (squad.inCamp ?? distance(squad, task.settlement) === 0) && task.enemies.length > 0);
+        const defendingHome = defence.some((task) => (squad.inQuarters ?? squad.inCamp ?? distance(squad, task.settlement) === 0) && task.enemies.length > 0);
         if (!squad.engaged && !defendingHome &&
           restingAtHome(squad, visible.settlements, types.get(squad.type)?.morale ?? 0)) {
           assigned.add(squad.id);
@@ -224,7 +225,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
         const lost = threat > support;
         if (!exhausted && !lost) return true;
         assigned.add(squad.id);
-        const sheltered = squad.inCamp ?? visible.settlements.some((settlement) => distance(squad, settlement) === 0);
+        const sheltered = squad.inQuarters ?? squad.inCamp ?? visible.settlements.some((settlement) => distance(squad, settlement) === 0);
         if (squad.engaged || (!returning && (enemies.length > 0 || (exhausted && !sheltered)))) {
           commands.push({ kind: 'withdraw', faction, squads: [squad.id] });
           reasons.push(`Withdraw Squad ${squad.id}: strength ${squad.men}, morale ${squad.morale}, local power ${support} against ${threat}; recover in friendly quarters rather than remain spent in the field.`);
