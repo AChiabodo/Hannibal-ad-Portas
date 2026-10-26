@@ -358,6 +358,9 @@ describe('the roster Match, which is what CI gates the two rosters with', () => 
 });
 
 describe('a whole Match won headless, once by Assault and once by Blockade', () => {
+  // Thousands of full Observations on the 160x160 theatre, sometimes repeated
+  // four times for deterministic equality, exceed the ordinary five-second unit bound.
+  const timeout = 60_000;
   it('storms Carthage’s Stronghold with the ram, and the result names the Stronghold', () => {
     const run = RULES.assault.play(1, 9000);
 
@@ -369,7 +372,7 @@ describe('a whole Match won headless, once by Assault and once by Blockade', () 
     // A Match decided by the rules, not by the bound.
     expect(run.result.tick).toBeLessThan(9000);
     expect(run.log.map((entry) => entry.command.kind)).toEqual(['assault', 'garrison']);
-  });
+  }, timeout);
 
   it('starves the same Stronghold into surrender, and the result says so', () => {
     const run = RULES.blockade.play(1, 9000);
@@ -383,16 +386,16 @@ describe('a whole Match won headless, once by Assault and once by Blockade', () 
     // A Blockade is the slow path: it takes Seasons where an Assault takes a
     // fight, which is the asymmetry the ticket is about.
     expect(run.result.tick).toBeGreaterThan(RULES.assault.play(1, 9000).result.tick);
-  });
+  }, timeout);
 
   it('plays each path again from the same seed, hash for hash', () => {
     expect(RULES.assault.play(1, 9000).hash).toBe(RULES.assault.play(1, 9000).hash);
     expect(RULES.blockade.play(1, 9000).hash).toBe(RULES.blockade.play(1, 9000).hash);
-  });
+  }, timeout);
 
   it('is two genuinely different Matches, not one procedure with different numbers', () => {
     expect(RULES.assault.play(1, 9000).hash).not.toBe(RULES.blockade.play(1, 9000).hash);
-  });
+  }, timeout);
 });
 
 describe('the Attrition Match, where the country an army stands in is the whole rule', () => {
