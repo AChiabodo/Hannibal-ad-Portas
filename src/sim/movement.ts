@@ -360,8 +360,15 @@ export function march(economy: Economy, map: MapGrid): void {
       if (target !== null) orderSquadTo(map, squad, target, routeCacheFor(map));
       continue;
     }
-    const { formation, facing } = pose;
-    if (!trafficStep(economy, map, squad, tileX(next), tileY(next), formation, facing)) continue;
+    let { formation, facing } = pose;
+    if (!trafficStep(economy, map, squad, tileX(next), tileY(next), formation, facing)) {
+      const retained = retainedPose(map, squad, tileX(next), tileY(next));
+      if (retained === undefined || !trafficStep(economy, map, squad, tileX(next), tileY(next), retained.formation, retained.facing)) {
+        if (squad.access?.reason !== 1) avoidFieldBodies(economy, map, squad);
+        continue;
+      }
+      ({ formation, facing } = retained);
+    }
     useMarchFormation(squad, formation);
     squad.facing = facing;
 
@@ -569,6 +576,11 @@ function passageFormation(map: MapGrid, squad: Squad, x: number, y: number, faci
 function passagePose(map: MapGrid, squad: Squad, x: number, y: number, facing: number): { formation: number; facing: number } | undefined {
   const forward = passageFormation(map, squad, x, y, facing);
   if (forward !== undefined) return { formation: forward, facing };
+  return retainedPose(map, squad, x, y);
+}
+
+/** The same translation can clear either static terrain or another field body. */
+function retainedPose(map: MapGrid, squad: Squad, x: number, y: number): { formation: number; facing: number } | undefined {
   const formation = accessColumn(squad) || crossingPerimeter(map, squad) ||
     crossingPerimeter(map, squad, x, y) ? 1 : squad.formation;
   if (canOccupy(map, squad, squad.x, squad.y, formation, squad.facing) && canOccupy(map, squad, x, y, formation, squad.facing))
@@ -581,15 +593,31 @@ function useMarchFormation(squad: Squad, formation: number): void {
   squad.formation = formation;
 }
 
-function passageCheck(map: MapGrid, squad: Squad): PassageCheck {
+function passageCheck(map: MapGrid, squad: Squad, avoidBodies = false): PassageCheck {
   return (x, y, fromX, fromY) => {
     const faces = fromX === undefined || fromY === undefined ? [0, 1, 2, 3] :
       [y < fromY ? 0 : x > fromX ? 1 : y > fromY ? 2 : 3, squad.facing];
     const wanted = accessColumn(squad) ? 1 : squad.marchFormation ?? squad.formation;
     return faces.some((facing) => [wanted, 1].some((formation) =>
       canOccupy(map, squad, x, y, formation, facing) &&
-      (fromX === undefined || fromY === undefined || canOccupy(map, squad, fromX, fromY, formation, facing))));
+      (!avoidBodies || clearFieldBody(map, squad, x, y, formation, facing)) &&
+      (fromX === undefined || fromY === undefined || (canOccupy(map, squad, fromX, fromY, formation, facing) &&
+        (!avoidBodies || clearFieldBody(map, squad, fromX, fromY, formation, facing))))));
   };
+}
+
+/** Keep the order, but find room around another body instead of facing it forever. */
+function avoidFieldBodies(economy: Economy, map: MapGrid, squad: Squad): void {
+  const last = squad.steps.at(-1);
+  if (last === undefined) return;
+  const bodies = economy.squads.filter((other) => other.id !== squad.id && other.garrison === FIELD)
+    .map((other) => `${other.id}:${other.x}:${other.y}:${other.formation}:${other.facing}`).join(';');
+  const route = routeCacheFor(map).route({ x: squad.x, y: squad.y }, { x: tileX(last), y: tileY(last) }, paceOf(squad),
+    passageCheck(map, squad, true), `${physicalSignature(map)}:${squad.owner}:${squad.capacity}:${squad.formation}:${squad.facing}:bodies:${bodies}`);
+  if (route.kind !== 'route') return;
+  const first = squad.steps[0];
+  squad.steps = [...route.steps];
+  if (squad.steps[0] !== first) squad.wait = costAhead(map, squad);
 }
 
 function accessColumn(squad: Squad): boolean {
