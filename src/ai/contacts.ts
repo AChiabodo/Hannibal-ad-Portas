@@ -56,3 +56,10 @@ export function permittedContacts(visible: {
   }
   return [...contacts.values()];
 }
+
+/** Latest observed sentry presence; an unread wall does not mean an empty one. */
+export function recordedGarrison(appearance: ObservedSettlement | undefined): boolean | undefined {
+  const sightings = appearance?.tiles.filter((tile) => tile.structure !== undefined && tile.garrison !== undefined)
+    .sort((one, other) => other.seen - one.seen);
+  return sightings?.[0]?.garrison;
+}

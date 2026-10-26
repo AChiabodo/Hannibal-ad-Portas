@@ -1,6 +1,6 @@
 import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import { bodyPerimeterDistance, type FormationSite, type Site } from './site.ts';
-import type { Contact } from './contacts.ts';
+import { recordedGarrison, type Contact } from './contacts.ts';
 import type { Observation } from '../sim/observation.ts';
 
 type Faction = Observation<unknown>['faction'];
@@ -13,6 +13,7 @@ export interface AssaultObservation {
     readonly settlement: number;
     readonly breached?: boolean;
     readonly garrison?: number;
+    readonly garrisonKnown?: boolean;
     readonly besieger: Faction | null;
     readonly siege?: 'assault' | 'blockade' | null;
     readonly ram: { readonly hp?: number; readonly built: boolean; readonly remaining?: number } | null;
@@ -36,8 +37,10 @@ export function createAssaultReadiness(content: {
     if (target === undefined || bodyPerimeterDistance(squad, target, content.settlementRadius ?? 0, content.squadTypes?.find((type) => type.id === squad.type)?.figures === 1 ? 1 : squad.capacity) > content.siegeRadius) return false;
     // The known open, empty ring no longer charges wall shock: finish the
     // capture approach rather than withdrawing because a hidden ram is unread.
+    const appearance = visible.appearances?.find((site) => site.id === front.settlement);
+    const empty = front.garrisonKnown === false ? recordedGarrison(appearance) === false : front.garrison === 0;
     if ((front.breached === true || visible.appearances?.some((site) => site.id === front.settlement &&
-      site.tiles.some((tile) => tile.structure?.condition === 'breached'))) && front.garrison === 0 && squad.engaged !== true) return squad.morale > 0;
+      site.tiles.some((tile) => tile.structure?.condition === 'breached'))) && empty && squad.engaged !== true) return squad.morale > 0;
     if (front.ram === null || (front.ram.hp ?? 0) <= 0) return false;
     const remaining = front.ram.built ? 0 : front.ram.remaining;
     if (remaining === undefined) return false;

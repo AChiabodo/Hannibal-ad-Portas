@@ -3,7 +3,7 @@ import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
 import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
-import { planningContacts, permittedContacts, type Contact } from './contacts.ts';
+import { planningContacts, permittedContacts, recordedGarrison, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 import { distance, bodyPerimeterDistance, type Site, type FormationSite } from './site.ts';
 import type { AssaultReadiness } from './assault.ts';
@@ -30,6 +30,7 @@ interface VisibleSiegeFront {
   readonly ram: { readonly built: boolean; readonly hp?: number; readonly remaining?: number } | null;
   readonly garrison: number;
   readonly garrisonMen?: number;
+  readonly garrisonKnown?: boolean;
 }
 
 /** What a siege policy may read: its own army, the ground it has seen, and the walls in front of it. */
@@ -146,11 +147,8 @@ export function createSiegeBehaviour(
 
       const relief = visible.enemies.filter((enemy) => Math.max(0, distance(enemy, place) - (content.settlementRadius ?? 0)) <= content.reliefRadius);
       const reliefPower = relief.reduce((sum, enemy) => sum + nominal(enemy.type), 0);
-      const garrisonSightings = visible.appearances?.find((site) => site.id === target.id)?.tiles
-        .filter((tile) => tile.structure !== undefined && tile.garrison !== undefined)
-        .sort((one, other) => other.seen - one.seen);
-      const presence = garrisonSightings?.[0]?.garrison;
-      const garrison = front === undefined ? presence === false ? 0 : 1 : front.garrison;
+      const presence = recordedGarrison(visible.appearances?.find((site) => site.id === target.id));
+      const garrison = front === undefined || front.garrisonKnown === false ? presence === false ? 0 : 1 : front.garrison;
       const threat = garrison * content.garrisonEstimate + reliefPower;
 
       const field = visible.squads.filter((squad) => !squad.routing && squad.garrison === null);

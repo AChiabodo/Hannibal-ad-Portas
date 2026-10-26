@@ -32,3 +32,18 @@ it('retains knowledge of an open gate when only intact opposite walls remain in 
       tiles: [{ cell: 305, seen: 174, visible: false, structure: { kind: 'gate' as const, side: 3, condition: 'breached' as const } }] }] };
   expect(ready('rome', visible, { x: 73, y: 75, capacity: 120, formation: 'column', facing: 'east', morale: 6 })).toBe(true);
 });
+
+it('requires observed absence when a front cannot currently read the garrison (#74)', () => {
+  const ready = createAssaultReadiness({ siegeRadius: 1, settlementRadius: 7, assaultTicks: 10, wallShock: 1 });
+  const visible = { contacts: [{ id: 1, kind: 'stronghold' as const, x: 75, y: 75 }],
+    fronts: [{ settlement: 1, besieger: 'rome' as const, siege: 'assault' as const, breached: true,
+      garrison: 0, garrisonKnown: false, ram: null }] };
+  const squad = { x: 73, y: 75, capacity: 120, formation: 'column' as const, facing: 'east' as const, morale: 6 };
+  expect(ready('rome', visible, squad)).toBe(false);
+  const appearance = { id: 1, kind: 'stronghold' as const, x: 75, y: 75, gateSide: 3, memory: 'seen' as const, owner: 'carthage' as const,
+    tiles: [{ cell: 305, seen: 174, visible: false, garrison: false,
+      structure: { kind: 'gate' as const, side: 3, condition: 'breached' as const } }] };
+  expect(ready('rome', { ...visible, appearances: [appearance] }, squad)).toBe(true);
+  expect(ready('rome', { ...visible, appearances: [{ ...appearance,
+    tiles: [{ ...appearance.tiles[0]!, garrison: true }] }] }, squad)).toBe(false);
+});
