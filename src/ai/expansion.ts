@@ -3,7 +3,7 @@ import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
 import { planningContacts, permittedContacts, type Contact } from './contacts.ts';
 import { atHalfStrength, type Behaviour } from './registry.ts';
-import { restingAtHome } from './recovery.ts';
+import { restingAtHome, returningHome } from './recovery.ts';
 import { distance, type Site } from './site.ts';
 
 type Faction = Observation<unknown>['faction'];
@@ -24,7 +24,7 @@ interface ExpansionObservation {
   readonly squads: readonly (Site & {
     readonly id: number; readonly type: string; readonly men: number; readonly capacity: number;
     readonly morale: number; readonly routing: boolean; readonly engaged: boolean;
-    readonly garrison: number | null; readonly goal: Site | null;
+    readonly garrison: number | null; readonly passage?: { readonly settlement: number; readonly phase: string }; readonly goal: Site | null;
   })[];
 }
 
@@ -54,7 +54,7 @@ export function createExpansionBehaviour(content: {
       return type !== undefined && !squad.routing && !squad.engaged && squad.garrison === null &&
         !atHalfStrength(squad) && squad.morale * 2 > type.morale &&
         !restingAtHome(squad, visible.settlements, type.morale) &&
-        !(squad.goal !== null && visible.settlements.some((home) => distance(home, squad.goal!) === 0)) &&
+        !returningHome(squad, visible.settlements) &&
         !visible.enemies.some((enemy) => distance(enemy, squad) <= CONTACT_RADIUS);
     });
     const options = targets.flatMap((target) => squads.map((squad) => ({ target, squad,

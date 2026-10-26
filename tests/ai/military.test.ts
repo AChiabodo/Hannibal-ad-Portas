@@ -312,3 +312,15 @@ describe('the military Controller', () => {
     expect(commands).toContainEqual({ kind: 'hold', faction: 'rome', squads: [0] });
   });
 });
+
+
+it('preserves a returning gate journey instead of reissuing withdrawal every tick (#74)', () => {
+  const base = battlefield();
+  const visible: SiegeVisible = { ...base, enemies: [],
+    contacts: [{ kind: 'stronghold', id: 1, type: null, x: 80, y: 80, seen: 0 }],
+    squads: [{ ...base.squads[0]!, morale: 3, x: 31, y: 20, goal: { x: 29, y: 20 },
+      passage: { settlement: 0, phase: 'approaching', remaining: 0 } }],
+  };
+  const commands = createArmyController('imperator').decide({ faction: 'rome', tick: 1, visible });
+  expect(commands.filter((command) => 'squads' in command && command.squads.includes(visible.squads[0]!.id))).toEqual([]);
+});

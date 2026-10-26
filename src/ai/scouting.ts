@@ -6,7 +6,7 @@ import { atHalfStrength, type Behaviour } from './registry.ts';
 import { planningContacts, permittedContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
-import { restingAtHome } from './recovery.ts';
+import { restingAtHome, returningHome } from './recovery.ts';
 
 export interface ScoutingObservation {
   readonly appearances?: readonly ObservedSettlement[];
@@ -19,7 +19,7 @@ export interface ScoutingObservation {
   readonly squads: readonly (Site & {
     readonly id: number; readonly type: string; readonly men: number; readonly capacity: number; readonly morale: number;
     readonly routing: boolean; readonly engaged: boolean; readonly garrison: number | null;
-    readonly goal: Site | null; readonly refused: string | null;
+    readonly passage?: { readonly settlement: number; readonly phase: string }; readonly goal: Site | null; readonly refused: string | null;
   })[];
 }
 export interface ScoutingContent {
@@ -140,7 +140,7 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
         !restingAtHome(squad, visible.settlements, type.morale) &&
         !atHalfStrength(squad) && squad.morale * 2 > type.morale &&
         !visible.enemies.some((enemy) => distance(squad, enemy) <= vision + 1) &&
-        !(squad.goal !== null && visible.settlements.some((home) => distance(home, squad.goal!) === 0));
+        !returningHome(squad, visible.settlements);
     }).sort((a, b) => (types.get(b.type)!.pace - types.get(a.type)!.pace) || a.id - b.id).slice(0, quota);
     const terrain = visible.fog.terrain;
     const unseen = content.unseen;

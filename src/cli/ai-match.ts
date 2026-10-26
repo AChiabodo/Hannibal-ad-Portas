@@ -4,7 +4,7 @@ import { createMilitaryBehaviour, createMilitaryRecruitment } from '../ai/milita
 import { createScoutingBehaviour } from '../ai/scouting.ts';
 import { createSiegeBehaviour } from '../ai/siege.ts';
 import { createAssaultReadiness } from '../ai/assault.ts';
-import { restingAtHome } from '../ai/recovery.ts';
+import { restingAtHome, returningHome } from '../ai/recovery.ts';
 import { createExpansionBehaviour } from '../ai/expansion.ts';
 import { createBehaviourRegistry, type Behaviour, type BehaviourContext, type BehaviourRegistry,
   type Candidate, type Contribution } from '../ai/registry.ts';
@@ -173,8 +173,7 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
     const { visible } = context.observation;
     const squads = visible.squads.filter((squad) => !withdrawn.has(squad.id) &&
       !restingAtHome(squad, visible.settlements, SQUAD_TYPES.find((type) => type.id === squad.type)?.morale ?? 0) &&
-      !(squad.goal !== null && visible.settlements.some((site) =>
-        site.x === squad.goal!.x && site.y === squad.goal!.y)));
+      !returningHome(squad, visible.settlements));
     const proposed = siege.tactical!({ ...context, observation: { ...context.observation,
       visible: { ...visible, squads } } });
     if (proposed.length === 0) return [];

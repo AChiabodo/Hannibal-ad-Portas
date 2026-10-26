@@ -6,7 +6,7 @@ import { planningContacts, permittedContacts, type Contact } from './contacts.ts
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
 import type { AssaultObservation, AssaultReadiness } from './assault.ts';
-import { restingAtHome } from './recovery.ts';
+import { restingAtHome, returningHome } from './recovery.ts';
 
 type Faction = Observation<unknown>['faction'];
 
@@ -23,6 +23,7 @@ interface Squad extends Enemy {
   readonly engaged: boolean;
   readonly garrison: number | null;
   readonly goal: Site | null;
+  readonly passage?: { readonly settlement: number; readonly phase: string };
 }
 
 export interface MilitaryObservation {
@@ -200,8 +201,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
       const assigned = new Set<number>();
       let withdrawing = false;
       let committed = false;
-      const fallingBack = (squad: Squad) => squad.goal !== null && visible.settlements.some((settlement) =>
-        squad.goal!.x === settlement.x && squad.goal!.y === settlement.y);
+      const fallingBack = (squad: Squad) => returningHome(squad, visible.settlements);
       // Decide support eligibility before local engagements: men who are leaving
       // or have lost their ability to fight cannot keep another Squad in contact.
       const supportSquads = squads.filter((squad) => !spent(squad, observation) && !fallingBack(squad));
