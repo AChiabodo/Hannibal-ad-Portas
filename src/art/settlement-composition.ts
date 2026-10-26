@@ -1,5 +1,5 @@
 /** Procedural, per-Work settlement composition. Geometry is the rules' public plan. */
-import { buildingLot, settlementLayout, turnRect, type GroundRect, type SettlementKind } from '../content/settlement-layout.ts';
+import { buildingLot, settlementLayout, settlementGroundFeatures, turnRect, type GroundRect, type SettlementKind } from '../content/settlement-layout.ts';
 import { createPixelBuffer, fillRect, strokeRect, type PixelBuffer, type Rgba } from './pixel-buffer.ts';
 import { RAMPS, shadeAt } from './palette.ts';
 import type { ObservedSettlement, ObservedSettlementTile } from '../content/settlement-appearance.ts';
@@ -115,14 +115,15 @@ export function settlementComposition(look: SettlementComposition): PixelBuffer 
   const plan = settlementLayout(look.kind);
   const out = createPixelBuffer(plan.grounds.width * TILE, plan.grounds.height * TILE);
   const side = look.gateSide ?? 2;
+  const features = settlementGroundFeatures(look.kind, side);
   const tradition = look.origin ?? (look.owner === 'carthage' ? 'carthage' : 'rome');
   const tier = Math.max(1, Math.min(3, look.tier));
   // Roads are ground, not selectable opaque rectangles over all reserved space.
-  const lane = pixelRect(turnRect({ x: -1, y: -7, width: 3, height: 20 }, side));
+  const lane = pixelRect(features.roads[0]!);
   fillRect(out, lane.x, lane.y, lane.width, lane.height, wood(1));
-  const cross = pixelRect(turnRect({ x: -6, y: -1, width: 13, height: 2 }, side));
+  const cross = pixelRect(features.roads[1]!);
   fillRect(out, cross.x, cross.y, cross.width, cross.height, wood(1));
-  const square = pixelRect(turnRect(plan.capture, side));
+  const square = pixelRect(features.square);
   fillRect(out, square.x, square.y, square.width, square.height, stone(tier + 1));
   for (const work of look.works) {
     const lot = buildingLot(work.building, work.ordinal);
@@ -178,7 +179,7 @@ export function settlementComposition(look: SettlementComposition): PixelBuffer 
 
   }
   if (look.ram !== undefined && look.ram !== 'none') {
-    const ram = pixelRect(turnRect({ x: -1, y: 9, width: 3, height: 2 }, side));
+    const ram = pixelRect(features.ram);
     fillRect(out, ram.x + 2, ram.y + 8, ram.width - 4, ram.height - 12, wood(2));
     strokeRect(out, ram.x + 3, ram.y + 4, ram.width - 6, ram.height - 8, wood(5));
     if (look.ram === 'built') {

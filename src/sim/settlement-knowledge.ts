@@ -1,7 +1,7 @@
 /** Numeric, authoritative settlement sightings; projection never reads the live world. */
 import { buildingOf } from '../content/index.ts';
 import { fortificationHp } from '../content/fortifications.ts';
-import { containsTile, settlementLayout, turnRect } from '../content/settlement-layout.ts';
+import { containsTile, settlementGroundFeatures } from '../content/settlement-layout.ts';
 import type { ObservedSettlement, ObservedSettlementTile } from '../content/settlement-appearance.ts';
 import type { Settlement } from './economy.ts';
 import type { Fog } from './fog.ts';
@@ -62,10 +62,18 @@ export function settlementAppearances(fog: Fog): readonly ObservedSettlement[] {
     let ownerSeen = -1, tierSeen = -1;
     let tier: number | undefined;
     let visible = false;
+    const features = settlementGroundFeatures(memory.kind === 1 ? 'stronghold' : 'settlement', memory.gateSide);
     for (let cell = 0; cell < WIDTH * WIDTH; cell += 1) {
       const offset = cell * STRIDE;
       const seen = memory.cells[offset + SEEN]!;
       if (seen < 0) continue;
+      // Authoritative memory keeps every observed cell. The DTO omits only ground
+      // with no ink or public architectural fact, reducing copied object graphs.
+      const localX = cell % WIDTH - HALF, localY = Math.floor(cell / WIDTH) - HALF;
+      const painted = memory.cells[offset + BUILDING]! >= 0 || memory.cells[offset + STRUCTURE]! >= 0 ||
+        memory.cells[offset + RAM]! > 0 || memory.cells[offset + TIER]! >= 1 || memory.cells[offset + OWNER]! >= 0 ||
+        features.roads.some((road) => containsTile(road, localX, localY));
+      if (!painted) continue;
       const at = (field: number) => memory.cells[offset + field]!;
       const x = memory.x - HALF + cell % WIDTH;
       const y = memory.y - HALF + Math.floor(cell / WIDTH);
@@ -102,9 +110,9 @@ function appearanceFrame(world: SiegeWorld, site: Settlement): Int32Array {
   if (cached?.signature === signature) return cached.cells;
   const cells = new Int32Array(WIDTH * WIDTH * STRIDE).fill(-1);
   const side = settlementSide(world.economy, site);
-  const plan = settlementLayout(world.siege.strongholds.includes(site.id) ? 'stronghold' : 'settlement');
-  const square = turnRect(plan.capture, side);
-  const ram = turnRect({ x: -1, y: 9, width: 3, height: 2 }, side);
+  const features = settlementGroundFeatures(world.siege.strongholds.includes(site.id) ? 'stronghold' : 'settlement', side);
+  const square = features.square;
+  const ram = features.ram;
   for (let cell = 0; cell < WIDTH * WIDTH; cell += 1) {
     const offset = cell * STRIDE;
     const at = { x: cell % WIDTH - HALF, y: Math.floor(cell / WIDTH) - HALF };
@@ -112,7 +120,7 @@ function appearanceFrame(world: SiegeWorld, site: Settlement): Int32Array {
     cells[offset + RAM] = front !== undefined && front.ram > 0 && containsTile(ram, at.x, at.y) ? front.ramTicks === 0 ? 2 : 1 : 0;
     if (containsTile(square, at.x, at.y)) cells[offset + TIER] = site.tier;
     // The flag extends slightly right and below its pole's cell.
-    if (containsTile({ x: square.x + square.width - 1, y: square.y, width: 2, height: 2 }, at.x, at.y)) cells[offset + OWNER] = site.owner;
+    if (containsTile(features.flag, at.x, at.y)) cells[offset + OWNER] = site.owner;
     const structure = structureAt(front, side, at.x, at.y);
     if (structure !== undefined) {
       cells[offset + TIER] = site.tier;
@@ -163,6 +171,5 @@ function revealsSite(world: SiegeWorld, site: Settlement, cell: number, frame: I
   if (frame[offset + BUILDING]! >= 0 || frame[offset + STRUCTURE]! >= 0 || frame[offset + RAM]! > 0 || frame[offset + TIER]! >= 1) return true;
   const side = settlementSide(world.economy, site);
   const x = cell % WIDTH - HALF, y = Math.floor(cell / WIDTH) - HALF;
-  return containsTile(turnRect({ x: -1, y: -7, width: 3, height: 20 }, side), x, y) ||
-    containsTile(turnRect({ x: -6, y: -1, width: 13, height: 2 }, side), x, y);
+  return settlementGroundFeatures(world.siege.strongholds.includes(site.id) ? 'stronghold' : 'settlement', side).roads.some((road) => containsTile(road, x, y));
 }

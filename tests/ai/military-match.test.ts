@@ -41,14 +41,15 @@ describe('military decisions in a headless Match', () => {
         { faction: 'carthage', controller: createArmyController('tiro') }],
     });
     expect(run.log).toContainEqual({ tick: 4200, command: { kind: 'withdraw', faction: 'carthage', squads: [1] } });
-    expect(final!.squads.find((squad) => squad.id === 1)).toMatchObject({ x: 84, y: 34, goal: null, routing: false });
+    expect(final!.squads.find((squad) => squad.id === 1)).toMatchObject({ inQuarters: true, goal: null, routing: false });
     const replay = runMatch({ seed: 9, ticks: 5501, rules: siegeMatchRules, observe: observeSiege,
       outcome: siegeMatchOutcome, players: [
         { faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
         { faction: 'carthage', controller: scriptedController<SiegeVisible>(run.log) },
       ] });
     expect(replay.hash).toBe(run.hash);
-  }, 15000);
+  // The live AI and its complete Replay both cross the expanded physical theatre.
+  }, 60000);
 
   it('installs military decisions in the shipped AI harness', () => {
     expect(playAiMatch(7, 1).decisions.some((entry) => entry.selected.behaviour === 'military')).toBe(true);

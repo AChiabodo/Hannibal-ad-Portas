@@ -1,3 +1,10 @@
+import { createSiegeWorld, observeSiege, siegeMatchRules } from '../../src/sim/siege.ts';
+import { createMatch } from '../../src/sim/match.ts';
+import { musterSquad } from '../../src/sim/movement.ts';
+import { refreshSiegeFog } from '../../src/sim/siege-fog.ts';
+import { move } from '../../src/sim/command.ts';
+import { MAP_WIDTH } from '../../src/sim/map.ts';
+import { UNSEEN } from '../../src/sim/fog.ts';
 import { describe, expect, it } from 'vitest';
 import { observedSettlementSprite, observedSettlementKey, settlementComposition } from '../../src/art/settlement-composition';
 import { pixelAt, hashPixelBuffer } from '../../src/art/pixel-buffer';
@@ -49,4 +56,33 @@ it('does not invent walls for a cell without observed fortification facts', () =
   const base = partial();
   const sprite = observedSettlementSprite({ ...base, tiles: [{ cell: 130, seen: 1, visible: true }] });
   expect(pixelAt(sprite, 85, 85)[3]).toBe(0);
+});
+
+
+it('omits transparent ground without changing owned or partially remembered pixels or state hash (#74)', () => {
+  const world = createSiegeWorld(7);
+  const enemy = world.economy.settlements[1]!;
+  const scout = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: enemy.x - 9, y: enemy.y });
+  refreshSiegeFog(world, 1);
+  const match = createMatch({ seed: 7, rules: { ...siegeMatchRules, createWorld: () => world } });
+  const compare = () => {
+    const before = match.hash();
+    const visible = observeSiege(world, 'rome');
+    for (const site of visible.appearances ?? []) {
+      const cells = new Map(site.tiles.map((tile) => [tile.cell, tile]));
+      const known = Array.from({ length: 625 }, (_unused, cell) => cell).filter((cell) => {
+        const x = site.x - 12 + cell % 25, y = site.y - 12 + Math.floor(cell / 25);
+        return visible.fog.terrain[y * MAP_WIDTH + x] !== UNSEEN;
+      });
+      const expanded = { ...site, tiles: known.map((cell) => cells.get(cell) ?? { cell, seen: 0, visible: false }) };
+      expect(hashPixelBuffer(observedSettlementSprite(site))).toBe(hashPixelBuffer(observedSettlementSprite(expanded)));
+    }
+    expect(visible.appearances!.find((site) => site.id === 0)!.tiles.length).toBeLessThan(300);
+    expect(match.hash()).toBe(before);
+    return visible;
+  };
+  expect(compare().appearances!.find((site) => site.id === 1)!.memory).toBe('seen');
+  match.step([move('rome', [scout.id], enemy.x - 20, enemy.y)]);
+  for (let tick = 0; tick < 100; tick += 1) match.step();
+  expect(compare().appearances!.find((site) => site.id === 1)!.memory).toBe('remembered');
 });

@@ -81,3 +81,27 @@ export function turnRect(rect: GroundRect, side: number): GroundRect {
   const b = corners[1] ?? rect;
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x) + 1, height: Math.abs(a.y - b.y) + 1 };
 }
+
+
+export interface SettlementGroundFeatures {
+  readonly roads: readonly GroundRect[];
+  readonly square: GroundRect;
+  readonly flag: GroundRect;
+  readonly ram: GroundRect;
+}
+const FEATURES = new Map<string, SettlementGroundFeatures>();
+/** Ground features drawn by art and decoded by visibility share one public plan. */
+export function settlementGroundFeatures(kind: SettlementKind, side: number): SettlementGroundFeatures {
+  const key = `${kind}:${side}`;
+  const known = FEATURES.get(key);
+  if (known !== undefined) return known;
+  const square = turnRect(settlementLayout(kind).capture, side);
+  const features: SettlementGroundFeatures = {
+    roads: [turnRect({ x: -1, y: -7, width: 3, height: 20 }, side), turnRect({ x: -6, y: -1, width: 13, height: 2 }, side)],
+    square,
+    flag: { x: square.x + square.width - 1, y: square.y, width: 2, height: 2 },
+    ram: turnRect({ x: -1, y: 9, width: 3, height: 2 }, side),
+  };
+  FEATURES.set(key, features);
+  return features;
+}
