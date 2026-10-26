@@ -113,7 +113,7 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     return gains;
   }
   /** Cover the opposite band systematically, deriving progress only from explored terrain. */
-  function explorationCourse(home: Site, patrol: number, terrain: Uint8Array): Site | undefined {
+  function explorationCourse(home: Site, patrol: number, terrain: Uint8Array, position: Site): Site | undefined {
     const margin = Math.max(vision, (content.settlementRadius ?? 0) + vision);
     const low = Math.min(margin, Math.floor(height / 2));
     const high = Math.max(low, height - 1 - margin);
@@ -121,7 +121,13 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const ownLatitude = Math.max(low, Math.min(high, home.y));
     // The leading patrol crosses towards the middle, then sweeps away from
     // home latitude. The second crosses at home latitude and covers the other end.
-    const first = patrol % 2 === 0 ? Math.floor(height / 2) : ownLatitude;
+    // A ford may already have carried the patrol farther along its sweep.
+    // Keep that progress instead of crossing the same river again to visit an
+    // arbitrary latitude before continuing in the original direction.
+    const middle = Math.floor(height / 2);
+    const first = patrol % 2 === 0
+      ? Math.max(low, Math.min(high, ownLatitude >= middle ? Math.min(middle, position.y) : Math.max(middle, position.y)))
+      : ownLatitude;
     const northFirst = patrol % 2 === 0 ? ownLatitude >= height / 2 : first < height / 2;
     const samples: number[] = [];
     for (let y = low; y <= high; y += Math.max(1, vision * 2)) samples.push(y);
@@ -198,7 +204,7 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const reasons: string[] = [];
     const targets: Site[] = [];
     for (const [patrol, squad] of scouts.entries()) {
-      const course = found ? undefined : explorationCourse(visible.settlements[0] ?? squad, patrol, terrain);
+      const course = found ? undefined : explorationCourse(visible.settlements[0] ?? squad, patrol, terrain, squad);
       const fits = new Int8Array(width * height).fill(-1);
       // An anchor on dry ground is insufficient: at least one column pose must fit.
       const arrivals = (['north', 'east', 'south', 'west'] as const).map((facing) => formationFootprint(squad.capacity, 'column', facing));

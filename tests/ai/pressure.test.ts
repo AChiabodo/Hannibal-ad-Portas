@@ -66,7 +66,7 @@ it('meets Imperator contact time with the Roman opening without missing payroll'
 }, 15000);
 
 
-it.each([2, 4])('covers both opposite-side latitude sectors on seed %i by the Imperator contact deadline (#74)', (seed) => {
+it.each([2, 4, 9])('covers both opposite-side latitude sectors on seed %i by the Imperator contact deadline (#74)', (seed) => {
   for (const faction of ['rome', 'carthage'] as const) {
     const result = diagnosePressure(seed, faction, 'imperator');
     expect(result.contact, `${seed}/${faction}`).not.toBeNull();
