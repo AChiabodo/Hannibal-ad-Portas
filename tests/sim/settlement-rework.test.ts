@@ -19,6 +19,19 @@ function stage() {
 }
 
 describe('the shared settlement rules (#74)', () => {
+  it('keeps the Garrison order when a newly started Work requires an approach detour', () => {
+    const { world, match } = stage();
+    const site = world.economy.settlements[0]!;
+    site.tier = 3;
+    site.stocks.fill(100);
+    site.works.push({ building: buildingCode('mine')!, ordinal: 0, origin: 0, remaining: 0 });
+    const squad = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 35, y: 10 });
+    match.step([garrison('rome', [squad.id], 0)]);
+    match.step([build('rome', 0, 'mine')]);
+    expect(observeSiege(match.state.world, 'rome').settlements[0]!.works).toHaveLength(2);
+    for (let tick = 0; tick < 500; tick += 1) match.step();
+    expect(observeSiege(match.state.world, 'rome').squads.find((current) => current.id === squad.id)?.garrison).toBe(0);
+  });
   it('starts a large recruitment batch one whole Squad at a time as muster space becomes free', () => {
     const { world, match } = stage();
     world.economy.settlements[0]!.stocks.fill(100);

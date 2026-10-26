@@ -406,6 +406,7 @@ export const STRINGS = {
   'settlement.management': { it: "Gestione", en: undefined },
   'settlement.managementTitle': { it: "Presidio e ordini - {title}", en: undefined },
   'settlement.capacity': { it: "Presidio: {men}/{capacity} uomini", en: undefined },
+  'settlement.capacityValue': { it: "{men}/{capacity} uomini", en: "{men}/{capacity} men" },
   'settlement.open': { it: "Insediamento aperto: nessun presidio sulle mura", en: undefined },
   'settlement.roster': { it: "{name} {id}: {men} uomini", en: undefined },
   'settlement.select': { it: "Seleziona", en: undefined },

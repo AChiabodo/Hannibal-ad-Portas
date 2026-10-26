@@ -357,7 +357,7 @@ export function march(economy: Economy, map: MapGrid): void {
       const target = goalOf(squad);
       squad.steps = [];
       squad.wait = 0;
-      if (target !== null) orderSquadTo(map, squad, target, routeCacheFor(map));
+      if (target !== null) orderSquadTo(map, squad, target, routeCacheFor(map), true);
       continue;
     }
     let { formation, facing } = pose;

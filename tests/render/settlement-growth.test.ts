@@ -4,6 +4,15 @@ import { settlementComposition } from '../../src/art/settlement-composition';
 import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 
 describe('the public settlement plan (#74)', () => {
+  it('distinguishes the initial architectural traditions by silhouette with flags and colours removed', () => {
+    for (const tier of [1, 2, 3]) {
+      const silhouettes = (['rome', 'carthage'] as const).map((origin) => {
+        const image = settlementComposition({ kind: 'stronghold', tier, origin, owner: 'none', works: [] });
+        return Array.from(image.pixels).filter((_value, index) => index % 4 === 3);
+      });
+      expect(silhouettes[0], `Tier ${tier}`).not.toEqual(silhouettes[1]);
+    }
+  });
   it('holds every individual Work without occupying its square, muster or entrance', () => {
     for (const kind of ['stronghold', 'settlement'] as const) {
       const plan = settlementLayout(kind);

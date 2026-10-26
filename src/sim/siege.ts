@@ -641,7 +641,8 @@ export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (wo
         if (settlement === undefined) return false;
 
         return settlement.owner === owner || front.besieger === owner ||
-          eyes.some((eye) => eyeCovers(eye, settlement));
+          eyes.some((eye) => eyeCovers(eye, settlement)) ||
+          filteredFront(world, front, owner, eyes).structures.length > 0;
       })
       .map((front) => filteredFront(world, front, owner, eyes)),
   };

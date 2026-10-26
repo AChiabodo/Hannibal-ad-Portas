@@ -1,7 +1,7 @@
 /** Shared physical geometry: no renderer, no extra soldier entities, no hidden knowledge. */
 import { buildingOf, squadTypeOf } from '../content/index.ts';
 import { formationFootprint } from '../content/formation.ts';
-import { buildingLot, containsTile, intersects, settlementLayout, turnPoint, turnRect,
+import { buildingLot, containsTile, intersects, settlementLayout, turnPoint, turnRect, perimeterPoint, gateTile, breachTile,
   type GroundPoint, type GroundRect } from '../content/settlement-layout.ts';
 import type { Economy, Settlement, Squad, Work } from './economy.ts';
 import { facingOf, formationOf, FIELD } from './squad.ts';
@@ -82,10 +82,9 @@ export function blockedTile(map: MapGrid, owner: number, x: number, y: number): 
       for (let edge = 0; edge < 4; edge += 1) {
         const wall = front.structures.find((structure) => structure.kind === 1 && structure.side === edge);
         for (let tangent = -7; tangent <= 7; tangent += 1) {
-          if (edge === side && Math.abs(tangent) <= 1 && (owner === site.owner || (gate?.hp ?? 0) <= 0)) continue;
-          if ((wall?.hp ?? 1) <= 0 && Math.abs(tangent - (edge === side ? -4 : 0)) <= 1) continue;
-          const at = edge === 0 ? { x: tangent, y: -7 } : edge === 1 ? { x: 7, y: tangent } :
-            edge === 2 ? { x: tangent, y: 7 } : { x: -7, y: tangent };
+          if (gateTile(side, edge, tangent) && (owner === site.owner || (gate?.hp ?? 0) <= 0)) continue;
+          if ((wall?.hp ?? 1) <= 0 && breachTile(side, edge, tangent)) continue;
+          const at = perimeterPoint(edge, tangent);
           paintObstacle(grid, { x: site.x + at.x, y: site.y + at.y, width: 1, height: 1 });
         }
       }

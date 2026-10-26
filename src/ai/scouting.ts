@@ -1,4 +1,5 @@
 import { formationFootprint } from '../content/formation.ts';
+import { breachTile } from '../content/settlement-layout.ts';
 import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
@@ -153,7 +154,7 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
       if (x < 0 || y < 0 || x >= width || y >= height) continue;
       const part = tile.structure;
       const tangent = part?.side === 0 || part?.side === 2 ? localX : localY;
-      const gap = part?.condition === 'breached' && (part.kind === 'gate' || Math.abs(tangent - (part.side === site.gateSide ? -4 : 0)) <= 1);
+      const gap = part?.condition === 'breached' && (part.kind === 'gate' || breachTile(site.gateSide, part.side, tangent));
       const obstacle = tile.work !== undefined || (part !== undefined && !gap && !(part.kind === 'gate' && owned.has(site.id)));
       if (obstacle) obstacles[index({ x, y })] = 1;
     }

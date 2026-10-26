@@ -9,6 +9,20 @@ import { blockade, type Command } from '../../src/sim/command';
 import { testMap } from './economy-fixtures';
 import { buildingCode } from '../../src/content/buildings';
 
+it('reports the observed gate front without requiring sight of the hidden settlement centre', () => {
+  const map = testMap({ strongholds: [{ x: 25, y: 25 }, { x: 75, y: 75 }] });
+  const economy = createEconomy(map);
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    fog: createFogs(), siege: createSiege(map, economy) };
+  musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x: 65, y: 75 });
+  const match = createMatch<SiegeWorld, Command>({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step();
+  const front = observeSiege(match.state.world, 'rome').fronts.find((current) => current.settlement === 1);
+  expect(front?.structures).toHaveLength(2);
+  expect(front?.structures.every((part) => part.side === 'west')).toBe(true);
+  expect(front?.garrisonMen).toBeUndefined();
+});
+
 it('takes the visible capture square without requiring its exact centre tile', () => {
   const map = testMap({ strongholds: [{ x: 25, y: 25 }, { x: 75, y: 75 }], settlements: [{ x: 110, y: 100 }] });
   const economy = createEconomy(map);

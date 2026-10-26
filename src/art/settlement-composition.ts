@@ -1,5 +1,5 @@
 /** Procedural, per-Work settlement composition. Geometry is the rules' public plan. */
-import { buildingLot, settlementLayout, settlementGroundFeatures, turnRect, type GroundRect, type SettlementKind } from '../content/settlement-layout.ts';
+import { buildingLot, settlementLayout, settlementGroundFeatures, turnRect, perimeterPoint, gateTile, breachTile, type GroundRect, type SettlementKind } from '../content/settlement-layout.ts';
 import { createPixelBuffer, fillRect, strokeRect, type PixelBuffer, type Rgba } from './pixel-buffer.ts';
 import { RAMPS, shadeAt } from './palette.ts';
 import type { ObservedSettlement, ObservedSettlementTile } from '../content/settlement-appearance.ts';
@@ -132,11 +132,10 @@ export function settlementComposition(look: SettlementComposition): PixelBuffer 
   if (look.kind === 'stronghold' && look.structures !== false) {
     for (let edge = 0; edge < 4; edge += 1) {
       for (let tangent = -7; tangent <= 7; tangent += 1) {
-        const isGate = edge === side && Math.abs(tangent) <= 1;
-        const opening = look.breached?.includes(edge) === true && Math.abs(tangent - (edge === side ? -4 : 0)) <= 1;
+        const isGate = gateTile(side, edge, tangent);
+        const opening = look.breached?.includes(edge) === true && breachTile(side, edge, tangent);
         if (isGate || opening) continue;
-        const tile = edge === 0 ? { x: tangent, y: -7 } : edge === 1 ? { x: 7, y: tangent } :
-          edge === 2 ? { x: tangent, y: 7 } : { x: -7, y: tangent };
+        const tile = perimeterPoint(edge, tangent);
         const r = pixelRect({ ...tile, width: 1, height: 1 });
         fillRect(out, r.x, r.y + 5, 16, 11, stone(1));
         const face = tier === 1 ? wood(3) : tradition === 'carthage' ? shadeAt(RAMPS.parchment, 3) : stone(4);
@@ -149,7 +148,9 @@ export function settlementComposition(look: SettlementComposition): PixelBuffer 
           fillRect(out, r.x + 6, r.y + 1, 4, 6, look.owner === 'carthage' ? shadeAt(RAMPS.blood, 5) : wood(6));
           fillRect(out, r.x + 6, r.y, 3, 3, shadeAt(RAMPS.parchment, 4));
         }
-        for (let dx = 2; dx < 15; dx += 5) fillRect(out, r.x + dx, r.y + 6 - tier * 2, 3, tier + 2, tier === 1 ? wood(4) : stone(6));
+        const flat = tradition === 'carthage';
+        for (let dx = flat ? 1 : 2; dx < 15; dx += flat ? 8 : 5)
+          fillRect(out, r.x + dx, r.y + 6 - tier * 2, flat ? 5 : 3, tier + 2, tier === 1 ? wood(4) : stone(6));
       }
     }
     for (const x of [-7, 7]) for (const y of [-7, 7]) {
@@ -160,6 +161,12 @@ export function settlementComposition(look: SettlementComposition): PixelBuffer 
       strokeRect(out, r.x + 3, r.y + 5 - tier, 10, 4, stone(3));
       fillRect(out, r.x + 7, r.y + 10, 2, 4, stone(0));
       if (tier === 3) for (const dx of [1, 6, 11]) fillRect(out, r.x + dx, r.y, 4, 3, stone(6));
+      if (tradition === 'carthage') {
+        // Broad flat parapets contrast with the Roman towers' raised merlons,
+        // including the empty Tier-I fortress before its first Work exists.
+        fillRect(out, r.x, r.y + 1, 16, 3, shadeAt(RAMPS.parchment, 4));
+        fillRect(out, r.x + 2, r.y, 12, 2, stone(6));
+      }
     }
     const gate = pixelRect(turnRect(plan.gate, side));
     strokeRect(out, gate.x, gate.y, gate.width, gate.height, look.gateBroken === true ? wood(1) : stone(6));

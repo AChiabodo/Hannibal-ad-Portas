@@ -17,6 +17,20 @@ export interface SettlementLayout {
   readonly lots: readonly BuildingLot[];
 }
 
+/** World-facing perimeter geometry, shared by rules, observed navigation and art. */
+export function perimeterPoint(side: number, tangent: number): GroundPoint {
+  return side === 0 ? { x: tangent, y: -7 } : side === 1 ? { x: 7, y: tangent } :
+    side === 2 ? { x: tangent, y: 7 } : { x: -7, y: tangent };
+}
+
+export function gateTile(gateSide: number, side: number, tangent: number): boolean {
+  return side === gateSide && Math.abs(tangent) <= 1;
+}
+
+export function breachTile(gateSide: number, side: number, tangent: number): boolean {
+  return Math.abs(tangent - (side === gateSide ? -4 : 0)) <= 1;
+}
+
 export function containsTile(rect: GroundRect, x: number, y: number): boolean {
   return x >= rect.x && y >= rect.y && x < rect.x + rect.width && y < rect.y + rect.height;
 }
