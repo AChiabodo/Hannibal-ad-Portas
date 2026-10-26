@@ -19,6 +19,14 @@ function stage() {
 }
 
 describe('the shared settlement rules (#74)', () => {
+  it('keeps repeated scenario Works individually identifiable in the owned Observation', () => {
+    const { world } = stage();
+    world.economy.settlements[0]!.works.push(
+      { building: buildingCode('granary')!, remaining: 0 },
+      { building: buildingCode('granary')!, remaining: 0 },
+    );
+    expect(observeSiege(world, 'rome').settlements[0]!.works.map((work) => work.ordinal)).toEqual([0, 1]);
+  });
   it('keeps the Garrison order when a newly started Work requires an approach detour', () => {
     const { world, match } = stage();
     const site = world.economy.settlements[0]!;

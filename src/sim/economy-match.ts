@@ -89,6 +89,7 @@ import { generateMap, type MapGrid, type Site } from './map.ts';
 import { applyMovementCommands, goalOf, march, routeCacheFor } from './movement.ts';
 import { refusalOf, type RouteRefusal } from './route.ts';
 import { pendingOrderCost } from './pending-orders.ts';
+import { workOrdinal } from './settlement-space.ts';
 import { fadeResidue, recordCasualties } from './residue.ts';
 import { facingOf, FIELD, formationOf, isRouting, type Facing } from './squad.ts';
 import {
@@ -496,8 +497,8 @@ function visibleSettlement(map: MapGrid, settlement: Settlement, economy: Econom
     stocks: namedStock(settlement.stocks),
     land: namedStock(allocation.land),
     works: settlement.works.map((work) => ({
-      ordinal: work.ordinal ?? 0,
-      origin: (work.origin ?? settlement.owner) === 1 ? 'carthage' : 'rome',
+      ordinal: workOrdinal(settlement, work),
+      origin: (work.origin ?? settlement.origin ?? settlement.owner) === 1 ? 'carthage' : 'rome',
       building: buildingOf(work.building)?.id ?? 'unknown',
       remaining: work.remaining,
       standing: work.remaining === 0,
