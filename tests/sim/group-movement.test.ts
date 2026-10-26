@@ -8,7 +8,7 @@ import { musterSquad } from '../../src/sim/movement';
 import { startCalendar } from '../../src/sim/season';
 import { plainMap } from './test-map';
 import { paint } from './test-map';
-import { TERRAIN, MAP_HEIGHT, tileIndex } from '../../src/sim/map';
+import { TERRAIN, MAP_HEIGHT, MAP_WIDTH, tileIndex } from '../../src/sim/map';
 import { replay } from '../../src/sim/replay';
 
 function world(): EconomyWorld {
@@ -58,9 +58,10 @@ it('stable ID assignments survive Command and economy ordering, repeated orders 
 it('mixed purchased sizes and formations cross a shared ford and spread on arrival', () => {
   const state = world();
   for (let y = 0; y < MAP_HEIGHT; y += 1) state.map.terrain[tileIndex(12, y)] = TERRAIN.river;
-  state.map.terrain[tileIndex(12, 5)] = TERRAIN.ford;
+  // A full column needs both three abreast and room for its tail when turning.
+  for (const y of [14, 15, 16]) state.map.terrain[tileIndex(12, y)] = TERRAIN.ford;
   musterSquad(state.economy, state.map, { faction: 'rome', squadType: 'hastati', men: 120,
-    formation: 'column', x: 5, y: 5 });
+    formation: 'column', x: 8, y: 25 });
   musterSquad(state.economy, state.map, { faction: 'rome', squadType: 'hastati', men: 60, x: 5, y: 5 });
   const ids = state.economy.squads.map((s) => s.id);
   play(state, [move('rome', ids, 28, 20)], 400);
@@ -84,7 +85,7 @@ it('an obstructed map edge keeps arrivals legal and near the click', () => {
 it('insufficient space refuses only excess Squads and preserves their previous route', () => {
   const state = world();
   state.map.terrain.fill(TERRAIN.river);
-  paint(state.map, ['..........'], 5, 5);
+  paint(state.map, ['............', '............', '............'], 4, 4);
   const ids = state.economy.squads.map((s) => s.id);
   play(state, [move('rome', [ids[11]!], 14, 5), move('rome', ids, 5, 5)], 1);
   const visible = observeEconomy(state, 'rome').squads;
@@ -104,7 +105,7 @@ it('an unreachable low-ID Squad does not claim a slot or cancel eligible peers',
   expect(new Set(visible.slice(1).map((s) => `${s.x},${s.y}`)).size).toBe(11);
 });
 
-it.each([{ x: 96, y: 5, refused: 'off-map' }, { x: 20, y: 20, refused: 'water' }])(
+it.each([{ x: MAP_WIDTH, y: 5, refused: 'off-map' }, { x: 20, y: 20, refused: 'water' }])(
   'an invalid target $refused refuses every Squad without replacing a prior route', ({ x, y, refused }) => {
     const state = world();
     state.map.terrain[tileIndex(20, 20)] = TERRAIN.river;
