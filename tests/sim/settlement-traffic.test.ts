@@ -134,4 +134,17 @@ describe('physical access traffic (#74)', () => {
     expect(simultaneous).toBe(true);
     expect(observeSiege(match.state.world, 'rome').squads.filter((squad) => [north.id, south.id].includes(squad.id)).map((squad) => squad.goal)).toEqual([null, null]);
   });
+  it('clears a tightly spaced line of full cohorts so the FIFO leader can rotate into its marching column', () => {
+    const { world, match } = stage();
+    const squads = [25, 29, 33].map((y) => musterSquad(world.economy, world.map,
+      { faction: 'rome', squadType: 'hastati', men: 120, x: 40, y }));
+    match.step(squads.map((squad) => move('rome', [squad.id], 25, 25)));
+    for (let tick = 0; tick < 220; tick += 1) {
+      match.step();
+      const seen = observeSiege(match.state.world, 'rome').squads;
+      for (let first = 0; first < seen.length; first += 1) for (let second = first + 1; second < seen.length; second += 1)
+        expect(intersects(ground(seen[first]!), ground(seen[second]!)), `body overlap at tick ${tick}`).toBe(false);
+    }
+    expect(observeSiege(match.state.world, 'rome').squads.find((squad) => squad.id === squads[0]!.id)).toMatchObject({ x: 25, y: 25, goal: null });
+  });
 });

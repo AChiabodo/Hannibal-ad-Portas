@@ -285,8 +285,9 @@ function orderGroupTo(map: MapGrid, squads: readonly Squad[], to: Site, routes: 
     // One Tile per three files/ranks plus clearance. This is rule geometry,
     // independent of Figure pixels, and conservative for every arrival facing.
     const radius = Math.ceil(Math.max(shape.files, shape.ranks) / 6) + 1;
-    const site = candidates.find((candidate) => assigned.every((other) =>
-      Math.max(Math.abs(candidate.x - other.site.x), Math.abs(candidate.y - other.site.y)) >= radius + other.radius));
+    const site = candidates.find((candidate) =>
+      (!hasPhysicalSpace(map) || passageCheck(map, squad)(candidate.x, candidate.y)) && assigned.every((other) =>
+        Math.max(Math.abs(candidate.x - other.site.x), Math.abs(candidate.y - other.site.y)) >= radius + other.radius));
     if (site === undefined) {
       squad.refused = refusalCode('no-space');
       continue;
@@ -346,8 +347,12 @@ export function march(economy: Economy, map: MapGrid): void {
 
     const next = squad.steps[0];
     if (next === undefined) continue;
-    const facing = facingOfStep(tileIndex(squad.x, squad.y), next);
-    const formation = passageFormation(map, squad, tileX(next), tileY(next), facing);
+    // A queued body can back away or sidestep without rotating through a
+    // neighbour. Its normal facing resumes after it has cleared the lane.
+    const yielding = squad.access?.yielding === 1;
+    const facing = yielding ? squad.facing : facingOfStep(tileIndex(squad.x, squad.y), next);
+    const formation = yielding && canOccupy(map, squad, tileX(next), tileY(next)) ? squad.formation :
+      passageFormation(map, squad, tileX(next), tileY(next), facing);
     if (formation === undefined) {
       const target = goalOf(squad);
       squad.steps = [];

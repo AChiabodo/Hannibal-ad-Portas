@@ -18,6 +18,22 @@ function onRoute(squad: Squad, access: PhysicalAccess): boolean {
   return squad.steps.some((tile) => containsTile(access.rect, tileX(tile), tileY(tile)));
 }
 
+/** The column faces each actual leg, including its first rotation in place. */
+function routeBodies(squad: Squad): readonly GroundRect[] {
+  const result: GroundRect[] = [];
+  let x = squad.x;
+  let y = squad.y;
+  for (const tile of squad.steps) {
+    const nx = tileX(tile);
+    const ny = tileY(tile);
+    const facing = ny < y ? 0 : nx > x ? 1 : ny > y ? 2 : 3;
+    result.push(squadGround(squad, x, y, 1, facing), squadGround(squad, nx, ny, 1, facing));
+    x = nx;
+    y = ny;
+  }
+  return result;
+}
+
 /** Registration precedes any movement, making simultaneous arrivals stable by Squad id. */
 export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squad, target: { x: number; y: number }) => void): void {
   for (const squad of [...economy.squads].sort((a, b) => a.id - b.id)) {
@@ -53,14 +69,20 @@ export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squ
       }
       continue;
     }
-    if (leader === undefined || !leader.steps.some((tile) => intersects(squadGround(leader, tileX(tile), tileY(tile), 1), squadGround(squad)))) continue;
+    if (leader === undefined) continue;
+    const lane = routeBodies(leader);
+    if (!lane.some((rect) => intersects(rect, squadGround(squad)))) continue;
     const access = physicalAccesses(map, squad.owner).find((at) => at.settlement === waiting.settlement && at.passage === waiting.passage);
     if (access === undefined) continue;
-    for (const offset of [-4, 4, -8, 8]) {
-      const x = squad.x + (access.rect.width === 3 ? offset : 0);
-      const y = squad.y + (access.rect.height === 3 ? offset : 0);
-      const rect = squadGround(squad, x, y, 1);
-      if (!canOccupy(map, squad, x, y, 1) || occupiedGround(economy, rect, squad.id)) continue;
+    const shifts = [-4, 4, -8, 8, -12, 12].flatMap((offset) => [
+      { x: access.rect.width === 3 ? offset : 0, y: access.rect.height === 3 ? offset : 0 },
+      { x: access.rect.height === 3 ? offset : 0, y: access.rect.width === 3 ? offset : 0 },
+    ]);
+    for (const shift of shifts) {
+      const x = squad.x + shift.x;
+      const y = squad.y + shift.y;
+      const rect = squadGround(squad, x, y);
+      if (!canOccupy(map, squad, x, y) || occupiedGround(economy, rect, squad.id) || lane.some((body) => intersects(body, rect))) continue;
       waiting.yielding = 1;
       send(squad, { x, y });
       if (squad.refused !== NO_REFUSAL) { waiting.yielding = 0; continue; }

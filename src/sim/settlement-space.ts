@@ -114,6 +114,7 @@ export function crossingPerimeter(map: MapGrid, squad: Squad, x = squad.x, y = s
   if (space === undefined) return false;
   const rect = squadGround(squad, x, y, formation, facing);
   return space.economy.settlements.slice(0, 2).some((site) => {
+    if ((space.siege?.fronts[site.id]?.structures.length ?? 0) === 0) return false;
     const bounds = coreOf(space.economy, site);
     const core = { x: bounds.x + 1, y: bounds.y + 1, width: bounds.width - 2, height: bounds.height - 2 };
     return intersects(rect, bounds) && !(containsTile(core, rect.x, rect.y) &&
