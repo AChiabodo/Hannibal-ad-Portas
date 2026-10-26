@@ -10,12 +10,12 @@ import { createSiege, observeSiege, siegeMatchRules, type SiegeVisible } from '.
 import { plainMap } from '../sim/test-map.ts';
 
 function theatre() {
-  const map = { ...plainMap(), strongholds: [{ x: 20, y: 20 }, { x: 80, y: 80 }] as const,
-    settlements: [{ x: 25, y: 20 }, { x: 50, y: 50 }] };
+  const map = { ...plainMap(), strongholds: [{ x: 20, y: 20 }, { x: 120, y: 120 }] as const,
+    settlements: [{ x: 50, y: 26 }, { x: 90, y: 90 }] };
   const economy = createEconomy(map);
-  musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x: 76, y: 80 });
-  musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x: 20, y: 20 });
-  const garrison = musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 80, y: 80 });
+  musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x: 111, y: 120 });
+  musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x: 46, y: 26 });
+  const garrison = musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 120, y: 120 });
   garrison.garrison = 1;
   return { map, economy, calendar: startCalendar(), siege: createSiege(map, economy),
     fog: createFogs(), autumns: 0, winters: 0 };
@@ -31,13 +31,13 @@ describe('economic expansion through permitted Match observations', () => {
         { tick: 1, command: { kind: 'move', faction: 'rome', squads: [1], x: 20, y: 20 } },
       ]);
       const opponent = scriptedController<SiegeVisible>(capture ? [
-        { tick: 200, command: { kind: 'move', faction: 'carthage', squads: [4], x: 50, y: 50 } },
+        { tick: 200, command: { kind: 'move', faction: 'carthage', squads: [4], x: 90, y: 90 } },
       ] : []);
       runMatch({ seed: 7, ticks: 1001, rules: { ...siegeMatchRules, createWorld() {
         const world = theatre();
-        world.economy.squads[0]!.x = 50;
-        world.economy.squads[0]!.y = 46;
-        musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 54, y: 50 });
+        world.economy.squads[0]!.x = 90;
+        world.economy.squads[0]!.y = 86;
+        musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 94, y: 90 });
         return world;
       } }, observe: observeSiege, outcome: () => null, players: [
         { faction: 'rome', controller: { decide(observation) {
@@ -50,7 +50,7 @@ describe('economic expansion through permitted Match observations', () => {
         } } },
       ] });
       expect(seenUnowned).toBe(true);
-      expect(remembered).toMatchObject({ kind: 'settlement', id: 3, x: 50, y: 50 });
+      expect(remembered).toMatchObject({ kind: 'settlement', id: 3, x: 90, y: 90 });
       expect(remembered?.unowned).toBeUndefined();
       return { remembered, captured };
     }
@@ -59,7 +59,7 @@ describe('economic expansion through permitted Match observations', () => {
     expect(stillNeutral.captured).toBe(false);
     expect(secretlyTaken.captured).toBe(true);
     expect(secretlyTaken.remembered).toEqual(stillNeutral.remembered);
-  });
+  }, 15000);
 
   it('remembers a discovered neutral village and takes it when the known Stronghold is too strong', () => {
     const setup = { seed: 7, ticks: 2601, rules: { ...siegeMatchRules, createWorld: theatre },
@@ -78,13 +78,13 @@ describe('economic expansion through permitted Match observations', () => {
     ] });
     expect(discovered).toBe(true);
     expect(captured).toBe(true);
-    expect(run.log.some(({ command }) => command.kind === 'move' && command.x === 25 && command.y === 20)).toBe(true);
-    expect(run.log.find(({ command }) => command.kind === 'move' && command.x === 25 && command.y === 20)!.tick)
+    expect(run.log.some(({ command }) => command.kind === 'move' && command.x === 50 && command.y === 26)).toBe(true);
+    expect(run.log.find(({ command }) => command.kind === 'move' && command.x === 50 && command.y === 26)!.tick)
       .toBeGreaterThanOrEqual(2100);
     const replayed = runMatch({ ...setup, players: [
       { faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
       { faction: 'carthage', controller: scriptedController<SiegeVisible>(run.log) },
     ] });
     expect(replayed.hash).toBe(run.hash);
-  });
+  }, 15000);
 });

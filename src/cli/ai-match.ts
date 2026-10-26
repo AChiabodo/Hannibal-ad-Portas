@@ -37,7 +37,7 @@ const canContinueAssault = createAssaultReadiness({ siegeRadius: SIEGE_RADIUS, s
 const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ,
   canContinueAssault, settlementRadius: 7 };
 const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
-  vision: SQUAD_VISION, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
+  vision: SQUAD_VISION, settlementRadius: 7, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
   scoutTypes: ['hastati', 'gaul', 'numidian-horse'] };
 // One garrison is worth the strongest Tier-1 Squad a Faction can raise, since an
 // unseen front reports how many Squads man it and not which. Since #66 "strongest"

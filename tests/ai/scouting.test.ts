@@ -151,7 +151,7 @@ describe('the scouting Controller', () => {
     const refresh = commands(301);
     expect(refresh).toHaveLength(1);
     const target = refresh[0]!;
-    expect((target.x - (home.x + 12)) ** 2 + (target.y - home.y) ** 2).toBeLessThanOrEqual(16);
+    expect(Math.max(0, Math.abs(target.x - (home.x + 12)) - 7) ** 2 + Math.max(0, Math.abs(target.y - home.y) - 7) ** 2).toBeLessThanOrEqual(16);
     expect(commands(6000)).toEqual([]);
   });
 });

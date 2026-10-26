@@ -157,3 +157,14 @@ it('can target an observed fortress wall without ever seeing its centre (#74)', 
       structure: { kind: 'wall', side: 0, condition: 'intact' } }] }] });
   expect(decide('rome', visible, 'centurio', 11).commands).toContainEqual({ kind: 'assault', faction: 'rome', squads: [1, 2, 3], settlement: 1 });
 });
+
+
+it('prices observed sentry presence without inventing an unseen full garrison (#74)', () => {
+  const visible = observation({ contacts: [], squads: [squad(1, 71, 80, { men: 24, capacity: 24 })],
+    appearances: [{ id: 1, kind: 'stronghold', x: 80, y: 80, gateSide: 3, owner: null, memory: 'seen',
+      tiles: [{ cell: 137, seen: 10, visible: true, garrison: false,
+        structure: { kind: 'wall', side: 0, condition: 'intact' } }] }] });
+  expect(decide('rome', visible, 'centurio', 11).commands).toContainEqual({ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 });
+  const guarded = { ...visible, appearances: visible.appearances!.map((site) => ({ ...site, tiles: site.tiles.map((tile) => ({ ...tile, garrison: true })) })) };
+  expect(decide('rome', guarded, 'centurio', 11).commands).toEqual([]);
+});

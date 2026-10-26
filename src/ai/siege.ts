@@ -142,7 +142,11 @@ export function createSiegeBehaviour(
 
       const relief = visible.enemies.filter((enemy) => Math.max(0, distance(enemy, place) - (content.settlementRadius ?? 0)) <= content.reliefRadius);
       const reliefPower = relief.reduce((sum, enemy) => sum + nominal(enemy.type), 0);
-      const garrison = front === undefined ? 1 : front.garrison;
+      const garrisonSightings = visible.appearances?.find((site) => site.id === target.id)?.tiles
+        .filter((tile) => tile.structure !== undefined && tile.garrison !== undefined)
+        .sort((one, other) => other.seen - one.seen);
+      const presence = garrisonSightings?.[0]?.garrison;
+      const garrison = front === undefined ? presence === false ? 0 : 1 : front.garrison;
       const threat = garrison * content.garrisonEstimate + reliefPower;
 
       const field = visible.squads.filter((squad) => !squad.routing && squad.garrison === null);

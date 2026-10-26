@@ -1,9 +1,12 @@
+import { formationFootprint } from '../../src/content/formation.ts';
+import { MAP_WIDTH, MAP_HEIGHT, TERRAIN } from '../../src/sim/map.ts';
+import { UNSEEN } from '../../src/sim/fog.ts';
 import { describe, expect, it } from 'vitest';
 import { createMatch } from '../../src/sim/match.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
 import { createSiege, observeSiege, siegeMatchRules, type SiegeVisible, type SiegeWorld } from '../../src/sim/siege.ts';
 import { createAi } from '../../src/ai/controller.ts';
-import { militaryRegistry, scoutingRegistry, playAiMatch } from '../../src/cli/ai-match.ts';
+import { militaryRegistry, scoutingRegistry, playAiMatch, createArmyController } from '../../src/cli/ai-match.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
 import type { Command } from '../../src/sim/command.ts';
 import { runMatch } from '../../src/sim/driver.ts';
@@ -137,3 +140,34 @@ describe('scouting through a Match Observation', () => {
     expect(observeSiege(world, 'carthage').contacts.some((contact) => contact.kind === 'stronghold')).toBe(false);
   });
 });
+
+
+it('does not repeatedly send a scout onto a riverbank that cannot hold any arrival pose (#74)', () => {
+  const ai = createArmyController('imperator');
+  let checked = 0;
+  runMatch({ seed: 7, ticks: 500, rules: siegeMatchRules, observe: observeSiege, outcome: () => null,
+    players: [{ faction: 'rome', controller: { decide(observation) {
+      const commands = ai.decide(observation);
+      for (const command of commands) {
+        if (command.kind !== 'move') continue;
+        for (const id of command.squads) {
+          const squad = observation.visible.squads.find((entry) => entry.id === id)!;
+          const fits = (['north', 'east', 'south', 'west'] as const).some((facing) => {
+            const rect = formationFootprint(squad.capacity, 'column', facing);
+            for (let y = command.y + rect.y; y < command.y + rect.y + rect.height; y += 1)
+              for (let x = command.x + rect.x; x < command.x + rect.x + rect.width; x += 1) {
+                if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) return false;
+                const terrain = observation.visible.fog.terrain[y * MAP_WIDTH + x];
+                if (terrain === TERRAIN.river || terrain === UNSEEN) return false;
+              }
+            return true;
+          });
+          expect(fits, `tick ${observation.tick}: Squad ${id} to ${command.x},${command.y}`).toBe(true);
+          checked += 1;
+        }
+      }
+      return commands;
+    } } }, { faction: 'carthage', controller: scriptedController<SiegeVisible>([]) }],
+  });
+  expect(checked).toBeGreaterThan(0);
+}, 15000);

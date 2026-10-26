@@ -1,3 +1,4 @@
+import { formationFootprint } from '../content/formation.ts';
 import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
@@ -27,6 +28,7 @@ export interface ScoutingContent {
   readonly unseen: number;
   readonly water: number;
   readonly vision: number;
+  readonly settlementRadius?: number;
   readonly ticksPerSecond: number;
   readonly scoutTypes: readonly string[];
   readonly squadTypes: readonly {
@@ -116,6 +118,19 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const contacts = planningContacts(permittedContacts(visible), tick, content.ticksPerSecond)
       .filter((contact) => contact.kind !== 'settlement');
     const found = contacts.some((contact) => contact.kind === 'stronghold');
+    const wallKnowledge = (contact: Contact) => visible.appearances?.find((site) => site.id === contact.id)?.tiles
+      .filter((tile) => tile.structure !== undefined);
+    const needsRefresh = (contact: Contact) => {
+      const walls = contact.kind === 'stronghold' ? wallKnowledge(contact) : undefined;
+      const nowSeen = walls === undefined ? visible.fog.visible[index(contact)] === 1 : walls.some((tile) => tile.visible);
+      return !nowSeen && (walls?.length === 0 || tick - contact.seen >= content.ticksPerSecond * difficulty.refreshSeconds);
+    };
+    const contactCovered = (contact: Contact, site: Site) => {
+      if (contact.kind !== 'stronghold' || !content.settlementRadius) return withinVision(contact, site);
+      const radius = content.settlementRadius;
+      return withinVision(site, { x: Math.max(contact.x - radius, Math.min(contact.x + radius, site.x)),
+        y: Math.max(contact.y - radius, Math.min(contact.y + radius, site.y)) });
+    };
     const quota = Math.max(found ? 1 : difficulty.openingScouts,
       Math.ceil(visible.squads.length / (found ? difficulty.scoutsPerFound : difficulty.scoutsPer)));
     const scouts = visible.squads.filter((squad) => {
@@ -130,8 +145,20 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const terrain = visible.fog.terrain;
     const unseen = content.unseen;
     const water = content.water;
-    /** Ground a scout can walk: anything the terrain says is neither unseen nor water. */
-    const blocked = (tile: number) => terrain[tile] === unseen || terrain[tile] === water;
+    const obstacles = new Uint8Array(width * height);
+    const owned = new Set(visible.settlements.map((site) => site.id));
+    for (const site of visible.appearances ?? []) for (const tile of site.tiles) {
+      const localX = tile.cell % 25 - 12, localY = Math.floor(tile.cell / 25) - 12;
+      const x = site.x + localX, y = site.y + localY;
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+      const part = tile.structure;
+      const tangent = part?.side === 0 || part?.side === 2 ? localX : localY;
+      const gap = part?.condition === 'breached' && (part.kind === 'gate' || Math.abs(tangent - (part.side === site.gateSide ? -4 : 0)) <= 1);
+      const obstacle = tile.work !== undefined || (part !== undefined && !gap && !(part.kind === 'gate' && owned.has(site.id)));
+      if (obstacle) obstacles[index({ x, y })] = 1;
+    }
+    /** Both the known ground and the recorded physical obstacles constrain a patrol. */
+    const blocked = (tile: number) => terrain[tile] === unseen || terrain[tile] === water || obstacles[tile] === 1;
     const walkable = (tile: number) => !blocked(tile);
     let gains: Int32Array | null = null;
     function gain(tile: number): number {
@@ -143,11 +170,25 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const reasons: string[] = [];
     const targets: Site[] = [];
     for (const squad of scouts) {
+      const fits = new Int8Array(width * height).fill(-1);
+      // An anchor on dry ground is insufficient: at least one column pose must fit.
+      const arrivals = (['north', 'east', 'south', 'west'] as const).map((facing) => formationFootprint(squad.capacity, 'column', facing));
+      function canArrive(tile: number): boolean {
+        if (fits[tile] !== -1) return fits[tile] === 1;
+        const x = tile % width, y = Math.floor(tile / width);
+        const safe = arrivals.some((rect) => {
+          for (let row = y + rect.y; row < y + rect.y + rect.height; row += 1)
+            for (let col = x + rect.x; col < x + rect.x + rect.width; col += 1)
+              if (row < 0 || col < 0 || row >= height || col >= width || blocked(row * width + col)) return false;
+          return true;
+        });
+        fits[tile] = safe ? 1 : 0;
+        return safe;
+      }
       let target: Site | undefined;
       // Keep a march while its destination can reveal ground or refresh a contact.
-      if (squad.goal !== null && squad.refused === null && walkable(index(squad.goal)) &&
-        (gain(index(squad.goal)) > 0 || contacts.some((contact) => withinVision(contact, squad.goal!) &&
-          visible.fog.visible[index(contact)] !== 1))) target = squad.goal;
+      if (squad.goal !== null && squad.refused === null && walkable(index(squad.goal)) && canArrive(index(squad.goal)) &&
+        (gain(index(squad.goal)) > 0 || contacts.some((contact) => contactCovered(contact, squad.goal!) && needsRefresh(contact)))) target = squad.goal;
       else {
         const distances = new Int32Array(width * height).fill(-1);
         const queue = [index(squad)];
@@ -161,10 +202,9 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
           const site = { x, y };
           const travel = distances[tile]!;
           if (travel > 0 && !targets.some((other) => distance(other, site) < vision * 2)) {
-            const refresh = contacts.some((contact) => tick - contact.seen >= content.ticksPerSecond * difficulty.refreshSeconds &&
-              withinVision(contact, site) && visible.fog.visible[index(contact)] !== 1);
+            const refresh = contacts.some((contact) => contactCovered(contact, site) && needsRefresh(contact));
             const unknown = gain(tile);
-            if (unknown > 0 || refresh) {
+            if ((unknown > 0 || refresh) && canArrive(tile)) {
               const central = Math.min(site.x, width - 1 - site.x, site.y, height - 1 - site.y);
               const home = visible.settlements[0] ?? squad;
               const outward = distance(home, site);
@@ -173,8 +213,12 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
               // Only own home, public dimensions and explored terrain enter this prior.
               const acrossX = width - 1 - home.x - site.x;
               const across = -(acrossX * acrossX);
+              // Search the middle latitudes first, then sweep outward on both sides.
+              // This is a public-map prior, independent of the hidden enemy start.
+              const latitude = site.y - Math.floor(height / 2);
+              const middle = -(latitude * latitude);
               const score = Math.floor(((unknown + (refresh ? 60 : 0)) * 100 + central * 10) *
-                (10 + outward) / (travel + 10)) + (!found ? across * 100 : 0);
+                (10 + outward) / (travel + 10)) + (!found ? across * 100 + middle * 10 : 0);
               if (score > best) { best = score; target = site; }
             }
           }
