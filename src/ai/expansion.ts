@@ -1,6 +1,7 @@
+import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
-import { planningContacts, type Contact } from './contacts.ts';
+import { planningContacts, permittedContacts, type Contact } from './contacts.ts';
 import { atHalfStrength, type Behaviour } from './registry.ts';
 import { restingAtHome } from './recovery.ts';
 import { distance, type Site } from './site.ts';
@@ -13,6 +14,7 @@ const APPROACH_RADIUS = 12;
 const CONTACT_RADIUS = 4;
 
 interface ExpansionObservation {
+  readonly appearances?: readonly ObservedSettlement[];
   readonly year: number;
   readonly season: Season;
   readonly settlements: readonly (Site & { readonly id: number })[];
@@ -40,7 +42,7 @@ export function createExpansionBehaviour(content: {
     // Give the opening army its first campaign and fund the first Payroll
     // before diverting a detachment into a second economy.
     if (visible.year === 1 && visible.season === 'spring') return [];
-    const contacts = planningContacts(visible.contacts, tick, content.ticksPerSecond);
+    const contacts = planningContacts(permittedContacts(visible), tick, content.ticksPerSecond);
     if (!contacts.some((contact) => contact.kind === 'stronghold')) return [];
     const targets = contacts.filter((contact) => contact.kind === 'settlement' &&
       !visible.settlements.some((home) => home.id === contact.id) &&

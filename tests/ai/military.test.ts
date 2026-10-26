@@ -24,7 +24,7 @@ function battlefield(): SiegeVisible {
   const squad = base.squads[0]!;
   return { ...base, settlements: [{ ...base.settlements[0]!, x: 20, y: 20 }],
     squads: [0, 1, 2].map((id) => ({ ...squad, id, type: 'hastati', men: 120,
-      morale: 10, fatigue: 0, routing: false, engaged: false, garrison: null,
+      morale: 10, fatigue: 0, inQuarters: false, routing: false, engaged: false, garrison: null,
       x: 20, y: 20, goal: null })),
     enemies: [{ id: 10, type: 'gaul', x: 25, y: 20 }],
   };

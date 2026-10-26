@@ -1,7 +1,8 @@
+import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
 import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
-import { planningContacts, type Contact } from './contacts.ts';
+import { planningContacts, permittedContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
 import type { AssaultReadiness } from './assault.ts';
@@ -32,7 +33,9 @@ interface VisibleSiegeFront {
 
 /** What a siege policy may read: its own army, the ground it has seen, and the walls in front of it. */
 export interface SiegeObservation {
+  readonly settlements?: readonly { readonly id: number }[];
   /** The calendar the Controller seam requires of every Observation; the policy reads neither. */
+  readonly appearances?: readonly ObservedSettlement[];
   readonly year: number;
   readonly season: Season;
   readonly treasury: number;
@@ -127,7 +130,7 @@ export function createSiegeBehaviour(
     id: 'siege',
     tactical: ({ observation }) => {
       const { visible, faction } = observation;
-      const contacts = planningContacts(visible.contacts, observation.tick, content.ticksPerSecond);
+      const contacts = planningContacts(permittedContacts(visible), observation.tick, content.ticksPerSecond);
       const target = contacts.find((contact) => contact.kind === 'stronghold');
       if (target === undefined) return [];
       const front = visible.fronts.find((candidate) => candidate.settlement === target.id);

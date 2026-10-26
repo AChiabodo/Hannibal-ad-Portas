@@ -149,3 +149,11 @@ describe('the siege Controller', () => {
     expect(commands).toContainEqual({ kind: 'assault', faction: 'rome', squads: [1, 2], settlement: 1 });
   });
 });
+
+
+it('can target an observed fortress wall without ever seeing its centre (#74)', () => {
+  const visible = observation({ contacts: [], appearances: [{ id: 1, kind: 'stronghold', x: 80, y: 80,
+    gateSide: 3, owner: null, memory: 'seen', tiles: [{ cell: 137, seen: 10, visible: true,
+      structure: { kind: 'wall', side: 0, condition: 'intact' } }] }] });
+  expect(decide('rome', visible, 'centurio', 11).commands).toContainEqual({ kind: 'assault', faction: 'rome', squads: [1, 2, 3], settlement: 1 });
+});

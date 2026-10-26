@@ -1,7 +1,8 @@
+import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
 import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
-import { planningContacts, type Contact } from './contacts.ts';
+import { planningContacts, permittedContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
 import type { AssaultObservation, AssaultReadiness } from './assault.ts';
@@ -25,6 +26,7 @@ interface Squad extends Enemy {
 }
 
 export interface MilitaryObservation {
+  readonly appearances?: readonly ObservedSettlement[];
   readonly year: number;
   readonly season: Season;
   readonly settlements: readonly (Site & { readonly id: number })[];
@@ -166,7 +168,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
     id: 'military',
     tactical: ({ observation }) => {
       const { visible, faction } = observation;
-      const remembered = planningContacts(visible.contacts ?? [], observation.tick, content.ticksPerSecond)
+      const remembered = planningContacts(permittedContacts(visible), observation.tick, content.ticksPerSecond)
         .filter((contact) => contact.kind === 'squad' && !visible.enemies.some((enemy) => enemy.id === contact.id))
         .map((contact) => ({ ...contact, type: contact.type ?? 'unknown' }));
       const squads = visible.squads.filter((squad) => !squad.routing && squad.garrison === null)

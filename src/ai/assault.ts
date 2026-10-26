@@ -1,3 +1,4 @@
+import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import { distance, type Site } from './site.ts';
 import type { Contact } from './contacts.ts';
 import type { Observation } from '../sim/observation.ts';
@@ -6,6 +7,7 @@ type Faction = Observation<unknown>['faction'];
 
 /** Only the visible siege work and known location needed to price its remaining shock. */
 export interface AssaultObservation {
+  readonly appearances?: readonly ObservedSettlement[];
   readonly contacts?: readonly (Site & { readonly id: number; readonly kind: Contact['kind'] })[];
   readonly fronts?: readonly {
     readonly settlement: number;
@@ -27,7 +29,8 @@ export function createAssaultReadiness(content: {
     if (front.besieger !== faction || front.siege !== 'assault' || front.ram === null ||
       (front.ram.hp ?? 0) <= 0) return false;
     const target = visible.contacts?.find((contact) => contact.id === front.settlement &&
-      (contact.kind === 'stronghold' || contact.kind === 'settlement'));
+      (contact.kind === 'stronghold' || contact.kind === 'settlement')) ??
+      visible.appearances?.find((site) => site.id === front.settlement && site.tiles.some((tile) => tile.structure !== undefined));
     if (target === undefined || Math.max(0, distance(squad, target) - (content.settlementRadius ?? 0)) > content.siegeRadius) return false;
     const remaining = front.ram.built ? 0 : front.ram.remaining;
     if (remaining === undefined) return false;

@@ -1,17 +1,19 @@
+import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
 import { atHalfStrength, type Behaviour } from './registry.ts';
-import { planningContacts, type Contact } from './contacts.ts';
+import { planningContacts, permittedContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
 import { restingAtHome } from './recovery.ts';
 
 export interface ScoutingObservation {
+  readonly appearances?: readonly ObservedSettlement[];
   readonly year: number;
   readonly season: Season;
   readonly fog: { readonly terrain: Uint8Array; readonly visible: Uint8Array };
   readonly contacts: readonly Contact[];
-  readonly settlements: readonly Site[];
+  readonly settlements: readonly (Site & { readonly id?: number })[];
   readonly enemies: readonly Site[];
   readonly squads: readonly (Site & {
     readonly id: number; readonly type: string; readonly men: number; readonly capacity: number; readonly morale: number;
@@ -111,7 +113,7 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const { visible, tick, faction } = observation;
     // Open settlements belong to expansion; stationary villages must not pull
     // the discovery patrol away from the enemy's Stronghold on every refresh.
-    const contacts = planningContacts(visible.contacts, tick, content.ticksPerSecond)
+    const contacts = planningContacts(permittedContacts(visible), tick, content.ticksPerSecond)
       .filter((contact) => contact.kind !== 'settlement');
     const found = contacts.some((contact) => contact.kind === 'stronghold');
     const quota = Math.max(found ? 1 : difficulty.openingScouts,
