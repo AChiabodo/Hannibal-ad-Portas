@@ -112,6 +112,33 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
 
     return gains;
   }
+  /** Cover the opposite band systematically, deriving progress only from explored terrain. */
+  function explorationCourse(home: Site, patrol: number, terrain: Uint8Array): Site | undefined {
+    const margin = Math.max(vision, (content.settlementRadius ?? 0) + vision);
+    const low = Math.min(margin, Math.floor(height / 2));
+    const high = Math.max(low, height - 1 - margin);
+    const opposite = Math.max(vision, Math.min(width - 1 - vision, width - 1 - home.x));
+    const ownLatitude = Math.max(low, Math.min(high, home.y));
+    // The leading patrol crosses towards the middle, then sweeps away from
+    // home latitude. The second crosses at home latitude and covers the other end.
+    const first = patrol % 2 === 0 ? Math.floor(height / 2) : ownLatitude;
+    const northFirst = patrol % 2 === 0 ? ownLatitude >= height / 2 : first < height / 2;
+    const samples: number[] = [];
+    for (let y = low; y <= high; y += Math.max(1, vision * 2)) samples.push(y);
+    if (samples.at(-1) !== high) samples.push(high);
+    const initial = samples.filter((y) => northFirst ? y < first : y > first)
+      .sort((one, other) => northFirst ? other - one : one - other);
+    const reverse = [...samples].sort((one, other) => northFirst ? one - other : other - one);
+    const inward = opposite < width / 2 ? vision * 2 : -vision * 2;
+    const columns = [opposite, opposite + inward, opposite - inward];
+    for (const x of columns) {
+      if (x < 0 || x >= width) continue;
+      for (const y of [first, ...initial, ...reverse]) {
+        if (terrain[y * width + x] === content.unseen) return { x, y };
+      }
+    }
+    return undefined;
+  }
   return { id: 'scouting', tactical: ({ observation }) => {
     const { visible, tick, faction } = observation;
     // Open settlements belong to expansion; stationary villages must not pull
@@ -170,7 +197,8 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const commands: Move[] = [];
     const reasons: string[] = [];
     const targets: Site[] = [];
-    for (const squad of scouts) {
+    for (const [patrol, squad] of scouts.entries()) {
+      const course = found ? undefined : explorationCourse(visible.settlements[0] ?? squad, patrol, terrain);
       const fits = new Int8Array(width * height).fill(-1);
       // An anchor on dry ground is insufficient: at least one column pose must fit.
       const arrivals = (['north', 'east', 'south', 'west'] as const).map((facing) => formationFootprint(squad.capacity, 'column', facing));
@@ -187,10 +215,27 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
         return safe;
       }
       let target: Site | undefined;
-      // Keep a march while its destination can reveal ground or refresh a contact.
-      if (squad.goal !== null && squad.refused === null && walkable(index(squad.goal)) && canArrive(index(squad.goal)) &&
-        (gain(index(squad.goal)) > 0 || contacts.some((contact) => contactCovered(contact, squad.goal!) && needsRefresh(contact)))) target = squad.goal;
+      // Finish an accepted safe leg before choosing the next frontier. Replanning
+      // when its last unknown tiles enter vision can oscillate between banks.
+      if (squad.goal !== null && squad.refused === null && walkable(index(squad.goal)) && canArrive(index(squad.goal))) target = squad.goal;
       else {
+        // Unknown terrain is a possible continuation, never a movement goal.
+        // Observed rivers bend this estimate around their known banks, avoiding
+        // repeated trips between equally informative ends of the same bank.
+        const guidance = new Int32Array(width * height).fill(-1);
+        if (course !== undefined) {
+          const open = [index(course)];
+          guidance[open[0]!] = 0;
+          for (let cursor = 0; cursor < open.length; cursor += 1) {
+            const tile = open[cursor]!, x = tile % width;
+            for (const next of [x > 0 ? tile - 1 : -1, x + 1 < width ? tile + 1 : -1,
+              tile >= width ? tile - width : -1, tile + width < width * height ? tile + width : -1]) {
+              if (next < 0 || guidance[next] !== -1 || terrain[next] === water || obstacles[next] === 1) continue;
+              guidance[next] = guidance[tile]! + 1;
+              open.push(next);
+            }
+          }
+        }
         const distances = new Int32Array(width * height).fill(-1);
         const queue = [index(squad)];
         distances[queue[0]!] = 0;
@@ -209,17 +254,11 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
               const central = Math.min(site.x, width - 1 - site.x, site.y, height - 1 - site.y);
               const home = visible.settlements[0] ?? squad;
               const outward = distance(home, site);
-              // Search the opposite end of the theatre across all latitudes.
-              // Home's latitude says nothing about where the opponent lives.
-              // Only own home, public dimensions and explored terrain enter this prior.
-              const acrossX = width - 1 - home.x - site.x;
-              const across = -(acrossX * acrossX);
-              // Search the middle latitudes first, then sweep outward on both sides.
-              // This is a public-map prior, independent of the hidden enemy start.
-              const latitude = site.y - Math.floor(height / 2);
-              const middle = -(latitude * latitude);
+              // A coarse public-map course prevents profitable local frontiers
+              // from postponing whole latitude bands indefinitely.
+              const remaining = course === undefined ? 0 : guidance[tile]! < 0 ? width * height : guidance[tile]!;
               const score = Math.floor(((unknown + (refresh ? 60 : 0)) * 100 + central * 10) *
-                (10 + outward) / (travel + 10)) + (!found ? across * 100 + middle * 10 : 0);
+                (10 + outward) / (travel + 10)) - (course === undefined ? 0 : travel + remaining) * 10000;
               if (score > best) { best = score; target = site; }
             }
           }
