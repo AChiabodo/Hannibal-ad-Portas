@@ -45,6 +45,7 @@ interface Settlement {
 /** A front we can see: ours, or the enemy's once it is sighted. */
 interface Front {
   readonly settlement: number;
+  readonly besieger: string | null;
   readonly structures: readonly { readonly hp: number }[];
 }
 
@@ -54,6 +55,8 @@ interface Observation {
   readonly settlements: readonly Settlement[];
   readonly contacts: readonly { readonly kind: string; readonly id: number; readonly x: number; readonly y: number }[];
   readonly fronts: readonly Front[];
+  /** A visible or remembered part of an expanded settlement, without its private economy. */
+  readonly appearances?: readonly { readonly kind: string; readonly id: number; readonly x: number; readonly y: number }[];
 }
 
 /** One Squad type the harness says we may raise. */
@@ -167,15 +170,15 @@ function decide(visible: Observation): readonly Command[] {
   );
 
   // Nothing to march: raise two Squads where they will be paid, which is home.
-  // The size is the largest the settlement's stock can pay for right now; the
-  // agent asks again on the next decision, so a second Squad is raised as soon
-  // as production has covered it.
+  // Buy small bodies first: buying one large body can consume the food needed
+  // for the second and strand this deliberately simple scouting plan at home.
   if (visible.squads.length < 2) {
     if (home === undefined) return [];
 
     const price = (men: number) => Math.ceil((plan.cost.grain * men) / 24);
     const iron = (men: number) => Math.ceil((plan.cost.iron * men) / 24);
-    const men = [...plan.sizes].reverse().find((size) => price(size) <= home.stocks.grain && iron(size) <= home.stocks.iron);
+    const men = [...plan.sizes].sort((one, other) => one - other)
+      .find((size) => price(size) <= home.stocks.grain && iron(size) <= home.stocks.iron);
     if (men === undefined) return [];
 
     return [command({ kind: 'recruit', settlement: home.id, squadType: plan.squadType, men, count: 1 })];
@@ -183,13 +186,17 @@ function decide(visible: Observation): readonly Command[] {
 
   // A Stronghold of the other Faction in our last-known contacts — the fog's
   // memory of a place, which is the only way we will ever know where it is.
-  const enemyContact = visible.contacts.find((contact) => contact.kind === 'stronghold');
+  // The old centre contact may remain unseen behind intact Walls. Seeing part
+  // of the fortification in the public appearance memory is enough to identify it.
+  const enemyContact = visible.contacts.find((contact) => contact.kind === 'stronghold') ??
+    visible.appearances?.find((site) => site.kind === 'stronghold' && site.id !== home?.id);
   if (enemyContact !== undefined) plan.target = enemyContact.id;
 
   const squads = visible.squads.map((squad) => squad.id);
 
   if (plan.target !== null) {
-    if (plan.besieging) return [];
+    if (visible.fronts.some((front) => front.settlement === plan.target && front.besieger === plan.faction)) return [];
+    if (plan.besieging && visible.squads.some((squad) => squad.goal !== null)) return [];
 
     plan.besieging = true;
 
