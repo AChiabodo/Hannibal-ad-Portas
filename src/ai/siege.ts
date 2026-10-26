@@ -137,6 +137,8 @@ export function createSiegeBehaviour(
       if (target === undefined) return [];
       const front = visible.fronts.find((candidate) => candidate.settlement === target.id);
       const place = { x: target.x, y: target.y };
+      const knownBreach = front?.breached === true || visible.appearances?.some((site) => site.id === target.id &&
+        site.tiles.some((tile) => tile.structure?.condition === 'breached')) === true;
       const age = observation.tick - target.seen;
       const sighting = `The Stronghold sighting is ${String(age)} ticks old.`;
       /** Every reason ends with the age of the sighting it acted on: the grounds, stated. */
@@ -193,14 +195,14 @@ export function createSiegeBehaviour(
       /** Whether this Faction's one path to a walled settlement is the ram. */
       function assaultPath(): boolean {
         if (!content.canAssault(faction)) return false;
-        if (front?.breached === true) return true;
+        if (knownBreach) return true;
         return front?.ram != null || visible.treasury >= content.ramCost;
       }
       /** The stated grounds for the path, with the numbers the decision read. */
       function grounds(assault: boolean, settlement: number, ours: number, theirs: number): string {
         const against = `${String(ours)} power against ${String(theirs)}`;
         if (assault) {
-          return front?.breached === true
+          return knownBreach
             ? `Assault settlement ${String(settlement)}: the walls are breached; storm the centre with ${against}.`
             : `Assault settlement ${String(settlement)}: ${faction} has the ram at the walls or can pay ` +
               `${String(content.ramCost)} of ${String(visible.treasury)}; ${against}, and the fast path is worth the blood.`;

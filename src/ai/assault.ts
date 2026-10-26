@@ -36,7 +36,8 @@ export function createAssaultReadiness(content: {
     if (target === undefined || bodyPerimeterDistance(squad, target, content.settlementRadius ?? 0, content.squadTypes?.find((type) => type.id === squad.type)?.figures === 1 ? 1 : squad.capacity) > content.siegeRadius) return false;
     // The known open, empty ring no longer charges wall shock: finish the
     // capture approach rather than withdrawing because a hidden ram is unread.
-    if (front.breached === true && front.garrison === 0 && squad.engaged !== true) return squad.morale > 0;
+    if ((front.breached === true || visible.appearances?.some((site) => site.id === front.settlement &&
+      site.tiles.some((tile) => tile.structure?.condition === 'breached'))) && front.garrison === 0 && squad.engaged !== true) return squad.morale > 0;
     if (front.ram === null || (front.ram.hp ?? 0) <= 0) return false;
     const remaining = front.ram.built ? 0 : front.ram.remaining;
     if (remaining === undefined) return false;

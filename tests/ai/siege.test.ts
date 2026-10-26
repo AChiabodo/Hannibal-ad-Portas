@@ -186,3 +186,12 @@ it('counts a real body already adjacent to a wall rather than only its anchor (#
     fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'assault', ram: null, garrison: 0 }] });
   expect(ai.decide({ faction: 'rome', tick: 0, visible })).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
 });
+
+
+it('continues an assault through a remembered breach when the ram is hidden and already paid (#74)', () => {
+  const visible = observation({ treasury: 0, squads: [squad(1, 80, 80)],
+    fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'assault', ram: null, garrison: 0 }],
+    appearances: [{ id: 1, kind: 'stronghold', x: 80, y: 80, gateSide: 3, memory: 'seen', owner: null,
+      tiles: [{ cell: 305, seen: 10, visible: false, structure: { kind: 'gate', side: 3, condition: 'breached' } }] }] });
+  expect(decide('rome', visible, 'centurio', 11).commands).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
+});
