@@ -1,3 +1,4 @@
+import { formationFootprint } from '../content/formation.ts';
 import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
@@ -70,6 +71,7 @@ export interface SiegeContent {
     readonly strength: number;
     readonly impact: number;
     readonly morale: number;
+    readonly figures?: number;
   }[];
 }
 
@@ -151,7 +153,10 @@ export function createSiegeBehaviour(
 
       const field = visible.squads.filter((squad) => !squad.routing && squad.garrison === null);
       const atWalls = (squad: SiegeSquad) => Math.max(0, distance(squad, place) - (content.settlementRadius ?? 0)) <= content.siegeRadius ||
-        (squad.goal !== null && squad.goal.x === place.x && squad.goal.y === place.y);
+        (squad.goal !== null && (squad.goal.x === place.x && squad.goal.y === place.y ||
+          front?.besieger === faction && (content.settlementRadius ?? 0) > 0 &&
+          perimeterArrival(squad.goal, types.get(squad.type)?.figures === 1 ? 1 : squad.capacity, place,
+            content.settlementRadius!, content.siegeRadius)));
       const committed = field.filter(atWalls);
       const reserve = field.filter((squad) => !atWalls(squad) && !spent(squad, observation));
       const willing = (squads: readonly SiegeSquad[]) => squads.filter((squad) => !spent(squad, observation)).map((squad) => squad.id);
@@ -218,4 +223,18 @@ export function createSiegeBehaviour(
 /** The one candidate a siege decision proposes; utility puts it ahead of the field's own. */
 function candidate(id: string, reason: string, commands: readonly SiegeCommand[]): Candidate<SiegeCommand> {
   return { id, utility: 30, reason, commands };
+}
+
+
+/** A valid siege route ends at the body perimeter rather than at the hidden centre. */
+function perimeterArrival(goal: Site, capacity: number, site: Site, radius: number, reach: number): boolean {
+  const left = site.x - radius, right = site.x + radius, top = site.y - radius, bottom = site.y + radius;
+  for (const formation of ['line', 'column'] as const) for (const facing of ['north', 'east', 'south', 'west'] as const) {
+    const rect = formationFootprint(capacity, formation, facing);
+    const x = goal.x + rect.x, y = goal.y + rect.y;
+    const endX = x + rect.width - 1, endY = y + rect.height - 1;
+    if (endX >= left && x <= right && endY >= top && y <= bottom) continue;
+    if (Math.max(0, left - endX, x - right, top - endY, y - bottom) <= reach) return true;
+  }
+  return false;
 }
