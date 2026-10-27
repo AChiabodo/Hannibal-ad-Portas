@@ -13,6 +13,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { hashState } from '../../src/sim/hash';
+import { findRoute } from '../../src/sim/route';
 import {
   generateMap,
   MAP_HEIGHT,
@@ -78,8 +79,28 @@ describe('the fairness the theatre is held to', () => {
     expect(problemsOver(SEEDS, strongholdProblems)).toEqual([]);
   });
 
-  it('carries four to six capturable minor settlements, each on a tile of its own', () => {
+  it('carries six to eight capturable minor settlements, each on a tile of its own', () => {
     expect(problemsOver(SEEDS, settlementProblems)).toEqual([]);
+    expect(SEEDS.every((seed) => generateMap(seed).settlements.length >= 6)).toBe(true);
+    expect(SEEDS.some((seed) => generateMap(seed).settlements.length > 6)).toBe(true);
+  });
+
+  it('gives each Stronghold a neutral settlement within a short opening march', () => {
+    for (let seed = 0; seed < 100; seed += 1) {
+      const map = generateMap(seed);
+      for (const stronghold of map.strongholds) {
+        const nearest = Math.min(...map.settlements.map((site) =>
+          Math.abs(site.x - stronghold.x) + Math.abs(site.y - stronghold.y)));
+        expect(nearest, `seed ${String(seed)}`).toBeLessThanOrEqual(48);
+        const nearby = map.settlements.filter((site) =>
+          Math.abs(site.x - stronghold.x) + Math.abs(site.y - stronghold.y) <= 48);
+        const marchLengths = nearby.flatMap((site) => {
+          const route = findRoute(map, stronghold, site);
+          return route.kind === 'route' ? [route.steps.length] : [];
+        });
+        expect(Math.min(...marchLengths), `seed ${String(seed)}`).toBeLessThanOrEqual(80);
+      }
+    }
   });
 
   it('crosses every river with at least the stated minimum of fords, and runs it edge to edge', () => {

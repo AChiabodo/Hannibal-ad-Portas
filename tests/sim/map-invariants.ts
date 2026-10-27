@@ -104,7 +104,7 @@ export function strongholdProblems(map: MapGrid): readonly string[] {
   return [];
 }
 
-/** Four to six capturable minor settlements, each on a tile of its own. */
+/** The stated number of capturable minor settlements, each on a tile of its own. */
 export function settlementProblems(map: MapGrid): readonly string[] {
   const problems: string[] = [];
   const count = map.settlements.length;

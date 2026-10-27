@@ -18,6 +18,7 @@
 import { describe, expect, it } from 'vitest';
 import { hashState } from '../../src/sim/hash';
 import { generateMap } from '../../src/sim/map';
+import { findRoute } from '../../src/sim/route';
 import { mapProblems } from './map-invariants';
 
 /** How many seeds the contract is asserted over: a thousand, as the ticket says. */
@@ -34,6 +35,23 @@ const SEEDS = 1000;
 const TIMEOUT = 60_000;
 
 describe('the map contract, over a thousand seeds', () => {
+  it('gives both Strongholds a nearby neutral settlement with a short walkable route', () => {
+    const broken: string[] = [];
+    for (let seed = 0; seed < SEEDS; seed += 1) {
+      const map = generateMap(seed);
+      for (const home of map.strongholds) {
+        const nearby = map.settlements.filter((site) =>
+          Math.abs(site.x - home.x) + Math.abs(site.y - home.y) <= 48);
+        const lengths = nearby.flatMap((site) => {
+          const route = findRoute(map, home, site);
+          return route.kind === 'route' ? [route.steps.length] : [];
+        });
+        if (Math.min(...lengths) > 80) broken.push(`seed ${String(seed)}, Stronghold ${String(home.x)},${String(home.y)}`);
+      }
+    }
+    expect(broken).toEqual([]);
+  }, TIMEOUT);
+
   it('holds on every one of them', () => {
     const broken: string[] = [];
 

@@ -4,8 +4,8 @@
  * `generateMap(seed)` is a pure function of the seed — no wall clock, no global
  * generator, no engine — so a Match that begins on it replays exactly
  * (ADR-0006). It returns a 160×160 grid of 16×16 tiles carrying terrain types,
- * rivers crossed by fords, resource nodes of grain, timber, stone and iron, four to
- * six capturable minor settlements, a Stronghold for each Faction, and roads
+ * rivers crossed by fords, resource nodes of grain, timber, stone and iron, six to
+ * eight capturable minor settlements, a Stronghold for each Faction, and roads
  * that join the nodes to one another.
  *
  * The theatre is **organic, not mirrored**: the two halves do not carry the
@@ -129,10 +129,10 @@ export const MIN_STRONGHOLD_DISTANCE = 56;
 export const MIN_FORDS_PER_RIVER = 2;
 
 /** The fewest minor settlements a map carries. */
-export const MIN_SETTLEMENTS = 4;
+export const MIN_SETTLEMENTS = 6;
 
 /** The most minor settlements a map carries. */
-export const MAX_SETTLEMENTS = 6;
+export const MAX_SETTLEMENTS = 8;
 
 /**
  * How far the two halves of the theatre may differ, per resource, in percent.
@@ -218,7 +218,7 @@ export interface MapGrid {
    */
   readonly strongholds: readonly [Site, Site];
 
-  /** The capturable minor settlements, four to six of them. */
+  /** The capturable minor settlements, six to eight of them. */
   readonly settlements: readonly Site[];
 
   /** The rivers, one or two, each running edge to edge. */
@@ -391,6 +391,9 @@ const STRONGHOLD_EDGE = 24;
 
 /** How far apart two settlements, or a settlement and a Stronghold, must stand. */
 const SETTLEMENT_SPACING = 27;
+
+/** Maximum straight-grid march to an opening opportunity for each Faction. */
+const OPENING_SETTLEMENT_DISTANCE = 48;
 
 /** How large a patch of farmland grows around a settlement, in tiles. */
 const FARMLAND_MIN = 30;
@@ -687,8 +690,8 @@ function strongholdIn(terrain: Uint8Array, rng: Rng, region: Region): Site {
 }
 
 /**
- * Draws four to six minor settlements, spread between the two halves of the
- * theatre and apart from each other.
+ * Draws minor settlements spread between the two halves and apart from each
+ * other, with an opening opportunity near each Stronghold.
  *
  * The spacing is a mask rather than a distance test per candidate: placing a
  * settlement blocks the tiles around it, and a tile that is blocked is skipped
@@ -720,6 +723,8 @@ function chooseSettlements(
         if (blocked[index] === 1) continue;
         if (!isDryLand(terrain, index)) continue;
         if (halves[index] !== half) continue;
+        const home = strongholds[half];
+        if (placed < 2 && manhattan(siteOf(index), home) > OPENING_SETTLEMENT_DISTANCE) continue;
         candidates.push(index);
       }
     }
@@ -949,47 +954,38 @@ function nodeTiles(
 /**
  * Lays the roads that join the settlements and resource nodes to one another.
  *
- * A road is laid from each feature to the nearest feature already reached, in
- * the manner of a minimum spanning tree: the first feature is Rome's Stronghold
- * and every other feature is joined to the network by the shortest road that
- * reaches it. A hand-drawn road per pair would be a prettier picture and a worse
- * network — this one is connected by construction, which is exactly what the
- * invariant asks.
+ * Each opening settlement first receives a direct road to its Stronghold. The
+ * remaining components are then joined by the nearest pair of features. This
+ * keeps an opening march short even when a river lies between the two sites.
  */
 function carveRoads(terrain: Uint8Array, rng: Rng, sites: readonly Site[], forbidden: Uint8Array): Road[] {
-  const [first, ...rest] = sites;
-  if (first === undefined) return [];
-
   const roads: Road[] = [];
-  const reached: Site[] = [first];
-  const pending: Site[] = rest;
-
-  while (pending.length > 0) {
-    let bestIndex = -1;
-    let bestFrom: Site | undefined;
-    let bestDistance = -1;
-
-    for (let index = 0; index < pending.length; index += 1) {
-      const site = elementAt(pending, index);
-
-      for (const connected of reached) {
-        const distance = manhattan(site, connected);
-        if (bestDistance < 0 || distance < bestDistance) {
-          bestDistance = distance;
-          bestFrom = connected;
-          bestIndex = index;
-        }
+  const component = sites.map((_, index) => index);
+  const join = (a: number, b: number): void => {
+    const first = elementAt(component, a);
+    const second = elementAt(component, b);
+    roads.push(layRoad(terrain, rng, elementAt(sites, a), elementAt(sites, b), forbidden));
+    for (let index = 0; index < component.length; index += 1) {
+      if (component[index] === second) component[index] = first;
+    }
+  };
+  if (sites.length >= 4) {
+    join(0, 2);
+    join(1, 3);
+  }
+  while (new Set(component).size > 1) {
+    let bestA = -1;
+    let bestB = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let a = 0; a < sites.length; a += 1) {
+      for (let b = a + 1; b < sites.length; b += 1) {
+        if (component[a] === component[b]) continue;
+        const distance = manhattan(elementAt(sites, a), elementAt(sites, b));
+        if (distance < bestDistance) { bestA = a; bestB = b; bestDistance = distance; }
       }
     }
-
-    if (bestFrom === undefined || bestIndex < 0) {
-      throw new Error('the road network could not reach every settlement and resource node');
-    }
-
-    const site = elementAt(pending, bestIndex);
-    roads.push(layRoad(terrain, rng, bestFrom, site, forbidden));
-    reached.push(site);
-    pending.splice(bestIndex, 1);
+    if (bestA < 0 || bestB < 0) throw new Error('the road network could not connect every feature');
+    join(bestA, bestB);
   }
 
   return roads;
