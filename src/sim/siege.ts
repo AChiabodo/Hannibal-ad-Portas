@@ -71,6 +71,7 @@
  */
 import { bearingOf, figuresOf, stockAt, squadTypeOf } from '../content/index.ts';
 import { fortificationHp, fortificationRepairStone, garrisonCapacity } from '../content/fortifications.ts';
+import { BARBARIAN_OWNER, createCampGuards } from './barbarian-guards.ts';
 import { bindSiegeSpace, siteRect, invalidateSpace, canOccupy, occupiedGround, squadGround, coreOf, physicalAccesses } from './settlement-space.ts';
 import { containsTile, settlementLayout, intersects, type GroundRect } from '../content/settlement-layout.ts';
 import { perimeterDistance, outsideCore, insideCore, rectDistance } from './settlement-siege-geometry.ts';
@@ -404,6 +405,7 @@ export interface SiegeVisible extends EconomyVisible {
   /** Enemy field Squads currently in ordinary vision, with no private economic or combat facts. */
   readonly enemies: readonly {
     readonly id: number; readonly type: string; readonly x: number; readonly y: number;
+    readonly neutral?: boolean;
     /** Present on canonical Observations; omitted by older external scenario fixtures. No private condition or orders. */
     readonly appearance?: Pick<VisibleSquad, 'men' | 'capacity' | 'figures' | 'formation' | 'facing'>;
   }[];
@@ -710,6 +712,7 @@ export function createSiegeWorld(seed: number): SiegeWorld {
 
   const complete = { ...world, siege: createSiege(world.map, world.economy), fog: createFogs() };
   openBarbarianCamps(complete);
+  createCampGuards(complete);
   refreshSiegeFog(complete, 0);
   return complete;
 }
@@ -746,6 +749,7 @@ export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (wo
       .map((squad) => {
         const type = squadTypeOf(squad.type);
         return { id: squad.id, type: type?.id ?? 'unknown', x: squad.x, y: squad.y,
+          ...(squad.owner === BARBARIAN_OWNER ? { neutral: true } : {}),
           appearance: { men: squad.strength, capacity: squad.capacity,
             figures: type === undefined ? squad.strength : figuresOf(type, squad.strength),
             formation: formationOf(squad.formation), facing: facingOf(squad.facing) } };
@@ -1286,7 +1290,7 @@ function holderOf(economy: Economy, settlement: Settlement): number {
   // A tie is a contest: nobody holds the ground being fought over. And a
   // Faction's own army standing in its own settlement is not taking it.
   const shared = ranked.filter(([, other]) => other === strongest).length > 1;
-  if (shared || owner === settlement.owner) return UNOWNED;
+  if (shared || owner === settlement.owner || owner === BARBARIAN_OWNER) return UNOWNED;
 
   return owner;
 }

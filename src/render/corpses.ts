@@ -99,7 +99,7 @@ export function corpseSprite(corpse: Corpse): PixelBuffer {
     figureOf(corpse),
     'south',
     figureFrame('death', 0),
-    factionOf(corpse.owner),
+    factionOf(corpse.owner === 0 ? 0 : 1),
   );
 }
 

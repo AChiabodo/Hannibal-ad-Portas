@@ -284,6 +284,7 @@ export function canCamp(faction: Faction): boolean {
  * standing: a settlement whose Castrum is still going up shelters nobody.
  */
 export function inCamp(economy: Economy, squad: Squad): boolean {
+  if (squad.owner !== 0 && squad.owner !== 1) return false;
   if (squad.steps.length > 0) return false;
   if (insideSettlement(economy, squad)) return false;
   if (!canCamp(factionOf(squad.owner))) return false;
@@ -322,6 +323,7 @@ export function inQuarters(economy: Economy, squad: Squad): boolean {
  * lookup rather than a walk of the theatre.
  */
 export function attritionPercent(economy: Economy, squad: Squad, season: Season): number {
+  if (squad.owner !== 0 && squad.owner !== 1) return 0;
   if (!holdsTerritory(territoryOf(economy), squad.owner, squad)) {
     return season === 'winter' ? ATTRITION_WINTER_PERCENT : ATTRITION_PERCENT;
   }

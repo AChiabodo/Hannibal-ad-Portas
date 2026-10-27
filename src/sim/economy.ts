@@ -210,11 +210,13 @@ export interface Work {
  * being one interface.
  */
 export interface Squad extends Block {
+  /** Origin of a neutral barbarian guard, absent on player Squads. */
+  barbarianCamp?: number;
   /** What a Command names it by, and what an Observation reports: an id is never reused. */
   readonly id: number;
 
-  /** The Faction that owns it, as state holds a Faction. */
-  readonly owner: FactionCode;
+  /** A player Faction or the distinct neutral barbarian owner. */
+  readonly owner: FactionCode | 2;
 
   /** Its type, as a content code. */
   readonly type: number;
