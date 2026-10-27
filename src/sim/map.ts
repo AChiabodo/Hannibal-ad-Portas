@@ -78,6 +78,8 @@ export const TERRAIN = {
   river: 4,
   ford: 5,
   road: 6,
+  lake: 7,
+  marsh: 8,
 } as const;
 
 /** One of the terrains a tile can be (GLOSSARY: Terrain). */
@@ -258,9 +260,12 @@ export function generateMap(seed: number): MapGrid {
   const reservations = siteReservations([...strongholds, ...settlements]);
   const rivers = carveRivers(terrain, rng, reservations.grounds);
   plantFords(terrain, rng, rivers);
+  growWetlands(terrain, rng, reservations.grounds);
   spreadFarmland(terrain, rng, [...strongholds, ...settlements]);
   const resources = placeResources(terrain, rng, halves, [...strongholds, ...settlements], reservations.resources);
-  const roads = carveRoads(terrain, rng, [...strongholds, ...settlements, ...resources], reservations.structures);
+  const roadObstacles = Uint8Array.from(reservations.structures, (blocked, index) =>
+    blocked === 1 || terrain[index] === TERRAIN.lake ? 1 : 0);
+  const roads = carveRoads(terrain, rng, [...strongholds, ...settlements, ...resources], roadObstacles);
   joinLand(terrain, rivers);
 
   const map = { terrain, strongholds, settlements, rivers, resources, roads };
@@ -318,7 +323,9 @@ export function isTerrain(value: number): value is Terrain {
     value === TERRAIN.farmland ||
     value === TERRAIN.river ||
     value === TERRAIN.ford ||
-    value === TERRAIN.road
+    value === TERRAIN.road ||
+    value === TERRAIN.lake ||
+    value === TERRAIN.marsh
   );
 }
 
@@ -330,7 +337,7 @@ export function isTerrain(value: number): value is Terrain {
  * which is the question the invariant about one landmass asks.
  */
 export function isWalkable(terrain: number): boolean {
-  return terrain !== TERRAIN.river;
+  return terrain !== TERRAIN.river && terrain !== TERRAIN.lake;
 }
 
 /**
@@ -574,6 +581,37 @@ function carveRivers(terrain: Uint8Array, rng: Rng, grounds: Uint8Array): River[
   }
 
   return rivers;
+}
+
+/** Inland lakes and their wet banks, kept clear of water, sites and map edges. */
+function growWetlands(terrain: Uint8Array, rng: Rng, grounds: Uint8Array): void {
+  const count = rng.nextBelow(3);
+  for (let lake = 0; lake < count; lake += 1) {
+    const rx = 4 + rng.nextBelow(4);
+    const ry = 4 + rng.nextBelow(4);
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const x = rx + 3 + rng.nextBelow(MAP_WIDTH - 2 * rx - 6);
+      const y = ry + 3 + rng.nextBelow(MAP_HEIGHT - 2 * ry - 6);
+      let clear = true;
+      for (let dy = -ry - 2; dy <= ry + 2 && clear; dy += 1) {
+        for (let dx = -rx - 2; dx <= rx + 2; dx += 1) {
+          const tile = tileIndex(x + dx, y + dy);
+          if (grounds[tile] === 1 || !isDryLand(terrain, tile)) { clear = false; break; }
+        }
+      }
+      if (!clear) continue;
+      const radius = rx * rx * ry * ry;
+      for (let dy = -ry - 2; dy <= ry + 2; dy += 1) {
+        for (let dx = -rx - 2; dx <= rx + 2; dx += 1) {
+          const tile = tileIndex(x + dx, y + dy);
+          const measure = dx * dx * ry * ry + dy * dy * rx * rx;
+          if (measure <= radius) terrain[tile] = TERRAIN.lake;
+          else if (measure <= radius + radius / 2 && rng.nextBelow(3) !== 0) terrain[tile] = TERRAIN.marsh;
+        }
+      }
+      break;
+    }
+  }
 }
 
 /**
@@ -1024,7 +1062,7 @@ function layRoadTile(terrain: Uint8Array, tile: number): void {
     widenCrossing(terrain, tile);
     return;
   }
-  if (isOpenTerrain(here)) terrain[tile] = TERRAIN.road;
+  if (isOpenTerrain(here) || here === TERRAIN.marsh) terrain[tile] = TERRAIN.road;
 }
 
 /** A crossing carries the whole marching column, not only its centre Tile. */
@@ -1157,7 +1195,7 @@ function labelAt(labels: Int32Array, terrain: Uint8Array, x: number, y: number):
 /** Whether a tile can carry something built on it: dry land, and not a ford. */
 function isDryLand(terrain: Uint8Array, index: number): boolean {
   const here = elementAt(terrain, index);
-  return here !== TERRAIN.river && here !== TERRAIN.ford;
+  return here !== TERRAIN.river && here !== TERRAIN.ford && here !== TERRAIN.lake;
 }
 
 /**

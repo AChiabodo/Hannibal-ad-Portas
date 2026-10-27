@@ -36,7 +36,7 @@ const canContinueAssault = createAssaultReadiness({ squadTypes: SQUAD_TYPES, sie
   assaultTicks: ASSAULT_TICKS, wallShock: WALL_SHOCK });
 const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ,
   canContinueAssault, settlementRadius: 7 };
-const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
+const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river, additionalWater: [TERRAIN.lake],
   vision: SQUAD_VISION, settlementRadius: 7, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
   scoutTypes: ['hastati', 'gaul', 'numidian-horse'] };
 // One garrison is worth the strongest Tier-1 Squad a Faction can raise, since an

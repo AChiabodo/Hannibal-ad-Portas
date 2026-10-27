@@ -49,6 +49,8 @@ const TERRAIN_NAMES: Readonly<Record<Terrain, string>> = {
   [TERRAIN.river]: 'river',
   [TERRAIN.ford]: 'ford',
   [TERRAIN.road]: 'road',
+  [TERRAIN.lake]: 'lake',
+  [TERRAIN.marsh]: 'marsh',
 };
 
 /** The name of a resource, for a failure a reader can act on. */

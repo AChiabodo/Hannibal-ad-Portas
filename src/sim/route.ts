@@ -80,13 +80,14 @@ import {
  * A river has no entry: it is not crossed at all, and `moveCost` refuses to
  * price it rather than pretending it is expensive.
  */
-const MOVE_COST: Readonly<Record<Exclude<Terrain, typeof TERRAIN.river>, number>> = {
+const MOVE_COST: Readonly<Record<Exclude<Terrain, typeof TERRAIN.river | typeof TERRAIN.lake>, number>> = {
   [TERRAIN.road]: 2,
   [TERRAIN.plain]: 4,
   [TERRAIN.farmland]: 5,
   [TERRAIN.hill]: 8,
   [TERRAIN.forest]: 8,
   [TERRAIN.ford]: 10,
+  [TERRAIN.marsh]: 10,
 };
 
 /** The cheapest tile there is, at the pace of a man on foot: the search's heuristic counts in it. */
@@ -99,8 +100,8 @@ const CHEAPEST_TILE = Math.min(...Object.values(MOVE_COST));
  *   route crosses — a caller that asks is a caller that has already gone wrong.
  */
 export function moveCost(terrain: Terrain): number {
-  if (terrain === TERRAIN.river) {
-    throw new RangeError('a river is not crossed: a tile of open water has no cost to enter');
+  if (terrain === TERRAIN.river || terrain === TERRAIN.lake) {
+    throw new RangeError('open water has no cost to enter');
   }
 
   return MOVE_COST[terrain];

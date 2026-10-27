@@ -28,6 +28,7 @@ export interface ScoutingContent {
   readonly height: number;
   readonly unseen: number;
   readonly water: number;
+  readonly additionalWater?: readonly number[];
   readonly vision: number;
   readonly settlementRadius?: number;
   readonly ticksPerSecond: number;
@@ -197,7 +198,8 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
       if (obstacle) obstacles[index({ x, y })] = 1;
     }
     /** Both the known ground and the recorded physical obstacles constrain a patrol. */
-    const blocked = (tile: number) => terrain[tile] === unseen || terrain[tile] === water || obstacles[tile] === 1;
+    const blocked = (tile: number) => terrain[tile] === unseen || terrain[tile] === water ||
+      (terrain[tile] !== undefined && content.additionalWater?.includes(terrain[tile]!) === true) || obstacles[tile] === 1;
     const walkable = (tile: number) => !blocked(tile);
     let gains: Int32Array | null = null;
     function gain(tile: number): number {

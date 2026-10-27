@@ -32,6 +32,8 @@ const TERRAIN_GLYPHS: Readonly<Record<number, string>> = {
   [TERRAIN.river]: '~',
   [TERRAIN.ford]: '=',
   [TERRAIN.road]: '-',
+  [TERRAIN.lake]: 'O',
+  [TERRAIN.marsh]: '%',
 };
 
 /** How the dump is expected to draw a resource node of each kind. */
@@ -99,7 +101,7 @@ describe('a generated map, written out for inspection', () => {
   it('names every terrain and every resource in its legend, so a glyph can be read', () => {
     const dump = formatMap(SEED);
 
-    for (const word of ['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road']) {
+    for (const word of ['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road', 'lake', 'marsh']) {
       expect(dump).toContain(word);
     }
     for (const word of ['grain', 'timber', 'stone', 'iron']) {
@@ -110,7 +112,7 @@ describe('a generated map, written out for inspection', () => {
     // a picture whose legend has drifted from it is worse than no legend.
     for (const [terrain, glyph] of Object.entries(TERRAIN_GLYPHS)) {
       expect(dump).toContain(
-        `${glyph} ${['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road'][Number(terrain)] ?? ''}`,
+        `${glyph} ${['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road', 'lake', 'marsh'][Number(terrain)] ?? ''}`,
       );
     }
     for (const [kind, glyph] of Object.entries(RESOURCE_GLYPHS)) {

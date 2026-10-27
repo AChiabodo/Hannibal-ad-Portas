@@ -77,6 +77,8 @@ export const MATERIAL_OF_TERRAIN: Readonly<Record<Terrain, TerrainMaterial>> = {
   [TERRAIN.river]: 'river',
   [TERRAIN.ford]: 'ford',
   [TERRAIN.road]: 'road',
+  [TERRAIN.lake]: 'lake',
+  [TERRAIN.marsh]: 'marsh',
 };
 
 /**

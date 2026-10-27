@@ -5,7 +5,7 @@ import { buildingLot, containsTile, intersects, settlementLayout, turnPoint, tur
   type GroundPoint, type GroundRect } from '../content/settlement-layout.ts';
 import type { Economy, Settlement, Squad, Work } from './economy.ts';
 import { facingOf, formationOf, FIELD } from './squad.ts';
-import { MAP_HEIGHT, MAP_WIDTH, TERRAIN, tileIndex, type MapGrid } from './map.ts';
+import { isWalkable, MAP_HEIGHT, MAP_WIDTH, TERRAIN, tileIndex, type MapGrid } from './map.ts';
 import type { Siege } from './siege.ts';
 
 interface PhysicalSpace { readonly economy: Economy; siege?: Siege; signature: string; readonly blocked: Map<number, Uint8Array> }
@@ -65,10 +65,10 @@ export function invalidateSpace(economy: Economy): void {
 export function blockedTile(map: MapGrid, owner: number, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) return true;
   const space = SPACES.get(map);
-  if (space === undefined) return map.terrain[tileIndex(x, y)] === TERRAIN.river;
+  if (space === undefined) return !isWalkable(map.terrain[tileIndex(x, y)] ?? TERRAIN.river);
   let grid = space.blocked.get(owner);
   if (grid === undefined) {
-    grid = Uint8Array.from(map.terrain, (terrain) => terrain === TERRAIN.river ? 1 : 0);
+    grid = Uint8Array.from(map.terrain, (terrain) => isWalkable(terrain) ? 0 : 1);
     for (const site of space.economy.settlements) {
       paintObstacle(grid, siteRect(space.economy, site, settlementLayout(site.id < 2 ? 'stronghold' : 'settlement').landmark));
       for (const work of site.works) {

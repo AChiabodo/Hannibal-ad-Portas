@@ -109,7 +109,7 @@ export const QUADRANT = TERRAIN_TILE / 2;
  * two textures; they are one *class* because they are one material to the
  * autotiler.
  */
-export const MATERIALS = ['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road'] as const;
+export const MATERIALS = ['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road', 'lake', 'marsh'] as const;
 
 /** One of the materials a terrain tile can be drawn from. */
 export type TerrainMaterial = (typeof MATERIALS)[number];
@@ -121,7 +121,7 @@ export type TerrainMaterial = (typeof MATERIALS)[number];
  * boundary to be decorated — they are the same water, and drawing a bank down
  * the middle of a river would be a bug that reads as art.
  */
-export const MATERIAL_CLASSES = ['plain', 'hill', 'forest', 'farmland', 'road', 'water'] as const;
+export const MATERIAL_CLASSES = ['plain', 'hill', 'forest', 'farmland', 'road', 'water', 'marsh'] as const;
 
 /** One of the classes a material belongs to. */
 export type MaterialClass = (typeof MATERIAL_CLASSES)[number];
@@ -135,6 +135,8 @@ export const CLASS_OF: Readonly<Record<TerrainMaterial, MaterialClass>> = {
   river: 'water',
   ford: 'water',
   road: 'road',
+  lake: 'water',
+  marsh: 'marsh',
 };
 
 /**
@@ -153,6 +155,7 @@ export const CLASS_PRIORITY: Readonly<Record<MaterialClass, number>> = {
   farmland: 3,
   road: 4,
   water: 5,
+  marsh: 3,
 };
 
 /**
@@ -332,6 +335,7 @@ const CLASS_STYLE: Readonly<Record<MaterialClass, ClassStyle>> = {
   },
   road: { outline: shadeAt(RAMPS.stone, 0), inner: shadeAt(RAMPS.stone, 5), outer: shadeAt(RAMPS.stone, 3) },
   water: { outline: shadeAt(RAMPS.water, 0), inner: shadeAt(RAMPS.water, 5), outer: shadeAt(RAMPS.bronze, 2) },
+  marsh: { outline: shadeAt(RAMPS.olive, 0), inner: shadeAt(RAMPS.olive, 3), outer: shadeAt(RAMPS.bronze, 2) },
 };
 
 /**
@@ -370,6 +374,8 @@ const SALT: Readonly<Record<TerrainMaterial, number>> = {
   river: 0x4005,
   ford: 0x5006,
   road: 0x6007,
+  lake: 0x7008,
+  marsh: 0x8009,
 };
 
 /**
@@ -458,6 +464,8 @@ export const MATERIAL_TEXTURES: Readonly<Record<TerrainMaterial, MaterialTexture
   ford: { ramp: 'water', body: 8, dark: 7, mark: { ramp: 'stone', index: 9 }, markShare: 1 / 16 },
   // The verge under a road's path: gravel, so the mark is stone in the bronze.
   road: { ramp: 'bronze', body: 4, dark: 3, mark: { ramp: 'stone', index: 4 }, markShare: 1 / 4 },
+  lake: { ramp: 'water', body: 4, dark: 3, mark: { ramp: 'water', index: 6 }, markShare: 1 / 8 },
+  marsh: { ramp: 'olive', body: 3, dark: 2, mark: { ramp: 'water', index: 3 }, markShare: 1 / 8 },
 };
 
 /**
@@ -552,7 +560,8 @@ function textureOf(material: TerrainMaterial, x: number, y: number): Rgba {
       if (noiseAt(x >> 1, y, salt) % 7 === 0) return mark;
       return body;
     }
-    case 'river': {
+    case 'river':
+    case 'lake': {
       if (y % 5 === 2 && (x + y) % 7 < 4) return mark;
       return noise % 9 === 0 ? dark : body;
     }
@@ -564,6 +573,10 @@ function textureOf(material: TerrainMaterial, x: number, y: number): Rgba {
     case 'road': {
       if (noise % 7 === 0) return mark;
       return noise % 4 === 0 ? dark : body;
+    }
+    case 'marsh': {
+      if (noise % 11 === 0) return mark;
+      return noise % 3 === 0 ? dark : body;
     }
   }
 }
@@ -1123,6 +1136,8 @@ export const TERRAIN_MATERIALS: readonly TerrainMaterial[] = [
   'farmland',
   'river',
   'ford',
+  'lake',
+  'marsh',
 ];
 
 /**
