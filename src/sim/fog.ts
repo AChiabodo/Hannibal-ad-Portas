@@ -168,6 +168,8 @@ export interface FogView {
  * type per Match, and it is the one the Observation carries.
  */
 export interface Fog extends FogView {
+  /** Last observed camp appearances, never refreshed from hidden territory. */
+  barbarianCamps?: { readonly id: number; readonly x: number; readonly y: number; readonly variant: number }[];
   /** Private authoritative numeric snapshots; public appearance DTOs decode these. */
   settlements?: SettlementMemory[];
   readonly terrain: Uint8Array;

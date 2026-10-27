@@ -93,7 +93,7 @@ import { factionCode, factionOf, type Faction } from './faction.ts';
 import { createFogs, eyeCovers, viewOf, type Fog, type FogView } from './fog.ts';
 import { refreshSiegeFog, siegeContacts, type KnownContact } from './siege-fog.ts';
 import { settlementAppearances } from './settlement-knowledge.ts';
-import { RESOURCE, type MapGrid, type Site } from './map.ts';
+import { MAP_WIDTH, RESOURCE, type MapGrid, type Site } from './map.ts';
 import type { MatchRules } from './match.ts';
 import { goalOf, orderedSquads, orderSquadTo, routeCacheFor } from './movement.ts';
 import { recordCasualties, type Fallen } from './residue.ts';
@@ -381,6 +381,9 @@ export interface VisibleFront {
 
 /** What a Faction may know of a Siege: its own walls, and the ones it is at. */
 export interface SiegeVisible extends EconomyVisible {
+  /** Camp appearances discovered by this Faction, never undiscovered locations. */
+  readonly barbarianCamps?: readonly { readonly id: number; readonly x: number; readonly y: number;
+    readonly variant: number; readonly memory: 'seen' | 'remembered' }[];
   readonly appearances?: readonly ObservedSettlement[];
   readonly fog: FogView;
   readonly contacts: readonly KnownContact[];
@@ -625,6 +628,8 @@ export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (wo
 
   return {
     ...seen,
+    barbarianCamps: (world.fog[faction].barbarianCamps ?? []).map((camp) => ({ ...camp,
+      memory: world.fog[faction].visible[camp.y * MAP_WIDTH + camp.x] === 1 ? 'seen' as const : 'remembered' as const })),
     appearances: settlementAppearances(world.fog[faction]),
     fog: viewOf(world.fog[faction]),
     contacts: siegeContacts(world, faction),

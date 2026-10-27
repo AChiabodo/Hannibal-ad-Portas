@@ -137,6 +137,7 @@ import { CONSTRUCTION_CATEGORIES, type ConstructionCategory } from '../ui/constr
 import { forecastLine } from '../ui/forecast.ts';
 import type { OrderMarkKind } from '../art/markers.ts';
 import { createHudLayer, type HudLayer } from './hud.ts';
+import { createBarbarianCampLayer } from './barbarian-camp-layer.ts';
 import { screenToStage, type Camera } from './camera.ts';
 import { textureOf } from './stage.ts';
 import { SETTLEMENT_LAYER, createSettlementLayer, type SettlementLayer } from './settlement-layer.ts';
@@ -567,6 +568,7 @@ export function createGame(options: GameOptions): Game {
 
   const layer: HudLayer = createHudLayer(options.stage);
   const ground: SettlementLayer = createSettlementLayer(options.world);
+  const barbarianCamps = createBarbarianCampLayer(options.world);
   const field: SquadLayer = createSquadLayer(options.world);
   const wildlife = createWildlifeLayer(options.world, wildlifeOf(match.state.world.map, options.seed));
   const pickInk = new Map<number, { key: string; buffer: ReturnType<typeof squadBlock> }>();
@@ -886,6 +888,7 @@ export function createGame(options: GameOptions): Game {
     },
     showSettlements: (visible) => {
       ground.setVisible(visible === true);
+      barbarianCamps.setVisible(visible === true);
       repainted();
     },
     sites: () => siteReports(),
@@ -1384,6 +1387,7 @@ export function createGame(options: GameOptions): Game {
     dead = readCorpses();
     layer.panels(model, options.size);
     ground.update({ sites: known, selected: human.selection.settlement });
+    barbarianCamps.update(observation.barbarianCamps ?? []);
     field.update({
       squads: visible().squads,
       enemies: observation.enemies,
