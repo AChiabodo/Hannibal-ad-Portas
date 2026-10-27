@@ -30,7 +30,7 @@ export function orderCampAttacks(world: SiegeWorld, commands: readonly Command[]
       const owner = factionCode(command.faction);
       world.campOrders = world.campOrders!.filter((order) => order.owner !== owner || !command.squads.includes(order.squad));
     }
-    if (command.kind !== 'attackStructure') continue;
+    if (command.kind !== 'attackStructure' || command.target.kind !== 'camp') continue;
     const site = world.map.barbarianCamps?.[command.target.id];
     const camp = world.barbarianCamps?.[command.target.id];
     if (site === undefined || camp === undefined ||

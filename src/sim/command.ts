@@ -113,11 +113,12 @@ export interface AttackCommand extends CommandBase {
   readonly target: number;
 }
 
-/** An explicit attack on an observed neutral camp. */
+/** An explicit attack on an observed camp or completed economic work. */
 export interface AttackStructureCommand extends CommandBase {
   readonly kind: 'attackStructure';
   readonly squads: readonly number[];
-  readonly target: { readonly kind: 'camp'; readonly id: number };
+  readonly target: { readonly kind: 'camp'; readonly id: number } |
+    { readonly kind: 'work'; readonly settlement: number; readonly building: string; readonly ordinal: number };
 }
 
 /** Hold position: stand, face the enemy, and do not pursue. */
@@ -506,8 +507,16 @@ function readAttack(value: Candidate, path: string): AttackCommand {
 function readAttackStructure(value: Candidate, path: string): AttackStructureCommand {
   requireFields(value, path, 'attackStructure', ['kind', FACTION_FIELD, 'squads', 'target']);
   const target = requireRecord(value.target, `${path}.target`);
+  if (target.kind === 'work') {
+    requireFields(target, `${path}.target`, 'attackStructure', ['kind', 'settlement', 'building', 'ordinal']);
+    return { kind: 'attackStructure', faction: requireFaction(value.faction, `${path}.faction`),
+      squads: requireSquads(value.squads, `${path}.squads`),
+      target: { kind: 'work', settlement: requireId(target.settlement, `${path}.target.settlement`, 'settlement'),
+        building: requireContentId(target.building, `${path}.target.building`, 'building'),
+        ordinal: requireId(target.ordinal, `${path}.target.ordinal`, 'ordinal') } };
+  }
   requireFields(target, `${path}.target`, 'attackStructure', ['kind', 'id']);
-  if (target.kind !== 'camp') throw new CommandValidationError(`${path}.target.kind`, 'must be camp');
+  if (target.kind !== 'camp') throw new CommandValidationError(`${path}.target.kind`, 'must be camp or work');
   return { kind: 'attackStructure', faction: requireFaction(value.faction, `${path}.faction`),
     squads: requireSquads(value.squads, `${path}.squads`),
     target: { kind: 'camp', id: requireId(target.id, `${path}.target.id`, 'camp') } };

@@ -81,6 +81,7 @@ import { TICK_HZ } from './clock.ts';
 import type { Command, SiegePath } from './command.ts';
 import { bearing, BREAKING_MORALE, woundsOf } from './combat.ts';
 import { advanceCampAttacks, openBarbarianCamps, orderCampAttacks, type BarbarianCampState, type CampAttackOrder } from './barbarian-camp-combat.ts';
+import { advanceWorkAttacks, orderWorkAttacks, type WorkAttackOrder } from './work-combat.ts';
 import type { MatchSetup, VictoryReason } from './driver.ts';
 import {
   economyMatchRules,
@@ -270,6 +271,13 @@ export interface Structure {
   repairRequest?: number;
 }
 
+/** A structure already in repair is immune to further damage. */
+export function damageFortification(structure: Structure, damage: number): boolean {
+  if (structure.repairTicks !== undefined || structure.hp <= 0 || damage <= 0) return false;
+  structure.hp = Math.max(0, structure.hp - damage);
+  return true;
+}
+
 /**
  * One settlement's Siege: its fortification, who is at it, and how far they have
  * got.
@@ -327,6 +335,7 @@ export interface Siege {
 export interface SiegeWorld extends EconomyWorld {
   barbarianCamps?: BarbarianCampState[];
   campOrders?: CampAttackOrder[];
+  workOrders?: WorkAttackOrder[];
   readonly fog: Readonly<Record<Faction, Fog>>;
   /** The walls, the rams and the two ways of taking a settlement. */
   readonly siege: Siege;
@@ -681,6 +690,7 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
     const routes = routeCacheFor(world.map);
 
     orderCampAttacks(world, commands);
+    orderWorkAttacks(world, commands);
     advanceCampGuards(world, tick);
     startFortificationRequests(world);
     for (const command of commands) {
@@ -695,6 +705,7 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
     advanceFortificationRepairs(world);
     assignFortificationRepairLabour(world);
     advanceCampAttacks(world, tick);
+    advanceWorkAttacks(world, tick);
 
     advanceGarrisonJourneys(world, (squad, target) => orderSquadTo(world.map, squad, target, routes, true));
 
@@ -1086,7 +1097,7 @@ function batter(world: SiegeWorld, front: Front): void {
   const gate = gateOf(front);
   if (gate === undefined || front.ram <= 0) return;
 
-  if (gate.repairTicks === undefined) gate.hp = Math.max(0, gate.hp - RAM_DAMAGE);
+  damageFortification(gate, RAM_DAMAGE);
   front.ram = Math.max(0, front.ram - ramDefence(world, front));
 }
 
@@ -1119,7 +1130,7 @@ function chipWall(front: Front, besiegers: readonly Squad[]): void {
   );
   if (wall === undefined) return;
 
-  wall.hp = Math.max(0, wall.hp - escaladeDamage(besiegers));
+  damageFortification(wall, escaladeDamage(besiegers));
 }
 
 /** What a body of men works off a wall in one round: its share of a full line's, capped at it. */

@@ -181,6 +181,10 @@ export const ALWAYS_SUPPLIED: Supplied = () => true;
  * working (ADR-0005).
  */
 export interface Work {
+  /** Damageable completed works default to full health when no damage has occurred. */
+  hp?: number;
+  /** Remaining work-repair time; unfinished construction cannot be repaired. */
+  repairTicks?: number;
   /** Ordering of a construction that started alongside a fortification repair. */
   readonly queueOrder?: number;
   /** Permanent copy number and original builder, preserved on conquest. */
@@ -488,6 +492,7 @@ export function allocate(settlement: Settlement, capacity: readonly number[]): A
   const works = settlement.works.map(() => 0);
   const repairs: number[] = [];
   const staff = (work: Work, index: number): void => {
+    if (work.remaining === 0 && (work.hp === 0 || work.repairTicks !== undefined)) return;
     const building = buildingOf(work.building);
     if (building === undefined || available < building.labour) return;
     available -= building.labour;
@@ -545,6 +550,7 @@ export function seasonYield(
 
   settlement.works.forEach((work, index) => {
     if (work.remaining > 0) return;
+    if (work.hp === 0 || work.repairTicks !== undefined) return;
     if (!isStaffed(work, allocation, index)) return;
 
     const building = buildingOf(work.building);
@@ -853,6 +859,7 @@ function earn(settlement: Settlement, allocation: Allocation, economy: Economy):
 
   settlement.works.forEach((work, index) => {
     if (work.remaining > 0) return;
+    if (work.hp === 0 || work.repairTicks !== undefined) return;
     if (!isStaffed(work, allocation, index)) return;
 
     earned += buildingOf(work.building)?.denarii ?? 0;

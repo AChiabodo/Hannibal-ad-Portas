@@ -86,7 +86,7 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 | `cancelPending` | `faction`, `settlement`, `order` | Cancel an owned unpaid construction or recruitment request by its observed order ID. |
 | `repairFortification` | `faction`, `settlement`, `structure`, `side` | Start a paid repair of one owned wall or gate outside a Siege. |
 | `cancelFortificationRepair` | `faction`, `settlement`, `structure`, `side` | Cancel a paid fortification repair without a refund. |
-| `attackStructure` | `faction`, `squads`, `target` | Attack a currently visible barbarian camp by its target kind and id. |
+| `attackStructure` | `faction`, `squads`, `target` | Attack a currently visible barbarian camp or completed economic Work. A Work target names its settlement, building and ordinal. |
 <!-- vocabulary:end -->
 
 ### Ground arrival allocation (#68)

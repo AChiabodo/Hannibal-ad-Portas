@@ -90,6 +90,7 @@ import { applyMovementCommands, goalOf, march, routeCacheFor } from './movement.
 import { refusalOf, type RouteRefusal } from './route.ts';
 import { pendingOrderCost } from './pending-orders.ts';
 import { workOrdinal } from './settlement-space.ts';
+import { WORK_MAX_HP } from '../content/buildings.ts';
 import { fadeResidue, recordCasualties } from './residue.ts';
 import { facingOf, FIELD, formationOf, isRouting, type Facing } from './squad.ts';
 import {
@@ -136,6 +137,8 @@ export type VisibleStocks = ResourceAmounts;
 
 /** What a Faction sees of one work: what it is building, and how far along it is. */
 export interface VisibleWork {
+  readonly hp?: number;
+  readonly maxHp?: number;
   readonly ordinal?: number;
   readonly origin?: Faction;
   /** The building's id, so a Controller can name it in a Build Command. */
@@ -502,6 +505,7 @@ function visibleSettlement(map: MapGrid, settlement: Settlement, economy: Econom
       origin: (work.origin ?? settlement.origin ?? settlement.owner) === 1 ? 'carthage' : 'rome',
       building: buildingOf(work.building)?.id ?? 'unknown',
       remaining: work.remaining,
+      ...(work.remaining === 0 ? { hp: work.hp ?? WORK_MAX_HP, maxHp: WORK_MAX_HP } : {}),
       standing: work.remaining === 0,
     })),
     pending: (economy.pending ?? []).filter((order) => order.settlement === settlement.id).map((order) => ({

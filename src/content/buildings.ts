@@ -30,6 +30,9 @@ import type { Faction } from '../sim/faction.ts';
 import { NOTHING, type ResourceAmounts } from './resources.ts';
 import type { Tier } from './squads.ts';
 
+/** Initial durability of a completed economic work. */
+export const WORK_MAX_HP = 60;
+
 /** One building a settlement can raise. */
 export interface BuildingType {
   /** The id a Build Command names, and the key of this table. */
