@@ -1,7 +1,7 @@
 /** A neutral camp's defenders use the ordinary Squad movement and combat rules. */
 import { squadTypeCode, squadTypeOf } from '../content/squads.ts';
 import { FIELD, isRouting, standingAt } from './squad.ts';
-import { engagedWith } from './combat.ts';
+import { engagedWith, enemyWithin } from './combat.ts';
 import { MAP_HEIGHT, MAP_WIDTH } from './map.ts';
 import { orderSquadTo, routeCacheFor } from './movement.ts';
 import { canOccupy, occupiedGround, squadGround } from './settlement-space.ts';
@@ -55,6 +55,13 @@ export function advanceCampGuards(world: SiegeWorld, tick: number): void {
         guard.steps = [];
         guard.wait = 0;
         guard.barbarianRetired = 1;
+      }
+      // Orphans never seek a fight: stop before wandering into another Squad.
+      // If an enemy closes into contact the normal combat rules let them defend.
+      if (enemyWithin(world.economy, guard, 5) !== undefined) {
+        guard.steps = [];
+        guard.wait = 0;
+        continue;
       }
       if (guard.steps.length === 0 && engagedWith(world.economy, guard) === undefined && tick % 120 === 0) {
         const direction = (guard.id + Math.floor(tick / 120)) % 4;

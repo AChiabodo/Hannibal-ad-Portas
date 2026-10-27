@@ -61,3 +61,19 @@ it('a destroyed camp does not replace its defeated surviving guard', () => {
   while (match.state.tick < 601) match.step();
   expect(observeSiege(world, 'rome').enemies.some((enemy) => enemy.neutral === true)).toBe(false);
 });
+
+it('orphaned defenders do not approach a nearby squad on their own', () => {
+  const world = createSiegeWorld(1);
+  const camp = world.map.barbarianCamps![0]!;
+  world.barbarianCamps![0]!.hp = 0;
+  const scout = musterSquad(world.economy, world.map, {
+    faction: 'rome', squadType: 'hastati', men: 24, x: camp.x + 4, y: camp.y,
+  });
+  const seen = observeSiege(world, 'rome').enemies.find((enemy) => enemy.neutral === true);
+  expect(seen).toBeDefined();
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  for (let tick = 0; tick < 180; tick += 1) match.step();
+  const after = observeSiege(world, 'rome').enemies.find((enemy) => enemy.id === seen?.id);
+  expect(after).toMatchObject({ x: seen?.x, y: seen?.y });
+  expect(scout.strength).toBe(24);
+});
