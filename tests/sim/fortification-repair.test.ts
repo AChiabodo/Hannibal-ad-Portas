@@ -5,6 +5,38 @@ import { observeSiege, siegeMatchRules, type SiegeWorld } from '../../src/sim/si
 import { musterSquad } from '../../src/sim/movement';
 import { buildingCode } from '../../src/content/buildings';
 
+it('keeps an unpaid repair request visible and starts it when stone is available', () => {
+  const world = siegeMatchRules.createWorld(7);
+  const site = world.economy.settlements[0]!;
+  const wall = world.siege.fronts[0]!.structures.find((item) => item.kind === 1 && item.side === 0)!;
+  wall.hp = 30;
+  site.stocks.fill(0);
+  const match = createMatch<SiegeWorld, Command>({ seed: 7, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([repairFortification('rome', 0, 'wall', 'north')]);
+  expect(observeSiege(world, 'rome').fronts[0]!.structures.find((item) => item.kind === 'wall' && item.side === 'north'))
+    .toMatchObject({ hp: 30, repairing: false, repairWaiting: 'resources' });
+  site.stocks.fill(100);
+  match.step();
+  expect(observeSiege(world, 'rome').fronts[0]!.structures.find((item) => item.kind === 'wall' && item.side === 'north'))
+    .toMatchObject({ hp: 30, repairing: true });
+});
+
+it('can cancel an unpaid repair request without paying or starting it later', () => {
+  const world = siegeMatchRules.createWorld(7);
+  const site = world.economy.settlements[0]!;
+  const wall = world.siege.fronts[0]!.structures.find((item) => item.kind === 1 && item.side === 0)!;
+  wall.hp = 30;
+  site.stocks.fill(0);
+  const match = createMatch<SiegeWorld, Command>({ seed: 7, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([repairFortification('rome', 0, 'wall', 'north')]);
+  match.step([cancelFortificationRepair('rome', 0, 'wall', 'north')]);
+  site.stocks.fill(100);
+  match.step();
+  expect(observeSiege(world, 'rome').fronts[0]!.structures.find((item) => item.kind === 'wall' && item.side === 'north'))
+    .toMatchObject({ hp: 30, repairing: false });
+  expect(observeSiege(world, 'rome').settlements[0]!.stocks.stone).toBe(100);
+});
+
 it('repairs an owned broken wall using local resources and workers', () => {
   const world = siegeMatchRules.createWorld(7);
   const wall = world.siege.fronts[0]!.structures.find((item) => item.kind === 1)!;

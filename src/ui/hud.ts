@@ -1254,14 +1254,17 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement,
       const stone = fortificationRepairStone(max, structure.hp);
       const label = translate(structure.kind === 'gate' ? 'ui.gate' : 'ui.walls');
       const side = translate(`settlement.${structure.side}`);
-      const canStart = front?.siege === null && settlement.stocks.stone >= stone;
+      const requested = structure.repairWaiting === 'resources' || structure.repairWaiting === 'siege';
+      const canStart = front?.siege === null;
       const suffix = structure.repairing ? '' : front?.siege !== null ? ` - ${translate('settlement.repairSiege')}` :
-        !canStart ? ` - ${translate('settlement.repairNoStone')}` : '';
-      return { text: structure.repairing ? message('settlement.repairProgress', { structure: label, side,
+        settlement.stocks.stone < stone ? ` - ${translate('settlement.repairNoStone')}` : '';
+      return { text: requested ? message('settlement.repairCost', { structure: label, side, hp: structure.hp, max, stone }) +
+        ` - ${translate(structure.repairWaiting === 'siege' ? 'settlement.repairSiege' : 'settlement.repairNoStone')}` :
+        structure.repairing ? message('settlement.repairProgress', { structure: label, side,
         seconds: Math.ceil((structure.repairRemaining ?? 0) / TICK_HZ) }) +
         (structure.repairWaiting === undefined ? '' : ` - ${translate(structure.repairWaiting === 'workers' ? 'settlement.repairWorkers' : 'settlement.repairPassage')}`) :
         message('settlement.repairCost', { structure: label, side, hp: structure.hp, max, stone }) + suffix,
-      actions: structure.repairing ? [{ action: `cancelFortificationRepair:${structure.kind}:${structure.side}` as const, text: translate('settlement.cancel') }] :
+      actions: structure.repairing || requested ? [{ action: `cancelFortificationRepair:${structure.kind}:${structure.side}` as const, text: translate('settlement.cancel') }] :
         canStart ? [{ action: `repairFortification:${structure.kind}:${structure.side}` as const, text: translate('settlement.repair') }] : [] };
     }),
   ];
