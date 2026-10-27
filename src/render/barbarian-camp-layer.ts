@@ -1,9 +1,9 @@
 /** The neutral camps the current Observation has actually discovered. */
 import { Container, Sprite, Texture } from 'pixi.js';
 import { barbarianCampSprite } from '../art/barbarian-camp.ts';
-import { TILE_SIZE } from '../sim/map.ts';
 import type { SiegeVisible } from '../sim/siege.ts';
 import { textureOf } from './stage.ts';
+import { tilePixel } from './terrain.ts';
 
 export interface BarbarianCampLayer {
   update(camps: NonNullable<SiegeVisible['barbarianCamps']>): void;
@@ -37,7 +37,8 @@ export function createBarbarianCampLayer(parent: Container): BarbarianCampLayer 
           sprites.set(camp.id, sprite);
         }
         sprite.texture = texture;
-        sprite.position.set(camp.x * TILE_SIZE, camp.y * TILE_SIZE);
+        const at = tilePixel(camp.x, camp.y);
+        sprite.position.set(at.x, at.y);
       }
     },
   };
