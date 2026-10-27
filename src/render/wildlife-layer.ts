@@ -10,7 +10,8 @@ export function createWildlifeLayer(world: Container, animals: readonly Wildlife
   const layer = new Container();
   layer.zIndex = 0.5;
   world.addChild(layer);
-  const textures = { hare: textureOf(wildlifeSprite('hare')), boar: textureOf(wildlifeSprite('boar')) };
+  const textures = { hare: textureOf(wildlifeSprite('hare')), boar: textureOf(wildlifeSprite('boar')),
+    bird: textureOf(wildlifeSprite('bird')) };
   const sprites = new Map<number, Sprite>();
   for (const animal of animals) {
     const sprite = new Sprite(textures[animal.kind]);

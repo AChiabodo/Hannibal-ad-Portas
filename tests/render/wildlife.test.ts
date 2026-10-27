@@ -11,7 +11,8 @@ describe('decorative wildlife', () => {
     expect(first.length).toBeGreaterThan(0);
     expect(wildlifeOf(map, 21)).toEqual(first);
     for (const animal of first) {
-      expect(terrainAt(map, animal.x, animal.y)).toBe(animal.kind === 'boar' ? TERRAIN.forest : TERRAIN.plain);
+      expect(terrainAt(map, animal.x, animal.y)).toBe(animal.kind === 'boar' ? TERRAIN.forest
+        : animal.kind === 'bird' ? TERRAIN.marsh : TERRAIN.plain);
       expect(wildlifeSprite(animal.kind).pixels.some((channel, index) => index % 4 === 3 && channel > 0)).toBe(true);
     }
     expect(map.terrain).toEqual(before);
@@ -32,5 +33,14 @@ describe('decorative wildlife', () => {
     expect(start?.pixelX).not.toBe(later?.pixelX);
     refreshVision(fog, map, []);
     expect(visibleWildlife(animals, fog, 0)).toEqual([]);
+  });
+
+  it('places wetland birds only on marsh ground', () => {
+    const maps = Array.from({ length: 20 }, (_, seed) => generateMap(seed));
+    const birds = maps.flatMap((map, seed) => wildlifeOf(map, seed)
+      .filter((animal) => animal.kind === 'bird')
+      .map((animal) => ({ terrain: terrainAt(map, animal.x, animal.y) })));
+    expect(birds.length).toBeGreaterThan(0);
+    expect(birds.every((bird) => bird.terrain === TERRAIN.marsh)).toBe(true);
   });
 });
