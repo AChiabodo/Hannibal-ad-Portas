@@ -60,6 +60,7 @@ import {
 import { nodeMarker, type NodeKind } from '../art/nodes.ts';
 import { blit, createPixelBuffer, fillRect, type PixelBuffer } from '../art/pixel-buffer.ts';
 import { RAMPS, shadeAt } from '../art/palette.ts';
+import { landscapeDetail } from '../art/landscape-details.ts';
 import type { Season } from '../sim/season.ts';
 
 /**
@@ -199,11 +200,9 @@ function decorateLand(buffer: PixelBuffer, map: MapGrid, season: Season, seed: n
       const colour = season === 'winter' ? shadeAt(RAMPS.stone, 6)
         : terrain === TERRAIN.hill ? shadeAt(RAMPS.stone, 5)
           : season === 'autumn' ? shadeAt(RAMPS.bronze, 5) : shadeAt(RAMPS.olive, 5);
-      if (terrain === TERRAIN.forest) {
-        fillRect(buffer, px, py, 2, 2, colour);
-        fillRect(buffer, px + 1, py - 1, 1, 1, colour);
-      } else if (terrain === TERRAIN.hill) {
-        fillRect(buffer, px, py, 3, 1, colour);
+      if (terrain === TERRAIN.forest || terrain === TERRAIN.hill) {
+        blit(buffer, landscapeDetail(terrain === TERRAIN.forest ? 'tree' : 'rock', season, hash % 3),
+          at.x + 3, at.y + 2);
       } else {
         fillRect(buffer, px, py, 1, 2, colour);
       }
