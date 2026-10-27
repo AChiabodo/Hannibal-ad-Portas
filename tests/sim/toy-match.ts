@@ -28,7 +28,7 @@ export const CODE_OF: Record<CommandKind, number> = {
   move: 1,
   attackMove: 2,
   attack: 3,
-  attackStructure: 14,
+  attackStructure: 16,
   hold: 4,
   garrison: 5,
   withdraw: 6,
