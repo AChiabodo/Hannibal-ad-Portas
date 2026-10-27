@@ -58,4 +58,15 @@ describe('seasonal terrain presentation', () => {
     expect(pixelAt(renderTerrain(map, 'winter', 4), at.x + 8, at.y + 8))
       .toEqual(pixelAt(renderTerrain(map, 'spring', 4), at.x + 8, at.y + 8));
   });
+
+  it('keeps bridge pixels clear through seasonal changes', () => {
+    const map = Array.from({ length: 20 }, (_, seed) => generateMap(seed))
+      .find((candidate) => candidate.terrain.includes(TERRAIN.bridge));
+    expect(map).toBeDefined();
+    if (map === undefined) return;
+    const bridge = map.terrain.indexOf(TERRAIN.bridge);
+    const at = tilePixel(bridge % MAP_WIDTH, Math.floor(bridge / MAP_WIDTH));
+    expect(pixelAt(renderTerrain(map, 'winter', 4), at.x + 8, at.y + 8))
+      .toEqual(pixelAt(renderTerrain(map, 'spring', 4), at.x + 8, at.y + 8));
+  });
 });
