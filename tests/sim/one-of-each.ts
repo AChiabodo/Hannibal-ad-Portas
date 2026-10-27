@@ -2,6 +2,7 @@ import {
   assault,
   attack,
   attackMove,
+  attackStructure,
   blockade,
   build,
   cancelPending,
@@ -38,4 +39,5 @@ export const ONE_OF_EACH: readonly Command[] = [
   formation('rome', [1, 2], 'column'),
   group('rome', 1, [1, 2]),
   cancelPending('rome', 5, 1),
+  attackStructure('rome', [1], { kind: 'camp', id: 0 }),
 ];

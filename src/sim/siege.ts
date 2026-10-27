@@ -79,6 +79,7 @@ import { advanceGarrisonJourneys, requestGarrison } from './settlement-access.ts
 import { TICK_HZ } from './clock.ts';
 import type { Command, SiegePath } from './command.ts';
 import { bearing, BREAKING_MORALE, woundsOf } from './combat.ts';
+import { advanceCampAttacks, openBarbarianCamps, orderCampAttacks, type BarbarianCampState, type CampAttackOrder } from './barbarian-camp-combat.ts';
 import type { MatchSetup, VictoryReason } from './driver.ts';
 import {
   economyMatchRules,
@@ -321,6 +322,8 @@ export interface Siege {
 
 /** The world `siegeMatchRules` plays: the economy's Match, with its fortifications beside it. */
 export interface SiegeWorld extends EconomyWorld {
+  barbarianCamps?: BarbarianCampState[];
+  campOrders?: CampAttackOrder[];
   readonly fog: Readonly<Record<Faction, Fog>>;
   /** The walls, the rams and the two ways of taking a settlement. */
   readonly siege: Siege;
@@ -391,7 +394,7 @@ export interface VisibleFront {
 export interface SiegeVisible extends EconomyVisible {
   /** Camp appearances discovered by this Faction, never undiscovered locations. */
   readonly barbarianCamps?: readonly { readonly id: number; readonly x: number; readonly y: number;
-    readonly variant: number; readonly memory: 'seen' | 'remembered' }[];
+    readonly variant: number; readonly condition: 'standing' | 'ruin'; readonly memory: 'seen' | 'remembered' }[];
   readonly appearances?: readonly ObservedSettlement[];
   readonly fog: FogView;
   readonly contacts: readonly KnownContact[];
@@ -661,6 +664,8 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
   step: (world, _rng, tick, commands) => {
     const routes = routeCacheFor(world.map);
 
+    orderCampAttacks(world, commands);
+
     for (const command of commands) applySiegeCommand(world, command, routes);
 
     assignFortificationRepairLabour(world);
@@ -668,6 +673,7 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
 
     advanceFortificationRepairs(world);
     assignFortificationRepairLabour(world);
+    advanceCampAttacks(world, tick);
 
     advanceGarrisonJourneys(world, (squad, target) => orderSquadTo(world.map, squad, target, routes, true));
 
@@ -685,6 +691,7 @@ export function createSiegeWorld(seed: number): SiegeWorld {
   const world = economyMatchRules.createWorld(seed);
 
   const complete = { ...world, siege: createSiege(world.map, world.economy), fog: createFogs() };
+  openBarbarianCamps(complete);
   refreshSiegeFog(complete, 0);
   return complete;
 }
@@ -710,7 +717,8 @@ export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (wo
 
   return {
     ...seen,
-    barbarianCamps: (world.fog[faction].barbarianCamps ?? []).map((camp) => ({ ...camp,
+    barbarianCamps: (world.fog[faction].barbarianCamps ?? []).map((camp) => ({ id: camp.id, x: camp.x, y: camp.y,
+      variant: camp.variant, condition: camp.condition === 0 ? 'standing' as const : 'ruin' as const,
       memory: world.fog[faction].visible[camp.y * MAP_WIDTH + camp.x] === 1 ? 'seen' as const : 'remembered' as const })),
     appearances: settlementAppearances(world.fog[faction]),
     fog: viewOf(world.fog[faction]),

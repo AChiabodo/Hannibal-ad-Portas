@@ -473,6 +473,10 @@ remains in `works`; an occupied lot prevents a pending construction from startin
 For a recruitment batch, `count` and `cost` describe its unpaid remainder:
 each complete Squad starts and is paid separately as muster space becomes free.
 
+`attackStructure` names owned squads and a visible target `{ "kind": "camp", "id": N }`;
+`barbarianCamps` in the observation contains only currently seen or last-remembered
+appearances, including their last observed standing or ruined condition.
+
 `appearances` records only observed portions of each settlement. Its `tiles` use
 row-major cells within 25 by 25 grounds centred on the settlement. Each cell has
 its sighting `seen`, current `visible` flag and only the appearance facts known

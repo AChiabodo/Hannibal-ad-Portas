@@ -16,7 +16,7 @@ export function createBarbarianCampLayer(parent: Container): BarbarianCampLayer 
   root.zIndex = 1;
   parent.addChild(root);
   const sprites = new Map<number, Sprite>();
-  const textures = new Map<number, Texture>();
+  const textures = new Map<string, Texture>();
   return {
     setVisible(visible) { root.visible = visible; },
     update(camps) {
@@ -25,10 +25,11 @@ export function createBarbarianCampLayer(parent: Container): BarbarianCampLayer 
         if (!present.has(id)) { sprite.destroy(); sprites.delete(id); }
       }
       for (const camp of camps) {
-        let texture = textures.get(camp.variant);
+        const key = `${camp.variant}:${camp.condition}`;
+        let texture = textures.get(key);
         if (texture === undefined) {
-          texture = textureOf(barbarianCampSprite(camp.variant));
-          textures.set(camp.variant, texture);
+          texture = textureOf(barbarianCampSprite(camp.variant, camp.condition));
+          textures.set(key, texture);
         }
         let sprite = sprites.get(camp.id);
         if (sprite === undefined) {

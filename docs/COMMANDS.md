@@ -86,6 +86,7 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 | `cancelPending` | `faction`, `settlement`, `order` | Cancel an owned unpaid construction or recruitment request by its observed order ID. |
 | `repairFortification` | `faction`, `settlement`, `structure`, `side` | Start a paid repair of one owned wall or gate outside a Siege. |
 | `cancelFortificationRepair` | `faction`, `settlement`, `structure`, `side` | Cancel a paid fortification repair without a refund. |
+| `attackStructure` | `faction`, `squads`, `target` | Attack a currently visible barbarian camp by its target kind and id. |
 <!-- vocabulary:end -->
 
 ### Ground arrival allocation (#68)
@@ -168,6 +169,7 @@ code fails the build.
 { "kind": "formation", "faction": "rome", "squads": [3, 5], "formation": "column" }
 { "kind": "group", "faction": "rome", "group": 2, "squads": [3, 5] }
 { "kind": "cancelPending", "faction": "rome", "settlement": 5, "order": 1 }
+{ "kind": "attackStructure", "faction": "rome", "squads": [3], "target": { "kind": "camp", "id": 0 } }
 ```
 <!-- examples:end -->
 

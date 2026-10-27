@@ -51,6 +51,7 @@ import { type Container } from 'pixi.js';
 import { createPixelBuffer, pixelAt, type Rgba } from '../art/pixel-buffer.ts';
 import {
   attack,
+  attackStructure,
   attackMove,
   assault,
   blockade,
@@ -171,6 +172,7 @@ const FRAME_BUDGET_MS = 250;
 type OrderPoint =
   | { readonly kind: 'ground'; readonly x: number; readonly y: number }
   | { readonly kind: 'enemy'; readonly squad: number }
+  | { readonly kind: 'camp'; readonly camp: number }
   | { readonly kind: 'settlement'; readonly settlement: number };
 
 /** A Squad, as the page reports it: what the Observation says, and where it is drawn. */
@@ -1805,7 +1807,10 @@ export function createGame(options: GameOptions): Game {
     }
     if (offer.target === 'enemy') {
       const enemy = enemyAt(enemyTargets(visible()), tile.x, tile.y);
-      return enemy === null ? false : submitOrder(offer, { kind: 'enemy', squad: enemy.id });
+      if (enemy !== null) return submitOrder(offer, { kind: 'enemy', squad: enemy.id });
+      const camp = visible().barbarianCamps?.find((site) => site.memory === 'seen' && site.condition === 'standing' &&
+        tile.x >= site.x && tile.x < site.x + 2 && tile.y >= site.y && tile.y < site.y + 2);
+      return camp === undefined ? false : submitOrder(offer, { kind: 'camp', camp: camp.id });
     }
     if (offer.target === 'settlement') {
       // The structure a Player can see is the target, by the rectangle it is drawn
@@ -1896,7 +1901,8 @@ export function createGame(options: GameOptions): Game {
       case 'attackMove':
         return point?.kind === 'ground' ? attackMove(faction, squads, point.x, point.y) : null;
       case 'attack':
-        return point?.kind === 'enemy' ? attack(faction, squads, point.squad) : null;
+        return point?.kind === 'enemy' ? attack(faction, squads, point.squad) :
+          point?.kind === 'camp' ? attackStructure(faction, squads, { kind: 'camp', id: point.camp }) : null;
       case 'hold':
         return hold(faction, squads);
       case 'withdraw':

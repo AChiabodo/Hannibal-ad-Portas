@@ -22,10 +22,10 @@ it('reveals a camp only through sight, then retains its last observed appearance
   expect(observeSiege(world, 'carthage').barbarianCamps).toEqual([]);
   match.step([move('rome', [scout.id], 40, 42)]);
   for (let i = 0; i < 80; i += 1) match.step();
-  expect(observeSiege(world, 'rome').barbarianCamps).toEqual([{ id: 0, x: 42, y: 42, variant: 1, memory: 'seen' }]);
+  expect(observeSiege(world, 'rome').barbarianCamps).toEqual([{ id: 0, x: 42, y: 42, variant: 1, condition: 'standing', memory: 'seen' }]);
   match.step([move('rome', [scout.id], 30, 42)]);
   for (let i = 0; i < 120; i += 1) match.step();
-  expect(observeSiege(world, 'rome').barbarianCamps).toEqual([{ id: 0, x: 42, y: 42, variant: 1, memory: 'remembered' }]);
+  expect(observeSiege(world, 'rome').barbarianCamps).toEqual([{ id: 0, x: 42, y: 42, variant: 1, condition: 'standing', memory: 'remembered' }]);
   expect(observeSiege(world, 'carthage').barbarianCamps).toEqual([]);
   const hash = match.hash();
   observeSiege(world, 'rome');

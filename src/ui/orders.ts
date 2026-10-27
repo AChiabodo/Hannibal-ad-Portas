@@ -239,7 +239,8 @@ export function squadOrders(
       costs: [], subject: null, note: null, shortcut: null,
       target: 'enemy', targetHint: translate('target.enemy'),
       ...(open
-        ? enemyTargets(visible).length === 0
+        ? enemyTargets(visible).length === 0 && !('barbarianCamps' in visible &&
+            visible.barbarianCamps?.some((camp) => camp.memory === 'seen' && camp.condition === 'standing') === true)
           ? blocked(translate('reason.noEnemy'))
           : { enabled: true, reason: null }
         : blocked(squadsReason)),

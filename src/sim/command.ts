@@ -113,6 +113,13 @@ export interface AttackCommand extends CommandBase {
   readonly target: number;
 }
 
+/** An explicit attack on an observed neutral camp. */
+export interface AttackStructureCommand extends CommandBase {
+  readonly kind: 'attackStructure';
+  readonly squads: readonly number[];
+  readonly target: { readonly kind: 'camp'; readonly id: number };
+}
+
 /** Hold position: stand, face the enemy, and do not pursue. */
 export interface HoldCommand extends CommandBase {
   readonly kind: 'hold';
@@ -226,6 +233,7 @@ export type Command =
   | MoveCommand
   | AttackMoveCommand
   | AttackCommand
+  | AttackStructureCommand
   | HoldCommand
   | GarrisonCommand
   | WithdrawCommand
@@ -265,6 +273,7 @@ export const COMMAND_KINDS: readonly CommandKind[] = [
   'cancelPending',
   'repairFortification',
   'cancelFortificationRepair',
+  'attackStructure',
 ];
 
 /** Every formation a Squad can hold: frontage and depth, in the order `docs/COMMANDS.md` lists them. */
@@ -301,6 +310,12 @@ export function attack(
   target: number,
 ): AttackCommand {
   return readAttack({ kind: 'attack', faction, squads, target }, ROOT);
+}
+
+/** Build an explicit structure attack. */
+export function attackStructure(faction: Faction, squads: readonly number[],
+  target: AttackStructureCommand['target']): AttackStructureCommand {
+  return readAttackStructure({ kind: 'attackStructure', faction, squads, target }, ROOT);
 }
 
 /** Builds a Hold Command. @throws CommandValidationError when it names no Squad. */
@@ -409,6 +424,7 @@ const READERS: {
   move: readMove,
   attackMove: readAttackMove,
   attack: readAttack,
+  attackStructure: readAttackStructure,
   hold: readHold,
   garrison: readGarrison,
   withdraw: readWithdraw,
@@ -485,6 +501,16 @@ function readAttack(value: Candidate, path: string): AttackCommand {
     squads: requireSquads(value.squads, `${path}.squads`),
     target: requireId(value.target, `${path}.target`, 'Squad'),
   };
+}
+
+function readAttackStructure(value: Candidate, path: string): AttackStructureCommand {
+  requireFields(value, path, 'attackStructure', ['kind', FACTION_FIELD, 'squads', 'target']);
+  const target = requireRecord(value.target, `${path}.target`);
+  requireFields(target, `${path}.target`, 'attackStructure', ['kind', 'id']);
+  if (target.kind !== 'camp') throw new CommandValidationError(`${path}.target.kind`, 'must be camp');
+  return { kind: 'attackStructure', faction: requireFaction(value.faction, `${path}.faction`),
+    squads: requireSquads(value.squads, `${path}.squads`),
+    target: { kind: 'camp', id: requireId(target.id, `${path}.target.id`, 'camp') } };
 }
 
 function readHold(value: Candidate, path: string): HoldCommand {

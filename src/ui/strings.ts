@@ -585,7 +585,7 @@ export const STRINGS = {
 
   // What an armed action is waiting for.
   'target.ground': { it: 'Clicca il terreno', en: 'Click the ground' },
-  'target.enemy': { it: 'Clicca un reparto nemico in vista', en: 'Click an enemy Squad in sight' },
+  'target.enemy': { it: 'Clicca un reparto o accampamento nemico in vista', en: 'Click an enemy Squad or camp in sight' },
   'target.settlement': { it: 'Clicca un insediamento sulla mappa o in lista', en: 'Click a settlement on the map or in the list' },
   'target.ownSettlement': { it: 'Clicca un tuo insediamento', en: 'Click one of your settlements' },
   'target.enemySettlement': { it: 'Clicca un insediamento nemico conosciuto', en: 'Click a known enemy settlement' },
