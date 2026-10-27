@@ -132,7 +132,7 @@ _UI_: Breccia
 _Avoid_: Gap, hole, breakthrough
 
 **Road**:
-A path laid between settlements and resource nodes when the map is generated: it carries a Squad faster, and it crosses water only at a ford.
+A path forming part of a network between settlements and other relevant places: it carries a Squad faster, and it crosses water only at a ford. The network connects to settlement entrances and internal passages.
 _UI_: Strada
 _Avoid_: Highway, route (a route is what pathfinding returns)
 
