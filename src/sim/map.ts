@@ -23,8 +23,8 @@
  *   `RESOURCE_TOLERANCE_PERCENT` of the other half's — the halves being the two
  *   sides of the perpendicular bisector of the two Strongholds, which is what
  *   `halfOf` answers;
- * - every river runs from one edge of the map to the other and carries at least
- *   `MIN_FORDS_PER_RIVER` fords, so no river is a wall;
+ * - substantial rivers carry at least `MIN_FORDS_PER_RIVER` fords, and may
+ *   begin or end inland or flow into a lake;
  * - the two Strongholds stand at least `MIN_STRONGHOLD_DISTANCE` tiles apart;
  * - the roads join every settlement and every resource node to the network, and
  *   the network to the Strongholds, over tiles a Squad can walk on.
@@ -176,8 +176,8 @@ export interface ResourceNode extends Site {
 }
 
 /**
- * A river: the tiles its water runs through, from the edge it enters the map by
- * to the edge it leaves by, in order.
+ * A river: the ordered tiles from its source to its mouth, including any
+ * tiles where it meets a lake.
  *
  * A ford appears in the grid's terrain, not in this list: the ford is still the
  * river's tile — a ford is part of the river — and which of a river's tiles
@@ -226,7 +226,7 @@ export interface MapGrid {
   /** The capturable minor settlements, six to eight of them. */
   readonly settlements: readonly Site[];
 
-  /** The rivers, one or two, each running edge to edge. */
+  /** The rivers, one or two, with endpoints at an edge or inland. */
   readonly rivers: readonly River[];
 
   /** Every resource node on the map, of all four kinds. */
@@ -260,16 +260,36 @@ export function generateMap(seed: number): MapGrid {
   const reservations = siteReservations([...strongholds, ...settlements]);
   const rivers = carveRivers(terrain, rng, reservations.grounds);
   plantFords(terrain, rng, rivers);
-  growWetlands(terrain, rng, reservations.grounds);
+  growWetlands(terrain, rng, reservations.grounds, rivers);
   spreadFarmland(terrain, rng, [...strongholds, ...settlements]);
+  const lakeMargin = lakeShoreMask(terrain);
+  for (let index = 0; index < TILE_COUNT; index += 1) {
+    if (lakeMargin[index] === 1) reservations.resources[index] = 1;
+  }
   const resources = placeResources(terrain, rng, halves, [...strongholds, ...settlements], reservations.resources);
   const roadObstacles = Uint8Array.from(reservations.structures, (blocked, index) =>
-    blocked === 1 || terrain[index] === TERRAIN.lake ? 1 : 0);
+    blocked === 1 || lakeMargin[index] === 1 ? 1 : 0);
   const roads = carveRoads(terrain, rng, [...strongholds, ...settlements, ...resources], roadObstacles);
   joinLand(terrain, rivers);
 
   const map = { terrain, strongholds, settlements, rivers, resources, roads };
   return { ...map, barbarianCamps: barbarianCampSites(map, seed) };
+}
+
+/** Keep roads and resource sites one tile from lake water so a crossing has room for a column. */
+function lakeShoreMask(terrain: Uint8Array): Uint8Array {
+  const mask = new Uint8Array(TILE_COUNT);
+  for (let y = 0; y < MAP_HEIGHT; y += 1) {
+    for (let x = 0; x < MAP_WIDTH; x += 1) {
+      if (terrain[tileIndex(x, y)] !== TERRAIN.lake) continue;
+      for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < MAP_WIDTH && ny < MAP_HEIGHT) mask[tileIndex(nx, ny)] = 1;
+      }
+    }
+  }
+  return mask;
 }
 
 /**
@@ -584,29 +604,38 @@ function carveRivers(terrain: Uint8Array, rng: Rng, grounds: Uint8Array): River[
 }
 
 /** Inland lakes and their wet banks, kept clear of water, sites and map edges. */
-function growWetlands(terrain: Uint8Array, rng: Rng, grounds: Uint8Array): void {
+function growWetlands(terrain: Uint8Array, rng: Rng, grounds: Uint8Array, rivers: readonly River[]): void {
   const count = rng.nextBelow(3);
   for (let lake = 0; lake < count; lake += 1) {
     const rx = 4 + rng.nextBelow(4);
     const ry = 4 + rng.nextBelow(4);
+    const radius = rx * rx * ry * ry;
+    const endpoints = rivers.flatMap((river) => [river.tiles[0], river.tiles.at(-1)])
+      .filter((tile): tile is number => tile !== undefined && tileX(tile) >= rx + 3 &&
+        tileX(tile) < MAP_WIDTH - rx - 3 && tileY(tile) >= ry + 3 && tileY(tile) < MAP_HEIGHT - ry - 3);
+    const attached = endpoints.length > 0 && rng.nextBelow(2) === 0 ? draw(rng, endpoints) : undefined;
     for (let attempt = 0; attempt < 100; attempt += 1) {
-      const x = rx + 3 + rng.nextBelow(MAP_WIDTH - 2 * rx - 6);
-      const y = ry + 3 + rng.nextBelow(MAP_HEIGHT - 2 * ry - 6);
+      const x = attached !== undefined && attempt === 0 ? tileX(attached) : rx + 3 + rng.nextBelow(MAP_WIDTH - 2 * rx - 6);
+      const y = attached !== undefined && attempt === 0 ? tileY(attached) : ry + 3 + rng.nextBelow(MAP_HEIGHT - 2 * ry - 6);
+      const joinsRiver = attached !== undefined && attempt === 0;
       let clear = true;
       for (let dy = -ry - 2; dy <= ry + 2 && clear; dy += 1) {
         for (let dx = -rx - 2; dx <= rx + 2; dx += 1) {
           const tile = tileIndex(x + dx, y + dy);
-          if (grounds[tile] === 1 || !isDryLand(terrain, tile)) { clear = false; break; }
+          const here = terrain[tile];
+          if (grounds[tile] === 1 || here === TERRAIN.ford || here === TERRAIN.lake ||
+            (here === TERRAIN.river && !joinsRiver)) { clear = false; break; }
         }
       }
       if (!clear) continue;
-      const radius = rx * rx * ry * ry;
       for (let dy = -ry - 2; dy <= ry + 2; dy += 1) {
         for (let dx = -rx - 2; dx <= rx + 2; dx += 1) {
           const tile = tileIndex(x + dx, y + dy);
           const measure = dx * dx * ry * ry + dy * dy * rx * rx;
           if (measure <= radius) terrain[tile] = TERRAIN.lake;
-          else if (measure <= radius + radius / 2 && rng.nextBelow(3) !== 0) terrain[tile] = TERRAIN.marsh;
+          else if (terrain[tile] !== TERRAIN.river && measure <= radius + radius / 2 && rng.nextBelow(3) !== 0) {
+            terrain[tile] = TERRAIN.marsh;
+          }
         }
       }
       break;
@@ -615,7 +644,7 @@ function growWetlands(terrain: Uint8Array, rng: Rng, grounds: Uint8Array): void 
 }
 
 /**
- * Carves one river, from one edge of the map to the opposite edge.
+ * Carves one substantial river with endpoints at an edge or inland.
  *
  * Seeded waypoints divide the journey into four reaches. Each reach uses a
  * four-connected path around reserved settlement grounds, so no future roof
@@ -628,6 +657,8 @@ function growWetlands(terrain: Uint8Array, rng: Rng, grounds: Uint8Array): void 
 function carveRiver(terrain: Uint8Array, rng: Rng, vertical: boolean, grounds: Uint8Array): River {
   const span = vertical ? MAP_WIDTH : MAP_HEIGHT;
   const far = vertical ? MAP_HEIGHT : MAP_WIDTH;
+  const start = rng.nextBelow(2) === 0 ? 0 : 12 + rng.nextBelow(16);
+  const end = far - 1 - (rng.nextBelow(2) === 0 ? 0 : 12 + rng.nextBelow(16));
   let across = RIVER_MARGIN + rng.nextBelow(span - 2 * RIVER_MARGIN);
   const forbidden = grounds.slice();
   for (let along = 0; along < far; along += 1) {
@@ -636,7 +667,7 @@ function carveRiver(terrain: Uint8Array, rng: Rng, vertical: boolean, grounds: U
   }
   const waypoints: number[] = [];
   for (let part = 0; part <= 4; part += 1) {
-    const along = part === 4 ? far - 1 : Math.floor(part * far / 4);
+    const along = start + Math.floor((part * (end - start)) / 4);
     across = Math.max(RIVER_MARGIN, Math.min(span - 1 - RIVER_MARGIN, across + rng.nextInt(-8, 8)));
     const candidates: number[] = [];
     let nearest = span;
@@ -1080,8 +1111,7 @@ function widenCrossing(terrain: Uint8Array, tile: number): void {
 /**
  * Fords whatever water still parts the land, until the land is one landmass.
  *
- * The rivers are cut across the whole map, so on their own they cut the land
- * into pieces; the fords planted along them and the ones the roads made are
+ * Some rivers cut the land into pieces; the fords planted along them and the ones the roads made are
  * meant to join those pieces, and this pass is the promise that it happened.
  * Every river tile that touches two different landmasses is a place a ford
  * would join them, and the first such tile is taken; the pass then looks again,
@@ -1089,8 +1119,7 @@ function widenCrossing(terrain: Uint8Array, tile: number): void {
  * the loop turns a river tile into a ford and never back, so the loop ends.
  *
  * @throws Error when the land is still parted and no river tile touches two
- *   landmasses — which cannot happen while every river crosses the map, and is
- *   a bug in a river rather than a bad seed.
+ *   landmasses — a generator error rather than a playable map.
  */
 function joinLand(terrain: Uint8Array, rivers: readonly River[]): void {
   const labels = new Int32Array(TILE_COUNT);

@@ -103,7 +103,7 @@ describe('the fairness the theatre is held to', () => {
     }
   });
 
-  it('crosses every river with at least the stated minimum of fords, and runs it edge to edge', () => {
+  it('keeps substantial rivers connected and crosses them with fords', () => {
     expect(problemsOver(SEEDS, riverProblems)).toEqual([]);
   });
 

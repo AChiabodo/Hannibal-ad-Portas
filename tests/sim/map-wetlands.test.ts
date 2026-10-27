@@ -32,4 +32,11 @@ describe('lakes and marshes', () => {
     expect(findRoute(map, map.strongholds[0], target)).toEqual({ kind: 'refused', reason: 'water' });
     expect(blockedTile(map, 0, target.x, target.y)).toBe(true);
   });
+
+  it('sometimes joins a river source or mouth to an inland lake', () => {
+    const connected = Array.from({ length: 30 }, (_, seed) => generateMap(seed)).some((map) =>
+      map.rivers.some((river) => [river.tiles[0], river.tiles.at(-1)].some((tile) =>
+        tile !== undefined && map.terrain[tile] === TERRAIN.lake)));
+    expect(connected).toBe(true);
+  });
 });

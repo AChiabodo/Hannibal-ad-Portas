@@ -166,18 +166,11 @@ export function connectivityProblems(map: MapGrid): readonly string[] {
   return problems;
 }
 
-/** Every river crosses the map, and carries at least the stated minimum of fords a Squad can cross. */
+/** Every substantial river is connected, with enough fords and an optional lake. */
 export function riverProblems(map: MapGrid): readonly string[] {
   const problems: string[] = [];
 
   if (map.rivers.length === 0) problems.push('the theatre has no river at all');
-
-  // A river running edge to edge is load-bearing rather than pretty: a river
-  // that stopped inside the map could seal a pocket of land off, and the repair
-  // pass that fords whatever water still parts the land relies on every river
-  // crossing the whole map, so that following it always reaches another
-  // landmass. It is also the shape every planted ford and every road was drawn
-  // against, so a generator that changed it should have to fail a test.
 
   for (const [index, river] of map.rivers.entries()) {
     const fords = river.tiles.filter((tile) => terrainOf(map, tile) === TERRAIN.ford);
@@ -201,7 +194,7 @@ export function riverProblems(map: MapGrid): readonly string[] {
 
     for (const tile of river.tiles) {
       const here = terrainOf(map, tile);
-      if (here !== TERRAIN.river && here !== TERRAIN.ford) {
+      if (here !== TERRAIN.river && here !== TERRAIN.ford && here !== TERRAIN.lake) {
         const name = isTerrain(here) ? TERRAIN_NAMES[here] : String(here);
         problems.push(
           `river ${index} runs through a ${name} tile at (${tileX(tile)}, ${tileY(tile)}), ` +
@@ -221,11 +214,7 @@ export function riverProblems(map: MapGrid): readonly string[] {
       }
     }
 
-    const source = river.tiles[0];
-    const mouth = river.tiles.at(-1);
-    if (source !== undefined && mouth !== undefined && !crossesTheMap(source, mouth)) {
-      problems.push(`river ${index} does not run from one edge of the map to the other`);
-    }
+    if (river.tiles.length < 100) problems.push(`river ${index} is too short to be a substantial watercourse`);
   }
 
   return problems;
@@ -492,12 +481,4 @@ function dryNeighbours(map: MapGrid, tile: number): number {
   ];
 
   return around.filter((beside) => isWalkable(beside)).length;
-}
-
-/** Whether a river runs from one edge of the map to the opposite one. */
-function crossesTheMap(source: number, mouth: number): boolean {
-  const downTheMap = tileY(source) === 0 && tileY(mouth) === MAP_HEIGHT - 1;
-  const acrossTheMap = tileX(source) === 0 && tileX(mouth) === MAP_WIDTH - 1;
-
-  return downTheMap || acrossTheMap;
 }
