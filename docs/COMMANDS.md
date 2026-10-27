@@ -201,7 +201,7 @@ the command at command.squads[1] is not a Squad id: 1.5
 ```
 
 **Illegal** means it is a Command, but not one that Faction may issue now: an
-enemy Squad, a tile in the sea, a building nobody can afford, an Assault by
+enemy Squad, a tile in the sea, a building above the settlement's Tier, an Assault by
 Carthage, a Blockade with nothing to besiege. Only the rules of the tick can answer that,
 because only they can look at the world and say why, so `command.ts` owns the
 first question and nothing of the second.

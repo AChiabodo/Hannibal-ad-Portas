@@ -125,9 +125,10 @@ describe('an unopposed economy across three Years', () => {
         ] });
       expect(replay.hash).toBe(run.hash);
     }
-  // Seed 7 also replays the complete three-Year Match; the full-suite run
-  // measured 56 seconds. These are compute budgets, not strategic deadlines.
-  }, seed === 7 ? 90_000 : 30_000);
+  // Seed 7 also replays the complete three-Year Match (56 seconds measured).
+  // The other full-worker cases reached 31.5 seconds. These compute budgets
+  // leave scheduling margin without changing any simulated campaign bound.
+  }, seed === 7 ? 90_000 : 60_000);
   }
 
   it('removes actual unpaid Squads from a deliberately bankrupted AI Observation', () => {
