@@ -10,6 +10,7 @@ import { createBehaviourRegistry, type Behaviour, type BehaviourContext, type Be
   type Candidate, type Contribution } from '../ai/registry.ts';
 import { DIFFICULTY, type Difficulty, type DifficultyName } from '../ai/difficulty.ts';
 import { BUILDINGS } from '../content/buildings.ts';
+import { fortificationRepairStone } from '../content/fortifications.ts';
 import { MATCHUP } from '../content/arms.ts';
 import { payrollBill, recruitCost, SQUAD_TYPES } from '../content/squads.ts';
 import { TICK_HZ } from '../sim/clock.ts';
@@ -28,7 +29,7 @@ export interface AiMatchRun extends MatchRun {
   readonly decisions: readonly AiDecision<Command>[];
 }
 
-const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
+const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES, fortificationRepairStone,
   recruitCost, payrollBill,
   grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, baseStorage: BASE_STORAGE, taxPerDenarius: TAX_PER_DENARIUS,
   ticksUntilPayroll: ticksUntilSeason };

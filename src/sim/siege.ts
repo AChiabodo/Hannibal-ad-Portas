@@ -70,7 +70,7 @@
  * its bound: the fall of a Stronghold, and the reason it fell.
  */
 import { bearingOf, figuresOf, stockAt, squadTypeOf } from '../content/index.ts';
-import { fortificationHp, garrisonCapacity } from '../content/fortifications.ts';
+import { fortificationHp, fortificationRepairStone, garrisonCapacity } from '../content/fortifications.ts';
 import { bindSiegeSpace, siteRect, invalidateSpace, canOccupy, occupiedGround, squadGround, coreOf, physicalAccesses } from './settlement-space.ts';
 import { containsTile, settlementLayout, intersects, type GroundRect } from '../content/settlement-layout.ts';
 import { perimeterDistance, outsideCore, insideCore, rectDistance } from './settlement-siege-geometry.ts';
@@ -90,7 +90,7 @@ import {
   type EconomyWorld,
   type VisibleSquad,
 } from './economy-match.ts';
-import { UNOWNED, allocate, landCapacity, type Economy, type Settlement, type Squad, type Supplied } from './economy.ts';
+import { UNOWNED, allocate, landCapacity, applyEconomyCommand, type Economy, type Settlement, type Squad, type Supplied } from './economy.ts';
 import { factionCode, factionOf, type Faction } from './faction.ts';
 import { createFogs, eyeCovers, viewOf, type Fog, type FogView } from './fog.ts';
 import { refreshSiegeFog, siegeContacts, type KnownContact } from './siege-fog.ts';
@@ -333,6 +333,7 @@ export interface SiegeWorld extends EconomyWorld {
 export interface VisibleStructure {
   readonly repairing?: boolean;
   readonly repairRemaining?: number;
+  readonly repairWaiting?: 'workers' | 'passage';
   readonly maxHp?: number;
   /** Whether it is the gate or a stretch of wall. */
   readonly kind: StructureKind;
@@ -535,7 +536,7 @@ function orderFortificationRepair(world: SiegeWorld, command: Extract<Command, {
   const maximum = fortificationHp(site.tier, item.kind === STRUCTURE.gate);
   if (front.path !== SIEGE.none || item.repairTicks !== undefined || item.hp >= maximum) return false;
   const damage = maximum - item.hp;
-  const cost = Math.max(1, Math.ceil(damage / 15));
+  const cost = fortificationRepairStone(maximum, item.hp);
   if ((site.stocks[RESOURCE.stone] ?? 0) < cost) return false;
   site.stocks[RESOURCE.stone] = (site.stocks[RESOURCE.stone] ?? 0) - cost;
   item.repairTicks = Math.max(1, damage * 3);
@@ -550,16 +551,10 @@ function assignFortificationRepairLabour(world: SiegeWorld): void {
   for (const front of world.siege.fronts) {
     const site = world.economy.settlements[front.settlement];
     if (site === undefined) continue;
-    delete site.repairLabour;
-    const allocation = allocate(site, landCapacity(world.map, site));
-    let available = site.population - allocation.works.reduce((sum, count) => sum + count, 0);
-    let claimed = 0;
-    for (const item of [...front.structures].sort((a, b) => (a.repairOrder ?? Infinity) - (b.repairOrder ?? Infinity))) {
-      if (item.repairTicks === undefined || item.repairTicks <= 0 || item.repairOwner !== site.owner || available < 2) continue;
-      available -= 2;
-      claimed += 2;
-    }
-    if (claimed > 0) site.repairLabour = claimed;
+    const orders = front.structures.filter((item) => item.repairTicks !== undefined && item.repairTicks > 0 && item.repairOwner === site.owner)
+      .map((item) => item.repairOrder ?? 0);
+    if (orders.length > 0) site.repairOrders = orders;
+    else delete site.repairOrders;
   }
 }
 
@@ -567,13 +562,12 @@ function advanceFortificationRepairs(world: SiegeWorld): void {
   for (const front of world.siege.fronts) {
     const site = world.economy.settlements[front.settlement];
     if (site === undefined) continue;
-    let available = site.repairLabour ?? 0;
+    const staffed = allocate(site, landCapacity(world.map, site)).repairs ?? [];
     for (const item of [...front.structures].sort((a, b) => (a.repairOrder ?? Infinity) - (b.repairOrder ?? Infinity))) {
       if (item.repairTicks === undefined) continue;
       if (item.repairOwner !== site.owner) { delete item.repairTicks; delete item.repairOwner; delete item.repairOrder; continue; }
       if (item.repairTicks > 0) {
-        if (available < 2) continue;
-        available -= 2;
+        if (!staffed.includes(item.repairOrder ?? 0)) continue;
         item.repairTicks -= 1;
       }
       if (item.repairTicks > 0) continue;
@@ -665,11 +659,14 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
     const routes = routeCacheFor(world.map);
 
     orderCampAttacks(world, commands);
-
-    for (const command of commands) applySiegeCommand(world, command, routes);
+    for (const command of commands) {
+      applySiegeCommand(world, command, routes);
+      assignFortificationRepairLabour(world);
+      applyEconomyCommand(world.economy, command);
+    }
 
     assignFortificationRepairLabour(world);
-    const changes = stepEconomyWorld(world, tick, commands, suppliedBy(world.siege));
+    const changes = stepEconomyWorld(world, tick, commands, suppliedBy(world.siege), true);
 
     advanceFortificationRepairs(world);
     assignFortificationRepairLabour(world);
@@ -1300,7 +1297,7 @@ function take(
   for (const structure of front.structures) {
     delete structure.repairTicks; delete structure.repairOwner; delete structure.repairOrder;
   }
-  delete settlement.repairLabour;
+  delete settlement.repairOrders;
   world.economy.pending = world.economy.pending?.filter((order) => order.settlement !== settlement.id || order.owner !== previous) ?? [];
   invalidateSpace(world.economy);
   world.economy.squads = world.economy.squads.filter((squad) => squad.garrison !== settlement.id);
@@ -1386,6 +1383,8 @@ function beatenFaction(economy: Economy): number | undefined {
 
 /** One front, as its holder or its besieger reads it. */
 function visibleFront(economy: Economy, front: Front): VisibleFront {
+  const site = economy.settlements[front.settlement];
+  const staffed = site === undefined ? [] : allocate(site, []).repairs ?? [];
   return {
     settlement: front.settlement,
     structures: front.structures.map((structure) => ({
@@ -1394,6 +1393,8 @@ function visibleFront(economy: Economy, front: Front): VisibleFront {
       hp: structure.hp,
       repairing: structure.repairTicks !== undefined,
       ...(structure.repairTicks === undefined ? {} : { repairRemaining: Math.max(0, structure.repairTicks) }),
+      ...(structure.repairTicks === undefined ? {} : structure.repairTicks < 0 ? { repairWaiting: 'passage' as const } :
+        !staffed.includes(structure.repairOrder ?? 0) ? { repairWaiting: 'workers' as const } : {}),
       maxHp: fortificationHp(front.tier ?? 1, structure.kind === STRUCTURE.gate),
       standing: structure.hp > 0,
     })),
@@ -1426,6 +1427,11 @@ function filteredFront(world: SiegeWorld, front: Front, owner: number, eyes: Ret
       if (sees(x, y)) return true;
     }
     return false;
+  }).map((structure) => {
+    const visible = { ...structure };
+    delete visible.repairRemaining;
+    delete visible.repairWaiting;
+    return visible;
   });
   const ramRect = siteRect(world.economy, site, { x: -1, y: 9, width: 3, height: 2 });
   let ramSeen = false;

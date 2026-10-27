@@ -57,11 +57,13 @@ import {
   blockade,
   build,
   cancelPending,
+  cancelFortificationRepair,
   formation,
   garrison,
   hold,
   move,
   recruit,
+  repairFortification,
   withdraw,
   type Command,
   type Formation,
@@ -1685,6 +1687,16 @@ export function createGame(options: GameOptions): Game {
     }
     else if (action === 'tutorialRetry') options.tutorialAction?.('retry');
     else if (action === 'tutorialExit') options.tutorialAction?.('exit');
+    else if (action.startsWith('repairFortification:') || action.startsWith('cancelFortificationRepair:')) {
+      const settlement = human.selection.settlement;
+      const [kind, structureKind, side] = action.split(':');
+      const structure = visible().fronts.find((front) => front.settlement === settlement)?.structures
+        .find((piece) => piece.kind === structureKind && piece.side === side);
+      if (settlement !== null && structure !== undefined) human.submit(kind === 'repairFortification'
+        ? repairFortification(faction, settlement, structure.kind, structure.side)
+        : cancelFortificationRepair(faction, settlement, structure.kind, structure.side));
+      repaint();
+    }
     else if (action.startsWith('cancelPending:')) {
       const settlement = human.selection.settlement;
       if (settlement !== null) human.submit(cancelPending(faction, settlement, Number(action.slice(14))));

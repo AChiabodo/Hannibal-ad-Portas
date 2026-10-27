@@ -1,8 +1,9 @@
 import { expect, it } from 'vitest';
 import { createMatch } from '../../src/sim/match';
-import { cancelFortificationRepair, move, repairFortification, type Command } from '../../src/sim/command';
+import { build, cancelFortificationRepair, move, repairFortification, type Command } from '../../src/sim/command';
 import { observeSiege, siegeMatchRules, type SiegeWorld } from '../../src/sim/siege';
 import { musterSquad } from '../../src/sim/movement';
+import { buildingCode } from '../../src/content/buildings';
 
 it('repairs an owned broken wall using local resources and workers', () => {
   const world = siegeMatchRules.createWorld(7);
@@ -93,4 +94,36 @@ it('assigns scarce workers to fortifications in the order their repairs were req
   const visible = observeSiege(world, 'rome').fronts[0]!.structures;
   expect(visible.find((item) => item.kind === 'wall' && item.side === 'east')?.repairRemaining).toBe(89);
   expect(visible.find((item) => item.kind === 'wall' && item.side === 'north')?.repairRemaining).toBe(90);
+});
+
+it('shares worker priority with new construction in the order chosen by the player', () => {
+  const run = (first: 'repair' | 'build') => {
+    const world = siegeMatchRules.createWorld(7);
+    const site = world.economy.settlements[0]!;
+    site.population = 4;
+    site.stocks.fill(100);
+    const wall = world.siege.fronts[0]!.structures.find((item) => item.kind === 1 && item.side === 0)!;
+    wall.hp = 30;
+    const match = createMatch<SiegeWorld, Command>({ seed: 7, rules: { ...siegeMatchRules, createWorld: () => world } });
+    const commands = [repairFortification('rome', 0, 'wall', 'north'), build('rome', 0, 'farm')];
+    match.step(first === 'repair' ? commands : commands.reverse());
+    return observeSiege(world, 'rome');
+  };
+  const repairFirst = run('repair');
+  const buildFirst = run('build');
+  expect(repairFirst.fronts[0]!.structures.find((item) => item.kind === 'wall' && item.side === 'north')?.repairRemaining).toBe(89);
+  expect(buildFirst.fronts[0]!.structures.find((item) => item.kind === 'wall' && item.side === 'north')?.repairRemaining).toBe(90);
+});
+
+it('gives completed productive works priority over a new repair', () => {
+  const world = siegeMatchRules.createWorld(7);
+  const site = world.economy.settlements[0]!;
+  site.population = 5;
+  site.stocks.fill(100);
+  site.works.push({ building: buildingCode('farm')!, remaining: 0 });
+  world.siege.fronts[0]!.structures.find((item) => item.kind === 1 && item.side === 0)!.hp = 30;
+  const match = createMatch<SiegeWorld, Command>({ seed: 7, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([repairFortification('rome', 0, 'wall', 'north')]);
+  const seen = observeSiege(world, 'rome');
+  expect(seen.fronts[0]!.structures.find((item) => item.kind === 'wall' && item.side === 'north')?.repairRemaining).toBe(90);
 });

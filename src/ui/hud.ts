@@ -33,6 +33,7 @@
  * Node; the same pixels come out of both (PLAN §3).
  */
 import { LINE_GAP, LINE_HEIGHT, drawText, measureText } from '../art/font.ts';
+import { fortificationRepairStone } from '../content/fortifications.ts';
 import { BASE, RAMPS, shadeAt } from '../art/palette.ts';
 import {
   TRANSPARENT,
@@ -265,7 +266,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = `cancelPending:${number}` | `garrisonSelect:${number}` | `garrisonExit:${number}` | `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works' | 'management' | 'catalogue'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore' | 'tutorialNext' | 'tutorialRetry' | 'tutorialExit' | 'tutorialHelp';
+export type HudAction = `repairFortification:${string}:${string}` | `cancelFortificationRepair:${string}:${string}` | `cancelPending:${number}` | `garrisonSelect:${number}` | `garrisonExit:${number}` | `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works' | 'management' | 'catalogue'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore' | 'tutorialNext' | 'tutorialRetry' | 'tutorialExit' | 'tutorialHelp';
 
 export interface HudButton {
   readonly action: HudAction;
@@ -1237,6 +1238,7 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement,
   }
 
   const roster = visible.squads.filter((squad) => squad.garrison === settlement.id);
+  const front = knownFront(visible, settlement.id);
   const management: NonNullable<HudDetail['management']> = [
     { text: walled ? message('settlement.capacity', { men: roster.reduce((sum, squad) => sum + squad.men, 0), capacity: garrisonCapacity(settlement.tier) }) : translate('settlement.open'), actions: [] },
     ...roster.map((squad) => ({ text: message('settlement.roster', { name: squadLabel(squad.type), id: squad.id, men: squad.men }), actions: [
@@ -1247,8 +1249,22 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement,
       text: `${order.kind === 'build' ? workLabel(order.building) : `${squadLabel(order.squadType)} ${order.count} x ${order.men}`} - ${order.reason === 'space' ? translate('pending.space') : translate('pending.resources')}${order.cost === undefined ? '' : message('pending.cost', { cost: RESOURCE_KINDS.map((kind) => `${resourceLabel(kind)} ${amountOf(order.cost!, kind)}`).join(', ') })}`,
       actions: [{ action: `cancelPending:${order.id}` as const, text: translate('settlement.cancel') }],
     })),
+    ...(front?.structures ?? []).filter((structure) => structure.repairing || structure.hp < (structure.maxHp ?? structure.hp)).map((structure) => {
+      const max = structure.maxHp ?? structure.hp;
+      const stone = fortificationRepairStone(max, structure.hp);
+      const label = translate(structure.kind === 'gate' ? 'ui.gate' : 'ui.walls');
+      const side = translate(`settlement.${structure.side}`);
+      const canStart = front?.siege === null && settlement.stocks.stone >= stone;
+      const suffix = structure.repairing ? '' : front?.siege !== null ? ` - ${translate('settlement.repairSiege')}` :
+        !canStart ? ` - ${translate('settlement.repairNoStone')}` : '';
+      return { text: structure.repairing ? message('settlement.repairProgress', { structure: label, side,
+        seconds: Math.ceil((structure.repairRemaining ?? 0) / TICK_HZ) }) +
+        (structure.repairWaiting === undefined ? '' : ` - ${translate(structure.repairWaiting === 'workers' ? 'settlement.repairWorkers' : 'settlement.repairPassage')}`) :
+        message('settlement.repairCost', { structure: label, side, hp: structure.hp, max, stone }) + suffix,
+      actions: structure.repairing ? [{ action: `cancelFortificationRepair:${structure.kind}:${structure.side}` as const, text: translate('settlement.cancel') }] :
+        canStart ? [{ action: `repairFortification:${structure.kind}:${structure.side}` as const, text: translate('settlement.repair') }] : [] };
+    }),
   ];
-  const front = knownFront(visible, settlement.id);
   if (front !== undefined && (front.structures.length > 0 || front.siege !== null || front.garrison > 0)) {
     lines.push(...frontLines(front));
   }

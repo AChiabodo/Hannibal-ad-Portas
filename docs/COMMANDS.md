@@ -169,6 +169,8 @@ code fails the build.
 { "kind": "formation", "faction": "rome", "squads": [3, 5], "formation": "column" }
 { "kind": "group", "faction": "rome", "group": 2, "squads": [3, 5] }
 { "kind": "cancelPending", "faction": "rome", "settlement": 5, "order": 1 }
+{ "kind": "repairFortification", "faction": "rome", "settlement": 5, "structure": "wall", "side": "north" }
+{ "kind": "cancelFortificationRepair", "faction": "rome", "settlement": 5, "structure": "wall", "side": "north" }
 { "kind": "attackStructure", "faction": "rome", "squads": [3], "target": { "kind": "camp", "id": 0 } }
 ```
 <!-- examples:end -->

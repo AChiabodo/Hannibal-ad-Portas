@@ -13,6 +13,27 @@ function economyAi() {
 }
 
 describe('the economy Controller', () => {
+  it('repairs its observed breached wall when it can afford the stone', () => {
+    const world = siegeMatchRules.createWorld(7);
+    world.economy.settlements[0]!.stocks[2] = 30;
+    world.siege.fronts[0]!.structures.find((item) => item.kind === 1 && item.side === 0)!.hp = 0;
+    const commands = economyAi().decide({ faction: 'rome', tick: 0, visible: observeSiege(world, 'rome') });
+    expect(commands).toContainEqual({ kind: 'repairFortification', faction: 'rome', settlement: 0, structure: 'wall', side: 'north' });
+  });
+
+  it('does not start a repair during a siege or without enough stone', () => {
+    const world = siegeMatchRules.createWorld(7);
+    const front = world.siege.fronts[0]!;
+    front.structures.find((item) => item.kind === 1 && item.side === 0)!.hp = 0;
+    world.economy.settlements[0]!.stocks[2] = 0;
+    expect(economyAi().decide({ faction: 'rome', tick: 0, visible: observeSiege(world, 'rome') })
+      .some((command) => command.kind === 'repairFortification')).toBe(false);
+    world.economy.settlements[0]!.stocks[2] = 30;
+    front.path = 1;
+    front.besieger = 1;
+    expect(economyAi().decide({ faction: 'rome', tick: 0, visible: observeSiege(world, 'rome') })
+      .some((command) => command.kind === 'repairFortification')).toBe(false);
+  });
   it('plans the funded first detachment together with the work needed to pay its first Payroll', () => {
     const visible = observeSiege(siegeMatchRules.createWorld(7), 'rome');
     const controller = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ,

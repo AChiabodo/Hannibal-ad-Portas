@@ -6,12 +6,14 @@ import {
   blockade,
   build,
   cancelPending,
+  cancelFortificationRepair,
   formation,
   garrison,
   group,
   hold,
   move,
   recruit,
+  repairFortification,
   withdraw,
   type Command,
 } from '../../src/sim/command';
@@ -39,5 +41,7 @@ export const ONE_OF_EACH: readonly Command[] = [
   formation('rome', [1, 2], 'column'),
   group('rome', 1, [1, 2]),
   cancelPending('rome', 5, 1),
+  repairFortification('rome', 5, 'wall', 'north'),
+  cancelFortificationRepair('rome', 5, 'wall', 'north'),
   attackStructure('rome', [1], { kind: 'camp', id: 0 }),
 ];

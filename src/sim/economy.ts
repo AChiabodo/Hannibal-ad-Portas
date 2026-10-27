@@ -181,6 +181,8 @@ export const ALWAYS_SUPPLIED: Supplied = () => true;
  * working (ADR-0005).
  */
 export interface Work {
+  /** Ordering of a construction that started alongside a fortification repair. */
+  readonly queueOrder?: number;
   /** Permanent copy number and original builder, preserved on conquest. */
   readonly ordinal?: number;
   origin?: number;
@@ -239,6 +241,8 @@ export interface Squad extends Block {
 
 /** How a settlement's people are divided, at one moment, between its works and its land. */
 export interface Allocation {
+  /** Started fortification repairs that received their full labour allocation. */
+  readonly repairs?: readonly number[];
   /** Workers staffed on each work, in the settlement's own work order: 0 when it is not staffed. */
   readonly works: readonly number[];
 
@@ -248,8 +252,8 @@ export interface Allocation {
 
 /** One settlement: what the economy owns on one tile of the map. */
 export interface Settlement {
-  /** Workers committed to ongoing fortification repairs this tick. */
-  repairLabour?: number;
+  /** Ordered active fortification repairs competing with construction. */
+  repairOrders?: readonly number[];
   /** Construction tradition persists through conquest, independently of holder. */
   origin?: number;
   /** Its id: the index it takes in the economy's list, which is what a Command names. */
@@ -463,9 +467,10 @@ function measureLand(map: MapGrid, settlement: Settlement): readonly number[] {
 /**
  * How a settlement's people are divided between its works and its land.
  *
- * The works first, in the order the settlement raised them: each takes its
- * `labour` out of the pool if the pool can cover it, and one it cannot cover
- * gets nobody and waits. What is left over works the land, one worker at a time
+ * Ordinarily works are staffed in the order raised. When fortification repairs
+ * are active, completed works take precedence and construction and repairs
+ * compete in their start order. Each takes its full labour or waits. What is
+ * left over works the land, one worker at a time
  * around the four kinds, so the leftovers are spread as evenly as the land
  * allows and never put where there is no land for them.
  *
@@ -476,18 +481,30 @@ function measureLand(map: MapGrid, settlement: Settlement): readonly number[] {
  */
 export function allocate(settlement: Settlement, capacity: readonly number[]): Allocation {
   let available = settlement.population;
-
-  const works = settlement.works.map((work) => {
+  const works = settlement.works.map(() => 0);
+  const repairs: number[] = [];
+  const staff = (work: Work, index: number): void => {
     const building = buildingOf(work.building);
-    if (building === undefined) return 0;
-    if (available < building.labour) return 0;
-
+    if (building === undefined || available < building.labour) return;
     available -= building.labour;
-    return building.labour;
-  });
+    works[index] = building.labour;
+  };
+  if (settlement.repairOrders === undefined) {
+    settlement.works.forEach(staff);
+  } else {
+    settlement.works.forEach((work, index) => { if (work.remaining === 0) staff(work, index); });
+    const jobs = [
+      ...settlement.works.flatMap((work, index) => work.remaining > 0 ? [{ order: work.queueOrder ?? 0, index }] : []),
+      ...settlement.repairOrders.map((order) => ({ order, index: -1 })),
+    ].sort((a, b) => a.order - b.order || a.index - b.index);
+    for (const job of jobs) {
+      if (job.index >= 0) { const work = settlement.works[job.index]; if (work !== undefined) staff(work, job.index); }
+      else if (available >= 2) { available -= 2; repairs.push(job.order); }
+    }
+  }
 
   const land = RESOURCE_KINDS.map(() => 0);
-  let remaining = Math.max(0, available - (settlement.repairLabour ?? 0));
+  let remaining = available;
 
   while (remaining > 0) {
     let placed = false;
@@ -504,7 +521,7 @@ export function allocate(settlement: Settlement, capacity: readonly number[]): A
     if (!placed) break;
   }
 
-  return { works, land };
+  return { works, land, ...(settlement.repairOrders === undefined ? {} : { repairs }) };
 }
 
 /**

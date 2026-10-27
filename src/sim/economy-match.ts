@@ -393,13 +393,14 @@ export function stepEconomyWorld(
   tick: number,
   commands: readonly Command[],
   supplied: Supplied = ALWAYS_SUPPLIED,
+  economyCommandsApplied = false,
 ): readonly SeasonChange[] {
   // The Commands first, in the order they arrived: the economy's own (build and
   // recruit), the movement's (move, attackMove, hold, formation) and combat's
   // (attack, withdraw), each ignoring the kinds the others own. Then the ground
   // the Squads cover, then the round of contact they fight, and then the works
   // and the calendar, which do not depend on where anybody is.
-  for (const command of commands) applyEconomyCommand(world.economy, command);
+  if (!economyCommandsApplied) for (const command of commands) applyEconomyCommand(world.economy, command);
   applyMovementCommands(world.economy, world.map, commands, routeCacheFor(world.map));
   applyCombatCommands(world.economy, world.map, commands, routeCacheFor(world.map));
   march(world.economy, world.map);
