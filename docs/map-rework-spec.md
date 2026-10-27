@@ -1,0 +1,133 @@
+# Specifica — Mappa viva, incursioni e riparazioni
+
+## Stato di implementazione
+
+- **Parziale — presentazione stagionale:** il terreno naturale varia con la stagione osservata, senza modificare la mappa della simulazione; strade e marcatori vengono disegnati dopo la colorazione. Verificati i generatori PixelBuffer e il typecheck. Restano da completare e verificare la varietà degli elementi ambientali, la neve sui dettagli, gli animali e l'accettazione visiva; nessuna delle richieste stagionali complessive è ancora dichiarata completata.
+
+## Problem Statement
+
+Dopo il rework degli insediamenti, la mappa ha bisogno di maggiore qualità e varietà: strade doppie o mal raccordate, paesaggi poco ricchi e spazi non adeguati agli insediamenti riducono leggibilità e interesse strategico. Il giocatore deve poter esplorare un'Italia plausibile, espandersi e affrontare ostacoli e minacce senza partire sistematicamente svantaggiato.
+
+## Solution
+
+Riprogettare generazione, terreno e presentazione procedurale in coerenza con gli insediamenti, introducendo acque, paludi, ponti, animali decorativi, accampamenti barbari e incursioni; estendere il combattimento a opere economiche e la riparazione alle opere e alle fortificazioni. Preservare determinismo, visibilità e controllo paritario delle fazioni. Calibrare una dimensione per il gioco attuale, preparando dimensioni maggiori come evoluzione futura.
+
+## User Stories
+
+1. Come giocatore, voglio paesaggi italiani plausibili, così da riconoscere l'ambientazione.
+2. Come giocatore, voglio mappe organiche e diverse per seed, così da esplorare partite distinte.
+3. Come giocatore, voglio opportunità iniziali comparabili, così da non essere sistematicamente svantaggiato.
+4. Come giocatore, voglio un insediamento minore relativamente vicino alla mia Stronghold, così da avere una scelta di espansione iniziale.
+5. Come giocatore, voglio che tale insediamento resti neutrale e conquistabile da entrambe le fazioni, così che la sua posizione non ne predetermini il proprietario.
+6. Come giocatore, voglio più insediamenti minori rispetto ai 4–6 attuali, senza affollamento, così da avere più scelte.
+7. Come giocatore, voglio che uno o due insediamenti possano naturalmente risultare contesi, senza posizioni centrali imposte, così da incontrare l'avversario in contesti vari.
+8. Come giocatore, voglio insediamenti diversi per posizione, terreno e risorse, così da ponderare l'espansione.
+9. Come giocatore, voglio accesso comparabile alle quattro risorse, considerando percorsi e minacce, così che la parità sia pratica e non solo numerica.
+10. Come giocatore, voglio una dimensione calibrata sui tempi di marcia e incontro, così da avere spazio di manovra senza attese eccessive.
+11. Come progettista, voglio evitare nuovi vincoli inutili a dimensioni maggiori e più giocatori futuri, così da poter estendere il gioco.
+12. Come giocatore, voglio una rete stradale unica e coerente, così da orientarmi e collegare gli insediamenti.
+13. Come giocatore, voglio strade raccordate a porte e passaggi, così da evitare sovrapposizioni con mura ed edifici.
+14. Come giocatore, voglio incroci leggibili e poche strade parallele superflue, così che la rete sembri naturale.
+15. Come giocatore, voglio diramazioni verso aree produttive senza obbligo di una strada per ogni nodo, così da evitare reti artificiali.
+16. Come giocatore, voglio percorsi alternativi quando utili, così da scegliere come aggirare ostacoli.
+17. Come progettista, voglio una rete utilizzabile dal commercio futuro, senza introdurre ora un sistema di commercio.
+18. Come giocatore, voglio fiumi riconoscibili e non troppo corti o ravvicinati, così da avere un paesaggio credibile.
+19. Come giocatore, voglio corsi d'acqua che possano iniziare o terminare all'interno della mappa, così da ottenere forme varie.
+20. Come giocatore, voglio laghi aggirabili e non attraversabili, così da affrontare scelte di percorso.
+21. Come giocatore, voglio fiumi che possano alimentare o uscire dai laghi, così da vedere reti idrografiche plausibili.
+22. Come giocatore, voglio che i luoghi importanti restino raggiungibili via terra, così da non trovare obiettivi isolati.
+23. Come giocatore, voglio guadi proporzionati all'importanza del corso d'acqua, così che un ostacolo importante non abbia un solo passaggio obbligato.
+24. Come giocatore, voglio ponti e guadi riconoscibili, così da scegliere tra attraversamento rapido e guado disordinante.
+25. Come giocatore, voglio ponti permanenti la cui forma corrisponde allo spazio percorribile, così da comprendere le strettoie.
+26. Come giocatore, voglio colonne, precedenza e combattimento coerenti sui ponti, così che il traffico resti gestibile.
+27. Come giocatore, voglio paludi attraversabili che rallentano, così da valutare percorsi alternativi.
+28. Come giocatore, voglio vegetazione, rocce e dettagli coerenti ma vari, così da vedere paesaggi più ricchi.
+29. Come giocatore, voglio variazioni stagionali leggibili, così che il paesaggio rifletta il tempo di gioco.
+30. Come giocatore, voglio che la neve non nasconda strade e oggetti importanti, così da conservare la leggibilità.
+31. Come giocatore, voglio animali decorativi associati all'ambiente e animati con discrezione, così che il paesaggio sembri vivo.
+32. Come giocatore, voglio animali senza collisioni o informazioni nascoste, così da non confonderli con minacce.
+33. Come giocatore, voglio accampamenti barbari piccoli e distinguibili, così da riconoscere una minaccia autonoma.
+34. Come giocatore, voglio difensori e incursioni limitate intorno all'accampamento, così da affrontare rischi territoriali.
+35. Come giocatore, voglio più tempo tra le incursioni ai livelli più bassi, così che la pressione segua la difficoltà scelta.
+36. Come giocatore, voglio che la stessa frequenza di difficoltà valga per entrambe le fazioni, così che i barbari siano neutrali.
+37. Come giocatore, voglio rinforzi graduali entro un tetto comune a difensori e incursori, così che la minaccia sia limitata.
+38. Come giocatore, voglio attaccare direttamente l'accampamento anche se sopravvivono difensori, così da eliminare la fonte dei rinforzi.
+39. Come giocatore, voglio denari in tesoreria alla distruzione dell'accampamento, così da ricevere una ricompensa immediata.
+40. Come giocatore, voglio una traccia non bloccante dell'accampamento distrutto, così da riconoscere il luogo liberato.
+41. Come giocatore, voglio che i superstiti senza accampamento vaghino finché sconfitti, così da poterli ancora incontrare.
+42. Come giocatore, voglio che i superstiti non organizzino più incursioni né ricevano rinforzi, così che la distruzione sia definitiva.
+43. Come giocatore, voglio vedere e ricordare gli accampamenti secondo la nebbia di guerra, così da esplorare senza informazioni nascoste.
+44. Come giocatore, voglio avvisi utili e non ripetuti per gli attacchi barbari, così da reagire.
+45. Come giocatore, voglio che i barbari attacchino truppe e strutture senza conquistare insediamenti, così da affrontare incursioni distinte da una fazione giocabile.
+46. Come giocatore, voglio ordinare attacchi a opere nemiche visibili e raggiungibili, così da interrompere la produzione con incursioni mirate.
+47. Come giocatore, voglio che le strutture centrali permanenti restino indistruttibili, così che il centro della conquista continui a esistere.
+48. Come giocatore, voglio che un'opera danneggiata funzioni fino a zero resistenza, così da comprendere quando va fuori uso.
+49. Come giocatore, voglio vedere le rovine e ripararle nello spazio originario, così da ripristinare un insediamento colpito.
+50. Come giocatore, voglio conservare capacità di abitazioni e magazzini anche in rovina o riparazione, così da non perdere persone o scorte.
+51. Come giocatore, voglio conservare il Tier raggiunto se Villa o Foro sono in rovina, così da evitare una regressione improvvisa.
+52. Come giocatore, voglio ordinare riparazioni meno costose delle nuove costruzioni, così da poter recuperare dai danni.
+53. Come giocatore, voglio riparazioni con lavoratori, tempi, priorità e feedback leggibili, così da gestire risorse e scelte.
+54. Come giocatore, voglio sospendere la produzione di un edificio in riparazione, così che la sua protezione abbia un costo.
+55. Come giocatore, voglio riparare mura e porte fuori dall'assedio, così da recuperare le difese.
+56. Come giocatore, voglio che una riparazione iniziata prima dell'assedio continui, così che il lavoro non venga annullato.
+57. Come giocatore, voglio che un varco occupato rimanga aperto fino a sgombero, così che le truppe non siano sovrapposte alle mura.
+58. Come giocatore, voglio che danni e rovine persistano dopo una conquista, così che lo scontro abbia conseguenze.
+59. Come giocatore, voglio un'IA capace di considerare incursioni, riparazioni e percorsi usando solo informazioni osservate, così da affrontare un avversario competente.
+60. Come giocatore, voglio che lo stesso seed e le stesse impostazioni riproducano mappa e partita nella stessa versione, così da poter ripetere gli eventi.
+
+## Implementation Decisions
+
+### Ambito e generazione
+
+- Una sola dimensione giocabile da calibrare ora; progettare senza nuovi vincoli inutili per dimensioni maggiori, partite più lunghe o più giocatori futuri. Nessun obbligo di implementare quelle modalità ora. La dimensione non è ancora fissata.
+- Conservare generazione da seed, mappa organica non speculare e parità effettiva di opportunità, risorse e pericoli. Garantire almeno un insediamento minore relativamente vicino a ogni Stronghold, ancora neutrale e contendibile. Puntare a più di 4–6 insediamenti senza affollamento; favorire uno o due naturalmente contesi, senza vincolo rigido di posizione centrale. Diversità di localizzazione e contesto probabilistica, non categorie speciali predeterminate.
+- Accesso alle quattro risorse comparabile considerando percorso reale, ostacoli e minacce, non soltanto distanza o quantità. Il valore economico deve riflettere le regole effettive: non introdurre bonus di adiacenza non concordati. Dimensione, intervalli, tempi di marcia, densità e parametri vanno calibrati insieme su partite, seed e difficoltà.
+- Rete unica connessa per tutte le strade funzionali, collegando porte/passaggi reali di Stronghold e insediamenti e raccordando aree produttive e luoghi significativi; nessun obbligo di diramazione per ogni nodo. Evitare doppioni, parallele inutili, sovrapposizioni con opere/mura e raccordi inesatti anche durante crescita. Consentire alternative giustificate dalla geografia, senza imporre ridondanza universale. Distinguere eventuali tracce decorative dalle strade che velocizzano. Preparare percorsi tra insediamenti per commercio futuro senza definire o implementare commercio.
+- Paesaggi italiani plausibili e varie combinazioni per seed, privilegiando giocabilità. Pochi fiumi riconoscibili ed estesi, evitare segmenti troppo corti e fiumi troppo vicini; corsi minori collegati possibili. Consentire origini e sbocchi interni, laghi indipendenti o con affluenti/emissari. Laghi non attraversabili, aggirabili via terra. Paludi attraversabili, con rallentamento come unico nuovo effetto di regole. Assicurare raggiungibilità terrestre di Stronghold, insediamenti e luoghi strategici.
+- Guadi in numero adeguato alla funzione del fiume: più possibilità per barriere significative; corsi brevi aggirabili possono averne uno o nessuno. Guadi causano disordine. Ponti e guadi servono la rete; ponti soprattutto sui collegamenti principali quando appropriato, senza aggiunte artificiali. Un ponte conserva il vantaggio di strada e non causa disordine; permanente, non costruibile né distruttibile in questa versione.
+- Ponti con geometria visibile coerente con quella percorribile; colonna dove stretti, precedenza a chi impegna per primo, spareggio deterministico per simultaneità, attesa e gestione opposti senza attraversamenti illeciti. Verificare uscita libera prima di entrare; nemici possono combattere sul ponte, senza attraversarsi. Nessun blocco permanente dopo ritirata, morte o congestione. Dettagli di larghezza e spareggio delegati alla calibrazione.
+
+### Presentazione e stagioni
+
+- Conservare PixelBuffer/PixiJS, prospettiva, stile procedurale e leggibilità degli insediamenti; varietà contestuale di erba, alberi, cespugli, rocce, strade e dettagli. Nessuna collisione individuale per vegetazione, rocce o animali decorativi: prevalgono i normali effetti del tipo di terreno.
+- Primavera/estate verdi, autunno più secco, inverno con neve e vegetazione adatta; sempreverdi possibili, neve anche su dettagli purché non nasconda strade e oggetti importanti. Cambiano aspetto e non forma, posizione, percorso o risorse. Nessuna nuova meccanica meteorologica; preservare gli effetti economici stagionali esistenti. Terreno esplorato mostra la stagione attuale anche se ricordato, senza aggiornare informazioni nascoste su edifici, accampamenti o danni.
+- Animali decorativi, specie e frequenza coerenti con ambiente e Italia dell'epoca; alcuni animati/mobili con moderazione. Niente caccia, risorse, combattimento, collisioni o informazioni tattiche; visibili solo in zone attualmente osservate. Scelta specie e densità da calibrare. Dettagli estetici riproducibili per seed, separati da Match e hash.
+
+### Accampamenti barbari
+
+- Luoghi neutrali distinti e nettamente più piccoli degli insediamenti minori e Stronghold; grafica procedurale riconoscibile con 2–3 varianti estetiche. Numero e posizioni iniziali variabili, comparabili tra fazioni e non troppo vicini alle Stronghold per un attacco immediato; non nascono nuovi accampamenti in partita. Gli insediamenti minori rimangono conquistabili e distinti.
+- Gruppi ostili a entrambe le fazioni difendono il campo e compiono incursioni intermittenti relativamente vicine. Truppe che minacciano direttamente hanno priorità; possono colpire truppe, opere raggiungibili, mura e porte senza conquistare insediamenti o costituire una fazione giocabile. Le guarnigioni devono poter difendere contro questi attacchi usando ed estendendo coerentemente le capacità effettive di assedio, senza ipotizzare un comportamento già esistente.
+- Forza finita comune a difensori e incursori, rinforzi graduali entro il tetto finché il campo esiste. Incursioni più frequenti con maggiore difficoltà, applicate a entrambe le fazioni; nessuna variazione di mappa, bottino, risorse, salute, danno o tetto di forza dovuta alla difficoltà. Parametri di frequenza, forza, distanza e tempi da calibrare.
+- L'accampamento ha resistenza propria ed è attaccabile anche se vi sono barbari vivi; a zero è eliminato permanentemente, non conquistato. La fazione che infligge il colpo finale riceve una sola volta denari direttamente in tesoreria; quantità configurabile e bilanciabile. Una traccia visiva non blocca movimento. I superstiti non ricevono rinforzi e non compiono nuove incursioni: vagano per la mappa fino a essere sconfitti, si difendono se attaccati e non devono scomparire automaticamente. Comportamenti accessori non decisi vanno calibrati senza attribuire loro nuove aggressioni.
+- Osservazione e nebbia: campo noto ricordato come ultima posizione e stato osservati, nessun aggiornamento nascosto su distruzione, unità o danni. Avvisi localizzabili per minacce viste o attacchi subiti, aggregati per non ripetersi a ogni colpo, senza divulgare dati non osservati.
+
+### Danni, assedio e riparazioni
+
+- Questa decisione rivede ADR-0030: le opere economiche completate sono bersagli individuali di barbari e fazioni; il centro permanente di Stronghold e insediamenti resta indistruttibile. Un'opera in costruzione non può essere danneggiata fino al completamento, poi diventa attaccabile anche sotto assedio. Le opere raggiungibili fuori dalle mura sono vulnerabili; quelle interne richiedono accesso o tiro validi senza attraversare muri, porte e brecce illegittimamente.
+- Ordini espliciti di attacco per giocatore e IA; barbari selezionano autonomamente. Fanteria può colpire opere e campo, cavalleria con efficacia inferiore; armi a distanza possono colpire bersagli visibili entro gittata e posizione di tiro valida. Fortificazioni conservano regole di assedio e ruoli distinti delle armi. Attacco richiede visibilità corrente; cessa se il bersaglio esce dalla vista o diventa invulnerabile, con motivo comunicato, senza tracking di stato nascosto.
+- Opere con resistenza positiva funzionano normalmente; a zero diventano rovina fuori uso nello stesso spazio e ostacolano come prima. Produzione e benefici operativi cessano a zero e durante riparazione; lavoratori ordinari vengono liberati per l'allocazione. Eccezioni: case e magazzini mantengono tutta la capacità anche in rovina e riparazione, senza perdita di scorte o persone; Villa/Foro preservano Tier e sblocchi raggiunti, mentre benefici produttivi seguono la regola generale. Stato danni, rovine, attività e attese leggibili in mappa e pannello.
+- Il proprietario ordina riparazione di opere, mura e porte; costo e durata proporzionati al danno e nettamente inferiori alla costruzione nuova. Lavoratori e pagamento usano il più possibile il modello e la coda di costruzione esistenti; opere già produttive hanno priorità, poi nuove costruzioni e riparazioni competono nell'ordine di avvio scelto dal giocatore. Riparazioni multiple seguono la logica della costruzione; se mancano lavoratori il lavoro attivo si ferma e la ragione è visibile. Una volta completato l'edificio rientra nell'allocazione ordinaria senza priorità automatica.
+- Nessuna nuova riparazione può iniziare durante assalto o blocco. Quelle iniziate prima proseguono anche sotto assedio e sono invulnerabili anche quando ferme per mancanza di lavoratori; la produzione è sospesa per tutta la riparazione. Ripristino completo della resistenza solo al termine, non graduale. Annullamento volontario o conquista annulla il lavoro, senza rimborso, lasciando la resistenza pre-riparazione; i danni e le rovine persistono alla conquista e il nuovo proprietario può ordinare riparazioni. Quando una breccia riparata è occupata, attesa segnalata, apertura mantenuta e invulnerabilità conservata finché è possibile richiudere senza sovrapposizioni; solo allora la struttura ripristinata torna attaccabile.
+- L'attacco barbaro a un'opera esterna non è di per sé un assedio; l'assalto barbaro inizia attaccando mura o porta e termina alla sconfitta o ritirata/interruzione dell'attacco. Stabilire una regola deterministica che eviti oscillazioni durante brevi pause, senza concedere conquista o blocco ai barbari. Gli assalti barbari usano le regole compatibili di muro/porta, non attraversano fortificazioni integre e devono consentire difesa della guarnigione.
+- L'IA usa soltanto Observation e conoscenza legittima, valutando minacce barbare, attacco o evitamento, riparazioni, ponti, guadi e nuove strutture. No accesso al mondo nascosto. Applicare stesse regole e comandi a giocatore e IA.
+- La stessa versione, seed e impostazioni devono riprodurre mappa e simulazione. Non è richiesta compatibilità con replay o salvataggi precedenti al rework; non introdurre una promessa di compatibilità retroattiva.
+
+## Testing Decisions
+
+- Test significativi sul comportamento osservabile pubblico, non repliche dell'implementazione; coprire esiti, determinismo, casi limite e regressioni.
+- Interfacce confermate dall'utente: Command → Match → Observation per regole, attacchi, riparazioni, assedio, barbari, IA e fog; generazione della mappa e invarianti su molti seed; generatori PixelBuffer e geometria condivisa per rappresentazione e attraversamenti. Usare i test di invarianti su 1000 seed, contratti Match/Controller/Observation, geometrie e generatori procedurali come precedenti. Testare entrambe le fazioni, difficoltà, code, ricostruzione e riproduzione deterministica.
+- Validare connessione stradale e accessi, acqua, raggiungibilità, equilibrio, densità e variabilità su un campione ampio; controllare anche assenza di sovrapposizioni tra terreno, strade, strutture e loro ingombri. La naturalezza grafica, il ritmo e l'affollamento richiedono valutazione distinta dalle proprietà automatiche.
+- Testare attacchi sotto fog, conoscenza ricordata, ricompense contese, limiti e superstiti, riparazioni prima/durante assedio, carenza lavoratori, annullamento, conquista, breccia occupata, eccezioni di capacità e Tier, attacchi a lavori incompleti, traffico e scontri su ponti. Verificare che l'aspetto stagionale non alteri stato o hash e non riveli informazioni nascoste.
+- Eseguire i controlli non browser appropriati. Chromium, headed o headless, profili npm, Playwright e CI browser richiedono una richiesta esplicita dell'utente per la singola esecuzione; la presente specifica non la costituisce. Evidenza visiva e browser non autorizzata va dichiarata non eseguita.
+
+## Out of Scope
+
+- Implementazione immediata: la presente richiesta autorizza progettazione e documentazione, non codice di gioco.
+- Modalità multigiocatore o selezione effettiva di mappe più grandi; commercio, carovane o regole commerciali; ponti costruibili/distruttibili o navigazione; nuove meccaniche climatiche; caccia e utilizzo economico degli animali; rigenerazione di accampamenti o fondazione di insediamenti sulle loro rovine.
+- Compatibilità con salvataggi e replay precedenti; imposizione di un preciso centro conteso o di categorie di insediamenti determinate; arte esterna o cambio di stile.
+
+## Further Notes
+
+- Queste sono decisioni di progetto, non prova che il comportamento sia già implementato. Il rework degli insediamenti è stato consegnato localmente; l'issue #74 risulta ancora aperta. Le modifiche ad assedio, opere e difficoltà aggiornano intenzionalmente le decisioni precedenti.
+- Delegati alla calibrazione: dimensione, quantità e distribuzioni, distanze, frequenza e forza delle incursioni, raggio di attività, tempi e costi delle riparazioni, valore del bottino, resistenze e danni, soglia di permanenza dell'assalto, specie, dettagli artistici e spareggio deterministico dei ponti. Non inventare nuove meccaniche per colmare questi parametri.
+- La riparazione ferma resta invulnerabile per scelta esplicita, anche senza lavoratori; la produzione sospesa è la mitigazione concordata. In caso di conflitto fra questa scelta e ottimizzazioni future, non modificarla senza una nuova decisione.

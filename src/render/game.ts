@@ -76,7 +76,7 @@ import { factionCode, type Faction } from '../sim/faction.ts';
 import { MAP_HEIGHT, MAP_WIDTH } from '../sim/map.ts';
 import { type Speed } from '../sim/pacing.ts';
 import { corpsesOf, type Corpse } from '../sim/residue.ts';
-import { MATCH_TICKS } from '../sim/season.ts';
+import { MATCH_TICKS, type Season } from '../sim/season.ts';
 import { visibleCorpses } from './corpses.ts';
 import type { LoggedCommand } from '../sim/replay.ts';
 import { requireTickCount } from '../sim/ticks.ts';
@@ -494,6 +494,8 @@ export interface Game {
 
 /** What a game needs to exist: a stage, a seed, the viewport, the camera and the fog. */
 export interface GameOptions {
+  /** Update the purely visual ground when the observed season changes. */
+  readonly season?: (season: Season) => void;
   readonly relayout?: (preferences: UiPreferences) => void;
   readonly centerOn?: (x: number, y: number) => void;
   readonly faction?: Faction;
@@ -1360,6 +1362,7 @@ export function createGame(options: GameOptions): Game {
   function repaint(): void {
     const known = readSites();
     const observation = visible();
+    options.season?.(observation.season);
     // The journal first: a notice raised on this tick is part of the frame the
     // Player is about to see, and reading it twice in one tick is harmless.
     notices = noticeBook.read(observation, match.state.tick);

@@ -97,14 +97,31 @@ _UI_: —
 _Avoid_: Icon, badge, sprite
 
 **Terrain**:
-What a tile is made of — plain, hill, forest, farmland, river, ford, road — and the modifier it carries. Only a river stops a Squad outright; the rest are costs and effects.
+The kind of ground or water a Squad encounters, such as plain, hill, forest, farmland, river, lake, marsh, ford or road, and the movement costs or effects it carries. Rivers and lakes stop Squads except at an available crossing.
 _UI_: Terreno
 _Avoid_: Ground, biome
 
 **Ford**:
-A river tile a Squad may cross, at the cost of disorder. Every river carries several, because a river with one crossing is a wall with a gate.
+A place where a Squad may cross a river in the water, at the cost of disorder. Its presence and number depend on the course of the water and the crossings needed.
 _UI_: Guado
 _Avoid_: Bridge, crossing (reserve "crossing" for the act)
+
+**Bridge**:
+A structure that carries a path across water, allowing Squads to cross above it.
+_UI_: Ponte
+_Avoid_: Ford
+
+**Marsh**:
+Wet ground that Squads can cross more slowly than ordinary land.
+_UI_: Palude
+
+**Lake**:
+An inland body of water that Squads cannot cross and must travel around.
+_UI_: Lago
+
+**Barbarian camp**:
+A neutral place occupied by a group hostile to both Factions, which defends it and raids its surroundings. Eliminating it permanently removes the threat and yields a one-time reward, rather than capturing it as a minor settlement.
+_UI_: Accampamento barbaro
 
 **Resource node**:
 A place on the map holding one resource — grain, timber, stone or iron — in a quantity the economy draws on each Season. Nodes stand on the terrain that suits them: timber in forests, stone and iron on hills, grain on farmland. The quantity is how much land a settlement can work, not a pile that runs out (ADR-0012).
@@ -112,7 +129,7 @@ _UI_: Giacimento
 _Avoid_: Deposit, mine, patch, field
 
 **Minor settlement**:
-A capturable settlement that is not a Stronghold, even at the highest Tier. Four to six stand on every map; they have no Walls and are taken by holding their Capture area.
+A capturable settlement that is not a Stronghold, even at the highest Tier. Minor settlements have no Walls and are taken by holding their Capture area.
 _UI_: Insediamento minore
 _Avoid_: Village, town, city, outpost
 
@@ -132,7 +149,7 @@ _UI_: Breccia
 _Avoid_: Gap, hole, breakthrough
 
 **Road**:
-A path forming part of a network between settlements and other relevant places: it carries a Squad faster, and it crosses water only at a ford. The network connects to settlement entrances and internal passages.
+A path forming part of a connected network between settlements and other relevant places: it carries a Squad faster, and crosses water at a Ford or a Bridge. The network connects to settlement entrances and internal passages.
 _UI_: Strada
 _Avoid_: Highway, route (a route is what pathfinding returns)
 
@@ -173,7 +190,7 @@ _UI_: Ordine
 _Avoid_: Action, instruction, order (as a synonym for Command)
 
 **Difficulty level**:
-How hard a built-in AI opponent thinks: Tiro, Centurio or Imperator. It changes planning horizon, aggression, reaction time and scouting quality, and nothing else — never resources, production or vision, which belong to the rules. “Level” here means one of these AI settings; a settlement's progression is its Tier.
+The selected challenge level: Tiro, Centurio or Imperator. It changes the built-in AI opponent's planning horizon, aggression, reaction time and scouting quality, and the frequency of Barbarian camp raids against both Factions; it does not change resources, production, vision or barbarian combat strength. “Level” here means one of these settings; a settlement's progression is its Tier.
 _UI_: —
 _Avoid_: setting
 

@@ -37,6 +37,9 @@ Reservation is not a blanket movement obstacle: courtyards, roads and passages
 must be distinguished from physical structures. No Tier increase expands the
 wall perimeter into an army or a neighbouring road.
 
+> **Design update:** ADR-0031 revises the following exclusion for the planned
+> map rework; implementation remains pending.
+
 Economic Works are physically represented but cannot be attacked or destroyed as
 individual targets, including those placed outside the Walls. Economic warfare
 continues through Siege and capture. Raiding and rebuilding individual Works are

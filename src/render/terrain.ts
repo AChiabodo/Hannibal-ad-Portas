@@ -59,6 +59,7 @@ import {
 } from '../art/terrain.ts';
 import { nodeMarker, type NodeKind } from '../art/nodes.ts';
 import { blit, createPixelBuffer, type PixelBuffer } from '../art/pixel-buffer.ts';
+import type { Season } from '../sim/season.ts';
 
 /**
  * Which material each terrain of the simulation is drawn with.
@@ -151,7 +152,7 @@ export function quadrantsAt(map: MapGrid, cellX: number, cellY: number): CellQua
  * the path has something to be a path across, and a marker is drawn last so that
  * a node on a road is still a node.
  */
-export function renderTerrain(map: MapGrid): PixelBuffer {
+export function renderTerrain(map: MapGrid, season: Season = 'spring'): PixelBuffer {
   const theatre = createPixelBuffer(THEATRE_PIXELS, THEATRE_PIXELS);
 
   for (let j = 0; j <= MAP_HEIGHT; j += 1) {
@@ -159,6 +160,8 @@ export function renderTerrain(map: MapGrid): PixelBuffer {
       blit(theatre, cellTile(quadrantsAt(map, i, j)), i * TERRAIN_TILE, j * TERRAIN_TILE);
     }
   }
+
+  colourSeason(theatre, map, season);
 
   for (let y = 0; y < MAP_HEIGHT; y += 1) {
     for (let x = 0; x < MAP_WIDTH; x += 1) {
@@ -175,6 +178,34 @@ export function renderTerrain(map: MapGrid): PixelBuffer {
   }
 
   return theatre;
+}
+
+/** Recolour natural land before adding roads and markers, leaving their shapes clear. */
+function colourSeason(buffer: PixelBuffer, map: MapGrid, season: Season): void {
+  if (season === 'spring' || season === 'summer') return;
+  for (let y = 0; y < buffer.height; y += 1) {
+    const tileY = Math.max(0, Math.min(MAP_HEIGHT - 1, Math.floor((y - THEATRE_MARGIN) / TERRAIN_TILE)));
+    for (let x = 0; x < buffer.width; x += 1) {
+      const tileX = Math.max(0, Math.min(MAP_WIDTH - 1, Math.floor((x - THEATRE_MARGIN) / TERRAIN_TILE)));
+      const terrain = terrainAt(map, tileX, tileY);
+      if (terrain === TERRAIN.river || terrain === TERRAIN.ford || terrain === TERRAIN.road) continue;
+      const at = (y * buffer.width + x) * 4;
+      const red = buffer.pixels[at] ?? 0;
+      const green = buffer.pixels[at + 1] ?? 0;
+      const blue = buffer.pixels[at + 2] ?? 0;
+      if (season === 'autumn') {
+        if (terrain === TERRAIN.hill) continue;
+        buffer.pixels[at] = Math.floor((red * 3 + 180) / 4);
+        buffer.pixels[at + 1] = Math.floor((green * 3 + 135) / 4);
+        buffer.pixels[at + 2] = Math.floor((blue * 3 + 65) / 4);
+      } else {
+        const weight = terrain === TERRAIN.forest ? 1 : 2;
+        buffer.pixels[at] = Math.floor((red * (4 - weight) + 220 * weight) / 4);
+        buffer.pixels[at + 1] = Math.floor((green * (4 - weight) + 229 * weight) / 4);
+        buffer.pixels[at + 2] = Math.floor((blue * (4 - weight) + 228 * weight) / 4);
+      }
+    }
+  }
 }
 
 /**
