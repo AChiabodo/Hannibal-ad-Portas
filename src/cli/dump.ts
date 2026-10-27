@@ -54,6 +54,7 @@ const TERRAIN_GLYPHS: Readonly<Record<Terrain, string>> = {
   [TERRAIN.road]: '-',
   [TERRAIN.lake]: 'O',
   [TERRAIN.marsh]: '%',
+  [TERRAIN.bridge]: '#',
 };
 
 /** The glyph a resource node of each kind is drawn as. */
@@ -89,6 +90,7 @@ const TERRAIN_NAMES: Readonly<Record<Terrain, string>> = {
   [TERRAIN.road]: 'road',
   [TERRAIN.lake]: 'lake',
   [TERRAIN.marsh]: 'marsh',
+  [TERRAIN.bridge]: 'bridge',
 };
 
 /** The terrains in the order the legend lists them: the ground first, then the water and the ways. */
@@ -102,6 +104,7 @@ const TERRAIN_ORDER: readonly Terrain[] = [
   TERRAIN.road,
   TERRAIN.lake,
   TERRAIN.marsh,
+  TERRAIN.bridge,
 ];
 
 /**

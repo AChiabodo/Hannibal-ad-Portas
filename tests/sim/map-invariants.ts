@@ -51,6 +51,7 @@ const TERRAIN_NAMES: Readonly<Record<Terrain, string>> = {
   [TERRAIN.road]: 'road',
   [TERRAIN.lake]: 'lake',
   [TERRAIN.marsh]: 'marsh',
+  [TERRAIN.bridge]: 'bridge',
 };
 
 /** The name of a resource, for a failure a reader can act on. */
@@ -194,7 +195,7 @@ export function riverProblems(map: MapGrid): readonly string[] {
 
     for (const tile of river.tiles) {
       const here = terrainOf(map, tile);
-      if (here !== TERRAIN.river && here !== TERRAIN.ford && here !== TERRAIN.lake) {
+      if (here !== TERRAIN.river && here !== TERRAIN.ford && here !== TERRAIN.lake && here !== TERRAIN.bridge) {
         const name = isTerrain(here) ? TERRAIN_NAMES[here] : String(here);
         problems.push(
           `river ${index} runs through a ${name} tile at (${tileX(tile)}, ${tileY(tile)}), ` +

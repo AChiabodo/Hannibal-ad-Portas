@@ -103,6 +103,11 @@ function fingerprint(buffer: PixelBuffer): string {
 }
 
 describe('the material a terrain is drawn with', () => {
+  it('connects a road visually to its adjacent bridge', () => {
+    const map = mapWith(TERRAIN.plain, { x: 10, y: 10 }, TERRAIN.road);
+    map.terrain[tileIndex(11, 10)] = TERRAIN.bridge;
+    expect(roadMask(map, 10, 10) & 0b0010).not.toBe(0);
+  });
   it('covers every terrain the map knows, and never draws two terrains as one', () => {
     const drawn = new Set<TerrainMaterial>();
 

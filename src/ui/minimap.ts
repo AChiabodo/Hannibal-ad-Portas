@@ -88,6 +88,7 @@ export const MINIMAP_COLOUR: Readonly<Record<Terrain, Rgba>> = {
   [TERRAIN.road]: shadeAt(RAMPS.stone, 6),
   [TERRAIN.lake]: shadeAt(RAMPS.water, 4),
   [TERRAIN.marsh]: shadeAt(RAMPS.olive, 3),
+  [TERRAIN.bridge]: shadeAt(RAMPS.stone, 6),
 };
 
 /**

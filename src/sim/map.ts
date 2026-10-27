@@ -80,6 +80,7 @@ export const TERRAIN = {
   road: 6,
   lake: 7,
   marsh: 8,
+  bridge: 9,
 } as const;
 
 /** One of the terrains a tile can be (GLOSSARY: Terrain). */
@@ -271,6 +272,7 @@ export function generateMap(seed: number): MapGrid {
     blocked === 1 || lakeMargin[index] === 1 ? 1 : 0);
   const roads = carveRoads(terrain, rng, [...strongholds, ...settlements, ...resources], roadObstacles);
   joinLand(terrain, rivers);
+  buildRoadBridge(terrain, roads, rivers);
 
   const map = { terrain, strongholds, settlements, rivers, resources, roads };
   return { ...map, barbarianCamps: barbarianCampSites(map, seed) };
@@ -345,7 +347,8 @@ export function isTerrain(value: number): value is Terrain {
     value === TERRAIN.ford ||
     value === TERRAIN.road ||
     value === TERRAIN.lake ||
-    value === TERRAIN.marsh
+    value === TERRAIN.marsh ||
+    value === TERRAIN.bridge
   );
 }
 
@@ -1104,6 +1107,28 @@ function widenCrossing(terrain: Uint8Array, tile: number): void {
     for (let x = Math.max(0, atX - 2); x <= Math.min(MAP_WIDTH - 1, atX + 2); x += 1) {
       const index = tileIndex(x, y);
       if (terrain[index] === TERRAIN.river) terrain[index] = TERRAIN.ford;
+    }
+  }
+}
+
+/** Turn one primary-road crossing into a bridge while retaining other fords. */
+function buildRoadBridge(terrain: Uint8Array, roads: readonly Road[], rivers: readonly River[]): void {
+  for (const road of roads.slice(0, 2)) {
+    for (const tile of road.tiles) {
+      if (terrain[tile] !== TERRAIN.ford) continue;
+      const x = tileX(tile);
+      const y = tileY(tile);
+      const remains = rivers.every((river) => river.tiles.filter((part) => terrain[part] === TERRAIN.ford &&
+        Math.max(Math.abs(tileX(part) - x), Math.abs(tileY(part) - y)) > 2).length >= MIN_FORDS_PER_RIVER);
+      if (!remains) continue;
+      for (let dy = -2; dy <= 2; dy += 1) for (let dx = -2; dx <= 2; dx += 1) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= MAP_WIDTH || ny >= MAP_HEIGHT) continue;
+        const part = tileIndex(nx, ny);
+        if (terrain[part] === TERRAIN.ford) terrain[part] = TERRAIN.bridge;
+      }
+      return;
     }
   }
 }

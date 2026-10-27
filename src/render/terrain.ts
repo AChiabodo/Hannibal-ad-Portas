@@ -80,6 +80,7 @@ export const MATERIAL_OF_TERRAIN: Readonly<Record<Terrain, TerrainMaterial>> = {
   [TERRAIN.road]: 'road',
   [TERRAIN.lake]: 'lake',
   [TERRAIN.marsh]: 'marsh',
+  [TERRAIN.bridge]: 'bridge',
 };
 
 /**
@@ -246,8 +247,11 @@ function colourSeason(buffer: PixelBuffer, map: MapGrid, season: Season): void {
  * at each bank and the ford is what crosses, which is what the map says.
  */
 export function roadMask(map: MapGrid, x: number, y: number): number {
-  const connect = (nx: number, ny: number): number =>
-    nx >= 0 && ny >= 0 && nx < MAP_WIDTH && ny < MAP_HEIGHT && terrainAt(map, nx, ny) === TERRAIN.road ? 1 : 0;
+  const connect = (nx: number, ny: number): number => {
+    if (nx < 0 || ny < 0 || nx >= MAP_WIDTH || ny >= MAP_HEIGHT) return 0;
+    const terrain = terrainAt(map, nx, ny);
+    return terrain === TERRAIN.road || terrain === TERRAIN.bridge ? 1 : 0;
+  };
 
   return connect(x, y - 1) | (connect(x + 1, y) << 1) | (connect(x, y + 1) << 2) | (connect(x - 1, y) << 3);
 }

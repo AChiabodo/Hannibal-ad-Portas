@@ -82,6 +82,7 @@ import {
  */
 const MOVE_COST: Readonly<Record<Exclude<Terrain, typeof TERRAIN.river | typeof TERRAIN.lake>, number>> = {
   [TERRAIN.road]: 2,
+  [TERRAIN.bridge]: 2,
   [TERRAIN.plain]: 4,
   [TERRAIN.farmland]: 5,
   [TERRAIN.hill]: 8,

@@ -109,7 +109,7 @@ export const QUADRANT = TERRAIN_TILE / 2;
  * two textures; they are one *class* because they are one material to the
  * autotiler.
  */
-export const MATERIALS = ['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road', 'lake', 'marsh'] as const;
+export const MATERIALS = ['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road', 'lake', 'marsh', 'bridge'] as const;
 
 /** One of the materials a terrain tile can be drawn from. */
 export type TerrainMaterial = (typeof MATERIALS)[number];
@@ -137,6 +137,7 @@ export const CLASS_OF: Readonly<Record<TerrainMaterial, MaterialClass>> = {
   road: 'road',
   lake: 'water',
   marsh: 'marsh',
+  bridge: 'water',
 };
 
 /**
@@ -376,6 +377,7 @@ const SALT: Readonly<Record<TerrainMaterial, number>> = {
   road: 0x6007,
   lake: 0x7008,
   marsh: 0x8009,
+  bridge: 0x900a,
 };
 
 /**
@@ -466,6 +468,7 @@ export const MATERIAL_TEXTURES: Readonly<Record<TerrainMaterial, MaterialTexture
   road: { ramp: 'bronze', body: 4, dark: 3, mark: { ramp: 'stone', index: 4 }, markShare: 1 / 4 },
   lake: { ramp: 'water', body: 4, dark: 3, mark: { ramp: 'water', index: 6 }, markShare: 1 / 8 },
   marsh: { ramp: 'olive', body: 3, dark: 2, mark: { ramp: 'water', index: 3 }, markShare: 1 / 8 },
+  bridge: { ramp: 'bronze', body: 4, dark: 3, mark: { ramp: 'bronze', index: 5 }, markShare: 1 / 4 },
 };
 
 /**
@@ -570,7 +573,8 @@ function textureOf(material: TerrainMaterial, x: number, y: number): Rgba {
       if (stone) return mark;
       return noise % 6 === 0 ? dark : body;
     }
-    case 'road': {
+    case 'road':
+    case 'bridge': {
       if (noise % 7 === 0) return mark;
       return noise % 4 === 0 ? dark : body;
     }
@@ -1138,6 +1142,7 @@ export const TERRAIN_MATERIALS: readonly TerrainMaterial[] = [
   'ford',
   'lake',
   'marsh',
+  'bridge',
 ];
 
 /**
