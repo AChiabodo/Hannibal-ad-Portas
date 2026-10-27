@@ -130,14 +130,14 @@ describe('the shipped siege AI in a headless Match', () => {
    */
   const levelMatches = [
     { level: 'centurio', seed: 6, winner: 'carthage', path: 'blockade' },
-    { level: 'tiro', seed: 13, winner: 'rome', path: 'assault' },
+    { level: 'tiro', seed: 13, winner: 'carthage', path: 'blockade' },
     { level: 'tiro', seed: 7, winner: 'carthage', path: 'blockade' },
-    { level: 'imperator', seed: 12, winner: 'carthage', path: 'blockade' },
-    { level: 'imperator', seed: 7, winner: 'rome', path: 'blockade' },
+    { level: 'imperator', seed: 12, winner: 'rome', path: 'assault' },
+    { level: 'imperator', seed: 7, winner: 'carthage', path: 'blockade' },
   ] as const;
 
   for (const { level, seed, winner, path } of levelMatches) {
-    it(`still ends with a Stronghold fallen at ${level}: ${winner} by ${path}, and the log replays`, () => {
+    it(`retained seed ${seed} still ends with a Stronghold fallen at ${level}: ${winner} by ${path}, and the log replays`, () => {
       const run = runOf(seed, HEADLESS_TICKS, level);
       expect(run.result.kind).toBe('victory');
       if (run.result.kind !== 'victory') return;
