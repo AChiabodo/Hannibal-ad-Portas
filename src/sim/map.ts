@@ -43,6 +43,7 @@
  * refuses anything else (ADR-0006).
  */
 import { makeRng, type Rng } from './rng.ts';
+import { barbarianCampSites, type BarbarianCampSite } from './barbarian-camp-sites.ts';
 import { containsTile, settlementLayout, turnRect, type GroundRect } from '../content/settlement-layout.ts';
 
 /** The map's width in tiles, allowing full settlement grounds (ADR-0030). */
@@ -200,6 +201,8 @@ export interface Road {
 
 /** The whole theatre a seed describes. */
 export interface MapGrid {
+  /** Neutral camps generated at the start; optional for legacy fixture maps. */
+  readonly barbarianCamps?: readonly BarbarianCampSite[];
   /**
    * The terrain of every tile, row-major: the cell at `tileIndex(x, y)`.
    *
@@ -260,7 +263,8 @@ export function generateMap(seed: number): MapGrid {
   const roads = carveRoads(terrain, rng, [...strongholds, ...settlements, ...resources], reservations.structures);
   joinLand(terrain, rivers);
 
-  return { terrain, strongholds, settlements, rivers, resources, roads };
+  const map = { terrain, strongholds, settlements, rivers, resources, roads };
+  return { ...map, barbarianCamps: barbarianCampSites(map, seed) };
 }
 
 /**
