@@ -1,11 +1,12 @@
+import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
 import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
-import { planningContacts, type Contact } from './contacts.ts';
+import { planningContacts, permittedContacts, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
 import { distance, type Site } from './site.ts';
 import type { AssaultObservation, AssaultReadiness } from './assault.ts';
-import { restingAtHome } from './recovery.ts';
+import { restingAtHome, returningHome } from './recovery.ts';
 
 type Faction = Observation<unknown>['faction'];
 
@@ -16,13 +17,17 @@ interface Squad extends Enemy {
   readonly capacity: number;
   readonly morale: number;
   readonly fatigue: number;
+  readonly inCamp?: boolean;
+  readonly inQuarters?: boolean;
   readonly routing: boolean;
   readonly engaged: boolean;
   readonly garrison: number | null;
   readonly goal: Site | null;
+  readonly passage?: { readonly settlement: number; readonly phase: string };
 }
 
 export interface MilitaryObservation {
+  readonly appearances?: readonly ObservedSettlement[];
   readonly year: number;
   readonly season: Season;
   readonly settlements: readonly (Site & { readonly id: number })[];
@@ -42,6 +47,7 @@ interface MilitaryType {
 }
 
 interface MilitaryContent {
+  readonly settlementRadius?: number;
   readonly canContinueAssault?: AssaultReadiness;
   readonly squadTypes: readonly MilitaryType[];
   readonly matchup: Readonly<Record<string, Readonly<Record<string, string>>>>;
@@ -163,7 +169,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
     id: 'military',
     tactical: ({ observation }) => {
       const { visible, faction } = observation;
-      const remembered = planningContacts(visible.contacts ?? [], observation.tick, content.ticksPerSecond)
+      const remembered = planningContacts(permittedContacts(visible), observation.tick, content.ticksPerSecond)
         .filter((contact) => contact.kind === 'squad' && !visible.enemies.some((enemy) => enemy.id === contact.id))
         .map((contact) => ({ ...contact, type: contact.type ?? 'unknown' }));
       const squads = visible.squads.filter((squad) => !squad.routing && squad.garrison === null)
@@ -179,7 +185,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
       for (const enemy of visible.enemies) region(enemy).enemy += enemyPower(enemy);
       for (const contact of remembered) region(contact).enemy += enemyPower(contact);
       const defence = visible.settlements.map((settlement) => {
-        const enemies = visible.enemies.filter((enemy) => distance(enemy, settlement) <= DEFENCE_RADIUS);
+        const enemies = visible.enemies.filter((enemy) => Math.max(0, distance(enemy, settlement) - (content.settlementRadius ?? 0)) <= DEFENCE_RADIUS);
         const area = region(settlement);
         area.threat = Math.max(area.threat, enemies.reduce((sum, enemy) => sum + enemyPower(enemy), 0));
         return { settlement, enemies, area };
@@ -195,8 +201,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
       const assigned = new Set<number>();
       let withdrawing = false;
       let committed = false;
-      const fallingBack = (squad: Squad) => squad.goal !== null && visible.settlements.some((settlement) =>
-        squad.goal!.x === settlement.x && squad.goal!.y === settlement.y);
+      const fallingBack = (squad: Squad) => returningHome(squad, visible.settlements);
       // Decide support eligibility before local engagements: men who are leaving
       // or have lost their ability to fight cannot keep another Squad in contact.
       const supportSquads = squads.filter((squad) => !spent(squad, observation) && !fallingBack(squad));
@@ -209,7 +214,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
         }
         const exhausted = spent(squad, observation);
         const enemies = visible.enemies.filter((enemy) => distance(squad, enemy) <= CONTACT_RADIUS);
-        const defendingHome = defence.some((task) => distance(squad, task.settlement) === 0 && task.enemies.length > 0);
+        const defendingHome = defence.some((task) => (squad.inQuarters ?? squad.inCamp ?? distance(squad, task.settlement) === 0) && task.enemies.length > 0);
         if (!squad.engaged && !defendingHome &&
           restingAtHome(squad, visible.settlements, types.get(squad.type)?.morale ?? 0)) {
           assigned.add(squad.id);
@@ -222,7 +227,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
         const lost = threat > support;
         if (!exhausted && !lost) return true;
         assigned.add(squad.id);
-        const sheltered = visible.settlements.some((settlement) => distance(squad, settlement) === 0);
+        const sheltered = squad.inQuarters ?? squad.inCamp ?? visible.settlements.some((settlement) => distance(squad, settlement) === 0);
         if (squad.engaged || (!returning && (enemies.length > 0 || (exhausted && !sheltered)))) {
           commands.push({ kind: 'withdraw', faction, squads: [squad.id] });
           reasons.push(`Withdraw Squad ${squad.id}: strength ${squad.men}, morale ${squad.morale}, local power ${support} against ${threat}; recover in friendly quarters rather than remain spent in the field.`);

@@ -19,7 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildingCode } from '../../src/content/index';
 import { createEconomy } from '../../src/sim/economy';
-import { createFogs, eyeOf, refreshVision, SETTLEMENT_VISION, type FogView } from '../../src/sim/fog';
+import { createFogs, type FogView } from '../../src/sim/fog';
 import { generateMap, type MapGrid, type Site } from '../../src/sim/map';
 import { musterSquad } from '../../src/sim/movement';
 import { startCalendar } from '../../src/sim/season';
@@ -40,13 +40,14 @@ const ROME: Site = { x: 10, y: 10 };
 const CARTHAGE: Site = { x: 85, y: 85 };
 
 /** A village within Rome's own watch, and one far outside every eye. */
-const NEAR_ROME: Site = { x: 16, y: 10 };
+const NEAR_ROME: Site = { x: 40, y: 10 };
 const IN_THE_FOG: Site = { x: 60, y: 40 };
 
 /** A hand-built theatre: two Strongholds, two villages, and nothing else. */
 function stage(): SiegeWorld {
   const map: MapGrid = testMap({ strongholds: [ROME, CARTHAGE], settlements: [NEAR_ROME, IN_THE_FOG] });
   const economy = createEconomy(map);
+  musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, ...NEAR_ROME });
 
   return {
     map,
@@ -124,8 +125,9 @@ describe('what the Faction may see', () => {
     expect(at(known, IN_THE_FOG)).toBeUndefined();
   });
 
-  it('shows an enemy stronghold an army has marched up to, as the enemy’s, seen', () => {
+  it('reads the observed plaza owner without reporting walls outside the scout sight', () => {
     const world = stage();
+    world.siege.fronts[1]!.structures[0]!.hp = 0;
     musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: CARTHAGE.x - 2, y: CARTHAGE.y });
     const known = seenBy(world);
     const enemy = at(known, CARTHAGE);
@@ -134,10 +136,10 @@ describe('what the Faction may see', () => {
     expect(enemy?.kind).toBe('stronghold');
     expect(enemy?.owner).toBe('carthage');
     expect(enemy?.memory).toBe('seen');
-    expect(enemy?.front?.structures).toHaveLength(WALL_SECTIONS + 1);
+    expect(enemy?.front?.structures).toHaveLength(0);
   });
 
-  it('remembers it — a settlement, and no walls — when the army marches away', () => {
+  it('keeps the last observed architecture and owner when the army marches away', () => {
     const world = stage();
     const army = musterSquad(world.economy, world.map, {
       faction: 'rome', squadType: 'hastati', x: CARTHAGE.x - 2, y: CARTHAGE.y,
@@ -157,7 +159,8 @@ describe('what the Faction may see', () => {
     expect(remembered?.front).toBeNull();
     // Memory records the settlement, not who holds it today: the drawing carries no
     // banner and the panel says the holder is unknown.
-    expect(remembered?.owner).toBeNull();
+    expect(remembered?.owner).toBe('carthage');
+    expect(remembered?.appearance?.tiles.some((tile) => tile.tier !== undefined)).toBe(true);
   });
 
   it('shows a village nobody holds, and says nobody holds it', () => {
@@ -179,7 +182,10 @@ describe('what the Faction may see', () => {
     // A watch that has been out to the far village and come back: the ground it saw
     // is remembered, and the settlement with it — with no front, because no eye covers it
     // now and a front is only what an eye reports.
-    refreshVision(world.fog.rome, world.map, [eyeOf(IN_THE_FOG, SETTLEMENT_VISION)]);
+    const scout = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, ...IN_THE_FOG });
+    look(world, 'rome');
+    scout.x = ROME.x;
+    scout.y = ROME.y;
     const known = seenBy(world);
     const village = at(known, IN_THE_FOG);
 
@@ -210,14 +216,15 @@ describe('the world a Match opens', () => {
 
 
 describe('Castrum knowledge for procedural art', () => {
-  it('shows completed own works and drops the camp after the holding is lost', () => {
+  it('remembers the observed Castrum after losing its holding', () => {
     const world = stage();
     const home = world.economy.settlements[0]!;
-    home.works.push({ building: buildingCode('castrum')!, remaining: 1 });
-    expect(seenBy(world).find((site) => site.id === home.id)?.camp).toBeUndefined();
+    home.works.push({ building: buildingCode('castrum')!, remaining: 1, origin: 0 });
+    const camp = () => seenBy(world).find((site) => site.id === home.id)?.appearance?.tiles.find((tile) => tile.work?.building === 'castrum')?.work;
+    expect(camp()?.stage).not.toBe(2);
     home.works[home.works.length - 1]!.remaining = 0;
-    expect(seenBy(world).find((site) => site.id === home.id)?.camp).toBe(true);
+    expect(camp()).toMatchObject({ stage: 2, origin: 'rome' });
     home.owner = 1;
-    expect(seenBy(world).find((site) => site.id === home.id)?.camp).toBeUndefined();
+    expect(camp()).toMatchObject({ stage: 2, origin: 'rome' });
   });
 });

@@ -48,6 +48,7 @@ import type { SiegeVisible, VisibleFront } from '../sim/siege.ts';
 import { KNOWLEDGE, knows, type FogView } from '../sim/fog.ts';
 import type { Faction } from '../sim/faction.ts';
 import { TILE_COUNT, type MapGrid } from '../sim/map.ts';
+import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 
 /** A settlement on the theatre, as the map states it: where it is, what it is, and its id. */
 export interface SiteIdentity {
@@ -66,6 +67,7 @@ export interface SiteIdentity {
 
 /** One settlement the Faction may see, and everything it knows of it. */
 export interface KnownSite extends SiteIdentity {
+  readonly appearance?: ObservedSettlement;
   /** Only completed works explicitly present in the own Observation. */
   readonly camp?: boolean;
   /** The Faction known to hold it, or `null` for a settlement nobody — or nobody known — holds. */
@@ -123,6 +125,15 @@ export function knownSites(
   faction: Faction,
 ): readonly KnownSite[] {
   requireTheatre(fog);
+  if (visible.appearances !== undefined) {
+    const identitiesById = new Map(identities.map((site) => [site.id, site]));
+    return visible.appearances.flatMap((appearance): KnownSite[] => {
+      const identity = identitiesById.get(appearance.id);
+      if (identity === undefined || appearance.tiles.length === 0) return [];
+      return [{ ...identity, appearance, owner: appearance.owner, memory: appearance.memory,
+        front: appearance.memory === 'seen' ? visible.fronts.find((front) => front.settlement === appearance.id) ?? null : null }];
+    });
+  }
   const own = new Map(visible.settlements.map((settlement) => [settlement.id, settlement]));
   const contacts = new Map(
     visible.contacts.filter((contact) => contact.kind !== 'squad').map((contact) => [contact.id, contact]),

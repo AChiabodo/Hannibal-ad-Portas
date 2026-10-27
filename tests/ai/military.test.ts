@@ -24,7 +24,7 @@ function battlefield(): SiegeVisible {
   const squad = base.squads[0]!;
   return { ...base, settlements: [{ ...base.settlements[0]!, x: 20, y: 20 }],
     squads: [0, 1, 2].map((id) => ({ ...squad, id, type: 'hastati', men: 120,
-      morale: 10, fatigue: 0, routing: false, engaged: false, garrison: null,
+      morale: 10, fatigue: 0, inQuarters: false, routing: false, engaged: false, garrison: null,
       x: 20, y: 20, goal: null })),
     enemies: [{ id: 10, type: 'gaul', x: 25, y: 20 }],
   };
@@ -74,7 +74,7 @@ describe('the military Controller', () => {
       contacts: [{ kind: 'stronghold', id: 1, type: null, x: 80, y: 80, seen: 0 }],
       fronts: [{ settlement: 1, breached: true, besieger: null, siege: null, ram: null,
         garrison: 0, hold: 0, structures: [] }],
-      squads: [{ ...base.squads[0]!, morale: 6 }],
+      squads: [{ ...base.squads[0]!, x: 22, y: 22, inCamp: false, ...{ inQuarters: true }, morale: 6 }],
     };
     const resting = controller.decide({ faction: 'rome', tick: 1, visible });
     expect(resting.filter((command) => command.kind === 'move' || command.kind === 'assault' || command.kind === 'blockade'))
@@ -137,7 +137,7 @@ describe('the military Controller', () => {
     } });
     expect(continuing.filter((command) => 'squads' in command && command.squads.includes(0))).toEqual([]);
     const arrived = controller.decide({ faction: 'rome', tick: 2, visible: { ...visible,
-      squads: [{ ...visible.squads[0]!, x: 20, y: 20, goal: null }],
+      squads: [{ ...visible.squads[0]!, x: 22, y: 22, inCamp: false, ...{ inQuarters: true }, goal: null }],
     } });
     expect(arrived.filter((command) => 'squads' in command && command.squads.includes(0))).toEqual([]);
   });
@@ -311,4 +311,16 @@ describe('the military Controller', () => {
     expect(commands).toContainEqual({ kind: 'attack', faction: 'rome', squads: [1], target: 10 });
     expect(commands).toContainEqual({ kind: 'hold', faction: 'rome', squads: [0] });
   });
+});
+
+
+it('preserves a returning gate journey instead of reissuing withdrawal every tick (#74)', () => {
+  const base = battlefield();
+  const visible: SiegeVisible = { ...base, enemies: [],
+    contacts: [{ kind: 'stronghold', id: 1, type: null, x: 80, y: 80, seen: 0 }],
+    squads: [{ ...base.squads[0]!, morale: 3, x: 31, y: 20, goal: { x: 29, y: 20 },
+      passage: { settlement: 0, phase: 'approaching', remaining: 0 } }],
+  };
+  const commands = createArmyController('imperator').decide({ faction: 'rome', tick: 1, visible });
+  expect(commands.filter((command) => 'squads' in command && command.squads.includes(visible.squads[0]!.id))).toEqual([]);
 });

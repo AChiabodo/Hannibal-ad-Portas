@@ -1,3 +1,4 @@
+import { turnPoint } from '../content/settlement-layout.ts';
 /**
  * The running game page: a Match, its interface, the men on the map and the loop
  * that turns one into the other (tickets B7, C2).
@@ -54,6 +55,7 @@ import {
   assault,
   blockade,
   build,
+  cancelPending,
   formation,
   garrison,
   hold,
@@ -603,7 +605,7 @@ export function createGame(options: GameOptions): Game {
   let focusId: string | null = null;
   let hoveredOrder: string | null = null;
   let inspectedOrder: string | null = null;
-  let settlementPage: 'summary' | 'balance' | 'works' = 'summary';
+  let settlementPage: 'summary' | 'balance' | 'works' | 'management' = 'summary';
   /** The action waiting for a click, by its stable id, or `null`. */
   let armed: string | null = null;
   /** The last order given on this page, and whether the seam has taken it yet. */
@@ -1148,7 +1150,7 @@ export function createGame(options: GameOptions): Game {
 
   /** The Faction's Squads, each with the rectangle its men are drawn in. */
   function squadReports(): readonly SquadReport[] {
-    return visible().squads.map((squad) => ({
+    return visible().squads.filter((squad) => squad.garrison === null).map((squad) => ({
       ...squad,
       rect: rectOf(squad),
     }));
@@ -1162,7 +1164,7 @@ export function createGame(options: GameOptions): Game {
    * conditions come from the same readers the plates and pins are composed from.
    */
   function indicatorReports(): readonly SquadIndicator[] {
-    return visible().squads.map((squad) => {
+    return visible().squads.filter((squad) => squad.garrison === null).map((squad) => {
       const selected = human.selection.squads.includes(squad.id);
       const conditions = squadConditions(squad);
 
@@ -1670,6 +1672,23 @@ export function createGame(options: GameOptions): Game {
     }
     else if (action === 'tutorialRetry') options.tutorialAction?.('retry');
     else if (action === 'tutorialExit') options.tutorialAction?.('exit');
+    else if (action.startsWith('cancelPending:')) {
+      const settlement = human.selection.settlement;
+      if (settlement !== null) human.submit(cancelPending(faction, settlement, Number(action.slice(14))));
+      repaint();
+    }
+    else if (action.startsWith('garrisonSelect:')) pickSelection({ kind: 'squad', id: Number(action.slice(15)) });
+    else if (action.startsWith('garrisonExit:')) {
+      const id = Number(action.slice(13));
+      const squad = visible().squads.find((candidate) => candidate.id === id);
+      const site = visible().settlements.find((candidate) => candidate.id === squad?.garrison);
+      if (site !== undefined) {
+        const appearance = visible().appearances?.find((candidate) => candidate.id === site.id);
+        const exit = turnPoint({ x: 0, y: 14 }, appearance?.gateSide ?? 2);
+        human.submit(move(faction, [id], site.x + exit.x, site.y + exit.y));
+      }
+      repaint();
+    }
     else if (action.startsWith('purchase:')) perform(action.slice(9));
     else if (action === 'closeInspection') { inspectedOrder = null; repaint(); }
     else if (action.startsWith('settlement:')) {
@@ -1896,7 +1915,7 @@ export function createGame(options: GameOptions): Game {
     if (picked.length === 0) return null;
     const near = garrisonReach(observation, picked, settlement);
 
-    return message('ui.partial', { near: near.near, total: near.total });
+    return message('garrison.eligible', { eligible: near.near, total: near.total });
   }
 
   /** An order to a screen point, given to the Squads picked when the Player clicked. */

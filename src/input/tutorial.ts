@@ -1,5 +1,5 @@
 /** Repeatable exercises use ordinary rules and learn only from permitted outcomes. */
-import { recruit, type Command } from '../sim/command.ts';
+import { move, recruit, type Command } from '../sim/command.ts';
 import { idleController, type Controller } from '../sim/controller.ts';
 import type { SiegeVisible } from '../sim/siege.ts';
 import { createBrowserMatch } from './match-host.ts';
@@ -10,10 +10,20 @@ export type TutorialChapter = typeof TUTORIAL_CHAPTERS[number];
 /** One defending Squad, raised through the same rules and budget as the human. */
 function exerciseOpponent(): Controller<SiegeVisible> {
   let recruited = false;
+  let deployed = false;
   return { decide({ faction, visible }) {
-    if (recruited || !visible.settlements[0]) return [];
-    recruited = true;
-    return [recruit(faction, visible.settlements[0].id, 'gaul', 24, 1)];
+    const home = visible.settlements[0];
+    if (!home) return [];
+    if (!recruited) {
+      recruited = true;
+      return [recruit(faction, home.id, 'gaul', 24, 1)];
+    }
+    if (deployed || visible.squads.length === 0) return [];
+    const gate = visible.fronts.find((front) => front.settlement === home.id)?.structures.find((part) => part.kind === 'gate');
+    if (!gate) return [];
+    const offset = { north: [0, -12], east: [12, 0], south: [0, 12], west: [-12, 0] }[gate.side]!;
+    deployed = true;
+    return [move(faction, visible.squads.map((squad) => squad.id), home.x + offset[0]!, home.y + offset[1]!)];
   } };
 }
 
@@ -65,9 +75,10 @@ export function createTutorial(chapter: TutorialChapter) {
     mark('fought', view.squads.some((squad) => squad.engaged));
     mark('captured', view.settlements.some(({ id }) => id > 1));
     mark('besieged', view.fronts.some((front) => front.besieger === 'rome' && front.siege !== null));
-    const enemy = view.contacts.find((contact) => contact.kind === 'stronghold' && contact.id === 1);
+    const enemy = view.appearances?.find((site) => site.kind === 'stronghold' && site.id === 1) ??
+      view.contacts.find((contact) => contact.kind === 'stronghold' && contact.id === 1);
     mark('atEnemy', enemy !== undefined && view.squads.some((squad) =>
-      Math.abs(squad.x - enemy.x) <= 1 && Math.abs(squad.y - enemy.y) <= 1));
+      Math.max(Math.abs(squad.x - enemy.x), Math.abs(squad.y - enemy.y)) <= 9));
     for (const command of commands) {
       if (command.kind === 'group') mark('groupBound', command.squads.filter((id) => view.squads.some((s) => s.id === id)).length >= 2);
       if ((command.kind === 'move' || command.kind === 'attackMove') && command.squads.length >= 2) {

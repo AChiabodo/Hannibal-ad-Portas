@@ -14,6 +14,7 @@
  * test beside this one a comparison rather than a smoke test.
  */
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import {
   MAP_HEIGHT,
   MAP_WIDTH,
@@ -40,7 +41,7 @@ import {
 } from '../../src/render/terrain';
 import { MATERIALS, TERRAIN_TILE, materialTile, roadTile, type TerrainMaterial } from '../../src/art/terrain';
 import { NODE_KINDS, nodeMarker, type NodeKind } from '../../src/art/nodes';
-import { blitRegion, createPixelBuffer, hashPixelBuffer, pixelAt, type PixelBuffer } from '../../src/art/pixel-buffer';
+import { pixelAt, type PixelBuffer } from '../../src/art/pixel-buffer';
 
 /** A map of one terrain, with the trimmings a `MapGrid` must carry and nothing that is drawn. */
 function flatMap(terrain: Terrain = TERRAIN.plain): MapGrid {
@@ -94,19 +95,11 @@ function holesIn(buffer: PixelBuffer): number {
 }
 
 /**
- * A fingerprint of a generous crop, rather than of the whole theatre.
- *
- * The pixel hash walks every byte with a 64-bit mix, which is the right trade for
- * a 16×16 tile and a slow one for two and a half million pixels; a crop is a
- * fingerprint of the same generator, and the test that needs the *whole* map
- * compared is the tiling one, which compares pixels directly.
+ * The complete theatre, hashed with Node's native implementation so a pair of
+ * seed-specific grass crops cannot conceal differences elsewhere on the map.
  */
 function fingerprint(buffer: PixelBuffer): string {
-  const size = 128;
-  const crop = createPixelBuffer(size, size);
-  blitRegion(crop, buffer, 700, 700, size, size, 0, 0);
-
-  return hashPixelBuffer(crop);
+  return createHash('sha256').update(buffer.pixels).digest('hex');
 }
 
 describe('the material a terrain is drawn with', () => {

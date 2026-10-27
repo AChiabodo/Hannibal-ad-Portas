@@ -58,6 +58,7 @@
  * the sample that is judged on the Atelier's plate is `SITE_SPECIMENS`.
  */
 import { DETAIL_RAMPS, RAMPS, shadeAt } from './palette.ts';
+import { observedSettlementKey, observedSettlementSprite } from './settlement-composition.ts';
 import {
   TRANSPARENT,
   createPixelBuffer,
@@ -123,6 +124,7 @@ export type SiteRam = (typeof SITE_RAMS)[number];
  * renderer's business, because which Faction that is depends on who is playing.
  */
 export interface SettlementLook {
+  readonly appearance?: import('../content/settlement-appearance.ts').ObservedSettlement;
   /** A completed Castrum known through the permitted Observation. */
   readonly camp?: boolean;
   /** Open settlement, or walled Stronghold. */
@@ -293,6 +295,7 @@ const SPRITES = new Map<string, PixelBuffer>();
  * key two sprites are compared on.
  */
 export function siteLookKey(look: SettlementLook): string {
+  if (look.appearance !== undefined) return observedSettlementKey(look.appearance);
   return [
     look.kind,
     look.owner,
@@ -314,6 +317,7 @@ export function siteLookKey(look: SettlementLook): string {
  * condition: the look a remembered settlement is drawn from has none.
  */
 export function siteSprite(look: SettlementLook): PixelBuffer {
+  if (look.appearance !== undefined) return observedSettlementSprite(look.appearance);
   const drawn = look.memory === 'remembered' ? rememberedLook(look) : look;
   const key = siteLookKey(drawn);
 
@@ -781,11 +785,12 @@ export function settlementEntries(): readonly { readonly name: string; readonly 
  * blit it over one — because a selection a Player cannot see is a selection they
  * have to guess at, and `render/` may not draw a second way.
  */
-export function siteMark(kind: SettlementKind): PixelBuffer {
-  const cached = MARKS.get(kind);
+export function siteMark(kind: SettlementKind, extent = SITE_SIZE[kind]): PixelBuffer {
+  const key = `${kind}:${extent}`;
+  const cached = MARKS.get(key);
   if (cached !== undefined) return cached;
 
-  const size = SITE_SIZE[kind];
+  const size = extent;
   const mark = createPixelBuffer(size, size);
   const arm = 5;
 
@@ -801,7 +806,7 @@ export function siteMark(kind: SettlementKind): PixelBuffer {
     }
   }
 
-  MARKS.set(kind, mark);
+  MARKS.set(key, mark);
   return mark;
 }
 
@@ -809,7 +814,7 @@ export function siteMark(kind: SettlementKind): PixelBuffer {
 const MARK = shadeAt(RAMPS.parchment, 6);
 
 /** The selection brackets already drawn, one per kind. */
-const MARKS = new Map<SettlementKind, PixelBuffer>();
+const MARKS = new Map<string, PixelBuffer>();
 
 /** A palisade and two rows of pitched tents. Fits within the site's pick bounds. */
 function paintCamp(sprite: PixelBuffer, x: number, y: number): void {

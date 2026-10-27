@@ -1,5 +1,16 @@
 # A settlement's walls are structures, and the ram is built in the field
 
+**Amended by [ADR-0030](0030-settlements-occupy-ground-and-show-their-works.md),
+2026-10-25, for the agreed redesign.** Wall and Gate resistance scale with Tier;
+their destroyed state remains a real passage. Garrison is limited to infantry
+and slingers, has a Tier-based survivor capacity, and is admitted through the
+physical Gate. Capture uses a visible central area and requires the active
+Garrison to be overcome as well as a Breach. Siege proximity is measured from the
+physical perimeter; relief must actually reach the exterior and outweigh the
+besiegers, or the besiegers must leave or be eliminated. The separate structures,
+field-built Ram and alternative Blockade path remain. These changes are not yet
+implemented.
+
 A Stronghold's fortification is **not** one pool of health. It is a gate and four stretches of wall, one to a side, each with its own hit points, and a **breach** is any one of them broken. The ram is aimed at the gate; the men who have no ram work at a wall, at about a third of the pace, and pay for every round of it in men and nerve. A **garrison** is a posture of an ordinary Squad — inside the walls, out of the field's contact rules, fed by the settlement's own granary — and the ram itself is **laid down at the walls**, paid for out of the besieging Faction's one treasury, built over `RAM_BUILD_TICKS`, and vulnerable to the garrison's files.
 
 A **Blockade** uses the settlement's own granary rather than a supply meter of its own: `produceSeason` and `harvest` take a `Supplied` predicate, a blockaded settlement works nothing, earns no tax and grows no people, and each Season of blockade spoils grain and takes people. A town with no grain and nobody left on its walls opens its gates. A field army of the besieged Faction within `RELIEF_RADIUS` lifts the ring.

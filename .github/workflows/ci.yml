@@ -56,14 +56,14 @@ jobs:
       # gated here rather than believed (ADR-0006). The default Match is B6's:
       # the theatre, the clock and the economy in one world.
       - name: Play a Match headless
-        run: npm run match -- --seed 1 --ticks 600 --expect-hash 3aaaf501674cafe1
+        run: npm run match -- --seed 1 --ticks 600 --expect-hash b6a86c9b9dd7547d
 
       # B5's guarantee, over the whole horizon: the default bound is three game
       # years, and a Match that runs to it terminates on exactly that tick. The
       # hash gates the calendar across every Season boundary, the year turn and,
       # now, three years of the economy — its stocks, its tiers and its Payroll.
       - name: Play a headless Match to its three-year bound
-        run: npm run match -- --seed 1 --expect-hash 685ee739af48f521
+        run: npm run match -- --seed 1 --expect-hash 5e67a16b4c21e49b
 
       # The clock on its own, so a change in the economy cannot hide a change in
       # the calendar it runs on.
@@ -88,7 +88,7 @@ jobs:
       # covers the whole map in state and what each Faction has seen of it, so a
       # change to the map or to the fog moves this line (ADR-0006, ADR-0013).
       - name: Play the theatre with fog, headless
-        run: npm run match -- --seed 1 --ticks 600 --rules fog --expect-hash 3d60b17e3e9b6e50
+        run: npm run match -- --seed 1 --ticks 600 --rules fog --expect-hash c511341fd66d5220
 
       # P2 moved every hash below that raises a Squad: `men` names a real size,
       # `capacity` is hashed state, and Payroll follows survivors (ADR-0026,
@@ -116,7 +116,7 @@ jobs:
       # to a fight moves this line and has to be a decision in review
       # (ADR-0006, ADR-0015).
       - name: March two equal forces of unequal Squads across the theatre, and let them fight, headless
-        run: npm run match -- --seed 1 --ticks 600 --rules march --expect-hash b5d29129ff9d86e7
+        run: npm run match -- --seed 1 --ticks 600 --rules march --expect-hash 282abec3df631489
 
       # C4's Match: both Factions' whole rosters, the six Carthaginian types
       # including the elephant, mustered on their own ground and sent at each
@@ -124,7 +124,7 @@ jobs:
       # change to a roster's numbers moves this line and has to be a decision in
       # review (ADR-0006).
       - name: March both rosters across the theatre, headless
-        run: npm run match -- --seed 1 --ticks 600 --rules roster --expect-hash 76b515304e285b62
+        run: npm run match -- --seed 1 --ticks 600 --rules roster --expect-hash 2536040ecec1744d
 
       # C5's first whole Match: Rome storms Carthage's Stronghold with the ram.
       # The hash is the state the Match ended on, and the Match ended because a
@@ -138,7 +138,7 @@ jobs:
       # front is sighted through it rather than announced (ADR-0020). A moved hash
       # is a decision in review (ADR-0006).
       - name: Win a Match by Assault, headless
-        run: npm run match -- --seed 1 --ticks 9000 --rules assault --expect-hash 0f37cc5352591836
+        run: npm run match -- --seed 1 --ticks 9000 --rules assault --expect-hash 67d81c768844e7c6
 
       # C5's second path: the same Stronghold starved into surrender, over
       # Seasons rather than over a fight. Its hash covers the blockade's supply
@@ -148,7 +148,7 @@ jobs:
       # (ADR-0013). The hash moved when each landed, and ADR-0006 says a moved
       # hash is a decision in review.
       - name: Win a Match by Blockade, headless
-        run: npm run match -- --seed 1 --ticks 9000 --rules blockade --expect-hash 1f42040d1278803f
+        run: npm run match -- --seed 1 --ticks 9000 --rules blockade --expect-hash 63998301d65d91fc
 
       # C6's Match: two armies in the field through four Season boundaries, one
       # of them holding position in a Roman camp and one in nobody's country. The
@@ -156,7 +156,7 @@ jobs:
       # outside it costs and the winter that costs six percent where autumn costs
       # two, and the camp that saves Rome's army from both (ADR-0006, ADR-0005).
       - name: Winter two armies in the field, one of them in a camp, headless
-        run: npm run match -- --seed 1 --ticks 9000 --rules attrition --expect-hash b6eb3698c5fafb34
+        run: npm run match -- --seed 1 --ticks 9000 --rules attrition --expect-hash 64e4d05ee2936679
 
       # D5's whole army crosses a Season boundary: two AI Controllers running
       # economy, field, scouting and siege at Centurio. The hash gates the
@@ -164,7 +164,7 @@ jobs:
       # (ADR-0013, ADR-0020). Keep the per-tick explanations in a report rather
       # than flooding CI logs.
       - name: Play two AI Controllers with scored decision logs
-        run: node src/cli/main.ts --rules ai --seed 1 --ticks 2101 --expect-hash 22415719c186c540 > "$RUNNER_TEMP/ai-match.json"
+        run: node src/cli/main.ts --rules ai --seed 1 --ticks 2101 --expect-hash d2173b02de353a67 > "$RUNNER_TEMP/ai-match.json"
 
   guards:
     name: "Fences (seven, including AI Observation imports)"

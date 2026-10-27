@@ -1,3 +1,7 @@
+import { formationFootprint } from '../content/formation.ts';
+import { settlementLayout, intersects } from '../content/settlement-layout.ts';
+import { SQUAD_TYPES } from '../content/squads.ts';
+import { rectDistance } from '../sim/settlement-siege-geometry.ts';
 import { createArmyController } from './ai-match.ts';
 import type { DifficultyName } from '../ai/difficulty.ts';
 import type { Faction } from '../sim/faction.ts';
@@ -51,7 +55,14 @@ export function diagnosePressure(seed: number, faction: Faction, difficulty: Dif
           if (pressure === null && front.siege === 'blockade' && front.besieger === enemy &&
             visible.enemies.some((squad) => {
               const site = visible.settlements.find((site) => site.id === front.settlement)!;
-              return Math.max(Math.abs(squad.x - site.x), Math.abs(squad.y - site.y)) <= 1;
+              const plan = settlementLayout('stronghold').core;
+              const core = { ...plan, x: site.x + plan.x, y: site.y + plan.y };
+              const figure = squad.appearance;
+              const footprint = figure === undefined ? { x: 0, y: 0, width: 1, height: 1 } : formationFootprint(
+                SQUAD_TYPES.find((type) => type.id === squad.type)?.figures === 1 ? 1 : figure.capacity,
+                figure.formation, figure.facing);
+              const body = { ...footprint, x: squad.x + footprint.x, y: squad.y + footprint.y };
+              return !intersects(core, body) && rectDistance(core, body) <= 1;
             })) pressure = { tick: observation.tick, settlement: front.settlement, effect: 'occupied-blockade' };
         }
         last = visible;

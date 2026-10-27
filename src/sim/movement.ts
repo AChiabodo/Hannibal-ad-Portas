@@ -82,7 +82,11 @@ import {
   paceCost,
   refusalCode,
   type RouteCache,
+  type PassageCheck,
 } from './route.ts';
+import { canOccupy, clearFieldBody, crossingPerimeter, hasPhysicalSpace, physicalSignature, refreshPhysicalSpace } from './settlement-space.ts';
+import { requestDeparture } from './settlement-access.ts';
+import { prepareTraffic, trafficStep } from './settlement-traffic.ts';
 import {
   FACING,
   facingCode,
@@ -231,7 +235,11 @@ export function applyMovementCommands(
 
       case 'formation':
         for (const squad of orderedSquads(economy, owner, command.squads)) {
-          squad.formation = formationCode(command.formation);
+          const requested = formationCode(command.formation);
+          if (canOccupy(map, squad, squad.x, squad.y, requested) && clearFieldBody(map, squad, squad.x, squad.y, requested)) {
+            squad.formation = requested;
+            delete squad.marchFormation;
+          } else squad.marchFormation = requested;
         }
         break;
 
@@ -277,8 +285,9 @@ function orderGroupTo(map: MapGrid, squads: readonly Squad[], to: Site, routes: 
     // One Tile per three files/ranks plus clearance. This is rule geometry,
     // independent of Figure pixels, and conservative for every arrival facing.
     const radius = Math.ceil(Math.max(shape.files, shape.ranks) / 6) + 1;
-    const site = candidates.find((candidate) => assigned.every((other) =>
-      Math.max(Math.abs(candidate.x - other.site.x), Math.abs(candidate.y - other.site.y)) >= radius + other.radius));
+    const site = candidates.find((candidate) =>
+      (!hasPhysicalSpace(map) || passageCheck(map, squad)(candidate.x, candidate.y)) && assigned.every((other) =>
+        Math.max(Math.abs(candidate.x - other.site.x), Math.abs(candidate.y - other.site.y)) >= radius + other.radius));
     if (site === undefined) {
       squad.refused = refusalCode('no-space');
       continue;
@@ -319,15 +328,49 @@ function connectedTo(map: MapGrid, site: Site): ReadonlySet<number> {
  * sooner for it. A Squad with nowhere left to walk has nothing to pay, and
  * stands.
  *
- * The order of the loop is the order Squads were raised in, and no Squad's step
- * depends on another's, so the whole tick is a function of the list.
+ * Physical accesses register arrivals before the loop. Their integer tickets
+ * determine passage order; other field bodies can keep a passage waiting.
  */
 export function march(economy: Economy, map: MapGrid): void {
+  refreshPhysicalSpace(map);
+  prepareTraffic(economy, map, (squad, target) => orderSquadTo(map, squad, target, routeCacheFor(map), true));
   for (const squad of economy.squads) {
+    if (squad.marchFormation !== undefined && !accessColumn(squad) && !crossingPerimeter(map, squad) &&
+      canOccupy(map, squad, squad.x, squad.y, squad.marchFormation) && clearFieldBody(map, squad, squad.x, squad.y, squad.marchFormation)) {
+      squad.formation = squad.marchFormation;
+      delete squad.marchFormation;
+    }
     if (squad.steps.length === 0) {
       squad.wait = 0;
       continue;
     }
+
+    const next = squad.steps[0];
+    if (next === undefined) continue;
+    // A queued body can back away or sidestep without rotating through a
+    // neighbour. Its normal facing resumes after it has cleared the lane.
+    const yielding = squad.access?.yielding === 1;
+    const direction = yielding ? squad.facing : facingOfStep(tileIndex(squad.x, squad.y), next);
+    const pose = yielding && canOccupy(map, squad, tileX(next), tileY(next)) ? { formation: squad.formation, facing: squad.facing } :
+      passagePose(map, squad, tileX(next), tileY(next), direction);
+    if (pose === undefined) {
+      const target = goalOf(squad);
+      squad.steps = [];
+      squad.wait = 0;
+      if (target !== null) orderSquadTo(map, squad, target, routeCacheFor(map), true);
+      continue;
+    }
+    let { formation, facing } = pose;
+    if (!trafficStep(economy, map, squad, tileX(next), tileY(next), formation, facing)) {
+      const retained = retainedPose(map, squad, tileX(next), tileY(next));
+      if (retained === undefined || !trafficStep(economy, map, squad, tileX(next), tileY(next), retained.formation, retained.facing)) {
+        if (squad.access?.reason !== 1) avoidFieldBodies(economy, map, squad);
+        continue;
+      }
+      ({ formation, facing } = retained);
+    }
+    useMarchFormation(squad, formation);
+    squad.facing = facing;
 
     if (squad.wait > 0) {
       squad.wait -= 1;
@@ -343,6 +386,10 @@ export function march(economy: Economy, map: MapGrid): void {
  * walk: what an Observation reports as its goal, and what a UI marks on the map.
  */
 export function goalOf(squad: Block): Site | null {
+  if (squad.access?.yielding) return { x: squad.access.goalX, y: squad.access.goalY };
+  if (squad.garrisonJourney?.phase === 3 && squad.garrison !== FIELD) {
+    return { x: squad.garrisonJourney.goalX, y: squad.garrisonJourney.goalY };
+  }
   const last = squad.steps.at(-1);
 
   return last === undefined ? null : { x: tileX(last), y: tileY(last) };
@@ -388,8 +435,8 @@ export function routeCacheFor(map: MapGrid): RouteCache {
  * the Squad a step it had already paid for. Only a route that enters a different
  * tile — or none at all — is charged from the beginning.
  *
- * Nothing on a theatre can block a way once it is planned (a route is blocked by
- * water and by nothing else), so a route already walked is a route still good.
+ * Foundations, ownership changes and new Breaches can change a planned way.
+ * March validates each next footprint and searches again when ground changes.
  *
  * A refused order leaves the Squad exactly as it was — its route, its waiting
  * and its place — and records the reason on it. That is the whole of "does not
@@ -402,7 +449,8 @@ export function routeCacheFor(map: MapGrid): RouteCache {
  * come through here rather than growing a second way to move a block that would
  * forget what a refusal is.
  */
-export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: RouteCache): void {
+export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: RouteCache, preserveJourney = false): void {
+  refreshPhysicalSpace(map);
   const destination = squad.steps.at(-1);
 
   if (destination !== undefined && destination === tileOf(to)) {
@@ -410,11 +458,25 @@ export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: Route
     return;
   }
 
-  const route = routes.route({ x: squad.x, y: squad.y }, to, paceOf(squad));
+  const route = routes.route({ x: squad.x, y: squad.y }, to, paceOf(squad),
+    hasPhysicalSpace(map) ? passageCheck(map, squad) : undefined,
+    hasPhysicalSpace(map) ? `${physicalSignature(map)}:${squad.owner}:${squad.capacity}:${squad.marchFormation ?? squad.formation}:${squad.facing}` : '');
 
   if (route.kind === 'refused') {
     squad.refused = refusalCode(route.reason);
     return;
+  }
+  if (squad.garrison !== FIELD && !preserveJourney) {
+    requestDeparture(squad, to);
+    return;
+  }
+  if (!preserveJourney) {
+    delete squad.garrisonJourney;
+    if (squad.access?.active === 1) {
+      squad.access.goalX = to.x;
+      squad.access.goalY = to.y;
+      squad.access.yielding = 0;
+    } else delete squad.access;
   }
 
   // The route is the Squad's own copy: a Squad walks its steps, and the cache
@@ -424,6 +486,13 @@ export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: Route
   // later — and the block does it as one piece, without disturbing a man.
   const payingFor = squad.steps[0];
   const firstStep = route.steps[0];
+  if (firstStep !== undefined && hasPhysicalSpace(map)) {
+    const facing = facingOfStep(tileIndex(squad.x, squad.y), firstStep);
+    const pose = passagePose(map, squad, tileX(firstStep), tileY(firstStep), facing);
+    if (pose === undefined) { squad.refused = refusalCode('unreachable'); return; }
+    const { formation } = pose;
+    if (clearFieldBody(map, squad, squad.x, squad.y, formation, facing)) useMarchFormation(squad, formation);
+  }
 
   squad.steps = [...route.steps];
   squad.refused = NO_REFUSAL;
@@ -431,7 +500,9 @@ export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: Route
   // is told to march is told to come out of it (C5). A refused order above
   // changed nothing, so it did not take the Squad out of anything either.
   squad.garrison = FIELD;
-  faceTheWay(squad);
+  if (firstStep === undefined || (canOccupy(map, squad, squad.x, squad.y, squad.formation,
+    facingOfStep(tileIndex(squad.x, squad.y), firstStep)) && clearFieldBody(map, squad, squad.x, squad.y, squad.formation,
+    facingOfStep(tileIndex(squad.x, squad.y), firstStep)))) faceTheWay(squad);
 
   // Only a route entering a different tile re-prices the step.
   if (payingFor === undefined || payingFor !== firstStep) squad.wait = costAhead(map, squad);
@@ -439,6 +510,8 @@ export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: Route
 
 /** Stops a Squad where it stands, and forgets where it was going. */
 function standDown(squad: Squad): void {
+  delete squad.garrisonJourney;
+  delete squad.access;
   squad.steps = [];
   squad.wait = 0;
   squad.refused = NO_REFUSAL;
@@ -487,8 +560,69 @@ function takeStep(map: MapGrid, squad: Squad): void {
 
   squad.x = tileX(entering);
   squad.y = tileY(entering);
-  faceTheWay(squad);
   squad.wait = costAhead(map, squad);
+}
+
+function passageFormation(map: MapGrid, squad: Squad, x: number, y: number, facing: number): number | undefined {
+  const wanted = accessColumn(squad) ? 1 : squad.marchFormation ?? squad.formation;
+  const face = facing;
+  if ((wanted === 1 || !crossingPerimeter(map, squad, x, y, wanted, face)) && canOccupy(map, squad, x, y, wanted, face) && canOccupy(map, squad, squad.x, squad.y, wanted, face) &&
+    (wanted === squad.formation || !crossingPerimeter(map, squad))) return wanted;
+  if (canOccupy(map, squad, x, y, 1, face) && canOccupy(map, squad, squad.x, squad.y, 1, face)) return 1;
+  return undefined;
+}
+
+/** A rigid body can back away before a safe turn; it never cuts its tail through terrain. */
+function passagePose(map: MapGrid, squad: Squad, x: number, y: number, facing: number): { formation: number; facing: number } | undefined {
+  const forward = passageFormation(map, squad, x, y, facing);
+  if (forward !== undefined) return { formation: forward, facing };
+  return retainedPose(map, squad, x, y);
+}
+
+/** The same translation can clear either static terrain or another field body. */
+function retainedPose(map: MapGrid, squad: Squad, x: number, y: number): { formation: number; facing: number } | undefined {
+  const formation = accessColumn(squad) || crossingPerimeter(map, squad) ||
+    crossingPerimeter(map, squad, x, y) ? 1 : squad.formation;
+  if (canOccupy(map, squad, squad.x, squad.y, formation, squad.facing) && canOccupy(map, squad, x, y, formation, squad.facing))
+    return { formation, facing: squad.facing };
+  return undefined;
+}
+
+function useMarchFormation(squad: Squad, formation: number): void {
+  if (squad.formation !== formation && squad.marchFormation === undefined) squad.marchFormation = squad.formation;
+  squad.formation = formation;
+}
+
+function passageCheck(map: MapGrid, squad: Squad, avoidBodies = false): PassageCheck {
+  return (x, y, fromX, fromY) => {
+    const faces = fromX === undefined || fromY === undefined ? [0, 1, 2, 3] :
+      [y < fromY ? 0 : x > fromX ? 1 : y > fromY ? 2 : 3, squad.facing];
+    const wanted = accessColumn(squad) ? 1 : squad.marchFormation ?? squad.formation;
+    return faces.some((facing) => [wanted, 1].some((formation) =>
+      canOccupy(map, squad, x, y, formation, facing) &&
+      (!avoidBodies || clearFieldBody(map, squad, x, y, formation, facing)) &&
+      (fromX === undefined || fromY === undefined || (canOccupy(map, squad, fromX, fromY, formation, facing) &&
+        (!avoidBodies || clearFieldBody(map, squad, fromX, fromY, formation, facing))))));
+  };
+}
+
+/** Keep the order, but find room around another body instead of facing it forever. */
+function avoidFieldBodies(economy: Economy, map: MapGrid, squad: Squad): void {
+  const last = squad.steps.at(-1);
+  if (last === undefined) return;
+  const bodies = economy.squads.filter((other) => other.id !== squad.id && other.garrison === FIELD)
+    .map((other) => `${other.id}:${other.x}:${other.y}:${other.formation}:${other.facing}`).join(';');
+  const route = routeCacheFor(map).route({ x: squad.x, y: squad.y }, { x: tileX(last), y: tileY(last) }, paceOf(squad),
+    passageCheck(map, squad, true), `${physicalSignature(map)}:${squad.owner}:${squad.capacity}:${squad.formation}:${squad.facing}:bodies:${bodies}`);
+  if (route.kind !== 'route') return;
+  const first = squad.steps[0];
+  squad.steps = [...route.steps];
+  if (squad.steps[0] !== first) squad.wait = costAhead(map, squad);
+}
+
+function accessColumn(squad: Squad): boolean {
+  const journey = squad.garrisonJourney;
+  return journey !== undefined && journey.fromOutside === 1 && (journey.phase === 0 || journey.phase === 2);
 }
 
 /**

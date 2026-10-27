@@ -45,6 +45,7 @@ import {
   type Rgba,
 } from '../art/pixel-buffer.ts';
 import { BADGE_TILE, ICON_TILE, badgeIcon, commandIcon, type BadgeName, type CommandIconName } from '../art/icons.ts';
+import { garrisonCapacity } from '../content/fortifications.ts';
 import { amountOf } from '../content/index.ts';
 import type { EconomyVisible, VisibleSettlement, VisibleSquad } from '../sim/economy-match.ts';
 import type { Faction } from '../sim/faction.ts';
@@ -138,6 +139,7 @@ export interface HudDetail {
   readonly ledger?: readonly HudLine[];
   readonly summary?: readonly HudLine[];
   readonly works?: readonly HudLine[];
+  readonly management?: readonly { readonly text: string; readonly actions: readonly { readonly action: HudAction; readonly text: string }[] }[];
 }
 
 /**
@@ -228,7 +230,7 @@ export interface HudSession {
 export interface HudView {
   readonly panelLayout?: PanelLayout;
   readonly inspectedOrder?: string | null;
-  readonly settlementPage?: 'summary' | 'balance' | 'works';
+  readonly settlementPage?: 'summary' | 'balance' | 'works' | 'management';
   readonly focus?: Rect | null;
   readonly hoveredOrder?: string | null;
   readonly desktop?: boolean;
@@ -263,7 +265,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works' | 'catalogue'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore' | 'tutorialNext' | 'tutorialRetry' | 'tutorialExit' | 'tutorialHelp';
+export type HudAction = `cancelPending:${number}` | `garrisonSelect:${number}` | `garrisonExit:${number}` | `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works' | 'management' | 'catalogue'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore' | 'tutorialNext' | 'tutorialRetry' | 'tutorialExit' | 'tutorialHelp';
 
 export interface HudButton {
   readonly action: HudAction;
@@ -1160,7 +1162,7 @@ function detail(
 
     return {
       title: message('ui.listItem', { name: settlementName(settlement, strongholds), id: settlement.id }),
-      ...settlementLines(visible, settlement, tick, ended),
+      ...settlementLines(visible, settlement, tick, ended, strongholds.includes(settlement.id)),
     };
   }
 
@@ -1182,7 +1184,7 @@ function detail(
  * has an eye on (ADR-0020). A settlement remembered from a contact is not one of
  * those, so it gets no wall line at all rather than a remembered one.
  */
-function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement, tick: number, ended: boolean): Pick<HudDetail, 'lines' | 'priority' | 'ledger' | 'summary' | 'works'> {
+function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement, tick: number, ended: boolean, walled: boolean): Pick<HudDetail, 'lines' | 'priority' | 'ledger' | 'summary' | 'works' | 'management'> {
   const economics = projectSettlement(settlement, visible.season);
   const boundary = nextBoundary(visible.season, tick);
   const future = projectSettlement(settlement, boundary.season);
@@ -1234,6 +1236,18 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement,
     });
   }
 
+  const roster = visible.squads.filter((squad) => squad.garrison === settlement.id);
+  const management: NonNullable<HudDetail['management']> = [
+    { text: walled ? message('settlement.capacity', { men: roster.reduce((sum, squad) => sum + squad.men, 0), capacity: garrisonCapacity(settlement.tier) }) : translate('settlement.open'), actions: [] },
+    ...roster.map((squad) => ({ text: message('settlement.roster', { name: squadLabel(squad.type), id: squad.id, men: squad.men }), actions: [
+      { action: `garrisonSelect:${squad.id}` as const, text: translate('settlement.select') },
+      { action: `garrisonExit:${squad.id}` as const, text: translate('settlement.exit') },
+    ] })),
+    ...(settlement.pending ?? []).map((order) => ({
+      text: `${order.kind === 'build' ? workLabel(order.building) : `${squadLabel(order.squadType)} ${order.count} x ${order.men}`} - ${order.reason === 'space' ? translate('pending.space') : translate('pending.resources')}${order.cost === undefined ? '' : message('pending.cost', { cost: RESOURCE_KINDS.map((kind) => `${resourceLabel(kind)} ${amountOf(order.cost!, kind)}`).join(', ') })}`,
+      actions: [{ action: `cancelPending:${order.id}` as const, text: translate('settlement.cancel') }],
+    })),
+  ];
   const front = knownFront(visible, settlement.id);
   if (front !== undefined && (front.structures.length > 0 || front.siege !== null || front.garrison > 0)) {
     lines.push(...frontLines(front));
@@ -1259,7 +1273,7 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement,
   return { lines, ledger: ended ? [
     { label: translate('match.ended'), value: translate('match.finalKnown') },
     { label: translate('economy.commonTreasury'), value: String(visible.treasury) },
-  ] : ledger, summary, works,
+  ] : ledger, summary, works, management,
     priority: importantWork < 0 ? [0] : [workStart + importantWork] };
 }
 
@@ -1280,7 +1294,7 @@ function knownSiteLines(site: KnownSite): Pick<HudDetail, 'lines' | 'priority'> 
     {
       label: translate('ui.holder'),
       value: site.owner === null
-        ? translate(site.memory === 'seen' ? 'ui.unclaimed' : 'ui.unknown')
+        ? translate(site.memory === 'seen' && (site.appearance === undefined || site.appearance.tiles.some((tile) => tile.owner === 'none')) ? 'ui.unclaimed' : 'ui.unknown')
         : translate(site.owner === 'rome' ? 'faction.rome' : 'faction.carthage'),
     },
   ];
@@ -1298,6 +1312,11 @@ function knownSiteLines(site: KnownSite): Pick<HudDetail, 'lines' | 'priority'> 
     lines.push({ label: translate('ui.walls'), value: translate('ui.none') });
   }
 
+  if (site.appearance !== undefined) {
+    const observed = new Map(site.appearance.tiles.flatMap((tile) => tile.work === undefined ? [] : [[`${tile.work.building}:${tile.work.ordinal}`, tile.work] as const]));
+    for (const work of observed.values()) lines.push({ label: workLabel(work.building), value: work.stage >= 2 ? translate('observed.finished') : work.stage === 1 ? translate('observed.incomplete') : translate('observed.foundation') });
+    if (site.appearance.tier !== undefined) lines.push({ label: translate('ui.tier'), value: String(site.appearance.tier) });
+  }
   return { lines, priority: [0] };
 }
 
@@ -1340,7 +1359,8 @@ function frontLines(front: VisibleFront): readonly HudLine[] {
     value: front.siege === null ? translate('ui.none') : translate(front.siege === 'assault' ? 'cmd.assault' : 'cmd.blockade'),
   });
   if (front.besieger !== null) lines.push({ label: translate('ui.besieger'), value: translate(front.besieger === 'rome' ? 'faction.rome' : 'faction.carthage') });
-  lines.push({ label: translate('ui.garrisonCount'), value: String(front.garrison) });
+  lines.push({ label: translate('ui.garrisonCount'), value: front.garrisonKnown === false ? translate('ui.unknown') : front.garrisonMen === undefined ? String(front.garrison) :
+    message('settlement.capacityValue', { men: front.garrisonMen, capacity: front.garrisonCapacity ?? '?' }) });
 
   return lines;
 }
@@ -1372,12 +1392,20 @@ function squadLines(squad: VisibleSquad, visible: EconomyVisible): Pick<HudDetai
     { label: translate('ui.fatigue'), value: String(squad.fatigue) },
     { label: translate('ui.ammunition'), value: String(squad.ammunition) },
     { label: translate('ui.supply'), value: translate(supply) },
-    { label: translate('ui.quarters'), value: translate(squad.inCamp ? 'quarters.camp' : 'quarters.field') },
+    { label: translate('ui.quarters'), value: translate((squad as VisibleSquad & { readonly inQuarters?: boolean }).inQuarters ? 'quarters.settlement' : squad.inCamp ? 'quarters.camp' : 'quarters.field') },
     { label: translate('ui.engaged'), value: translate(squad.engaged ? 'ui.yes' : 'ui.no') },
     { label: translate('ui.payroll'), value: String(squad.payroll) },
     { label: translate('ui.unpaid'), value: String(squad.unpaid) },
     { label: translate('ui.home'), value: String(squad.home) },
   ];
+  if (squad.passage !== undefined) {
+    const passage = squad.passage;
+    const phase = { approaching: translate('passage.approaching'), waiting: translate('passage.waiting'), entering: translate('passage.entering'), leaving: translate('passage.leaving') }[passage.phase];
+    const impediment = passage.reason === 'access-busy' ? translate('passage.busy')
+      : passage.reason === 'exit-blocked' ? translate('passage.blocked')
+        : passage.reason === undefined ? null : translate('passage.impeded');
+    lines.push({ label: translate('passage.label'), value: `${passage.remaining > 0 ? message('passage.seconds', { phase, seconds: Math.ceil(passage.remaining / TICK_HZ) }) : phase}${impediment === null ? '' : ` (${impediment})`}` });
+  }
   if (squad.garrison !== null) lines.push({ label: translate('ui.garrisonCount'), value: message('ui.garrisonAt', { id: squad.garrison }) });
 
   // What is known of the enemy's walls: the fronts this Faction has an eye on, or
@@ -1564,7 +1592,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
   const textX = inner;
   const stripWidth = detailWidth - 2 * inner - 46;
   const groupStrip = model.groups.length === 0 ? 0 : groupStripRows(model.groups, stripWidth) * LINE_STEP + 4;
-  const detailHeight = compactOverview ? groupStrip + (model.view.settlementPage && model.view.settlementPage !== 'summary' ? 114 : 100) : hasDetail
+  const detailHeight = compactOverview ? groupStrip + (model.view.settlementPage === 'management' ? 156 : model.view.settlementPage && model.view.settlementPage !== 'summary' ? 114 : 100) : hasDetail
     ? Math.max(DETAIL_MIN_HEIGHT, Math.min(DETAIL_MAX_HEIGHT, Math.round(height * DETAIL_SHARE))) + (model.groups.length > 0 ? 10 : 0) : 28;
   const detail: Rect = { x: 0, y: height - detailHeight, width: detailWidth, height: detailHeight };
   const minimap: Rect = { x: width - MINIMAP_PLATE_WIDTH, y: height - MINIMAP_PLATE_HEIGHT, width: MINIMAP_PLATE_WIDTH, height: MINIMAP_PLATE_HEIGHT };
@@ -1628,10 +1656,10 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
       tabs.push({ tab, rect: { x: detail.x + inset + index * (tabWidth + 2), y: detail.y + 4, width: tabWidth, height: 16 } });
     }
     const page = model.view.settlementPage ?? 'summary';
-    const heading = page === 'summary' ? model.detail!.title
+    const heading = page === 'management' ? message('settlement.managementTitle', { title: model.detail!.title }) : page === 'summary' ? model.detail!.title
       : `${translate(page === 'balance' ? 'economy.balanceTitle' : 'economy.worksTitle')} - ${model.detail!.title}`;
     priority.push({ text: heading, rect: { x: detail.x + inset, y: detail.y + 24, width: contentWidth, height: LINE_STEP } });
-    const source = page === 'summary' ? model.detail!.summary! : page === 'balance' ? model.detail!.ledger! : model.detail!.works!;
+    const source = page === 'management' ? [] : page === 'summary' ? model.detail!.summary! : page === 'balance' ? model.detail!.ledger! : model.detail!.works!;
     const prose = source.flatMap((line) => wrapText(`${line.label}: ${line.value}`, contentWidth));
     const room = detail.height - groupStrip - 64;
     detailScroll = page === 'summary' ? { offset: 0, max: 0, page: prose.length }
@@ -1639,8 +1667,22 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
     for (const [index, word] of prose.slice(detailScroll.offset, detailScroll.offset + detailScroll.page).entries()) {
       text.push({ text: word, rect: { x: detail.x + inset, y: detail.y + 38 + index * LINE_STEP, width: contentWidth, height: LINE_STEP } });
     }
+    if (page === 'management') {
+      const entries = model.detail!.management ?? [];
+      detailScroll = { offset: Math.min(model.view.detailOffset ?? 0, Math.max(0, entries.length - 1)), max: Math.max(0, entries.length - 1), page: 1 };
+      const entry = entries[detailScroll.offset];
+      if (entry !== undefined) {
+        for (const [index, word] of wrapText(entry.text, contentWidth).slice(0, 5).entries()) {
+          text.push({ text: word, rect: { x: detail.x + inset, y: detail.y + 38 + index * LINE_STEP, width: contentWidth, height: LINE_STEP } });
+        }
+        for (const [index, action] of entry.actions.entries()) {
+          buttons.push({ ...action, enabled: !model.view.ended, rect: { x: detail.x + inset + index * 90, y: detail.y + 100, width: 86, height: 16 } });
+        }
+      }
+    }
     const actions: readonly { action: HudAction; text: string; enabled: boolean }[] = page === 'summary'
-      ? [{ action: 'settlement:balance', text: translate('economy.balanceTitle'), enabled: true },
+      ? [{ action: 'settlement:management', text: translate('settlement.management'), enabled: true },
+        { action: 'settlement:balance', text: translate('economy.balanceTitle'), enabled: true },
         { action: 'settlement:works', text: translate('economy.worksTitle'), enabled: true }]
       : [{ action: 'settlement:summary', text: translate('tab.overview'), enabled: true },
         { action: 'detailPrevious', text: translate('ui.previous'), enabled: detailScroll.offset > 0 },

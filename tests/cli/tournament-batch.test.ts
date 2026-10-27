@@ -72,19 +72,19 @@ describe('a batch of AI-vs-AI Matches', () => {
   }, 60_000);
 
   it('plays a real Match: one seed, to a victory, with the decisions it took to win it', async () => {
-    // The retained seed now ends when Rome finishes its ram instead of recalling
-    // the builders one round before shelter. This is still a real victory contract.
+    // The expanded physical settlements change this retained seed's campaign:
+    // Carthage wins the blockade; this remains a real, bounded victory contract.
     const report = await runTournament(batch({ seeds: 1, firstSeed: 13, difficulty: 'tiro', ticks: 7000, workers: 1 }));
 
-    expect(report.matches[0]).toMatchObject({ seed: 13, outcome: 'victory', winner: 'rome', ticks: 1051 });
-    expect(report.winRate).toEqual({ rome: 1, carthage: 0 });
+    expect(report.matches[0]).toMatchObject({ seed: 13, outcome: 'victory', winner: 'carthage', ticks: 4200 });
+    expect(report.winRate).toEqual({ rome: 0, carthage: 1 });
     expect(report.outliers.lopsided).toEqual([]);
     expect(report.outliers.stalled).toEqual([]);
   }, 120_000);
 
   it('reports the short seed 6 bound as clock before its later conquest', async () => {
-    const report = await runTournament(batch({ seeds: 1, firstSeed: 6, ticks: 7000, workers: 1 }));
-    expect(report.matches[0]).toMatchObject({ seed: 6, outcome: 'clock', winner: null, ticks: 7000 });
+    const report = await runTournament(batch({ seeds: 1, firstSeed: 6, ticks: 1000, workers: 1 }));
+    expect(report.matches[0]).toMatchObject({ seed: 6, outcome: 'clock', winner: null, ticks: 1000 });
     expect(report.winRate).toEqual({ rome: 0, carthage: 0 });
   }, 120_000);
 

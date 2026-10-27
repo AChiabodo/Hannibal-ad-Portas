@@ -114,6 +114,7 @@
  */
 import { bearingOf, matchupOf, squadTypeOf, type Advantage, type Arm } from '../content/index.ts';
 import type { Command, Formation } from './command.ts';
+import { contactAllowed } from './settlement-space.ts';
 import { factionCode } from './faction.ts';
 import type { Economy, Squad } from './economy.ts';
 import { TERRAIN, terrainAt, type MapGrid, type Site } from './map.ts';
@@ -546,7 +547,7 @@ export function engagedPairs(economy: Economy): readonly (readonly [Squad, Squad
       const other = squads[second];
       if (one === undefined || other === undefined) continue;
       if (one.owner === other.owner) continue;
-      if (inContact(one, other)) pairs.push([one, other]);
+      if (inContact(one, other) && contactAllowed(economy, one, other)) pairs.push([one, other]);
     }
   }
 
@@ -564,7 +565,7 @@ export function engagedWith(economy: Economy, squad: Squad): Squad | undefined {
   if (!inTheField(squad)) return undefined;
 
   return economy.squads.find(
-    (other) => other.owner !== squad.owner && inTheField(other) && inContact(squad, other),
+    (other) => other.owner !== squad.owner && inTheField(other) && inContact(squad, other) && contactAllowed(economy, squad, other),
   );
 }
 

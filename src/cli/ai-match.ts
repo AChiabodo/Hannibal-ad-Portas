@@ -4,7 +4,7 @@ import { createMilitaryBehaviour, createMilitaryRecruitment } from '../ai/milita
 import { createScoutingBehaviour } from '../ai/scouting.ts';
 import { createSiegeBehaviour } from '../ai/siege.ts';
 import { createAssaultReadiness } from '../ai/assault.ts';
-import { restingAtHome } from '../ai/recovery.ts';
+import { restingAtHome, returningHome } from '../ai/recovery.ts';
 import { createExpansionBehaviour } from '../ai/expansion.ts';
 import { createBehaviourRegistry, type Behaviour, type BehaviourContext, type BehaviourRegistry,
   type Candidate, type Contribution } from '../ai/registry.ts';
@@ -32,12 +32,12 @@ const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
   recruitCost, payrollBill,
   grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, baseStorage: BASE_STORAGE, taxPerDenarius: TAX_PER_DENARIUS,
   ticksUntilPayroll: ticksUntilSeason };
-const canContinueAssault = createAssaultReadiness({ siegeRadius: SIEGE_RADIUS,
+const canContinueAssault = createAssaultReadiness({ squadTypes: SQUAD_TYPES, siegeRadius: SIEGE_RADIUS, settlementRadius: 7,
   assaultTicks: ASSAULT_TICKS, wallShock: WALL_SHOCK });
 const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ,
-  canContinueAssault };
+  canContinueAssault, settlementRadius: 7 };
 const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
-  vision: SQUAD_VISION, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
+  vision: SQUAD_VISION, settlementRadius: 7, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
   scoutTypes: ['hastati', 'gaul', 'numidian-horse'] };
 // One garrison is worth the strongest Tier-1 Squad a Faction can raise, since an
 // unseen front reports how many Squads man it and not which. Since #66 "strongest"
@@ -45,7 +45,7 @@ const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, 
 // in the same units as the rest of a Controller's power.
 const garrisonEstimate = Math.max(...SQUAD_TYPES.filter((type) => type.tier === 1)
   .map((type) => type.strength * type.impact * type.morale));
-const siegeContent = { canAssault, canContinueAssault, ramCost: RAM_COST, siegeRadius: SIEGE_RADIUS, reliefRadius: RELIEF_RADIUS,
+const siegeContent = { canAssault, canContinueAssault, ramCost: RAM_COST, siegeRadius: SIEGE_RADIUS, reliefRadius: RELIEF_RADIUS, settlementRadius: 7,
   garrisonEstimate, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES };
 
 /** Economy alone at one difficulty: what `economyRegistry` is to Centurio. */
@@ -173,8 +173,7 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
     const { visible } = context.observation;
     const squads = visible.squads.filter((squad) => !withdrawn.has(squad.id) &&
       !restingAtHome(squad, visible.settlements, SQUAD_TYPES.find((type) => type.id === squad.type)?.morale ?? 0) &&
-      !(squad.goal !== null && visible.settlements.some((site) =>
-        site.x === squad.goal!.x && site.y === squad.goal!.y)));
+      !returningHome(squad, visible.settlements));
     const proposed = siege.tactical!({ ...context, observation: { ...context.observation,
       visible: { ...visible, squads } } });
     if (proposed.length === 0) return [];

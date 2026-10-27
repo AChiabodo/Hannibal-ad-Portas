@@ -1,9 +1,12 @@
+import { formationFootprint } from '../../src/content/formation.ts';
+import { MAP_WIDTH, MAP_HEIGHT, TERRAIN } from '../../src/sim/map.ts';
+import { UNSEEN } from '../../src/sim/fog.ts';
 import { describe, expect, it } from 'vitest';
 import { createMatch } from '../../src/sim/match.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
 import { createSiege, observeSiege, siegeMatchRules, type SiegeVisible, type SiegeWorld } from '../../src/sim/siege.ts';
 import { createAi } from '../../src/ai/controller.ts';
-import { militaryRegistry, scoutingRegistry, playAiMatch } from '../../src/cli/ai-match.ts';
+import { militaryRegistry, scoutingRegistry, playAiMatch, createArmyController } from '../../src/cli/ai-match.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
 import type { Command } from '../../src/sim/command.ts';
 import { runMatch } from '../../src/sim/driver.ts';
@@ -90,7 +93,7 @@ describe('scouting through a Match Observation', () => {
     const world = siegeMatchRules.createWorld(7);
     const before = structuredClone(observeSiege(world, 'rome'));
     const hidden = world.economy.settlements.find((settlement) => settlement.id > 1 &&
-      before.fog.visible[settlement.y * 96 + settlement.x] === 0)!;
+      before.fog.visible[settlement.y * MAP_WIDTH + settlement.x] === 0)!;
     world.siege.fronts[hidden.id]!.hold = 2;
     expect(observeSiege(world, 'rome')).toEqual(before);
   });
@@ -103,13 +106,15 @@ describe('scouting through a Match Observation', () => {
       runMatch({ seed, ticks: bound, rules: { ...siegeMatchRules, createWorld(seed) {
         const world = siegeMatchRules.createWorld(seed);
         const home = world.economy.settlements[0]!;
-        for (let i = 0; i < 3; i += 1) musterSquad(world.economy, world.map, {
-          faction: 'rome', squadType: 'hastati', x: home.x, y: home.y,
+        for (const [dx, dy] of [[15, 0], [-3, -3], [-3, 3]]) musterSquad(world.economy, world.map, {
+          faction: 'rome', squadType: 'hastati', men: 24, x: home.x + dx!, y: home.y + dy!,
         });
         return world;
       } }, observe: observeSiege, outcome: () => null,
       players: [{ faction: 'rome', controller: { decide(observation) {
-        if (observation.visible.contacts.some((contact) => contact.kind === 'stronghold')) {
+        if (observation.visible.contacts.some((contact) => contact.kind === 'stronghold') ||
+          observation.visible.appearances?.some((site) => site.kind === 'stronghold' &&
+            !observation.visible.settlements.some((own) => own.id === site.id) && site.tiles.some((tile) => tile.structure !== undefined))) {
           found = Math.min(found, observation.tick);
         }
         return controller.decide(observation);
@@ -128,12 +133,43 @@ describe('scouting through a Match Observation', () => {
     expect(observeSiege(world, 'rome').contacts).toEqual([]);
     const enemy = world.economy.settlements[1]!;
     musterSquad(world.economy, world.map, {
-      faction: 'rome', squadType: 'hastati', x: enemy.x + 3, y: enemy.y,
+      faction: 'rome', squadType: 'hastati', men: 24, x: enemy.x - 9, y: enemy.y,
     });
     match.step();
-    expect(observeSiege(world, 'rome').contacts).toContainEqual({
-      kind: 'stronghold', id: 1, x: enemy.x, y: enemy.y, seen: 1, type: null,
-    });
+    const known = observeSiege(world, 'rome');
+    expect(known.contacts.some((contact) => contact.kind === 'stronghold')).toBe(false);
+    expect(known.appearances?.some((site) => site.id === 1 && site.tiles.some((tile) => tile.structure !== undefined))).toBe(true);
     expect(observeSiege(world, 'carthage').contacts.some((contact) => contact.kind === 'stronghold')).toBe(false);
   });
 });
+
+
+it('does not repeatedly send a scout onto a riverbank that cannot hold any arrival pose (#74)', () => {
+  const ai = createArmyController('imperator');
+  let checked = 0;
+  runMatch({ seed: 7, ticks: 500, rules: siegeMatchRules, observe: observeSiege, outcome: () => null,
+    players: [{ faction: 'rome', controller: { decide(observation) {
+      const commands = ai.decide(observation);
+      for (const command of commands) {
+        if (command.kind !== 'move') continue;
+        for (const id of command.squads) {
+          const squad = observation.visible.squads.find((entry) => entry.id === id)!;
+          const fits = (['north', 'east', 'south', 'west'] as const).some((facing) => {
+            const rect = formationFootprint(squad.capacity, 'column', facing);
+            for (let y = command.y + rect.y; y < command.y + rect.y + rect.height; y += 1)
+              for (let x = command.x + rect.x; x < command.x + rect.x + rect.width; x += 1) {
+                if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) return false;
+                const terrain = observation.visible.fog.terrain[y * MAP_WIDTH + x];
+                if (terrain === TERRAIN.river || terrain === UNSEEN) return false;
+              }
+            return true;
+          });
+          expect(fits, `tick ${observation.tick}: Squad ${id} to ${command.x},${command.y}`).toBe(true);
+          checked += 1;
+        }
+      }
+      return commands;
+    } } }, { faction: 'carthage', controller: scriptedController<SiegeVisible>([]) }],
+  });
+  expect(checked).toBeGreaterThan(0);
+}, 15000);

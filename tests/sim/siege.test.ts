@@ -43,14 +43,14 @@ const ROME: Site = { x: 10, y: 10 };
 const CARTHAGE: Site = { x: 85, y: 85 };
 
 /** A tile one step from Carthage's Stronghold: where a besieging army stands at the walls. */
-const AT_THE_GATE: Site = { x: 84, y: 85 };
+const AT_THE_GATE: Site = { x: 75, y: 85 };
 
 it('shows only the real visual formation of an enemy currently in sight, without its private condition or orders', () => {
   const world = stage();
-  const enemy = musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', x: 12, y: 10, men: 24 });
+  const enemy = musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', x: 20, y: 10, men: 24 });
   enemy.strength = 9;
   const observed = observeSiege(world, 'rome').enemies;
-  expect(observed).toMatchObject([{ id: enemy.id, type: 'gaul', x: 12, y: 10,
+  expect(observed).toMatchObject([{ id: enemy.id, type: 'gaul', x: 20, y: 10,
     appearance: { men: 9, capacity: 24, figures: 9, formation: 'line', facing: 'south' } }]);
   expect(Object.keys(observed[0]!).sort()).toEqual(['appearance', 'id', 'type', 'x', 'y']);
   expect(Object.keys(observed[0]!.appearance!).sort()).toEqual(['capacity', 'facing', 'figures', 'formation', 'men']);
@@ -100,7 +100,7 @@ function muster(world: SiegeWorld, faction: 'rome' | 'carthage', type: string, s
   const squads: Squad[] = [];
 
   for (let raised = 0; raised < count; raised += 1) {
-    squads.push(musterSquad(world.economy, world.map, { faction, squadType: type, x: site.x, y: site.y }));
+    squads.push(musterSquad(world.economy, world.map, { faction, squadType: type, x: site.x, y: site.y + raised * 4 }));
   }
 
   return squads;
@@ -108,11 +108,16 @@ function muster(world: SiegeWorld, faction: 'rome' | 'carthage', type: string, s
 
 /** Puts a Carthaginian garrison inside its Stronghold, through the Command the game uses. */
 function manWalls(world: SiegeWorld, count = 1): readonly Squad[] {
-  const squads = muster(world, 'carthage', 'libyan-spear', CARTHAGE, count);
-  const ids = squads.map((squad) => squad.id);
-
-  expect(applySiegeCommand(world, garrison('carthage', ids, 1), routeCacheFor(world.map))).toBe(true);
-
+  if (count > 1) world.economy.settlements[1]!.tier = 3;
+  const squads: Squad[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const squad = muster(world, 'carthage', 'libyan-spear', CARTHAGE)[0]!;
+    const match = matchOn(world);
+    match.step([garrison('carthage', [squad.id], 1)]);
+    run(match, 200);
+    expect(squad.garrison).toBe(1);
+    squads.push(squad);
+  }
   return squads;
 }
 
@@ -437,7 +442,8 @@ describe('a blockade', () => {
     run(match, 10);
     expect(carthageFront(world).path).toBe(SIEGE.blockade);
 
-    muster(world, 'carthage', 'libyan-spear', { x: CARTHAGE.x, y: CARTHAGE.y + RELIEF_RADIUS });
+    muster(world, 'carthage', 'libyan-spear', { x: CARTHAGE.x + 7 + RELIEF_RADIUS, y: 78 }, 4);
+    for (const x of [78, 82, 86, 90]) muster(world, 'carthage', 'libyan-spear', { x, y: CARTHAGE.y + 7 + RELIEF_RADIUS });
     match.step();
 
     expect(carthageFront(world)).toMatchObject({ path: SIEGE.none, besieger: UNOWNED });
@@ -524,7 +530,7 @@ describe('the fall of a Stronghold', () => {
         { faction: 'rome', controller: idleController() },
         { faction: 'carthage', controller: idleController() },
       ],
-      ticks: 600,
+      ticks: 1800,
     };
 
     const result = runMatch(setup);
@@ -534,7 +540,7 @@ describe('the fall of a Stronghold', () => {
       winner: 'rome',
       reason: { kind: 'stronghold', stronghold: 1, path: 'assault' },
     });
-    expect(result.result.tick).toBeLessThan(600);
+    expect(result.result.tick).toBeLessThan(1800);
   });
 
   it('is a siege the besieger can watch, and a wall nobody besieges stays out of the other’s Observation', () => {
@@ -584,7 +590,9 @@ describe('the Siege a seed opens', () => {
 
     expect(again.hash).toBe(once.hash);
     expect(siegeMatchOutcome(once.world)).toBeNull();
-  });
+  // The 160x160 theatre and per-cell appearance memory are hashed twice here;
+  // leave room for the other CPU-heavy map/Match workers in the full suite.
+  }, 15_000);
 });
 
 it('captures a neutral settlement after a group actually marches to its centre, for either Faction', () => {

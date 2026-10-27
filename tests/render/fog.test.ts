@@ -37,6 +37,12 @@ import { THEATRE_PIXELS, THEATRE_MARGIN, renderTerrain, tilePixel } from '../../
 /** Two theatres that are nothing like each other, so "reveals nothing" has something to hide. */
 const FIRST = generateMap(1);
 const SECOND = generateMap(2);
+// Deliberately distinct terrain at the sampled tile; seed layout changes must
+// not turn a fog non-disclosure check into a comparison of identical grass.
+for (let y = 19; y <= 21; y += 1) for (let x = 19; x <= 21; x += 1) {
+  FIRST.terrain[tileIndex(x, y)] = 0;
+  SECOND.terrain[tileIndex(x, y)] = 1;
+}
 
 /** A fog that knows nothing of any theatre. */
 function blind(): FogView {

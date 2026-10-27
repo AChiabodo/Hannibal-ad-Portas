@@ -44,7 +44,7 @@ import { describe, expect, it } from 'vitest';
 import { assault, blockade, garrison, type Command } from '../../src/sim/command';
 import { createFogs } from '../../src/sim/fog';
 import { createEconomy, type Squad } from '../../src/sim/economy';
-import { RESOURCE } from '../../src/sim/map';
+import { RESOURCE, tileIndex } from '../../src/sim/map';
 import { createMatch, type Match } from '../../src/sim/match';
 import { routeCacheFor } from '../../src/sim/movement';
 import type { MapGrid, Site } from '../../src/sim/map';
@@ -54,6 +54,7 @@ import {
   CAPTURE_HOLDS,
   CAPTURE_TICKS,
   createSiege,
+  observeSiege,
   siegeMatchRules,
   STRUCTURE,
   type SiegeWorld,
@@ -70,7 +71,7 @@ function stage(options: { readonly minor?: Site; readonly hill?: Site } = {}): S
   const map: MapGrid = testMap({
     strongholds: [ROME, CARTHAGE],
     ...(options.minor === undefined ? {} : { settlements: [options.minor] }),
-    ...(options.hill === undefined ? {} : { paint: { [options.hill.y * 96 + options.hill.x]: 1 } }),
+    ...(options.hill === undefined ? {} : { paint: { [tileIndex(options.hill.x, options.hill.y)]: 1 } }),
   });
   const economy = createEconomy(map);
 
@@ -429,12 +430,12 @@ describe('the Siege reads men and not Squads', () => {
       .reduce((total, structure) => total + structure.hp, 0);
   }
 
-  /** `count` bodies of `men` of a type, on Carthage's gate tile's neighbour, ordered to storm. */
+  /** Equal forces distributed outside the west perimeter, each one Tile from the Walls. */
   function storming(men: number, count: number): { world: SiegeWorld; squads: readonly Squad[] } {
     const world = stage();
     const squads: Squad[] = [];
     for (let index = 0; index < count; index += 1) {
-      squads.push(body(world, 'rome', 'principes', CARTHAGE.x - 1, CARTHAGE.y, men, 'east'));
+      squads.push(body(world, 'rome', 'principes', CARTHAGE.x - 8, CARTHAGE.y + (index - (count - 1) / 2) * 4, men, 'east'));
     }
     world.economy.treasuries[0] = 0;
     expect(order(world, assault('rome', squads.map((squad) => squad.id), 1))).toBe(true);
@@ -477,13 +478,18 @@ describe('the Siege reads men and not Squads', () => {
     /** The ram left, after one assault by 120 men on a garrison of 120 in `shape`. */
     function afterElevenRounds(shape: readonly number[]): number {
       const world = stage();
+      world.economy.settlements[1]!.tier = 2; // 120 defenders fit the Tier II wall-duty capacity.
       const holders: Squad[] = [];
       for (const men of shape) {
-        holders.push(body(world, 'carthage', 'libyan-spear', CARTHAGE.x, CARTHAGE.y, men));
+        const holder = body(world, 'carthage', 'libyan-spear', CARTHAGE.x, CARTHAGE.y, men);
+        holders.push(holder);
+        expect(order(world, garrison('carthage', [holder.id], 1))).toBe(true);
+        run(matchOn(world), 60);
       }
-      expect(order(world, garrison('carthage', holders.map((squad) => squad.id), 1))).toBe(true);
+      const admitted = observeSiege(world, 'carthage').squads;
+      expect(holders.every((holder) => admitted.find((squad) => squad.id === holder.id)?.garrison === 1)).toBe(true);
 
-      const attacker = body(world, 'rome', 'principes', CARTHAGE.x - 1, CARTHAGE.y, 120, 'east');
+      const attacker = body(world, 'rome', 'principes', CARTHAGE.x - 8, CARTHAGE.y, 120, 'east');
       world.economy.treasuries[0] = 15;
       expect(order(world, assault('rome', [attacker.id], 1))).toBe(true);
       // Long enough for the ram to be paid for, built, and worked for a few rounds.
@@ -507,7 +513,7 @@ describe('the Siege reads men and not Squads', () => {
       const world = stage();
       const ring: Squad[] = [];
       for (let index = 0; index < count; index += 1) {
-        ring.push(body(world, 'rome', 'hastati', CARTHAGE.x - 1, CARTHAGE.y, 120 / count, 'east'));
+        ring.push(body(world, 'rome', 'hastati', CARTHAGE.x - 8, CARTHAGE.y + (index - (count - 1) / 2) * 4, 120 / count, 'east'));
       }
       // 120 men in `count` bodies of the roster's own sizes: `120 / count` is 120
       // for one body and 24 for five, both of which the roster sells.

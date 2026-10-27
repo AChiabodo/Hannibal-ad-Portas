@@ -1,3 +1,5 @@
+import { formationFootprint, type Formation, type Facing } from '../content/formation.ts';
+import { rectDistance } from '../content/settlement-layout.ts';
 /**
  * A place on the map as a planning policy reads it, and the one way the policies
  * measure the ground between two of them.
@@ -18,4 +20,21 @@ export interface Site {
 /** The tiles between two places, Chebyshev: a diagonal costs one, as movement does. */
 export function distance(a: Site, b: Site): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+}
+
+
+/** Public physical facts; older policy fixtures may supply only an anchor. */
+export interface FormationSite extends Site {
+  readonly engaged?: boolean;
+  readonly type?: string;
+  readonly capacity?: number;
+  readonly formation?: Formation;
+  readonly facing?: Facing;
+}
+
+export function bodyPerimeterDistance(squad: FormationSite, site: Site, radius: number, figures = squad.capacity): number {
+  if (figures === undefined || squad.formation === undefined || squad.facing === undefined) return Math.max(0, distance(squad, site) - radius);
+  const footprint = formationFootprint(figures, squad.formation, squad.facing);
+  return rectDistance({ x: site.x - radius, y: site.y - radius, width: radius * 2 + 1, height: radius * 2 + 1 },
+    { ...footprint, x: squad.x + footprint.x, y: squad.y + footprint.y });
 }

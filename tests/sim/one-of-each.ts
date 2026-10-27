@@ -4,6 +4,7 @@ import {
   attackMove,
   blockade,
   build,
+  cancelPending,
   formation,
   garrison,
   group,
@@ -36,4 +37,5 @@ export const ONE_OF_EACH: readonly Command[] = [
   blockade('rome', [2], 5),
   formation('rome', [1, 2], 'column'),
   group('rome', 1, [1, 2]),
+  cancelPending('rome', 5, 1),
 ];

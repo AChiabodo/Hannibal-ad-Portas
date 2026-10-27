@@ -1121,3 +1121,45 @@ describe('the first-entry guide panel', () => {
       .toBeGreaterThan(0);
   });
 });
+
+
+describe('settlement management (#74)', () => {
+  it('lists survivors on the walls and cancellable pending purchases through public HUD controls', () => {
+    const settlement = { ...VISIBLE.settlements[0]!, tier: 2, pending: [{ id: 7, kind: 'recruit' as const, building: '', squadType: 'hastati', men: 60, count: 1, reason: 'space' as const, cost: { grain: 10, timber: 0, stone: 0, iron: 5 } }] };
+    const visible = { ...VISIBLE, settlements: [settlement], squads: [{ ...VISIBLE.squads[0]!, men: 40, garrison: 0 }] };
+    const model = hudModel(visible, STRONGHOLDS, { kind: 'settlement', id: 0 }, [], { desktop: true, uiScale: 1, settlementPage: 'management', detailOffset: 1 });
+    expect(model.detail?.management?.[0]?.text).toContain('40/120');
+    const layout = hudLayout(model, SIZE);
+    expect(layout.buttons.map((button) => button.action)).toContain(`garrisonSelect:${visible.squads[0]!.id}`);
+    expect(layout.buttons.map((button) => button.action)).toContain(`garrisonExit:${visible.squads[0]!.id}`);
+    for (const panelLayout of ['sidebar', 'dock', 'compact'] as const) {
+      const arranged = hudLayout({ ...model, view: { ...model.view, panelLayout } }, { width: 1280, height: 720 });
+      expect(arranged.buttons.map((button) => button.action), panelLayout).toContain(`garrisonExit:${visible.squads[0]!.id}`);
+      expect(arranged.buttons.map((button) => button.action), panelLayout).toContain('settlement:management');
+      const pendingLayout = hudLayout({ ...model, view: { ...model.view, panelLayout, detailOffset: 2 } }, { width: 1280, height: 720 });
+      expect(pendingLayout.buttons.map((button) => button.action), panelLayout).toContain('cancelPending:7');
+      expect(pendingLayout.text.map((line) => line.text).join(' '), panelLayout).toContain('costo');
+    }
+    const pending = hudLayout({ ...model, view: { ...model.view, detailOffset: 2 } }, SIZE);
+    expect(pending.buttons.map((button) => button.action)).toContain('cancelPending:7');
+    expect(model.detail?.management?.[2]?.text).toContain('Spazio occupato');
+    expect(model.detail?.management?.[2]?.text).toContain('costo');
+  });
+});
+
+
+it('does not call an exposed field passage an admission to the garrison (#74)', () => {
+  const squad = { ...VISIBLE.squads[0]!, garrison: null, passage: { settlement: 0, phase: 'entering' as const, remaining: 0 } };
+  const model = hudModel({ ...VISIBLE, squads: [squad] }, STRONGHOLDS, { kind: 'squad', id: squad.id });
+  const text = model.detail?.lines.find((line) => line.label === 'Accesso')?.value;
+  expect(text).toContain('Passaggio');
+  expect(text).toContain('ancora esposto');
+  expect(text).not.toContain('Ingresso');
+});
+
+it('explains an interrupted passage without raw traffic identifiers (#74)', () => {
+  const squad = { ...VISIBLE.squads[0]!, passage: { settlement: 0, phase: 'waiting' as const, remaining: 0, reason: 'access-busy' } };
+  const model = hudModel({ ...VISIBLE, squads: [squad] }, STRONGHOLDS, { kind: 'squad', id: squad.id });
+  expect(model.detail?.lines.find((line) => line.label === 'Accesso')?.value).toContain('Accesso occupato');
+  expect(model.detail?.lines.find((line) => line.label === 'Accesso')?.value).not.toContain('access-busy');
+});
