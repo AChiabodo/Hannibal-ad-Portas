@@ -4,26 +4,46 @@ import { FIELD, isRouting, standingAt } from './squad.ts';
 import { engagedWith } from './combat.ts';
 import { MAP_HEIGHT, MAP_WIDTH } from './map.ts';
 import { orderSquadTo, routeCacheFor } from './movement.ts';
+import { canOccupy, occupiedGround, squadGround } from './settlement-space.ts';
+import type { Squad } from './economy.ts';
 import type { SiegeWorld } from './siege.ts';
 
 /** Not a player Faction and never a valid Command issuer. */
 export const BARBARIAN_OWNER = 2;
 const GUARD_MEN = 24;
+const REINFORCEMENT_TICKS = 600;
 
 /** Create a finite initial field force at each generated camp. */
 export function createCampGuards(world: SiegeWorld): void {
+  for (const campId of (world.map.barbarianCamps ?? []).keys()) spawnGuard(world, campId);
+}
+
+function spawnGuard(world: SiegeWorld, campId: number): void {
+  const site = world.map.barbarianCamps?.[campId];
+  if (site === undefined) return;
   const code = squadTypeCode('gaul');
   const type = code === undefined ? undefined : squadTypeOf(code);
   if (code === undefined || type === undefined) throw new Error('Barbarian guard needs an infantry type');
-  for (const [campId, site] of (world.map.barbarianCamps ?? []).entries()) {
-    world.economy.squads.push({ ...standingAt(site.x, site.y, GUARD_MEN, type.ammunition),
-      id: world.economy.nextSquadId++, owner: BARBARIAN_OWNER, type: code, capacity: GUARD_MEN,
-      home: -1, morale: type.morale, unpaid: 0, barbarianCamp: campId });
+  for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
+    const x = site.x + (dx ?? 0), y = site.y + (dy ?? 0);
+    const guard: Squad = { ...standingAt(x, y, GUARD_MEN, type.ammunition),
+      id: world.economy.nextSquadId, owner: BARBARIAN_OWNER, type: code, capacity: GUARD_MEN,
+      home: -1, morale: type.morale, unpaid: 0, barbarianCamp: campId };
+    if (!canOccupy(world.map, guard, x, y) || occupiedGround(world.economy, squadGround(guard))) continue;
+    world.economy.squads.push(guard);
+    world.economy.nextSquadId += 1;
+    return;
   }
 }
 
 /** Defend the surrounding ground; surviving orphans wander without raiding. */
 export function advanceCampGuards(world: SiegeWorld, tick: number): void {
+  if (tick > 0 && tick % REINFORCEMENT_TICKS === 0) {
+    for (const [campId, camp] of (world.barbarianCamps ?? []).entries()) {
+      if (camp.hp <= 0 || world.economy.squads.some((squad) => squad.barbarianCamp === campId)) continue;
+      spawnGuard(world, campId);
+    }
+  }
   const routes = routeCacheFor(world.map);
   for (const guard of world.economy.squads) {
     if (guard.owner !== BARBARIAN_OWNER || guard.barbarianCamp === undefined || isRouting(guard)) continue;
