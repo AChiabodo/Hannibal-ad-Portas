@@ -105,7 +105,8 @@ import {
 import { squadTypesOf } from '../content/index.ts';
 import { playAiMatchAt } from './ai-match.ts';
 import type { DifficultyName } from '../ai/difficulty.ts';
-import { settlementSide, sitePoint } from '../sim/settlement-space.ts';
+import { blockedTile, settlementSide, sitePoint } from '../sim/settlement-space.ts';
+import { formationFootprint } from '../content/formation.ts';
 import { facingOf } from '../sim/squad.ts';
 
 /**
@@ -493,11 +494,20 @@ function squadIdsOf(world: EconomyWorld, faction: Faction): readonly number[] {
  */
 function groundNear(map: MapGrid, site: Site, count: number, spread = MARCH_SPREAD): readonly Site[] {
   const ground: Site[] = [];
+  // These harnesses muster full lines facing south. Reserve the largest body,
+  // not just its anchor, so it can leave past the permanent headquarters.
+  const body = formationFootprint(120, 'line', 'south');
+  const owner = site === map.strongholds[1] ? 1 : 0;
 
   for (let y = site.y - spread; y <= site.y + spread; y += 1) {
     for (let x = site.x - spread; x <= site.x + spread; x += 1) {
       if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) continue;
       if (!isWalkable(terrainAt(map, x, y))) continue;
+      let blocked = false;
+      for (let row = y + body.y; row < y + body.y + body.height; row += 1)
+        for (let col = x + body.x; col < x + body.x + body.width; col += 1)
+          if (blockedTile(map, owner, col, row)) blocked = true;
+      if (blocked) continue;
       if (ground.length === count) return ground;
 
       ground.push({ x, y });

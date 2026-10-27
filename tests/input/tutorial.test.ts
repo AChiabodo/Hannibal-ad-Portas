@@ -141,13 +141,17 @@ it('finishes the final lesson sequence only after a normal AI encounter, capture
   host.human.submit(move('rome', [other.id], 22, 110));
   host.human.submit(attackMove('rome', [first.id], 60, 90));
   let encounter = false;
+  // The host retains only the latest 128 Commands, so observe AI activity
+  // during the encounter rather than after repeated human attacks evict it.
+  let opponentActed = host.applied('carthage').length > 0;
   for (let tick = 0; tick < 10000 && host.result === null && !encounter; tick += 1) {
     host.advance(1);
+    opponentActed ||= host.applied('carthage').length > 0;
     const enemy = host.observe().enemies[0];
     if (enemy !== undefined) host.human.submit(attack('rome', [first.id], enemy.id));
     encounter = host.observe().squads.some(({ engaged }) => engaged);
   }
-  expect(host.applied().some(({ command }) => command.faction === 'carthage')).toBe(true);
+  expect(opponentActed).toBe(true);
   expect(encounter).toBe(true);
   host.human.submit(move('rome', host.observe().squads.map(({ id }) => id), 35, 79));
   host.advance(800);

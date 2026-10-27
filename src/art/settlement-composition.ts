@@ -110,6 +110,45 @@ function drawWork(out: PixelBuffer, rect: GroundRect, work: WorkAppearance): voi
   }
 }
 
+/** A permanent headquarters or village hall, separate from paid economic Works. */
+function drawLandmark(out: PixelBuffer, rect: GroundRect, kind: SettlementKind, origin: 'rome' | 'carthage', tier: number): void {
+  const { x, y, width, height } = pixelRect(rect);
+  const flat = origin === 'carthage';
+  const military = kind === 'stronghold';
+  const cloth = military ? RAMPS.parchment : flat ? RAMPS.parchment : RAMPS.bronze;
+  fillRect(out, x + 3, y + 7, width - 5, height - 8, stone(0));
+  fillRect(out, x + 2, y + 6, width - 6, height - 8, military && tier === 1 ? shadeAt(cloth, 3) : stone(tier + 1));
+  if (military && tier === 1) {
+    for (let fold = 7; fold < width - 7; fold += 8)
+      fillRect(out, x + fold, y + 10, 2, height - 16, shadeAt(cloth, 2));
+  }
+  if (flat) {
+    fillRect(out, x + 2, y + 3, width - 5, height - 14, shadeAt(cloth, 3));
+    strokeRect(out, x + 3, y + 2, width - 7, height - 14, shadeAt(cloth, 5));
+    if (military) fillRect(out, x + 10, y + 7, width - 21, 7, wood(2));
+  } else {
+    for (let row = 0; row < 12; row += 1) {
+      const inset = 12 - row;
+      fillRect(out, x + inset, y + 2 + row, width - inset * 2, 1, shadeAt(cloth, row < 6 ? 5 : 3));
+    }
+    fillRect(out, x + 12, y + 3, width - 24, 2, shadeAt(cloth, 6));
+  }
+  fillRect(out, x + Math.floor(width / 2) - 4, y + height - 12, 8, 10, wood(0));
+  fillRect(out, x + 3, y + height - 3, width - 7, 2, stone(4));
+  if (military) {
+    // Open awning, guy posts and a command standard read as a headquarters,
+    // rather than another economic house or the separately purchased Castrum.
+    for (const dx of [5, width - 9]) fillRect(out, x + dx, y + height - 12, 2, 9, wood(5));
+    fillRect(out, x + 4, y + height - 14, width - 9, 3, shadeAt(cloth, 5));
+    fillRect(out, x + width - 7, y + 1, 2, height - 5, wood(4));
+    fillRect(out, x + width - 13, y + 2, 6, 5, shadeAt(RAMPS.blood, 3));
+    if (tier === 3) strokeRect(out, x + 1, y + height - 8, width - 3, 7, stone(6));
+  } else {
+    fillRect(out, x + 5, y + height - 10, 4, 4, wood(1));
+    if (tier > 1) fillRect(out, x + width - 10, y + height - 10, 4, 4, wood(1));
+  }
+}
+
 /** Fully procedural image; neither simulation state nor random source is read. */
 export function settlementComposition(look: SettlementComposition): PixelBuffer {
   const plan = settlementLayout(look.kind);
@@ -125,6 +164,7 @@ export function settlementComposition(look: SettlementComposition): PixelBuffer 
   fillRect(out, cross.x, cross.y, cross.width, cross.height, wood(1));
   const square = pixelRect(features.square);
   fillRect(out, square.x, square.y, square.width, square.height, stone(tier + 1));
+  drawLandmark(out, features.landmark, look.kind, tradition, tier);
   for (const work of look.works) {
     const lot = buildingLot(work.building, work.ordinal);
     if (lot !== undefined) drawWork(out, turnRect(lot, side), work);

@@ -19,6 +19,17 @@ function stage() {
 }
 
 describe('the shared settlement rules (#74)', () => {
+  it('keeps the headquarters solid while leaving the capture square reachable', () => {
+    const { world, match } = stage();
+    const squad = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 40, y: 22 });
+    // This Stronghold faces east: its north-east authored landmark turns to
+    // the north-west of its square, occupying (21..22, 21..22).
+    match.step([move('rome', [squad.id], 22, 22)]);
+    expect(observeSiege(match.state.world, 'rome').squads[0]?.refused).not.toBeNull();
+    match.step([move('rome', [squad.id], 25, 25)]);
+    for (let tick = 0; tick < 250; tick += 1) match.step();
+    expect(observeSiege(match.state.world, 'rome').squads[0]).toMatchObject({ x: 25, y: 25, goal: null });
+  });
   it('keeps repeated scenario Works individually identifiable in the owned Observation', () => {
     const { world } = stage();
     world.economy.settlements[0]!.works.push(

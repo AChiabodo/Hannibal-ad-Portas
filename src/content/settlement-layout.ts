@@ -11,6 +11,8 @@ export interface SettlementLayout {
   readonly grounds: GroundRect;
   readonly core: GroundRect;
   readonly capture: GroundRect;
+  /** Permanent civic/military landmark facing the walkable capture square. */
+  readonly landmark: GroundRect;
   readonly muster: GroundRect;
   readonly assembly: GroundPoint;
   readonly gate: GroundRect;
@@ -70,6 +72,7 @@ const PLAN: SettlementLayout = {
   grounds: { x: -12, y: -12, width: 25, height: 25 },
   core: { x: -7, y: -7, width: 15, height: 15 },
   capture: { x: -1, y: -1, width: 3, height: 3 },
+  landmark: { x: 3, y: -4, width: 2, height: 2 },
   muster: { x: -3, y: 2, width: 6, height: 4 },
   assembly: { x: 0, y: 6 },
   gate: { x: -1, y: 7, width: 3, height: 1 },
@@ -77,7 +80,10 @@ const PLAN: SettlementLayout = {
 };
 
 /** Positions are permanent across Tier, ownership and construction order. */
-const PLANS: Readonly<Record<SettlementKind, SettlementLayout>> = { stronghold: PLAN, settlement: PLAN };
+const PLANS: Readonly<Record<SettlementKind, SettlementLayout>> = {
+  stronghold: PLAN,
+  settlement: PLAN,
+};
 export function settlementLayout(kind: SettlementKind): SettlementLayout { return PLANS[kind]; }
 
 /** Select one of the permanently reserved copies of a building kind. */
@@ -106,6 +112,7 @@ export function turnRect(rect: GroundRect, side: number): GroundRect {
 export interface SettlementGroundFeatures {
   readonly roads: readonly GroundRect[];
   readonly square: GroundRect;
+  readonly landmark: GroundRect;
   readonly flag: GroundRect;
   readonly ram: GroundRect;
 }
@@ -124,6 +131,7 @@ export function settlementGroundFeatures(kind: SettlementKind, side: number): Se
       : [{ x: 0, y: -3, width: 1, height: 7 }, { x: -3, y: 0, width: 7, height: 1 }]
     ).map((road) => turnRect(road, side)),
     square,
+    landmark: turnRect(settlementLayout(kind).landmark, side),
     flag: { x: square.x + square.width - 1, y: square.y, width: 2, height: 2 },
     ram: turnRect({ x: -1, y: 9, width: 3, height: 2 }, side),
   };

@@ -119,6 +119,10 @@ function appearanceFrame(world: SiegeWorld, site: Settlement): Int32Array {
     cells[offset + OWNER] = UNKNOWN_OWNER;
     cells[offset + RAM] = front !== undefined && front.ram > 0 && containsTile(ram, at.x, at.y) ? front.ramTicks === 0 ? 2 : 1 : 0;
     if (containsTile(square, at.x, at.y)) cells[offset + TIER] = site.tier;
+    if (containsTile(features.landmark, at.x, at.y)) {
+      cells[offset + TIER] = site.tier;
+      cells[offset + ORIGIN] = origin;
+    }
     // The flag extends slightly right and below its pole's cell.
     if (containsTile(features.flag, at.x, at.y)) cells[offset + OWNER] = site.owner;
     const structure = structureAt(front, side, at.x, at.y);

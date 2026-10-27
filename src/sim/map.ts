@@ -774,6 +774,7 @@ function siteReservations(sites: readonly Site[]): { readonly structures: Uint8A
       return { ...turned, x: site.x + turned.x, y: site.y + turned.y };
     };
     for (const lot of plan.lots) markRect(structures, at(lot));
+    markRect(structures, at(plan.landmark));
     if (id < 2) {
       const core = at(plan.core);
       const gate = at(plan.gate);
@@ -797,6 +798,12 @@ function siteReservations(sites: readonly Site[]): { readonly structures: Uint8A
   }
   const resources = structures.slice();
   for (const area of publicGround) markRect(resources, area);
+  // A landmark can enclose a small yard between future houses and walls.
+  // Such a yard is not a resource site: its road must remain reachable even
+  // after every planned building exists. Reuse the terrain flood for this mask.
+  const access = new Int32Array(TILE_COUNT);
+  labelLand(Uint8Array.from(structures, (blocked) => blocked === 1 ? TERRAIN.river : TERRAIN.plain), access, []);
+  for (let tile = 0; tile < TILE_COUNT; tile += 1) if (access[tile] !== access[0]) resources[tile] = 1;
   return { structures, resources, grounds };
 }
 

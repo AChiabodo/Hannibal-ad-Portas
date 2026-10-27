@@ -1220,7 +1220,7 @@ npm run match -- --seed 1 --ticks 600
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 0,
-  "hash": "3aaaf501674cafe1"
+  "hash": "b6a86c9b9dd7547d"
 }
 ```
 

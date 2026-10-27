@@ -4,6 +4,20 @@ import { settlementComposition } from '../../src/art/settlement-composition';
 import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 
 describe('the public settlement plan (#74)', () => {
+  it('gives empty settlements a central landmark distinct by kind and building tradition', () => {
+    const landmarks = [];
+    for (const kind of ['stronghold', 'settlement'] as const) for (const origin of ['rome', 'carthage'] as const) {
+      const image = settlementComposition({ kind, tier: 1, owner: 'none', origin, works: [] });
+      // The structure faces the square from its north-east corner, leaving
+      // both axes through the centre clear for whole formations.
+      const paint = [];
+      for (let y = 8 * 16; y < 10 * 16; y += 1) {
+        paint.push(...image.pixels.subarray((y * image.width + 14 * 16) * 4, (y * image.width + 17 * 16) * 4));
+      }
+      landmarks.push(JSON.stringify(paint));
+    }
+    expect(new Set(landmarks).size).toBe(4);
+  });
   it('keeps an undeveloped minor centre compact inside its reserved growth grounds', () => {
     for (const gateSide of [0, 1, 2, 3]) {
       const image = settlementComposition({ kind: 'settlement', tier: 1, owner: 'none', gateSide, works: [] });
@@ -12,8 +26,8 @@ describe('the public settlement plan (#74)', () => {
         if (image.pixels[(y * image.width + x) * 4 + 3] !== 0) painted.push({ x, y });
       }
       expect(painted.length).toBeGreaterThan(0);
-      expect(Math.max(...painted.map(({ x }) => x)) - Math.min(...painted.map(({ x }) => x)) + 1).toBeLessThanOrEqual(7 * 16);
-      expect(Math.max(...painted.map(({ y }) => y)) - Math.min(...painted.map(({ y }) => y)) + 1).toBeLessThanOrEqual(7 * 16);
+      expect(Math.max(...painted.map(({ x }) => x)) - Math.min(...painted.map(({ x }) => x)) + 1).toBeLessThanOrEqual(8 * 16);
+      expect(Math.max(...painted.map(({ y }) => y)) - Math.min(...painted.map(({ y }) => y)) + 1).toBeLessThanOrEqual(8 * 16);
       expect(image.width).toBe(25 * 16);
       expect(settlementLayout('settlement').lots).toHaveLength(25);
     }
@@ -41,11 +55,14 @@ describe('the public settlement plan (#74)', () => {
   it('holds every individual Work without occupying its square, muster or entrance', () => {
     for (const kind of ['stronghold', 'settlement'] as const) {
       const plan = settlementLayout(kind);
+      expect(intersects(plan.landmark, plan.capture)).toBe(false);
+      expect(intersects(plan.landmark, plan.muster)).toBe(false);
       expect(plan.lots).toHaveLength(25);
       expect(plan.lots.filter((lot) => lot.building === 'house')).toHaveLength(4);
       expect(plan.lots.filter((lot) => lot.building === 'granary')).toHaveLength(2);
       for (const [index, lot] of plan.lots.entries()) {
         expect(intersects(lot, plan.capture), `${kind}/${lot.building}: capture`).toBe(false);
+        expect(intersects(lot, plan.landmark), `${kind}/${lot.building}: landmark`).toBe(false);
         expect(intersects(lot, plan.muster), `${kind}/${lot.building}: muster`).toBe(false);
         expect(containsTile(plan.grounds, lot.x, lot.y)).toBe(true);
         expect(containsTile(plan.grounds, lot.x + lot.width - 1, lot.y + lot.height - 1)).toBe(true);

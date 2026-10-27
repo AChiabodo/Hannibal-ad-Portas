@@ -56,3 +56,30 @@ neutral passage label distinguishes exposed field traffic from Garrison admissio
 without changing rules or the public protocol.
 
 Follow-up totals: Standards 0 findings; Spec 0 findings. Both reviews were read-only.
+
+## Settlement landmark delta from 7a7a7f7
+
+Standards reported no unresolved documented violation or meaningful maintenance
+smell. Geometry remains shared across art, collision, map reservation and observed
+navigation. Connectivity reuses the existing flood, while CLI exercise placement
+checks complete initial formations against the same obstacles.
+
+Spec reported no unresolved P2 or requirement gap. The calibrated landmark keeps
+capture axes, paid building lots and Muster space free; partial knowledge retains
+the observed original architecture on conquest. Resource masking and CLI placement
+resolve the new physical constraints without resource or production bonuses.
+Lone-scout routing uses eligible own patrols and permitted terrain only. Confining
+the heading assertion to free-field turns is justified, with rigid manoeuvre
+coverage retained; Command-count migration keeps decision cadence and Replay.
+
+Landmark review totals: Standards 0 findings; Spec 0 findings. Read-only reviews.
+
+Both axes also reviewed the final headless hash migration: nine updated CI pins
+and the current README example match 12 paired local command results, with
+byte-identical output on repetition. Rules, seeds, tick bounds and assertions
+are unchanged; three unaffected pins remain intact. No findings on either axis.
+
+The final tutorial-only assertion repair was also reviewed independently on both
+axes: remember observed opponent Commands before the bounded 128-entry history
+evicts them. Actual encounter, capture, Siege and original time bounds remain
+required. Standards 0 findings; Spec 0 findings. Production source unchanged.

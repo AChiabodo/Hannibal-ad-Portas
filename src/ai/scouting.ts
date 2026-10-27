@@ -1,5 +1,5 @@
 import { formationFootprint } from '../content/formation.ts';
-import { breachTile } from '../content/settlement-layout.ts';
+import { breachTile, containsTile, settlementGroundFeatures } from '../content/settlement-layout.ts';
 import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
@@ -113,7 +113,7 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     return gains;
   }
   /** Cover the opposite band systematically, deriving progress only from explored terrain. */
-  function explorationCourse(home: Site, patrol: number, terrain: Uint8Array, position: Site): Site | undefined {
+  function explorationCourse(home: Site, patrol: number, terrain: Uint8Array, position: Site, lonePatrol: boolean): Site | undefined {
     const margin = Math.max(vision, (content.settlementRadius ?? 0) + vision);
     const low = Math.min(margin, Math.floor(height / 2));
     const high = Math.max(low, height - 1 - margin);
@@ -125,8 +125,12 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     // Keep that progress instead of crossing the same river again to visit an
     // arbitrary latitude before continuing in the original direction.
     const middle = Math.floor(height / 2);
+    // Complementary half-sweeps need two actual patrols. A lone scout crosses
+    // at its home latitude, then covers the opposite band in one sweep instead
+    // of leaving the other half behind until a trip to the far end and back.
+    const crossing = lonePatrol ? ownLatitude : middle;
     const first = patrol % 2 === 0
-      ? Math.max(low, Math.min(high, ownLatitude >= middle ? Math.min(middle, position.y) : Math.max(middle, position.y)))
+      ? Math.max(low, Math.min(high, ownLatitude >= middle ? Math.min(crossing, position.y) : Math.max(crossing, position.y)))
       : ownLatitude;
     const northFirst = patrol % 2 === 0 ? ownLatitude >= height / 2 : first < height / 2;
     const samples: number[] = [];
@@ -188,7 +192,8 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
       const part = tile.structure;
       const tangent = part?.side === 0 || part?.side === 2 ? localX : localY;
       const gap = part?.condition === 'breached' && (part.kind === 'gate' || breachTile(site.gateSide, part.side, tangent));
-      const obstacle = tile.work !== undefined || (part !== undefined && !gap && !(part.kind === 'gate' && owned.has(site.id)));
+      const landmark = tile.tier !== undefined && containsTile(settlementGroundFeatures(site.kind, site.gateSide).landmark, localX, localY);
+      const obstacle = landmark || tile.work !== undefined || (part !== undefined && !gap && !(part.kind === 'gate' && owned.has(site.id)));
       if (obstacle) obstacles[index({ x, y })] = 1;
     }
     /** Both the known ground and the recorded physical obstacles constrain a patrol. */
@@ -204,7 +209,7 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const reasons: string[] = [];
     const targets: Site[] = [];
     for (const [patrol, squad] of scouts.entries()) {
-      const course = found ? undefined : explorationCourse(visible.settlements[0] ?? squad, patrol, terrain, squad);
+      const course = found ? undefined : explorationCourse(visible.settlements[0] ?? squad, patrol, terrain, squad, scouts.length === 1);
       const fits = new Int8Array(width * height).fill(-1);
       // An anchor on dry ground is insufficient: at least one column pose must fit.
       const arrivals = (['north', 'east', 'south', 'west'] as const).map((facing) => formationFootprint(squad.capacity, 'column', facing));

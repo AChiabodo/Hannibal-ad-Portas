@@ -742,14 +742,16 @@ describe('a Squad keeps its formation, and turns', () => {
     expect(sentTo(12, 15)).toBe('west');
   });
 
-  it('faces the way it is about to step at every tick of a long march, through every bend', () => {
-    const world = economyMatchRules.createWorld(5);
-    const [rome, carthage] = world.map.strongholds;
-    const squad = place(world, 'hastati', rome.x, rome.y);
+  it('faces its next step through every bend of a free-field march', () => {
+    // At a building, an ordered backstep legitimately retains the old facing.
+    // This heading check exercises free turns; rigid obstacle manoeuvres have
+    // their own public traffic and route regressions.
+    const world = worldOf();
+    const squad = place(world, 'hastati', 10, 20);
     applyMovementCommands(
       world.economy,
       world.map,
-      [move('rome', [squad.id], carthage.x, carthage.y)],
+      [move('rome', [squad.id], 80, 70)],
       createRouteCache(world.map),
     );
 

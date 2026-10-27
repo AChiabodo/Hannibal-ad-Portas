@@ -341,6 +341,11 @@ The recognizable, walkable part of a Settlement's central square whose sustained
 _UI_: Piazza di controllo
 _Avoid_: Centre tile, invisible capture point
 
+**Settlement landmark**:
+The permanent headquarters of a Stronghold or communal hall of a Minor settlement, identifying its civic centre beside the central square. It is distinct from commissioned Works and the Roman Castrum.
+_UI_: —
+_Avoid_: Work, Castrum, using the landmark to mean the Capture area
+
 **Muster area**:
 The open ground in a Settlement where newly recruited Squads assemble in the field, distinct from its Garrison.
 _UI_: Zona di raduno
@@ -372,7 +377,7 @@ _UI_: Ordine in attesa
 _Avoid_: Work, completed purchase
 
 **Work**:
-One building in one settlement: a labour demand plus a timer while it goes up, and a labour demand plus what it yields once it stands.
+One commissioned building in one settlement: a labour demand plus a timer while it goes up, and a labour demand plus what it yields once it stands.
 _UI_: Cantiere
 _Avoid_: Building (a building is the kind; a work is the one in a settlement), construction site
 

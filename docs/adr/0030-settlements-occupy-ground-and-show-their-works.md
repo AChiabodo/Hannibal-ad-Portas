@@ -156,6 +156,15 @@ prevailing there. A Stronghold additionally needs a Breach and a Garrison that
 has been neutralized or surrendered. An active Garrison cannot be ignored to
 win by standing in the square. Blockade remains the alternative capture path.
 
+Following the visual review on 2026-10-27, every Settlement also has a permanent
+Settlement landmark facing the square: a command encampment/headquarters in a
+Stronghold and a smaller communal hall in a Minor settlement. It is present from
+the beginning, has a real solid footprint, and leaves the Capture area, muster
+ground and all commissioned building lots clear. It does not grant housing,
+production, storage, Labour or Garrison benefits and is not the purchased Castrum.
+Tier refines its architecture; observed portions retain their original building
+tradition after conquest and in Fog memory, like the other architecture.
+
 Quarters cover the interior of an owned Stronghold's Walls or the inhabited core
 of an owned Minor settlement, including Squads remaining in the field. Exterior
 productive grounds alone do not grant shelter; Castrum retains its function.

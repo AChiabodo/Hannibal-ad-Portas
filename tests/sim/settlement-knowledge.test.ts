@@ -38,6 +38,19 @@ function observe(match: Match<SiegeWorld, Command>) {
 }
 
 describe('physical settlement knowledge through Match commands (#74)', () => {
+  it('sees the hall without inventing the hidden square and preserves its tradition on capture', () => {
+    const world = stage();
+    world.economy.settlements[2]!.origin = 1;
+    const scout = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 55, y: 44 });
+    const match = on(world);
+    const partial = observe(match).appearances.find((site) => site.id === 2);
+    expect(partial?.tiles.find((tile) => tile.cell === 215)).toMatchObject({ tier: 1, origin: 'carthage' });
+    expect(partial?.tiles.some((tile) => tile.cell === 312)).toBe(false);
+    match.step([move('rome', [scout.id], 50, 50)]);
+    run(match, 250);
+    expect(observe(match).settlements.find((site) => site.id === 2)).toBeDefined();
+    expect(observe(match).appearances.find((site) => site.id === 2)?.tiles.find((tile) => tile.cell === 215)).toMatchObject({ tier: 1, origin: 'carthage' });
+  });
   it('discovers only the seen farm corner and freezes hidden completion and a hidden Tier upgrade', () => {
     function play(upgrade: boolean) {
       const world = stage();
@@ -83,7 +96,7 @@ describe('physical settlement knowledge through Match commands (#74)', () => {
     world.economy.settlements[2]!.works.push({ building: buildingCode('farm')!, ordinal: 0, origin: 0, remaining: 0 });
     const square = settlementLayout('settlement').capture;
     const scout = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24,
-      x: 50 + square.x + square.width + 1, y: 50 + square.y - 2 });
+      x: 50 + square.x + square.width + 3, y: 50 + square.y });
     const captor = musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 58, y: 50 });
     const match = on(world);
     expect(observe(match).appearances.find((site) => site.id === 2)?.tiles.some((tile) => tile.owner === 'none')).toBe(true);
@@ -95,7 +108,7 @@ describe('physical settlement knowledge through Match commands (#74)', () => {
     run(match, 250);
     expect(world.economy.settlements[2]!.owner).toBe(1);
     expect(observe(match).appearances.find((site) => site.id === 2)).toEqual(before);
-    match.step([move('rome', [scout.id], 50 + square.x + square.width + 1, 50 + square.y - 2)]);
+    match.step([move('rome', [scout.id], 50 + square.x + square.width + 3, 50 + square.y)]);
     run(match, 160);
     expect(observe(match).appearances.find((site) => site.id === 2)?.owner).toBe('carthage');
   });

@@ -70,6 +70,7 @@ export function blockedTile(map: MapGrid, owner: number, x: number, y: number): 
   if (grid === undefined) {
     grid = Uint8Array.from(map.terrain, (terrain) => terrain === TERRAIN.river ? 1 : 0);
     for (const site of space.economy.settlements) {
+      paintObstacle(grid, siteRect(space.economy, site, settlementLayout(site.id < 2 ? 'stronghold' : 'settlement').landmark));
       for (const work of site.works) {
         const name = buildingOf(work.building)?.id;
         const rect = name === undefined ? undefined : workGround(space.economy, site, name, workOrdinal(site, work));

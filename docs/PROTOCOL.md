@@ -480,6 +480,10 @@ there: tier, construction tradition (`origin`), owner, individual work ordinal,
 phase (0 foundations, 1 incomplete, 2 finished), fortification condition, sentries
 and ram. Missing cells reveal nothing; remembered cells retain their last observed
 appearance. Seeing one cell does not reveal the remaining buildings or stocks.
+Observed permanent-landmark cells carry their `tier` and architectural `origin`,
+without inventing a commissioned Work. Their solid footprint follows the shared
+settlement plan; the adjacent Capture area stays walkable. Hidden landmark
+portions retain only their recorded appearance and origin after conquest.
 
 Own squads may carry `passage`: the named settlement, `phase` (`approaching`,
 `waiting`, `entering`, `leaving`), remaining time and an optional impediment.
