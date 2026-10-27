@@ -18,3 +18,14 @@ it('a discovered barbarian camp has neutral defenders hostile to both factions',
   musterSquad(other.economy, other.map, { faction: 'carthage', squadType: 'gaul', men: 24, x: camp.x, y: camp.y });
   expect(observeSiege(other, 'carthage').enemies.some((enemy) => enemy.neutral === true)).toBe(true);
 });
+
+it('camp defenders react to a nearby intruder without waiting for an attack order', () => {
+  const world = createSiegeWorld(1);
+  const camp = world.map.barbarianCamps![0]!;
+  const intruder = musterSquad(world.economy, world.map, {
+    faction: 'rome', squadType: 'hastati', men: 24, x: camp.x + 4, y: camp.y,
+  });
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  for (let tick = 0; tick < 150; tick += 1) match.step();
+  expect(intruder.strength).toBeLessThan(24);
+});

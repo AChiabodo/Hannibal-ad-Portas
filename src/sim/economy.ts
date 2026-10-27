@@ -212,6 +212,8 @@ export interface Work {
 export interface Squad extends Block {
   /** Origin of a neutral barbarian guard, absent on player Squads. */
   barbarianCamp?: number;
+  /** Set when a surviving camp defender has become a wandering orphan. */
+  barbarianRetired?: number;
   /** What a Command names it by, and what an Observation reports: an id is never reused. */
   readonly id: number;
 

@@ -71,7 +71,7 @@
  */
 import { bearingOf, figuresOf, stockAt, squadTypeOf } from '../content/index.ts';
 import { fortificationHp, fortificationRepairStone, garrisonCapacity } from '../content/fortifications.ts';
-import { BARBARIAN_OWNER, createCampGuards } from './barbarian-guards.ts';
+import { advanceCampGuards, BARBARIAN_OWNER, createCampGuards } from './barbarian-guards.ts';
 import { bindSiegeSpace, siteRect, invalidateSpace, canOccupy, occupiedGround, squadGround, coreOf, physicalAccesses } from './settlement-space.ts';
 import { containsTile, settlementLayout, intersects, type GroundRect } from '../content/settlement-layout.ts';
 import { perimeterDistance, outsideCore, insideCore, rectDistance } from './settlement-siege-geometry.ts';
@@ -681,6 +681,7 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
     const routes = routeCacheFor(world.map);
 
     orderCampAttacks(world, commands);
+    advanceCampGuards(world, tick);
     startFortificationRequests(world);
     for (const command of commands) {
       applySiegeCommand(world, command, routes);

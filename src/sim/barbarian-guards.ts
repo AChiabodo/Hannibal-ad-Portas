@@ -1,6 +1,9 @@
 /** A neutral camp's defenders use the ordinary Squad movement and combat rules. */
 import { squadTypeCode, squadTypeOf } from '../content/squads.ts';
-import { standingAt } from './squad.ts';
+import { FIELD, isRouting, standingAt } from './squad.ts';
+import { engagedWith } from './combat.ts';
+import { MAP_HEIGHT, MAP_WIDTH } from './map.ts';
+import { orderSquadTo, routeCacheFor } from './movement.ts';
 import type { SiegeWorld } from './siege.ts';
 
 /** Not a player Faction and never a valid Command issuer. */
@@ -16,5 +19,39 @@ export function createCampGuards(world: SiegeWorld): void {
     world.economy.squads.push({ ...standingAt(site.x, site.y, GUARD_MEN, type.ammunition),
       id: world.economy.nextSquadId++, owner: BARBARIAN_OWNER, type: code, capacity: GUARD_MEN,
       home: -1, morale: type.morale, unpaid: 0, barbarianCamp: campId });
+  }
+}
+
+/** Defend the surrounding ground; surviving orphans wander without raiding. */
+export function advanceCampGuards(world: SiegeWorld, tick: number): void {
+  const routes = routeCacheFor(world.map);
+  for (const guard of world.economy.squads) {
+    if (guard.owner !== BARBARIAN_OWNER || guard.barbarianCamp === undefined || isRouting(guard)) continue;
+    const home = world.map.barbarianCamps?.[guard.barbarianCamp];
+    if (home === undefined) continue;
+    const camp = world.barbarianCamps?.[guard.barbarianCamp];
+    if (camp === undefined || camp.hp <= 0) {
+      if (guard.barbarianRetired === undefined) {
+        guard.steps = [];
+        guard.wait = 0;
+        guard.barbarianRetired = 1;
+      }
+      if (guard.steps.length === 0 && engagedWith(world.economy, guard) === undefined && tick % 120 === 0) {
+        const direction = (guard.id + Math.floor(tick / 120)) % 4;
+        const x = Math.max(0, Math.min(MAP_WIDTH - 1, guard.x + (direction === 0 ? 3 : direction === 2 ? -3 : 0)));
+        const y = Math.max(0, Math.min(MAP_HEIGHT - 1, guard.y + (direction === 1 ? 3 : direction === 3 ? -3 : 0)));
+        orderSquadTo(world.map, guard, { x, y }, routes);
+      }
+      continue;
+    }
+    if (tick % 20 !== 0) continue;
+    if (engagedWith(world.economy, guard) !== undefined) continue;
+    const targets = world.economy.squads.filter((squad) => squad.owner !== BARBARIAN_OWNER && squad.garrison === FIELD &&
+      Math.max(Math.abs(squad.x - home.x), Math.abs(squad.y - home.y)) <= 8);
+    targets.sort((a, b) => Math.max(Math.abs(a.x - guard.x), Math.abs(a.y - guard.y)) -
+      Math.max(Math.abs(b.x - guard.x), Math.abs(b.y - guard.y)) || a.id - b.id);
+    const target = targets[0];
+    if (target !== undefined) orderSquadTo(world.map, guard, target, routes);
+    else if (Math.max(Math.abs(guard.x - home.x), Math.abs(guard.y - home.y)) > 2) orderSquadTo(world.map, guard, home, routes);
   }
 }
