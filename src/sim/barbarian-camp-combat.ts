@@ -8,7 +8,7 @@ import { eyeCovers } from './fog.ts';
 import { MAP_WIDTH } from './map.ts';
 import { orderedSquads, orderSquadTo, routeCacheFor } from './movement.ts';
 import type { SiegeWorld } from './siege.ts';
-import { NO_REFUSAL } from './route.ts';
+import { NO_REFUSAL, refusalCode } from './route.ts';
 import { FIELD, isRouting } from './squad.ts';
 
 export interface BarbarianCampState { hp: number }
@@ -33,8 +33,14 @@ export function orderCampAttacks(world: SiegeWorld, commands: readonly Command[]
     if (command.kind !== 'attackStructure') continue;
     const site = world.map.barbarianCamps?.[command.target.id];
     const camp = world.barbarianCamps?.[command.target.id];
-    if (site === undefined || camp === undefined || camp.hp <= 0 ||
-      world.fog[command.faction].visible[site.y * MAP_WIDTH + site.x] !== 1) continue;
+    if (site === undefined || camp === undefined ||
+      world.fog[command.faction].visible[site.y * MAP_WIDTH + site.x] !== 1) {
+      for (const squad of orderedSquads(world.economy, factionCode(command.faction), command.squads)) {
+        squad.refused = refusalCode('target-not-visible');
+      }
+      continue;
+    }
+    if (camp.hp <= 0) continue;
     const owner = factionCode(command.faction);
     for (const squad of orderedSquads(world.economy, owner, command.squads)) {
       if (squad.garrison !== FIELD) continue;
@@ -54,11 +60,13 @@ export function advanceCampAttacks(world: SiegeWorld, tick: number): void {
     const camp = world.barbarianCamps?.[order.target];
     const squad = world.economy.squads.find((candidate) => candidate.id === order.squad && candidate.owner === order.owner);
     const faction = order.owner === 0 ? 'rome' : 'carthage';
+    const seen = site !== undefined && eyes[faction].some((eye) => eyeCovers(eye, site));
     if (site === undefined || camp === undefined || camp.hp <= 0 || squad === undefined || squad.strength <= 0 ||
-      squad.garrison !== FIELD || isRouting(squad) || !eyes[faction].some((eye) => eyeCovers(eye, site))) {
+      squad.garrison !== FIELD || isRouting(squad) || !seen) {
       if (squad !== undefined && squad.garrison === FIELD && !isRouting(squad)) {
         squad.steps = [];
         squad.wait = 0;
+        if (!seen) squad.refused = refusalCode('target-not-visible');
       }
       continue;
     }

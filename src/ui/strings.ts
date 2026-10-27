@@ -444,6 +444,7 @@ export const STRINGS = {
   'refusal.garrisonFull': { it: 'Capienza della guarnigione insufficiente', en: undefined },
   'refusal.garrisonType': { it: 'Questo reparto non può presidiare le mura', en: undefined },
   'refusal.noSpace': { it: 'Spazio insufficiente vicino alla destinazione', en: 'Insufficient space near the destination' },
+  'refusal.targetNotVisible': { it: 'Bersaglio non visibile: attacco interrotto', en: 'Target not visible: attack stopped' },
   'ui.nothingSelected': { it: 'Nessuna selezione', en: 'Nothing selected' },
   'ui.none': { it: '-', en: '-' },
   'ui.listItem': { it: '{name} {id}', en: '{name} {id}' },
@@ -751,6 +752,7 @@ const REFUSAL_KEYS = {
   'no-space': 'refusal.noSpace',
   'garrison-full': 'refusal.garrisonFull',
   'garrison-type': 'refusal.garrisonType',
+  'target-not-visible': 'refusal.targetNotVisible',
 } as const;
 
 

@@ -70,7 +70,7 @@ it('refuses an attack on a hidden camp and does not reveal it', () => {
   match.step([attackStructure('rome', [scout.id], { kind: 'camp', id: 0 })]);
   for (let i = 0; i < 30; i += 1) match.step();
   expect(observeSiege(world, 'rome').barbarianCamps).toEqual([]);
-  expect(observeSiege(world, 'rome').squads[0]).toMatchObject({ x: first.x, y: first.y, goal: null });
+  expect(observeSiege(world, 'rome').squads[0]).toMatchObject({ x: first.x, y: first.y, goal: null, refused: 'target-not-visible' });
 });
 
 it('stops approaching a camp when the faction loses sight of it', () => {
@@ -87,5 +87,5 @@ it('stops approaching a camp when the faction loses sight of it', () => {
   match.step([move('rome', [eye.id], 32, 42)]);
   for (let i = 0; i < 130; i += 1) match.step();
   expect(observeSiege(world, 'rome').barbarianCamps).toMatchObject([{ condition: 'standing', memory: 'remembered' }]);
-  expect(observeSiege(world, 'rome').squads.find((squad) => squad.id === attacker.id)?.goal).toBeNull();
+  expect(observeSiege(world, 'rome').squads.find((squad) => squad.id === attacker.id)).toMatchObject({ goal: null, refused: 'target-not-visible' });
 });
