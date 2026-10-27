@@ -39,3 +39,20 @@ gap. The review confirmed that historical breach and garrison evidence remains
 filtered knowledge, physical readiness uses public body geometry, and exploratory
 guidance uses public dimensions and observed terrain. No hidden Match reads,
 resource bonuses or payment shortcuts were introduced.
+
+## Browser follow-up delta from a463758
+
+The Standards reviewer found no documented violation or meaningful maintenance
+smell in the wall-orientation, compact village-path and exposed-passage wording
+fixes. Geometry remains shared content, art remains procedural PixelBuffer, and
+Italian wording remains in the string table. Regressions inspect public art and
+HUD output.
+
+The Spec reviewer found no unresolved P2 or requirement gap. Wall painting joins
+the vertical sides while preserving tile boundaries, upright sentries and real
+openings; filtered rendering still copies only observed cells. Compact initial
+village paths preserve all growth lots, capture geometry and navigation. The
+neutral passage label distinguishes exposed field traffic from Garrison admission
+without changing rules or the public protocol.
+
+Follow-up totals: Standards 0 findings; Spec 0 findings. Both reviews were read-only.

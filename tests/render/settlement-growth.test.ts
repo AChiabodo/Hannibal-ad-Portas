@@ -4,6 +4,31 @@ import { settlementComposition } from '../../src/art/settlement-composition';
 import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 
 describe('the public settlement plan (#74)', () => {
+  it('keeps an undeveloped minor centre compact inside its reserved growth grounds', () => {
+    for (const gateSide of [0, 1, 2, 3]) {
+      const image = settlementComposition({ kind: 'settlement', tier: 1, owner: 'none', gateSide, works: [] });
+      const painted: { x: number; y: number }[] = [];
+      for (let y = 0; y < image.height; y += 1) for (let x = 0; x < image.width; x += 1) {
+        if (image.pixels[(y * image.width + x) * 4 + 3] !== 0) painted.push({ x, y });
+      }
+      expect(painted.length).toBeGreaterThan(0);
+      expect(Math.max(...painted.map(({ x }) => x)) - Math.min(...painted.map(({ x }) => x)) + 1).toBeLessThanOrEqual(7 * 16);
+      expect(Math.max(...painted.map(({ y }) => y)) - Math.min(...painted.map(({ y }) => y)) + 1).toBeLessThanOrEqual(7 * 16);
+      expect(image.width).toBe(25 * 16);
+      expect(settlementLayout('settlement').lots).toHaveLength(25);
+    }
+  });
+  it('joins intact wall segments continuously along their vertical sides', () => {
+    for (const origin of ['rome', 'carthage'] as const) for (const tier of [1, 2, 3]) {
+      const image = settlementComposition({ kind: 'stronghold', tier, origin, owner: 'none', gateSide: 2, works: [] });
+      // Every cross-section between the corner towers must hit masonry,
+      // including tile joins; the three-tile southern gate is elsewhere.
+      for (const x of [5 * 16, 19 * 16]) for (let y = 6 * 16; y < 19 * 16; y += 1) {
+        const opaque = Array.from({ length: 16 }, (_, dx) => image.pixels[(y * image.width + x + dx) * 4 + 3]);
+        expect(opaque.some((alpha) => alpha !== 0), `${origin} Tier ${tier}, wall ${x}, row ${y}`).toBe(true);
+      }
+    }
+  });
   it('distinguishes the initial architectural traditions by silhouette with flags and colours removed', () => {
     for (const tier of [1, 2, 3]) {
       const silhouettes = (['rome', 'carthage'] as const).map((origin) => {

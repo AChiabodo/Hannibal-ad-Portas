@@ -137,20 +137,26 @@ export function settlementComposition(look: SettlementComposition): PixelBuffer 
         if (isGate || opening) continue;
         const tile = perimeterPoint(edge, tangent);
         const r = pixelRect({ ...tile, width: 1, height: 1 });
-        fillRect(out, r.x, r.y + 5, 16, 11, stone(1));
+        // Paint along the wall's tangent. Vertical sides must join across the
+        // full tile height, with their outer face on the appropriate side.
+        const paint = (x: number, y: number, width: number, height: number, color: Rgba): void => {
+          if (edge % 2 === 0) fillRect(out, r.x + x, r.y + y, width, height, color);
+          else fillRect(out, r.x + (edge === 1 ? y : TILE - y - height), r.y + x, height, width, color);
+        };
+        paint(0, 5, 16, 11, stone(1));
         const face = tier === 1 ? wood(3) : tradition === 'carthage' ? shadeAt(RAMPS.parchment, 3) : stone(4);
-        fillRect(out, r.x + 1, r.y + 7, 14, 8, face);
-        fillRect(out, r.x + 1, r.y + 8 - tier * 2, 14, tier * 2, look.damaged?.includes(edge) === true ? stone(3) : tier === 1 ? wood(5) : stone(6));
-        fillRect(out, r.x + 1, r.y + 13, 14, 2, stone(2));
-        if (tier > 1) fillRect(out, r.x + 7, r.y + 10, 2, 4, stone(1));
-        if (tier === 3) for (const dx of [2, 11]) fillRect(out, r.x + dx, r.y + 7, 2, 7, stone(3));
+        paint(1, 7, 14, 8, face);
+        paint(1, 8 - tier * 2, 14, tier * 2, look.damaged?.includes(edge) === true ? stone(3) : tier === 1 ? wood(5) : stone(6));
+        paint(1, 13, 14, 2, stone(2));
+        if (tier > 1) paint(7, 10, 2, 4, stone(1));
+        if (tier === 3) for (const dx of [2, 11]) paint(dx, 7, 2, 7, stone(3));
         if (look.garrison === true && tangent % 4 === 0) {
           fillRect(out, r.x + 6, r.y + 1, 4, 6, look.owner === 'carthage' ? shadeAt(RAMPS.blood, 5) : wood(6));
           fillRect(out, r.x + 6, r.y, 3, 3, shadeAt(RAMPS.parchment, 4));
         }
         const flat = tradition === 'carthage';
         for (let dx = flat ? 1 : 2; dx < 15; dx += flat ? 8 : 5)
-          fillRect(out, r.x + dx, r.y + 6 - tier * 2, flat ? 5 : 3, tier + 2, tier === 1 ? wood(4) : stone(6));
+          paint(dx, 6 - tier * 2, flat ? 5 : 3, tier + 2, tier === 1 ? wood(4) : stone(6));
       }
     }
     for (const x of [-7, 7]) for (const y of [-7, 7]) {

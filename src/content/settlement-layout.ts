@@ -117,7 +117,12 @@ export function settlementGroundFeatures(kind: SettlementKind, side: number): Se
   if (known !== undefined) return known;
   const square = turnRect(settlementLayout(kind).capture, side);
   const features: SettlementGroundFeatures = {
-    roads: [turnRect({ x: -1, y: -7, width: 3, height: 20 }, side), turnRect({ x: -6, y: -1, width: 13, height: 2 }, side)],
+    // The reserved estate is not the developed town. A minor centre starts
+    // around its square; the broad military approach belongs to a Stronghold.
+    roads: (kind === 'stronghold'
+      ? [{ x: -1, y: -7, width: 3, height: 20 }, { x: -6, y: -1, width: 13, height: 2 }]
+      : [{ x: 0, y: -3, width: 1, height: 7 }, { x: -3, y: 0, width: 7, height: 1 }]
+    ).map((road) => turnRect(road, side)),
     square,
     flag: { x: square.x + square.width - 1, y: square.y, width: 2, height: 2 },
     ram: turnRect({ x: -1, y: 9, width: 3, height: 2 }, side),

@@ -5,10 +5,24 @@ Implementation authorized on 2026-10-25 after the Q1–Q40 design interview.
 - Branch: `feat/outpost-reworking`.
 - Review baseline: `7e67ee6e2e0878f0870cefa8f9234b5df88ea3dd` (confirmed by the user).
 - Confirmed TDD seams: Command/Match/Observation; pure PixelBuffer generators and public geometry; public HUD/Controller/AI/headless contracts.
-- Chromium and browser CI are not authorized. Pure-generator PNG comparisons are not browser acceptance.
+- Interactive Browser validation was explicitly authorized on 2026-10-27, after the initial non-browser delivery. Browser CI has not been requested. Pure-generator PNG comparisons remain distinct from browser acceptance.
 - A checked item means the complete requirement is implemented and verified; partial work remains unchecked.
 
-## Final verification — 2026-10-27
+## Browser follow-up — 2026-10-27
+
+The user explicitly requested Browser validation after delivery. Tested the real Vite page at `http://127.0.0.1:5175/` with the in-app Browser, including 1280×720, 1280×900 and 1920×1080 desktop views. Ordinary pointer/keyboard interactions covered setup, construction/recruitment, a Villa upgrade, admission from the courtyard, sentries, protected roster, sortie/re-entry, pending-resource cancellation, exploration, neutral capture and repeated houses. The Carthaginian campaign also reached Tier III with its Forum and 24/240 Garrison readout. The existing public `advance`/`fastForward` hooks skipped waiting while retaining normal rules, payments and AI: campaigns reached both the three-year clock and Roman defeat by blockade. A separate existing neutral fixture verified the remembered site after the Squad left: only 17 observed architectural cells remained recorded. Page identity, meaningful rendering, absence of error overlays and console health passed.
+
+Three reproduced defects are now fixed, each with a failing public regression before its fix:
+
+- **Q1/Q21/Q22/Q28 — Wall continuity:** all segments had horizontal paint, leaving transparent joins on the west/east walls. Their paint now follows each side's axis and outer face; gate/breach exclusions and upright sentries remain intact. The regression checks every vertical cross-section between corner towers, both traditions and all three Tiers.
+- **Q4/Q5/Q40 — Minor settlement scale:** an undeveloped village inherited the fortress's 20×13-tile military roads. It now starts with one-tile-wide paths contained in a 7×7-tile centre. All 25 permanent lots and the 25×25 growth reserve remain available; completed copies still appear independently. The same shared geometry governs drawing and discovery, so empty future grounds do not disclose the village. All four orientations are covered.
+- **Q11/Q29 — Exposed passage wording:** ordinary field traffic leaving a Gate could read “Ingresso: ancora esposto”. The neutral label is now “Passaggio: ancora esposto”; an actual departure journey still reads “Uscita in corso”. The HUD regression and a second rendered sortie verified the correction.
+
+The complete AI pressure matrix passed again: **60/60 cases, 60/60 replay hashes, unpaid 0**, with unchanged game deadlines. Lint, TypeScript, guards and production build passed. The first complete unit batch passed 1,551 cases and hit two 30-second compute timeouts; both long campaigns then passed in the focused single-worker run (11 tests). The final complete batch passed **1,554/1,554 tests in 137 files** with two workers, unchanged timeouts and no failures (`unit-final.json`, 571.33 s). Both delta review axes have no unresolved findings; see [the review report](issue-74-code-review.md).
+
+Screenshots and raw test evidence are local, outside Git, under `C:/Users/aless/.codex/visualizations/2026/10/25/01a1738c-6754-7130-a06e-7a93ba3daf1f/issue74-browser/`, including `walls-before.jpg`, `walls-after.jpg`, `village-before.jpg`, `village-after-compact.jpg`, `village-growth-two-houses.jpg`, `desktop-wide-ui2.png` and `passage-after.jpg`. Browser interaction/inspection was performed through the Browser runtime and its CDP developer capability, not an external Playwright process. This is explicit interactive evidence, not a claim that the complete automated browser acceptance profile or hardware performance was measured. Temporary viewport overrides were reset and the original UI scale restored. No push or CI run was triggered.
+
+## Delivery verification before Browser acceptance — 2026-10-27
 
 All Q1–Q40 are implemented. The complete non-browser suite passed **1,551/1,551 tests in 137 files**, with no failures (`artifacts/issue-74/unit-verified.json`). Lint, TypeScript, architecture guards and the production build passed.
 
@@ -16,7 +30,7 @@ The complete AI pressure matrix passed **60/60 cases** (10 seeds, both human fac
 
 Both final review axes are clear: Standards has no unresolved violations; Spec has no unresolved requirement gaps. See [the review report](issue-74-code-review.md). Pure procedural comparisons are available at `artifacts/issue-74/compositional-comparison.png`, including empty initial sites, three Tiers, completed development, construction stages and troop-scale references.
 
-Chromium/browser acceptance remains **unrun**, as required without an explicit user request. All commits remain local on `feat/outpost-reworking`; no push or browser CI was triggered.
+At this delivery checkpoint, Chromium/browser acceptance was **unrun** without an explicit user request; the subsequent authorized interactive validation is recorded above. All commits remain local on `feat/outpost-reworking`; no push or browser CI was triggered.
 
 ## Requirements
 

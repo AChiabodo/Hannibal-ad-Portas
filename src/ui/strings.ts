@@ -422,7 +422,7 @@ export const STRINGS = {
   'passage.label': { it: "Accesso", en: undefined },
   'passage.approaching': { it: "In marcia verso la porta", en: undefined },
   'passage.waiting': { it: "In attesa del passaggio", en: undefined },
-  'passage.entering': { it: "Ingresso: ancora esposto", en: undefined },
+  'passage.entering': { it: "Passaggio: ancora esposto", en: undefined },
   'passage.leaving': { it: "Uscita in corso", en: undefined },
   'passage.busy': { it: "Accesso occupato: attendi il passaggio", en: undefined },
   'passage.blocked': { it: "Uscita ostruita: libera lo spazio esterno", en: undefined },

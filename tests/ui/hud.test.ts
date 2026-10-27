@@ -1148,6 +1148,15 @@ describe('settlement management (#74)', () => {
 });
 
 
+it('does not call an exposed field passage an admission to the garrison (#74)', () => {
+  const squad = { ...VISIBLE.squads[0]!, garrison: null, passage: { settlement: 0, phase: 'entering' as const, remaining: 0 } };
+  const model = hudModel({ ...VISIBLE, squads: [squad] }, STRONGHOLDS, { kind: 'squad', id: squad.id });
+  const text = model.detail?.lines.find((line) => line.label === 'Accesso')?.value;
+  expect(text).toContain('Passaggio');
+  expect(text).toContain('ancora esposto');
+  expect(text).not.toContain('Ingresso');
+});
+
 it('explains an interrupted passage without raw traffic identifiers (#74)', () => {
   const squad = { ...VISIBLE.squads[0]!, passage: { settlement: 0, phase: 'waiting' as const, remaining: 0, reason: 'access-busy' } };
   const model = hudModel({ ...VISIBLE, squads: [squad] }, STRONGHOLDS, { kind: 'squad', id: squad.id });
