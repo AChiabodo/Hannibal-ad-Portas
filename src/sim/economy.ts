@@ -248,6 +248,8 @@ export interface Allocation {
 
 /** One settlement: what the economy owns on one tile of the map. */
 export interface Settlement {
+  /** Workers committed to ongoing fortification repairs this tick. */
+  repairLabour?: number;
   /** Construction tradition persists through conquest, independently of holder. */
   origin?: number;
   /** Its id: the index it takes in the economy's list, which is what a Command names. */
@@ -485,7 +487,7 @@ export function allocate(settlement: Settlement, capacity: readonly number[]): A
   });
 
   const land = RESOURCE_KINDS.map(() => 0);
-  let remaining = available;
+  let remaining = Math.max(0, available - (settlement.repairLabour ?? 0));
 
   while (remaining > 0) {
     let placed = false;
