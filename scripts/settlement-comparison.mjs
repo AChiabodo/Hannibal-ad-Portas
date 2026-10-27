@@ -18,7 +18,7 @@ for (const [column, [origin, kind]] of variants.entries()) {
       (origin === 'rome' || lot.building !== 'castrum') &&
       (row >= 4 || (lot.ordinal === 0 && (lot.building !== 'villa' || tier >= 2) &&
         (lot.building !== 'forum' || tier >= 3)))).map((lot) => ({ ...lot, stage: row === 5 ? 0 : row === 6 ? 1 : 2, origin }));
-    const sprite = settlementComposition({ kind, tier, owner: origin, works, garrison: kind === 'stronghold' });
+    const sprite = settlementComposition({ kind, tier, owner: origin, works, garrison: kind === 'stronghold' && row > 0 });
     const x = column * 420 + 10;
     const y = row * 440 + 30;
     drawText(out, `${origin} ${kind} ${row === 0 ? 'INIZIALE' : row === 4 ? 'COMPLETO' : row === 5 ? 'FONDAMENTA' : row === 6 ? 'CANTIERI' : 'LIVELLO ' + tier}`, x, y - 20, ink);

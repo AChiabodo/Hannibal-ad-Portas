@@ -29,3 +29,13 @@
 The same follow-up inspected the additional observed-front correction: a visible wall or gate can expose its filtered front without seeing the hidden centre; unseen structural sides remain absent. No unresolved P2 was found.
 
 Review totals: Standards 2 findings (worst documented severity P3), both addressed; Spec 2 findings (worst severity P2), both addressed.
+
+## Final source delta
+
+Both reviewers independently inspected `git diff 2c893c3..65b0cd8 -- src` after
+the completed AI integration. Standards reported no unresolved violations or
+meaningful maintenance smells; Spec reported no unresolved P2 or requirement
+gap. The review confirmed that historical breach and garrison evidence remains
+filtered knowledge, physical readiness uses public body geometry, and exploratory
+guidance uses public dimensions and observed terrain. No hidden Match reads,
+resource bonuses or payment shortcuts were introduced.

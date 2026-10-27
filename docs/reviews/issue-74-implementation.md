@@ -8,6 +8,16 @@ Implementation authorized on 2026-10-25 after the Q1–Q40 design interview.
 - Chromium and browser CI are not authorized. Pure-generator PNG comparisons are not browser acceptance.
 - A checked item means the complete requirement is implemented and verified; partial work remains unchecked.
 
+## Final verification — 2026-10-27
+
+All Q1–Q40 are implemented. The complete non-browser suite passed **1,551/1,551 tests in 137 files**, with no failures (`artifacts/issue-74/unit-verified.json`). Lint, TypeScript, architecture guards and the production build passed.
+
+The complete AI pressure matrix passed **60/60 cases** (10 seeds, both human factions, three difficulties), with **60/60 matching replay hashes** and no unpaid commands. It ran through the documented per-seed CLI in four isolated processes; contact and pressure deadlines were unchanged. Evidence: `artifacts/issue-74/pressure-verified.jsonl`. Earlier failed runs below are retained as implementation history and are superseded by these final results.
+
+Both final review axes are clear: Standards has no unresolved violations; Spec has no unresolved requirement gaps. See [the review report](issue-74-code-review.md). Pure procedural comparisons are available at `artifacts/issue-74/compositional-comparison.png`, including empty initial sites, three Tiers, completed development, construction stages and troop-scale references.
+
+Chromium/browser acceptance remains **unrun**, as required without an explicit user request. All commits remain local on `feat/outpost-reworking`; no push or browser CI was triggered.
+
 ## Requirements
 
 - [x] **Q1** — Occupazione reale
@@ -57,8 +67,7 @@ Implementation authorized on 2026-10-25 after the Q1–Q40 design interview.
 
 - Initial red/green: `tests/render/settlement-growth.test.ts` checks all 25 permanent lots, non-overlap, reserved capture/muster/assembly space and interior/exterior assignment. This is foundational geometry, not completion of the integrated map or rendering requirements.
 
-- Q40 complete: pure generator matrix produced by 
-ode scripts/settlement-comparison.mjs at artifacts/issue-74/initial-comparison.png; inspected locally. Both traditions, three Tiers, full 25/24-Work development and Rome 24/60/120, Carthage 24/48 plus horse/elephant references. Public geometry/art tests: 2 passed; TypeScript passed. Dimensions remain candidates until navigation/map calibration. No Chromium executed.
+- Q40 complete: pure generator matrix produced by `node scripts/settlement-comparison.mjs` at artifacts/issue-74/initial-comparison.png; inspected locally. Both traditions, three Tiers, full 25/24-Work development and Rome 24/60/120, Carthage 24/48 plus horse/elephant references. Public geometry/art tests: 2 passed; TypeScript passed. Dimensions remained candidates until the subsequent navigation/map calibration. No Chromium executed.
 
 
 - Q12/Q16/Q17/Q18 complete at the shared rules seam: mandatory survivor capacity (60/120/240 for both Factions), whole-Squad rejection, purchased Capacity unchanged, cavalry/elephant admission refused. tests/sim/settlement-rework.test.ts: 8 passed across both Factions and all Tiers. TypeScript passed. Physical admission/exit and HUD remain separate open requirements.
