@@ -3,6 +3,8 @@
 ## Stato di implementazione
 
 - **Parziale — presentazione stagionale:** il terreno naturale varia con la stagione osservata, senza modificare la mappa della simulazione; strade e marcatori vengono disegnati dopo la colorazione. Verificati i generatori PixelBuffer e il typecheck. Restano da completare e verificare la varietà degli elementi ambientali, la neve sui dettagli, gli animali e l'accettazione visiva; nessuna delle richieste stagionali complessive è ancora dichiarata completata.
+- **Completato — Q19 e Q135, animali decorativi e visibilità:** le presenze sono esclusivamente di presentazione, non interagiscono con la simulazione e appaiono solo sui terreni attualmente visibili; non permangono nella nebbia ricordata. I test pubblici verificano riproducibilità, assenza di mutazioni della mappa e transizione fra inesplorato, visibile e ricordato. La verifica visiva Chromium non è stata autorizzata né eseguita.
+- **Parziale — Q51/Q100:** lepri e cinghiali procedurali hanno piccoli movimenti e collocazioni coerenti con pianure e boschi; rimane da completare la varietà degli habitat introdotti dal rework e valutarne leggibilità e densità.
 
 ## Problem Statement
 

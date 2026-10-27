@@ -146,6 +146,8 @@ import { siteSprite } from '../art/settlements.ts';
 import { siteLook } from './settlements.ts';
 import { blockPlacement, blockSize, squadBlock, squadFrameKey, visualShape } from './squads.ts';
 import { tileAt, tilePixel } from './terrain.ts';
+import { wildlifeOf } from './wildlife.ts';
+import { createWildlifeLayer } from './wildlife-layer.ts';
 import { VIEWED_FACTION } from './view.ts';
 import type { PixelPoint, Stage } from './stage.ts';
 import { PANEL_LAYOUTS, type PanelLayout, DEFAULT_UI_PREFERENCES, fittedUiScale, loadUiPreferences, saveUiPreferences, type UiPreferences } from '../ui/preferences.ts';
@@ -566,6 +568,7 @@ export function createGame(options: GameOptions): Game {
   const layer: HudLayer = createHudLayer(options.stage);
   const ground: SettlementLayer = createSettlementLayer(options.world);
   const field: SquadLayer = createSquadLayer(options.world);
+  const wildlife = createWildlifeLayer(options.world, wildlifeOf(match.state.world.map, options.seed));
   const pickInk = new Map<number, { key: string; buffer: ReturnType<typeof squadBlock> }>();
 
   /** Every settlement on the theatre, by id: the map's own list, and what the minimap walks. */
@@ -1363,6 +1366,7 @@ export function createGame(options: GameOptions): Game {
     const known = readSites();
     const observation = visible();
     options.season?.(observation.season);
+    wildlife.update(options.fog(), match.state.tick);
     // The journal first: a notice raised on this tick is part of the frame the
     // Player is about to see, and reading it twice in one tick is harmless.
     notices = noticeBook.read(observation, match.state.tick);
