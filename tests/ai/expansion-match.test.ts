@@ -9,12 +9,12 @@ import { startCalendar } from '../../src/sim/season.ts';
 import { createSiege, observeSiege, siegeMatchRules, type SiegeVisible } from '../../src/sim/siege.ts';
 import { plainMap } from '../sim/test-map.ts';
 
-function theatre() {
+function theatre(reserveType: 'hastati' | 'principes' = 'hastati') {
   const map = { ...plainMap(), strongholds: [{ x: 20, y: 20 }, { x: 120, y: 120 }] as const,
     settlements: [{ x: 50, y: 26 }, { x: 90, y: 90 }] };
   const economy = createEconomy(map);
   musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x: 111, y: 120 });
-  musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x: 46, y: 26 });
+  musterSquad(economy, map, { faction: 'rome', squadType: reserveType, men: 24, x: 46, y: 26 });
   const garrison = musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 120, y: 120 });
   garrison.garrison = 1;
   return { map, economy, calendar: startCalendar(), siege: createSiege(map, economy),
@@ -62,7 +62,9 @@ describe('economic expansion through permitted Match observations', () => {
   }, 15000);
 
   it('remembers a discovered neutral village and takes it when the known Stronghold is too strong', () => {
-    const setup = { seed: 7, ticks: 2601, rules: { ...siegeMatchRules, createWorld: theatre },
+    // Keep a field reserve by the village: a second light patrol would legally
+    // explore across the enlarged map before summer, beyond this capture window.
+    const setup = { seed: 7, ticks: 2601, rules: { ...siegeMatchRules, createWorld: () => theatre('principes') },
       observe: observeSiege, outcome: () => null };
     let discovered = false;
     let captured = false;
@@ -78,6 +80,9 @@ describe('economic expansion through permitted Match observations', () => {
     ] });
     expect(discovered).toBe(true);
     expect(captured).toBe(true);
+    expect(ai.readLog().some((decision) => decision.selected.behaviour === 'expansion')).toBe(true);
+    expect(run.log.some(({ tick, command }) => tick <= 2100 &&
+      (command.kind === 'assault' || command.kind === 'blockade'))).toBe(false);
     expect(run.log.some(({ command }) => command.kind === 'move' && command.x === 50 && command.y === 26)).toBe(true);
     expect(run.log.find(({ command }) => command.kind === 'move' && command.x === 50 && command.y === 26)!.tick)
       .toBeGreaterThanOrEqual(2100);
