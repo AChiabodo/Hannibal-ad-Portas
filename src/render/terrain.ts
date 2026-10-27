@@ -58,7 +58,8 @@ import {
   type TerrainMaterial,
 } from '../art/terrain.ts';
 import { nodeMarker, type NodeKind } from '../art/nodes.ts';
-import { blit, createPixelBuffer, type PixelBuffer } from '../art/pixel-buffer.ts';
+import { blit, createPixelBuffer, fillRect, type PixelBuffer } from '../art/pixel-buffer.ts';
+import { RAMPS, shadeAt } from '../art/palette.ts';
 import type { Season } from '../sim/season.ts';
 
 /**
@@ -152,7 +153,7 @@ export function quadrantsAt(map: MapGrid, cellX: number, cellY: number): CellQua
  * the path has something to be a path across, and a marker is drawn last so that
  * a node on a road is still a node.
  */
-export function renderTerrain(map: MapGrid, season: Season = 'spring'): PixelBuffer {
+export function renderTerrain(map: MapGrid, season: Season = 'spring', detailSeed?: number): PixelBuffer {
   const theatre = createPixelBuffer(THEATRE_PIXELS, THEATRE_PIXELS);
 
   for (let j = 0; j <= MAP_HEIGHT; j += 1) {
@@ -162,6 +163,7 @@ export function renderTerrain(map: MapGrid, season: Season = 'spring'): PixelBuf
   }
 
   colourSeason(theatre, map, season);
+  if (detailSeed !== undefined) decorateLand(theatre, map, season, detailSeed);
 
   for (let y = 0; y < MAP_HEIGHT; y += 1) {
     for (let x = 0; x < MAP_WIDTH; x += 1) {
@@ -178,6 +180,33 @@ export function renderTerrain(map: MapGrid, season: Season = 'spring'): PixelBuf
   }
 
   return theatre;
+}
+
+/** Sparse seed-specific plants and rocks; paths and resource markers are drawn later. */
+function decorateLand(buffer: PixelBuffer, map: MapGrid, season: Season, seed: number): void {
+  for (let y = 0; y < MAP_HEIGHT; y += 1) {
+    for (let x = 0; x < MAP_WIDTH; x += 1) {
+      const terrain = terrainAt(map, x, y);
+      if (terrain !== TERRAIN.plain && terrain !== TERRAIN.forest && terrain !== TERRAIN.hill) continue;
+      let hash = Math.imul(x + seed, 0x85ebca6b) ^ Math.imul(y + seed, 0x27d4eb2d);
+      hash = (Math.imul(hash ^ (hash >>> 15), 0x2545f491) ^ (hash >>> 13)) >>> 0;
+      if (hash % 8 !== 0) continue;
+      const at = tilePixel(x, y);
+      const px = at.x + 2 + ((hash >>> 4) % 10);
+      const py = at.y + 3 + ((hash >>> 9) % 9);
+      const colour = season === 'winter' ? shadeAt(RAMPS.stone, 6)
+        : terrain === TERRAIN.hill ? shadeAt(RAMPS.stone, 5)
+          : season === 'autumn' ? shadeAt(RAMPS.bronze, 5) : shadeAt(RAMPS.olive, 5);
+      if (terrain === TERRAIN.forest) {
+        fillRect(buffer, px, py, 2, 2, colour);
+        fillRect(buffer, px + 1, py - 1, 1, 1, colour);
+      } else if (terrain === TERRAIN.hill) {
+        fillRect(buffer, px, py, 3, 1, colour);
+      } else {
+        fillRect(buffer, px, py, 1, 2, colour);
+      }
+    }
+  }
 }
 
 /** Recolour natural land before adding roads and markers, leaving their shapes clear. */

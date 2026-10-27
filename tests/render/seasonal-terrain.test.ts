@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generateMap, TERRAIN, terrainAt, MAP_WIDTH, MAP_HEIGHT } from '../../src/sim/map';
 import { renderTerrain, tilePixel } from '../../src/render/terrain';
 import { pixelAt } from '../../src/art/pixel-buffer';
+import { createHash } from 'node:crypto';
 
 describe('seasonal terrain presentation', () => {
   it('changes the appearance of the same plain in autumn and winter without changing the map', () => {
@@ -31,11 +32,19 @@ describe('seasonal terrain presentation', () => {
     expect(roadIndex).toBeGreaterThanOrEqual(0);
     expect(node).toBeDefined();
     if (roadIndex < 0 || node === undefined) return;
-    const spring = renderTerrain(map, 'spring');
-    const winter = renderTerrain(map, 'winter');
+    const spring = renderTerrain(map, 'spring', 11);
+    const winter = renderTerrain(map, 'winter', 11);
     for (const point of [road, node]) {
       const at = tilePixel(point.x, point.y);
       expect(pixelAt(winter, at.x + 8, at.y + 8)).toEqual(pixelAt(spring, at.x + 8, at.y + 8));
     }
+  });
+
+  it('draws reproducible landscape details that vary with the presentation seed', () => {
+    const map = generateMap(11);
+    const fingerprint = (seed: number): string => createHash('sha256')
+      .update(renderTerrain(map, 'spring', seed).pixels).digest('hex');
+    expect(fingerprint(11)).toBe(fingerprint(11));
+    expect(fingerprint(12)).not.toBe(fingerprint(11));
   });
 });
