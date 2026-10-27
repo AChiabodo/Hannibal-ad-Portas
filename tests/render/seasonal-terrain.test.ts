@@ -47,4 +47,15 @@ describe('seasonal terrain presentation', () => {
     expect(fingerprint(11)).toBe(fingerprint(11));
     expect(fingerprint(12)).not.toBe(fingerprint(11));
   });
+
+  it('keeps lake water recognizable through seasonal changes', () => {
+    const map = Array.from({ length: 20 }, (_, seed) => generateMap(seed))
+      .find((candidate) => candidate.terrain.includes(TERRAIN.lake));
+    expect(map).toBeDefined();
+    if (map === undefined) return;
+    const lake = map.terrain.indexOf(TERRAIN.lake);
+    const at = tilePixel(lake % MAP_WIDTH, Math.floor(lake / MAP_WIDTH));
+    expect(pixelAt(renderTerrain(map, 'winter', 4), at.x + 8, at.y + 8))
+      .toEqual(pixelAt(renderTerrain(map, 'spring', 4), at.x + 8, at.y + 8));
+  });
 });

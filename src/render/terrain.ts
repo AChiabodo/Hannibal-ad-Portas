@@ -219,7 +219,7 @@ function colourSeason(buffer: PixelBuffer, map: MapGrid, season: Season): void {
     for (let x = 0; x < buffer.width; x += 1) {
       const tileX = Math.max(0, Math.min(MAP_WIDTH - 1, Math.floor((x - THEATRE_MARGIN) / TERRAIN_TILE)));
       const terrain = terrainAt(map, tileX, tileY);
-      if (terrain === TERRAIN.river || terrain === TERRAIN.ford || terrain === TERRAIN.road) continue;
+      if (terrain === TERRAIN.river || terrain === TERRAIN.lake || terrain === TERRAIN.ford || terrain === TERRAIN.road) continue;
       const at = (y * buffer.width + x) * 4;
       const red = buffer.pixels[at] ?? 0;
       const green = buffer.pixels[at + 1] ?? 0;
