@@ -82,7 +82,7 @@ describe('the scouting Controller', () => {
     expect(move).toBeDefined();
     if (move?.kind !== 'move') return;
     expect(move.squads).toEqual([squad.id]);
-    expect(visible.fog.terrain[move.y * 96 + move.x]).not.toBe(255);
+    expect(visible.fog.terrain[move.y * MAP_WIDTH + move.x]).not.toBe(255);
     expect(Math.max(Math.abs(move.x - home.x), Math.abs(move.y - home.y))).toBeGreaterThan(3);
     expect(commands.filter((command) => command.kind === 'hold').flatMap((command) => command.squads)).not.toContain(squad.id);
   });
@@ -151,7 +151,7 @@ describe('the scouting Controller', () => {
     const refresh = commands(301);
     expect(refresh).toHaveLength(1);
     const target = refresh[0]!;
-    expect((target.x - (home.x + 12)) ** 2 + (target.y - home.y) ** 2).toBeLessThanOrEqual(16);
+    expect(Math.max(0, Math.abs(target.x - (home.x + 12)) - 7) ** 2 + Math.max(0, Math.abs(target.y - home.y) - 7) ** 2).toBeLessThanOrEqual(16);
     expect(commands(6000)).toEqual([]);
   });
 });

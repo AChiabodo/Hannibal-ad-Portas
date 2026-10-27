@@ -41,14 +41,15 @@ describe('military decisions in a headless Match', () => {
         { faction: 'carthage', controller: createArmyController('tiro') }],
     });
     expect(run.log).toContainEqual({ tick: 4200, command: { kind: 'withdraw', faction: 'carthage', squads: [1] } });
-    expect(final!.squads.find((squad) => squad.id === 1)).toMatchObject({ x: 84, y: 34, goal: null, routing: false });
+    expect(final!.squads.find((squad) => squad.id === 1)).toMatchObject({ inQuarters: true, goal: null, routing: false });
     const replay = runMatch({ seed: 9, ticks: 5501, rules: siegeMatchRules, observe: observeSiege,
       outcome: siegeMatchOutcome, players: [
         { faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
         { faction: 'carthage', controller: scriptedController<SiegeVisible>(run.log) },
       ] });
     expect(replay.hash).toBe(run.hash);
-  }, 15000);
+  // The live AI and its complete Replay both cross the expanded physical theatre.
+  }, 60000);
 
   it('installs military decisions in the shipped AI harness', () => {
     expect(playAiMatch(7, 1).decisions.some((entry) => entry.selected.behaviour === 'military')).toBe(true);
@@ -79,25 +80,26 @@ describe('military decisions in a headless Match', () => {
   it('executes withdrawal to friendly quarters without feeding the beaten Squad back in, and replays the same hash', () => {
     const rules = { ...siegeMatchRules, createWorld() {
       const world = theatre();
-      const beaten = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: 23, y: 20 });
+      const beaten = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: 29, y: 20 });
       beaten.strength = 35;
       beaten.morale = 3;
-      for (let i = 0; i < 2; i += 1) {
-        musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: 20, y: 20 });
+      beaten.facing = 3;
+      for (const y of [12, 28]) {
+        musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: 29, y });
       }
-      musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', x: 24, y: 20 });
+      musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', x: 36, y: 20 });
       return world;
     } };
     const controller = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry: militaryRegistry });
     let final: SiegeVisible | undefined;
-    const run = runMatch({ seed: 7, ticks: 60, rules, observe: observeSiege,
+    const run = runMatch({ seed: 7, ticks: 250, rules, observe: observeSiege,
       outcome(world) { final = observeSiege(world, 'rome'); return siegeMatchOutcome(world); },
       players: [{ faction: 'rome', controller }, { faction: 'carthage', controller: scriptedController<SiegeVisible>([]) }],
     });
     expect(run.log).toContainEqual({ tick: 0, command: { kind: 'withdraw', faction: 'rome', squads: [1] } });
-    expect(final!.squads.find((squad) => squad.id === 1)).toMatchObject({ x: 20, y: 20, routing: false });
+    expect(final!.squads.find((squad) => squad.id === 1)).toMatchObject({ inQuarters: true, routing: false });
     expect(run.log.some(({ command }) => command.kind === 'attack' && command.squads.includes(1))).toBe(false);
-    const replay = runMatch({ seed: 7, ticks: 60, rules, observe: observeSiege, outcome: siegeMatchOutcome,
+    const replay = runMatch({ seed: 7, ticks: 250, rules, observe: observeSiege, outcome: siegeMatchOutcome,
       players: [{ faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
         { faction: 'carthage', controller: scriptedController<SiegeVisible>(run.log) }],
     });

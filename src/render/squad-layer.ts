@@ -197,7 +197,7 @@ export function createSquadLayer(parent: Container): SquadLayer {
 
     update(field) {
       const formations: { squad: SquadDrawing & { x: number; y: number }; own?: VisibleSquad; faction: 'rome' | 'carthage' }[] =
-        field.squads.map((squad) => ({ squad, own: squad, faction: field.faction }));
+        field.squads.filter((squad) => squad.garrison === null).map((squad) => ({ squad, own: squad, faction: field.faction }));
       for (const enemy of field.enemies ?? []) {
         if (!enemy.appearance) continue;
         formations.push({ squad: { id: enemy.id, type: enemy.type, x: enemy.x, y: enemy.y,

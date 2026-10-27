@@ -181,6 +181,7 @@ export interface WireObservation {
   readonly contacts: readonly KnownContact[];
   readonly enemies: SiegeVisible['enemies'];
   readonly fronts: readonly VisibleFront[];
+  readonly appearances?: SiegeVisible['appearances'];
 }
 
 /** The harness's question: what the Faction may see, on the tick being decided. */
@@ -333,6 +334,7 @@ export function wireObservation(visible: SiegeVisible): WireObservation {
     contacts: visible.contacts,
     enemies: visible.enemies,
     fronts: visible.fronts,
+    ...(visible.appearances === undefined ? {} : { appearances: visible.appearances }),
   };
 }
 
@@ -480,7 +482,7 @@ function requireTick(value: unknown, path: string): number {
  * One tile grid, run-length encoded: a string per row, each a comma-separated
  * list of `<run>x<value>` adding up to the map's width.
  *
- * The encoding exists because an Observation carries three 96×96 grids and a
+ * The encoding exists because an Observation carries three 160×160 grids and a
  * Match asks for a decision every second of Match time: sent as JSON arrays that
  * is a quarter of a megabyte a message, and a Theatre that is mostly unexplored
  * or mostly held by one Faction is a handful of runs a row. It is plain text and

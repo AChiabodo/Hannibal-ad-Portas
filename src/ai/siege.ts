@@ -1,14 +1,16 @@
+import { formationFootprint } from '../content/formation.ts';
+import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
 import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
-import { planningContacts, type Contact } from './contacts.ts';
+import { planningContacts, permittedContacts, recordedGarrison, type Contact } from './contacts.ts';
 import { DIFFICULTY, attackPercent, type Difficulty } from './difficulty.ts';
-import { distance, type Site } from './site.ts';
+import { distance, bodyPerimeterDistance, type Site, type FormationSite } from './site.ts';
 import type { AssaultReadiness } from './assault.ts';
 
 type Faction = Observation<unknown>['faction'];
 
-interface SiegeSquad extends Site {
+interface SiegeSquad extends FormationSite {
   readonly id: number;
   readonly type: string;
   readonly men: number;
@@ -27,11 +29,15 @@ interface VisibleSiegeFront {
   readonly siege?: 'assault' | 'blockade' | null;
   readonly ram: { readonly built: boolean; readonly hp?: number; readonly remaining?: number } | null;
   readonly garrison: number;
+  readonly garrisonMen?: number;
+  readonly garrisonKnown?: boolean;
 }
 
 /** What a siege policy may read: its own army, the ground it has seen, and the walls in front of it. */
 export interface SiegeObservation {
+  readonly settlements?: readonly { readonly id: number }[];
   /** The calendar the Controller seam requires of every Observation; the policy reads neither. */
+  readonly appearances?: readonly ObservedSettlement[];
   readonly year: number;
   readonly season: Season;
   readonly treasury: number;
@@ -50,6 +56,7 @@ export interface SiegeContent {
   readonly ramCost: number;
   /** How close a Squad has to be to be at the walls. */
   readonly siegeRadius: number;
+  readonly settlementRadius?: number;
   /** How close a field army has to come to threaten the ring. */
   readonly reliefRadius: number;
   /** One unknown garrison's worth of power, for a front whose walls have not been seen. */
@@ -65,6 +72,7 @@ export interface SiegeContent {
     readonly strength: number;
     readonly impact: number;
     readonly morale: number;
+    readonly figures?: number;
   }[];
 }
 
@@ -125,24 +133,30 @@ export function createSiegeBehaviour(
     id: 'siege',
     tactical: ({ observation }) => {
       const { visible, faction } = observation;
-      const contacts = planningContacts(visible.contacts, observation.tick, content.ticksPerSecond);
+      const contacts = planningContacts(permittedContacts(visible), observation.tick, content.ticksPerSecond);
       const target = contacts.find((contact) => contact.kind === 'stronghold');
       if (target === undefined) return [];
       const front = visible.fronts.find((candidate) => candidate.settlement === target.id);
       const place = { x: target.x, y: target.y };
+      const knownBreach = front?.breached === true || visible.appearances?.some((site) => site.id === target.id &&
+        site.tiles.some((tile) => tile.structure?.condition === 'breached')) === true;
       const age = observation.tick - target.seen;
       const sighting = `The Stronghold sighting is ${String(age)} ticks old.`;
       /** Every reason ends with the age of the sighting it acted on: the grounds, stated. */
       const stated = (reason: string) => `${reason} ${sighting}`;
 
-      const relief = visible.enemies.filter((enemy) => distance(enemy, place) <= content.reliefRadius);
+      const relief = visible.enemies.filter((enemy) => Math.max(0, distance(enemy, place) - (content.settlementRadius ?? 0)) <= content.reliefRadius);
       const reliefPower = relief.reduce((sum, enemy) => sum + nominal(enemy.type), 0);
-      const garrison = front === undefined ? 1 : front.garrison;
+      const presence = recordedGarrison(visible.appearances?.find((site) => site.id === target.id));
+      const garrison = front === undefined || front.garrisonKnown === false ? presence === false ? 0 : 1 : front.garrison;
       const threat = garrison * content.garrisonEstimate + reliefPower;
 
       const field = visible.squads.filter((squad) => !squad.routing && squad.garrison === null);
-      const atWalls = (squad: SiegeSquad) => distance(squad, place) <= content.siegeRadius ||
-        (squad.goal !== null && squad.goal.x === place.x && squad.goal.y === place.y);
+      const atWalls = (squad: SiegeSquad) => bodyPerimeterDistance(squad, place, content.settlementRadius ?? 0, types.get(squad.type)?.figures === 1 ? 1 : squad.capacity) <= content.siegeRadius ||
+        (squad.goal !== null && (squad.goal.x === place.x && squad.goal.y === place.y ||
+          front?.besieger === faction && (content.settlementRadius ?? 0) > 0 &&
+          perimeterArrival(squad.goal, types.get(squad.type)?.figures === 1 ? 1 : squad.capacity, place,
+            content.settlementRadius!, content.siegeRadius)));
       const committed = field.filter(atWalls);
       const reserve = field.filter((squad) => !atWalls(squad) && !spent(squad, observation));
       const willing = (squads: readonly SiegeSquad[]) => squads.filter((squad) => !spent(squad, observation)).map((squad) => squad.id);
@@ -179,14 +193,14 @@ export function createSiegeBehaviour(
       /** Whether this Faction's one path to a walled settlement is the ram. */
       function assaultPath(): boolean {
         if (!content.canAssault(faction)) return false;
-        if (front?.breached === true) return true;
+        if (knownBreach) return true;
         return front?.ram != null || visible.treasury >= content.ramCost;
       }
       /** The stated grounds for the path, with the numbers the decision read. */
       function grounds(assault: boolean, settlement: number, ours: number, theirs: number): string {
         const against = `${String(ours)} power against ${String(theirs)}`;
         if (assault) {
-          return front?.breached === true
+          return knownBreach
             ? `Assault settlement ${String(settlement)}: the walls are breached; storm the centre with ${against}.`
             : `Assault settlement ${String(settlement)}: ${faction} has the ram at the walls or can pay ` +
               `${String(content.ramCost)} of ${String(visible.treasury)}; ${against}, and the fast path is worth the blood.`;
@@ -209,4 +223,18 @@ export function createSiegeBehaviour(
 /** The one candidate a siege decision proposes; utility puts it ahead of the field's own. */
 function candidate(id: string, reason: string, commands: readonly SiegeCommand[]): Candidate<SiegeCommand> {
   return { id, utility: 30, reason, commands };
+}
+
+
+/** A valid siege route ends at the body perimeter rather than at the hidden centre. */
+function perimeterArrival(goal: Site, capacity: number, site: Site, radius: number, reach: number): boolean {
+  const left = site.x - radius, right = site.x + radius, top = site.y - radius, bottom = site.y + radius;
+  for (const formation of ['line', 'column'] as const) for (const facing of ['north', 'east', 'south', 'west'] as const) {
+    const rect = formationFootprint(capacity, formation, facing);
+    const x = goal.x + rect.x, y = goal.y + rect.y;
+    const endX = x + rect.width - 1, endY = y + rect.height - 1;
+    if (endX >= left && x <= right && endY >= top && y <= bottom) continue;
+    if (Math.max(0, left - endX, x - right, top - endY, y - bottom) <= reach) return true;
+  }
+  return false;
 }

@@ -85,7 +85,7 @@ export function createSettlementLayer(parent: Container): SettlementLayer {
   parent.addChild(root);
 
   const settlements = new Map<number, Drawn>();
-  const marks = new Map<SettlementKind, Sprite>();
+  const marks = new Map<string, Sprite>();
   /** One texture per look: two Strongholds in the same state share the pixels. */
   const textures = new Map<string, Texture>();
 
@@ -127,11 +127,19 @@ export function createSettlementLayer(parent: Container): SettlementLayer {
         settlements.delete(id);
       }
 
+      // A completed phase must not retain a full-size GPU texture forever.
+      const active = new Set([...settlements.values()].map((drawn) => drawn.key));
+      for (const [key, texture] of textures) {
+        if (active.has(key)) continue;
+        texture.destroy(true);
+        textures.delete(key);
+      }
+
       for (const mark of marks.values()) mark.visible = false;
       const picked = field.sites.find((site) => site.id === field.selected);
       if (picked !== undefined) {
-        const mark = markFor(picked.kind);
         const rect = siteRect(picked);
+        const mark = markFor(picked.kind, rect.width);
         mark.position.set(rect.x, rect.y);
         mark.visible = true;
         // The brackets sit above every settlement, so a picked minor settlement's mark is never
@@ -153,13 +161,14 @@ export function createSettlementLayer(parent: Container): SettlementLayer {
   }
 
   /** The one settlement the brackets are drawn over, made once per kind. */
-  function markFor(kind: SettlementKind): Sprite {
-    const cached = marks.get(kind);
+  function markFor(kind: SettlementKind, size: number): Sprite {
+    const key = `${kind}:${size}`;
+    const cached = marks.get(key);
     if (cached !== undefined) return cached;
 
-    const mark = new Sprite(textureOf(siteMark(kind)));
+    const mark = new Sprite(textureOf(siteMark(kind, size)));
     root.addChild(mark);
-    marks.set(kind, mark);
+    marks.set(key, mark);
     return mark;
   }
 }

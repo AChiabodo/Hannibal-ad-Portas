@@ -33,8 +33,8 @@
  *
  * ## A garrison is a posture, not a second army
  *
- * A Squad told to `garrison` stands at its settlement's centre but is *inside*
- * the walls: `combat.ts`'s contact rules skip it (`squad.ts`'s `Block.garrison`),
+ * A Squad told to `garrison` reaches the access and enters completely before
+ * joining the wall defenders: contact rules then skip it (`Block.garrison`),
  * because the wall, not the man, is what an enemy at the gate is facing. So the
  * fight over a breach is the same exchange as any other fight — the men who came
  * over the wall against the men who man it (`combat.ts`'s `woundsOf`) — and a
@@ -69,6 +69,12 @@
  * its bound: the fall of a Stronghold, and the reason it fell.
  */
 import { bearingOf, figuresOf, stockAt, squadTypeOf } from '../content/index.ts';
+import { fortificationHp, garrisonCapacity } from '../content/fortifications.ts';
+import { bindSiegeSpace, siteRect, invalidateSpace, canOccupy, occupiedGround, squadGround, coreOf } from './settlement-space.ts';
+import { containsTile, settlementLayout, intersects, type GroundRect } from '../content/settlement-layout.ts';
+import { perimeterDistance, outsideCore, insideCore, rectDistance } from './settlement-siege-geometry.ts';
+import type { ObservedSettlement } from '../content/settlement-appearance.ts';
+import { advanceGarrisonJourneys, requestGarrison } from './settlement-access.ts';
 import { TICK_HZ } from './clock.ts';
 import type { Command, SiegePath } from './command.ts';
 import { bearing, BREAKING_MORALE, woundsOf } from './combat.ts';
@@ -86,11 +92,12 @@ import { UNOWNED, type Economy, type Settlement, type Squad, type Supplied } fro
 import { factionCode, factionOf, type Faction } from './faction.ts';
 import { createFogs, eyeCovers, viewOf, type Fog, type FogView } from './fog.ts';
 import { refreshSiegeFog, siegeContacts, type KnownContact } from './siege-fog.ts';
+import { settlementAppearances } from './settlement-knowledge.ts';
 import { RESOURCE, type MapGrid, type Site } from './map.ts';
 import type { MatchRules } from './match.ts';
 import { goalOf, orderedSquads, orderSquadTo, routeCacheFor } from './movement.ts';
 import { recordCasualties, type Fallen } from './residue.ts';
-import { NO_REFUSAL, type RouteCache } from './route.ts';
+import type { RouteCache } from './route.ts';
 import {
   FACINGS,
   facingCode,
@@ -264,6 +271,8 @@ export interface Structure {
  * points.
  */
 export interface Front {
+  /** Last Tier applied to these structures, so growth preserves existing damage. */
+  tier?: number;
   /** The settlement this front is about: the economy's own id. */
   readonly settlement: number;
 
@@ -313,6 +322,7 @@ export interface SiegeWorld extends EconomyWorld {
 
 /** One piece of a fortification, as the Faction that can see it reads it. */
 export interface VisibleStructure {
+  readonly maxHp?: number;
   /** Whether it is the gate or a stretch of wall. */
   readonly kind: StructureKind;
 
@@ -361,12 +371,17 @@ export interface VisibleFront {
   /** Capture checks the holder has held the centre. */
   readonly hold: number;
 
-  /** How many Squads are garrisoning it. */
+  /** Own roster count; an enemy front reports only observable presence (0 or 1). */
   readonly garrison: number;
+  /** False when current sight covers no wall; zero then carries no absence claim. */
+  readonly garrisonKnown?: boolean;
+  readonly garrisonMen?: number;
+  readonly garrisonCapacity?: number;
 }
 
 /** What a Faction may know of a Siege: its own walls, and the ones it is at. */
 export interface SiegeVisible extends EconomyVisible {
+  readonly appearances?: readonly ObservedSettlement[];
   readonly fog: FogView;
   readonly contacts: readonly KnownContact[];
   /** Enemy field Squads currently in ordinary vision, with no private economic or combat facts. */
@@ -392,7 +407,7 @@ export function createSiege(map: MapGrid, economy: Economy): Siege {
   const strongholds = map.strongholds.map((site) => settlementIdAt(economy, site));
   const [rome, carthage] = map.strongholds;
 
-  return {
+  return bindSiegeSpace(map, {
     fronts: economy.settlements.map((settlement) => {
       const side = strongholds.indexOf(settlement.id);
       const gateSide = side === 0 ? sideToward(rome, carthage) : sideToward(carthage, rome);
@@ -400,7 +415,7 @@ export function createSiege(map: MapGrid, economy: Economy): Siege {
       return frontOf(settlement, side >= 0 ? gateSide : undefined);
     }),
     strongholds,
-  };
+  });
 }
 
 /**
@@ -496,6 +511,16 @@ export function applySiegeCommand(world: SiegeWorld, command: Command, routes: R
  * runs inside the economy's tick — has already happened.
  */
 export function besiege(world: SiegeWorld, tick: number): void {
+  for (const front of world.siege.fronts) {
+    const tier = world.economy.settlements[front.settlement]?.tier ?? 1;
+    const previous = front.tier ?? 1;
+    if (tier === previous) continue;
+    for (const structure of front.structures) {
+      const gate = structure.kind === STRUCTURE.gate;
+      if (structure.hp > 0) structure.hp = Math.ceil(structure.hp * fortificationHp(tier, gate) / fortificationHp(previous, gate));
+    }
+    front.tier = tier;
+  }
   for (const front of world.siege.fronts) resolveFront(world, front, tick);
 
   if (tick % CAPTURE_TICKS === 0) captureRound(world);
@@ -559,6 +584,8 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
 
     const changes = stepEconomyWorld(world, tick, commands, suppliedBy(world.siege));
 
+    advanceGarrisonJourneys(world, (squad, target) => orderSquadTo(world.map, squad, target, routes, true));
+
     besiege(world, tick);
 
     // One Season of blockade for every boundary the clock crossed — normally one,
@@ -598,6 +625,7 @@ export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (wo
 
   return {
     ...seen,
+    appearances: settlementAppearances(world.fog[faction]),
     fog: viewOf(world.fog[faction]),
     contacts: siegeContacts(world, faction),
     enemies: world.economy.squads
@@ -615,9 +643,10 @@ export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (wo
         if (settlement === undefined) return false;
 
         return settlement.owner === owner || front.besieger === owner ||
-          eyes.some((eye) => eyeCovers(eye, settlement));
+          eyes.some((eye) => eyeCovers(eye, settlement)) ||
+          filteredFront(world, front, owner, eyes).structures.length > 0;
       })
-      .map((front) => visibleFront(world.economy, front)),
+      .map((front) => filteredFront(world, front, owner, eyes)),
   };
 };
 
@@ -653,8 +682,9 @@ export const siegeMatchOutcome: MatchSetup<SiegeWorld, SiegeVisible>['outcome'] 
 /** A front at the opening of a Match: its walls if it is a Stronghold, and nobody at them. */
 function frontOf(settlement: Settlement, gateSide: Facing | undefined): Front {
   return {
+    tier: settlement.tier,
     settlement: settlement.id,
-    structures: gateSide === undefined ? [] : fortifications(gateSide),
+    structures: gateSide === undefined ? [] : fortifications(gateSide, settlement.tier),
     besieger: UNOWNED,
     path: SIEGE.none,
     ram: 0,
@@ -667,10 +697,10 @@ function frontOf(settlement: Settlement, gateSide: Facing | undefined): Front {
 }
 
 /** A gate and four stretches of wall, one to a side, all standing. */
-function fortifications(gateSide: Facing): Structure[] {
+function fortifications(gateSide: Facing, tier = 1): Structure[] {
   return [
-    { kind: STRUCTURE.gate, side: facingCode(gateSide), hp: GATE_HP },
-    ...FACINGS.map((side) => ({ kind: STRUCTURE.wall, side: facingCode(side), hp: WALL_HP })),
+    { kind: STRUCTURE.gate, side: facingCode(gateSide), hp: fortificationHp(tier, true) },
+    ...FACINGS.map((side) => ({ kind: STRUCTURE.wall, side: facingCode(side), hp: fortificationHp(tier, false) })),
   ];
 }
 
@@ -722,9 +752,19 @@ function laySiege(
   const squads = orderedSquads(world.economy, owner, ids);
   if (squads.length === 0) return false;
 
+  const reserved: GroundRect[] = [];
+  let accepted = false;
   for (const squad of squads) {
-    orderSquadTo(world.map, squad, { x: settlement.x, y: settlement.y }, routes);
+    const target = path === SIEGE.assault && breached(front) ? { x: settlement.x, y: settlement.y } :
+      siegePosition(world, settlement, squad, reserved);
+    if (target !== undefined) {
+      orderSquadTo(world.map, squad, target, routes);
+      if (squad.refused !== -1) continue;
+      reserved.push(squadGround(squad, target.x, target.y));
+      accepted = true;
+    }
   }
+  if (!accepted) return false;
 
   front.besieger = owner;
   front.path = path;
@@ -739,29 +779,8 @@ function takeUpGarrison(
   faction: Faction,
   ids: readonly number[],
 ): boolean {
-  const front = frontAt(world.siege, settlementId);
-  const settlement = world.economy.settlements[settlementId];
-  if (front === undefined || settlement === undefined) return false;
-  if (settlement.owner !== factionCode(faction)) return false;
-  // A garrison mans walls, and an open settlement has none: an open one is held
-  // in the field, by the Squads standing on its centre.
-  if (!isWalled(front)) return false;
-
-  let garrisoned = false;
-
-  for (const squad of orderedSquads(world.economy, factionCode(faction), ids)) {
-    if (!inReach(squad, settlement, SIEGE_RADIUS)) continue;
-
-    squad.garrison = settlement.id;
-    squad.x = settlement.x;
-    squad.y = settlement.y;
-    squad.steps = [];
-    squad.wait = 0;
-    squad.refused = NO_REFUSAL;
-    garrisoned = true;
-  }
-
-  return garrisoned;
+  return requestGarrison(world, settlementId, factionCode(faction), ids,
+    (squad, target) => orderSquadTo(world.map, squad, target, routeCacheFor(world.map), true));
 }
 
 /** One front's tick: whether the Siege still stands, and what it does about it. */
@@ -814,7 +833,8 @@ function besiegersOf(world: SiegeWorld, front: Front): readonly Squad[] {
       squad.owner === front.besieger &&
       squad.garrison === FIELD &&
       !isRouting(squad) &&
-      inReach(squad, settlement, SIEGE_RADIUS),
+      (front.path === SIEGE.assault && breached(front) && insideCore(world.economy, settlement, squad) ||
+        outsideCore(world.economy, settlement, squad) && perimeterDistance(world.economy, settlement, squad) <= SIEGE_RADIUS),
   );
 }
 
@@ -834,7 +854,11 @@ function onTheWay(world: SiegeWorld, front: Front, settlement: Settlement): bool
 
     const goal = goalOf(squad);
 
-    return goal !== null && goal.x === settlement.x && goal.y === settlement.y;
+    if (goal === null) return false;
+    const body = squadGround(squad, goal.x, goal.y);
+    const core = coreOf(world.economy, settlement);
+    return !intersects(core, body) && rectDistance(core, body) <= SIEGE_RADIUS ||
+      front.path === SIEGE.assault && breached(front) && containsTile(core, goal.x, goal.y);
   });
 }
 
@@ -850,13 +874,33 @@ function onTheWay(world: SiegeWorld, front: Front, settlement: Settlement): bool
 function relieved(world: SiegeWorld, settlement: Settlement): boolean {
   if (settlement.owner === UNOWNED) return false;
 
-  return world.economy.squads.some(
+  const relief = world.economy.squads.filter(
     (squad) =>
       squad.owner === settlement.owner &&
       squad.garrison === FIELD &&
       !isRouting(squad) &&
-      inReach(squad, settlement, RELIEF_RADIUS),
+      outsideCore(world.economy, settlement, squad) && perimeterDistance(world.economy, settlement, squad) <= RELIEF_RADIUS,
   );
+  const front = frontAt(world.siege, settlement.id);
+  return front !== undefined && forceOf(relief) > forceOf(besiegersOf(world, front));
+}
+
+/** Distinct exterior destinations keep a siege army off roofs, walls and other bodies. */
+function siegePosition(world: SiegeWorld, site: Settlement, squad: Squad, reserved: readonly GroundRect[]): Site | undefined {
+  if (outsideCore(world.economy, site, squad) && perimeterDistance(world.economy, site, squad) <= SIEGE_RADIUS) return squad;
+  const core = coreOf(world.economy, site);
+  const options: Site[] = [];
+  for (let y = site.y - 16; y <= site.y + 16; y += 1) {
+    for (let x = site.x - 16; x <= site.x + 16; x += 1) {
+      const body = squadGround(squad, x, y);
+      if (intersects(core, body) || rectDistance(core, body) > SIEGE_RADIUS ||
+        !canOccupy(world.map, squad, x, y) || occupiedGround(world.economy, body, squad.id) ||
+        reserved.some((other) => intersects(body, other))) continue;
+      options.push({ x, y });
+    }
+  }
+  return options.sort((a, b) => Math.max(Math.abs(a.x - squad.x), Math.abs(a.y - squad.y)) -
+    Math.max(Math.abs(b.x - squad.x), Math.abs(b.y - squad.y)) || a.y - b.y || a.x - b.x)[0];
 }
 
 /** One round of an Assault: the ram, the walls, the price of standing under them. */
@@ -881,7 +925,15 @@ function assaultRound(
     if (!rammed(front)) punish(world, besiegers, tick);
   }
 
-  if (breached(front)) storm(world, front, besiegers, tick);
+  if (breached(front)) {
+    const site = world.economy.settlements[front.settlement];
+    if (site === undefined) return;
+    for (const squad of besiegers) {
+      if (!insideCore(world.economy, site, squad) && goalOf(squad) === null)
+        orderSquadTo(world.map, squad, site, routeCacheFor(world.map));
+    }
+    storm(world, front, besiegers.filter((squad) => insideCore(world.economy, site, squad)), tick);
+  }
 }
 
 /**
@@ -1055,7 +1107,7 @@ function storm(world: SiegeWorld, front: Front, besiegers: readonly Squad[], tic
  * A capture check: whether the Faction holding a settlement's centre has held it
  * long enough to have taken it.
  *
- * Holding means standing on the centre tile with the field, uncontested, and the
+ * Holding means standing in the visible capture square with the field, uncontested, and the
  * count is continuous: a Faction that loses the tile — or whose enemy arrives on
  * it — starts again from nothing. A walled settlement is only open to this once
  * it has been breached; an open one has no such gate, which is the whole of "a
@@ -1067,7 +1119,7 @@ function captureRound(world: SiegeWorld): void {
     if (settlement === undefined) continue;
 
     const holder = holderOf(world.economy, settlement);
-    if (holder === UNOWNED || !openTo(front)) {
+    if (holder === UNOWNED || !openTo(front) || garrisonOf(world.economy, settlement.id).some((squad) => !isRouting(squad))) {
       front.holder = UNOWNED;
       front.hold = 0;
       continue;
@@ -1103,7 +1155,8 @@ function holderOf(economy: Economy, settlement: Settlement): number {
 
   for (const squad of economy.squads) {
     if (squad.garrison !== FIELD || isRouting(squad)) continue;
-    if (squad.x !== settlement.x || squad.y !== settlement.y) continue;
+    const square = siteRect(economy, settlement, settlementLayout(settlement.id < 2 ? 'stronghold' : 'settlement').capture);
+    if (!containsTile(square, squad.x, squad.y)) continue;
 
     present += 1;
     force.set(squad.owner, (force.get(squad.owner) ?? 0) + bearing(squad));
@@ -1145,7 +1198,12 @@ function take(
   taker: number,
   path: SiegeCode,
 ): void {
+  const previous = settlement.owner;
+  settlement.origin ??= previous === 1 ? 1 : 0;
+  for (const work of settlement.works) work.origin ??= settlement.origin;
   settlement.owner = taker;
+  world.economy.pending = world.economy.pending?.filter((order) => order.settlement !== settlement.id || order.owner !== previous) ?? [];
+  invalidateSpace(world.economy);
   world.economy.squads = world.economy.squads.filter((squad) => squad.garrison !== settlement.id);
 
   stand(front);
@@ -1235,6 +1293,7 @@ function visibleFront(economy: Economy, front: Front): VisibleFront {
       kind: structureKindOf(structure.kind),
       side: facingOfSide(structure.side),
       hp: structure.hp,
+      maxHp: fortificationHp(front.tier ?? 1, structure.kind === STRUCTURE.gate),
       standing: structure.hp > 0,
     })),
     breached: breached(front),
@@ -1245,7 +1304,39 @@ function visibleFront(economy: Economy, front: Front): VisibleFront {
       : null,
     hold: front.hold,
     garrison: garrisonOf(economy, front.settlement).length,
+    garrisonKnown: true,
+    garrisonMen: garrisonOf(economy, front.settlement).reduce((men, squad) => men + squad.strength, 0),
+    garrisonCapacity: garrisonCapacity(economy.settlements[front.settlement]?.tier ?? 1),
   };
+}
+
+/** Seeing one wall cannot reveal a breach, ram or defenders on the opposite side. */
+function filteredFront(world: SiegeWorld, front: Front, owner: number, eyes: ReturnType<typeof eyesOfEconomy>): VisibleFront {
+  const full = visibleFront(world.economy, front);
+  const site = world.economy.settlements[front.settlement];
+  if (site === undefined || site.owner === owner) return full;
+  const sees = (x: number, y: number) => eyes.some((eye) => eyeCovers(eye, { x, y }));
+  const structures = full.structures.filter((structure) => {
+    const side = FACINGS.indexOf(structure.side);
+    for (let tangent = -7; tangent <= 7; tangent += 1) {
+      if (structure.kind === 'gate' && Math.abs(tangent) > 1) continue;
+      const x = site.x + (side === 1 ? 7 : side === 3 ? -7 : tangent);
+      const y = site.y + (side === 0 ? -7 : side === 2 ? 7 : tangent);
+      if (sees(x, y)) return true;
+    }
+    return false;
+  });
+  const ramRect = siteRect(world.economy, site, { x: -1, y: 9, width: 3, height: 2 });
+  let ramSeen = false;
+  for (let y = ramRect.y; y < ramRect.y + ramRect.height; y += 1)
+    for (let x = ramRect.x; x < ramRect.x + ramRect.width; x += 1) ramSeen ||= sees(x, y);
+  const publicFront = { ...full };
+  delete publicFront.garrisonMen;
+  delete publicFront.garrisonCapacity;
+  return { ...publicFront, structures, breached: structures.some((structure) => !structure.standing),
+    ram: ramSeen ? full.ram : null, hold: sees(site.x, site.y) ? full.hold : 0,
+    garrisonKnown: structures.length > 0,
+    garrison: structures.length > 0 && full.garrison > 0 ? 1 : 0 };
 }
 
 /** The word for a structure code. @throws RangeError when it names none. */
@@ -1270,11 +1361,4 @@ function facingOfSide(code: number): Facing {
   if (side === undefined) throw new RangeError(`${String(code)} is not a side of a settlement`);
 
   return side;
-}
-
-/** Whether a Squad is within `radius` tiles of a settlement, counting Chebyshev. */
-function inReach(squad: Site, settlement: Site, radius: number): boolean {
-  return (
-    Math.max(Math.abs(squad.x - settlement.x), Math.abs(squad.y - settlement.y)) <= radius
-  );
 }

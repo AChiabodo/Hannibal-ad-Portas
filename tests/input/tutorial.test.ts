@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { createTutorial, type Tutorial } from '../../src/input/tutorial.ts';
-import { build, recruit, move, attackMove, blockade } from '../../src/sim/command.ts';
+import { build, recruit, move, attack, attackMove, blockade } from '../../src/sim/command.ts';
 
 function showCurrentControl(practice: Tutorial): void {
   const goal = practice.lesson.goal;
@@ -105,7 +105,7 @@ it('teaches selection, group movement, binding, discovery and real combat as sep
   host.advance(1);
   readAvailable(practice);
   expect(practice.lesson.id).toBe('explore');
-  host.human.submit(attackMove('rome', squads.map(({ id }) => id), 88, 89));
+  host.human.submit(attackMove('rome', squads.map(({ id }) => id), 132, 96));
   for (let count = 0; count < 2000 && !host.observe().squads.some((squad) => squad.engaged); count += 1) host.advance(1);
   expect(host.observe().squads.some((squad) => squad.engaged)).toBe(true);
   readAvailable(practice);
@@ -136,22 +136,31 @@ it('finishes the final lesson sequence only after a normal AI encounter, capture
   host.advance(1);
   readAvailable(practice);
   expect(practice.lesson.id).toBe('capture');
-  host.human.submit(attackMove('rome', host.observe().squads.map(({ id }) => id), 88, 89));
+  const first = host.observe().squads[0]!;
+  const other = host.observe().squads[1]!;
+  host.human.submit(move('rome', [other.id], 22, 110));
+  host.human.submit(attackMove('rome', [first.id], 60, 90));
   let encounter = false;
+  // The host retains only the latest 128 Commands, so observe AI activity
+  // during the encounter rather than after repeated human attacks evict it.
+  let opponentActed = host.applied('carthage').length > 0;
   for (let tick = 0; tick < 10000 && host.result === null && !encounter; tick += 1) {
     host.advance(1);
+    opponentActed ||= host.applied('carthage').length > 0;
+    const enemy = host.observe().enemies[0];
+    if (enemy !== undefined) host.human.submit(attack('rome', [first.id], enemy.id));
     encounter = host.observe().squads.some(({ engaged }) => engaged);
   }
-  expect(host.applied().some(({ command }) => command.faction === 'carthage')).toBe(true);
+  expect(opponentActed).toBe(true);
   expect(encounter).toBe(true);
-  host.human.submit(move('rome', host.observe().squads.map(({ id }) => id), 4, 73));
+  host.human.submit(move('rome', host.observe().squads.map(({ id }) => id), 35, 79));
   host.advance(800);
   expect(host.observe().settlements.some(({ id }) => id === 2)).toBe(true);
   readAvailable(practice);
-  host.human.submit(attackMove('rome', host.observe().squads.map(({ id }) => id), 88, 89));
+  host.human.submit(attackMove('rome', host.observe().squads.map(({ id }) => id), 135, 96));
   let opened = false;
   for (let tick = 0; tick < 3000 && host.result === null && !opened; tick += 1) {
-    const squads = host.observe().squads.filter(({ x, y }) => Math.abs(x - 88) <= 1 && Math.abs(y - 89) <= 1);
+    const squads = host.observe().squads.filter(({ x, y }) => Math.max(Math.abs(x - 144), Math.abs(y - 96)) <= 9);
     if (squads.length) host.human.submit(blockade('rome', squads.map(({ id }) => id), 1));
     host.advance(1);
     opened = host.observe().fronts.some((front) => front.settlement === 1 && front.besieger === 'rome');

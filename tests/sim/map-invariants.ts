@@ -38,6 +38,7 @@ import {
   type Site,
   type Terrain,
 } from '../../src/sim/map';
+import { settlementGroundProblems } from './map-ground-invariants';
 
 /** The name of a terrain, for a failure a reader can act on. */
 const TERRAIN_NAMES: Readonly<Record<Terrain, string>> = {
@@ -68,6 +69,7 @@ export function mapProblems(map: MapGrid): readonly string[] {
     ...riverProblems(map),
     ...resourceProblems(map),
     ...roadProblems(map),
+    ...settlementGroundProblems(map),
   ];
 }
 

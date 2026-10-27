@@ -46,7 +46,9 @@ describe('an unopposed economy across three Years', () => {
     expect(purchase).toBeDefined();
     expect(purchase!.tick).toBeGreaterThan(granary!.tick);
     expect(unpaid).toBe(0);
-  });
+  // Three full Years with a developed 160x160 world and copied appearance data
+  // measured 27-29 seconds under the bounded full-suite worker load.
+  }, 60_000);
 
   it.each(['rome', 'carthage'] as const)('completes a sustainable Forum and buys the upper roster as %s', (faction) => {
     const ai = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry: economyRegistry });
@@ -75,7 +77,8 @@ describe('an unopposed economy across three Years', () => {
     expect(final!.squads.every((squad) => squad.unpaid === 0)).toBe(true);
   });
 
-  it.each([1, 7, 42])('grows and pays both Factions without exhausting or hoarding the treasury (seed %i)', (seed) => {
+  for (const seed of [1, 7, 42]) {
+  it(`grows and pays both Factions without exhausting or hoarding the treasury (seed ${seed})`, () => {
     const snapshots: Record<string, SiegeVisible[]> = { rome: [], carthage: [] };
     let final: SiegeVisible[] = [];
     let checks = 0;
@@ -122,7 +125,11 @@ describe('an unopposed economy across three Years', () => {
         ] });
       expect(replay.hash).toBe(run.hash);
     }
-  }, 30_000);
+  // Seed 7 also replays the complete three-Year Match (56 seconds measured).
+  // The other full-worker cases reached 31.5 seconds. These compute budgets
+  // leave scheduling margin without changing any simulated campaign bound.
+  }, seed === 7 ? 90_000 : 60_000);
+  }
 
   it('removes actual unpaid Squads from a deliberately bankrupted AI Observation', () => {
     const ai = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry: economyRegistry });

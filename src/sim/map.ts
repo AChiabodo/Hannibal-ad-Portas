@@ -3,7 +3,7 @@
  *
  * `generateMap(seed)` is a pure function of the seed — no wall clock, no global
  * generator, no engine — so a Match that begins on it replays exactly
- * (ADR-0006). It returns a 96×96 grid of 16×16 tiles carrying terrain types,
+ * (ADR-0006). It returns a 160×160 grid of 16×16 tiles carrying terrain types,
  * rivers crossed by fords, resource nodes of grain, timber, stone and iron, four to
  * six capturable minor settlements, a Stronghold for each Faction, and roads
  * that join the nodes to one another.
@@ -35,20 +35,21 @@
  * is for.
  *
  * The work happens in passes, and the order is the design: the land first,
- * then water through it, then what stands on the terrain, then the roads that
- * join them, and finally a repair pass that fords whatever water still parts
+ * then complete settlement grounds, then water around them, resources and the
+ * roads that join them, and finally a repair pass that fords whatever water still parts
  * the land. Every pass draws from the seed's own stream, so the map is a
  * function of the seed and of nothing else — and every number it writes down is
  * an integer, because the map is authoritative state and `serializeState`
  * refuses anything else (ADR-0006).
  */
 import { makeRng, type Rng } from './rng.ts';
+import { containsTile, settlementLayout, turnRect, type GroundRect } from '../content/settlement-layout.ts';
 
-/** The map's width in tiles: 96, as the plan fixes it (PLAN §4). */
-export const MAP_WIDTH = 96;
+/** The map's width in tiles, allowing full settlement grounds (ADR-0030). */
+export const MAP_WIDTH = 160;
 
-/** The map's height in tiles: 96, as the plan fixes it (PLAN §4). */
-export const MAP_HEIGHT = 96;
+/** The map's height in tiles, allowing full settlement grounds (ADR-0030). */
+export const MAP_HEIGHT = 160;
 
 /** The side of a tile in pixels, for whoever draws the map later (B3). */
 export const TILE_SIZE = 16;
@@ -248,14 +249,15 @@ export function generateMap(seed: number): MapGrid {
   terrain.fill(TERRAIN.plain);
 
   growPatches(terrain, rng, new Uint32Array(TILE_COUNT));
-  const rivers = carveRivers(terrain, rng);
-  plantFords(terrain, rng, rivers);
   const strongholds = chooseStrongholds(terrain, rng);
   const halves = halfTiles(strongholds);
   const settlements = chooseSettlements(terrain, rng, strongholds, halves);
+  const reservations = siteReservations([...strongholds, ...settlements]);
+  const rivers = carveRivers(terrain, rng, reservations.grounds);
+  plantFords(terrain, rng, rivers);
   spreadFarmland(terrain, rng, [...strongholds, ...settlements]);
-  const resources = placeResources(terrain, rng, halves, [...strongholds, ...settlements]);
-  const roads = carveRoads(terrain, rng, [...strongholds, ...settlements, ...resources]);
+  const resources = placeResources(terrain, rng, halves, [...strongholds, ...settlements], reservations.resources);
+  const roads = carveRoads(terrain, rng, [...strongholds, ...settlements, ...resources], reservations.structures);
   joinLand(terrain, rivers);
 
   return { terrain, strongholds, settlements, rivers, resources, roads };
@@ -382,13 +384,13 @@ const RIVER_MARGIN = 1;
 const MAX_PLANTED_FORDS = 3;
 
 /** How far a Stronghold stays from its own end of the theatre, in tiles. */
-const STRONGHOLD_INSET = 6;
+const STRONGHOLD_INSET = 15;
 
 /** How far a Stronghold reaches in from that end: the two regions never come close. */
-const STRONGHOLD_EDGE = 18;
+const STRONGHOLD_EDGE = 24;
 
 /** How far apart two settlements, or a settlement and a Stronghold, must stand. */
-const SETTLEMENT_SPACING = 10;
+const SETTLEMENT_SPACING = 27;
 
 /** How large a patch of farmland grows around a settlement, in tiles. */
 const FARMLAND_MIN = 30;
@@ -555,13 +557,13 @@ function randomTileIn(region: Region, rng: Rng): number {
  * case for the land to survive, which is why it is worth generating. A single
  * river runs whichever way the draw says.
  */
-function carveRivers(terrain: Uint8Array, rng: Rng): River[] {
+function carveRivers(terrain: Uint8Array, rng: Rng, grounds: Uint8Array): River[] {
   const count = 1 + rng.nextBelow(2);
   const firstIsVertical = rng.nextBelow(2) === 0;
   const rivers: River[] = [];
 
   for (let index = 0; index < count; index += 1) {
-    rivers.push(carveRiver(terrain, rng, index === 0 ? firstIsVertical : !firstIsVertical));
+    rivers.push(carveRiver(terrain, rng, index === 0 ? firstIsVertical : !firstIsVertical, grounds));
   }
 
   return rivers;
@@ -570,54 +572,48 @@ function carveRivers(terrain: Uint8Array, rng: Rng): River[] {
 /**
  * Carves one river, from one edge of the map to the opposite edge.
  *
- * The river advances one row (or one column) at a time and may shift a single
- * tile sideways on the way, which is what makes it a wandering line rather than
- * a staircase of large turns. Advancing every step is also what guarantees it
- * reaches the far edge: a river that wandered freely could curl back on itself
- * and never get there, and a river that does not cross the map is not a river a
- * Faction has to reckon with.
- *
- * A sideways shift is made as a step within the row it happens in, so the water
- * is always four-connected: a river that stepped sideways *while* advancing
- * would leave a diagonal gap, and a diagonal gap is a gap a Squad walks through
- * — the water would look like a wall and not be one. The price of that is a row
- * two tiles wide wherever the river turns, which is what a river turning looks
- * like from above.
+ * Seeded waypoints divide the journey into four reaches. Each reach uses a
+ * four-connected path around reserved settlement grounds, so no future roof
+ * or courtyard appears over water and a diagonal gap never breaks the river.
  *
  * The banks are kept in from the map's edges, so every tile of the water except
  * its first and last has land beside it — which is what makes a ford a crossing
  * rather than a tile at the edge of the world.
  */
-function carveRiver(terrain: Uint8Array, rng: Rng, vertical: boolean): River {
-  const tiles: number[] = [];
+function carveRiver(terrain: Uint8Array, rng: Rng, vertical: boolean, grounds: Uint8Array): River {
   const span = vertical ? MAP_WIDTH : MAP_HEIGHT;
   const far = vertical ? MAP_HEIGHT : MAP_WIDTH;
   let across = RIVER_MARGIN + rng.nextBelow(span - 2 * RIVER_MARGIN);
-
+  const forbidden = grounds.slice();
   for (let along = 0; along < far; along += 1) {
-    tiles.push(vertical ? tileIndex(across, along) : tileIndex(along, across));
-
-    const sideways = drift(rng);
-    if (sideways === 0) continue;
-
-    const turned = Math.min(Math.max(across + sideways, RIVER_MARGIN), span - 1 - RIVER_MARGIN);
-    if (turned === across) continue;
-
-    tiles.push(vertical ? tileIndex(turned, along) : tileIndex(along, turned));
-    across = turned;
+    forbidden[vertical ? tileIndex(0, along) : tileIndex(along, 0)] = 1;
+    forbidden[vertical ? tileIndex(span - 1, along) : tileIndex(along, span - 1)] = 1;
   }
-
+  const waypoints: number[] = [];
+  for (let part = 0; part <= 4; part += 1) {
+    const along = part === 4 ? far - 1 : Math.floor(part * far / 4);
+    across = Math.max(RIVER_MARGIN, Math.min(span - 1 - RIVER_MARGIN, across + rng.nextInt(-8, 8)));
+    const candidates: number[] = [];
+    let nearest = span;
+    for (let candidate = RIVER_MARGIN; candidate < span - RIVER_MARGIN; candidate += 1) {
+      const tile = vertical ? tileIndex(candidate, along) : tileIndex(along, candidate);
+      if (forbidden[tile] === 1) continue;
+      const distance = Math.abs(candidate - across);
+      if (distance < nearest) { nearest = distance; candidates.length = 0; }
+      if (distance === nearest) candidates.push(tile);
+    }
+    waypoints.push(draw(rng, candidates));
+  }
+  const first = waypoints[0];
+  if (first === undefined) throw new Error('a river needs a source');
+  const tiles = [first];
+  for (const to of waypoints.slice(1)) {
+    const from = tiles.at(-1);
+    if (from === undefined) throw new Error('a river lost its previous reach');
+    tiles.push(...groundPath(from, to, forbidden, rng.nextUint32()).slice(1));
+  }
   for (const tile of tiles) terrain[tile] = TERRAIN.river;
   return { tiles };
-}
-
-/** How far a river drifts sideways in one step: usually nowhere, never more than one tile. */
-function drift(rng: Rng): number {
-  const roll = rng.nextBelow(6);
-
-  if (roll === 0) return -1;
-  if (roll === 5) return 1;
-  return 0;
 }
 
 /**
@@ -645,7 +641,7 @@ function plantFords(terrain: Uint8Array, rng: Rng, rivers: readonly River[]): vo
 
     for (let ford = 1; ford <= count; ford += 1) {
       const at = Math.floor((ford * fords.length) / (count + 1));
-      terrain[elementAt(fords, at)] = TERRAIN.ford;
+      widenCrossing(terrain, elementAt(fords, at));
     }
   }
 }
@@ -666,8 +662,8 @@ function isStraightFord(terrain: Uint8Array, tile: number): boolean {
  * Draws the two Strongholds, one from each end of the theatre.
  *
  * The regions are what makes `MIN_STRONGHOLD_DISTANCE` true without a rejection
- * loop: Rome's is at most 18 tiles in from the western edge and Carthage's at
- * least 77 from it, so the two are never nearer than 59 tiles however the draws
+ * loop: Rome's is at most 24 tiles in from the western edge and Carthage's at
+ * least 135 from it, so the two are never nearer than 111 tiles however the draws
  * fall — and no amount of retrying would be as easy to read as the arithmetic.
  * The invariant the ticket states asks for fewer than that, which is the point:
  * the margin is deliberate.
@@ -718,8 +714,8 @@ function chooseSettlements(
     const half: Half = placed % 2 === 0 ? 0 : 1;
     const candidates: number[] = [];
 
-    for (let y = 0; y < MAP_HEIGHT; y += 1) {
-      for (let x = 0; x < MAP_WIDTH; x += 1) {
+    for (let y = STRONGHOLD_INSET; y < MAP_HEIGHT - STRONGHOLD_INSET; y += 1) {
+      for (let x = STRONGHOLD_INSET; x < MAP_WIDTH - STRONGHOLD_INSET; x += 1) {
         const index = tileIndex(x, y);
         if (blocked[index] === 1) continue;
         if (!isDryLand(terrain, index)) continue;
@@ -740,14 +736,118 @@ function chooseSettlements(
 function blockAround(blocked: Uint8Array, x: number, y: number): void {
   for (let dy = -SETTLEMENT_SPACING; dy <= SETTLEMENT_SPACING; dy += 1) {
     for (let dx = -SETTLEMENT_SPACING; dx <= SETTLEMENT_SPACING; dx += 1) {
-      if (dx * dx + dy * dy > SETTLEMENT_SPACING * SETTLEMENT_SPACING) continue;
-
       const aroundX = x + dx;
       const aroundY = y + dy;
       if (aroundX < 0 || aroundY < 0 || aroundX >= MAP_WIDTH || aroundY >= MAP_HEIGHT) continue;
       blocked[tileIndex(aroundX, aroundY)] = 1;
     }
   }
+}
+
+/** Reserve the final site before water is routed, without changing its land capacity. */
+function reservedGrounds(sites: readonly Site[]): Uint8Array {
+  const reserved = new Uint8Array(TILE_COUNT);
+  const grounds = settlementLayout('stronghold').grounds;
+  for (const site of sites) {
+    for (let y = site.y + grounds.y; y < site.y + grounds.y + grounds.height; y += 1) {
+      for (let x = site.x + grounds.x; x < site.x + grounds.x + grounds.width; x += 1) {
+        reserved[tileIndex(x, y)] = 1;
+      }
+    }
+  }
+  return reserved;
+}
+
+/** Future roofs/walls and always-free civic ground are reserved independently. */
+function siteReservations(sites: readonly Site[]): { readonly structures: Uint8Array; readonly resources: Uint8Array; readonly grounds: Uint8Array } {
+  const structures = new Uint8Array(TILE_COUNT);
+  const grounds = reservedGrounds(sites);
+  const publicGround: GroundRect[] = [];
+  for (const [id, site] of sites.entries()) {
+    const plan = settlementLayout(id < 2 ? 'stronghold' : 'settlement');
+    const other = sites[id === 0 ? 1 : 0];
+    const dx = (other?.x ?? site.x) - site.x;
+    const dy = (other?.y ?? site.y) - site.y;
+    const side = id >= 2 ? 2 : Math.abs(dx) >= Math.abs(dy) ? dx >= 0 ? 1 : 3 : dy >= 0 ? 2 : 0;
+    const at = (rect: GroundRect): GroundRect => {
+      const turned = turnRect(rect, side);
+      return { ...turned, x: site.x + turned.x, y: site.y + turned.y };
+    };
+    for (const lot of plan.lots) markRect(structures, at(lot));
+    markRect(structures, at(plan.landmark));
+    if (id < 2) {
+      const core = at(plan.core);
+      const gate = at(plan.gate);
+      for (let y = core.y; y < core.y + core.height; y += 1) {
+        for (let x = core.x; x < core.x + core.width; x += 1) {
+          if (containsTile(gate, x, y)) continue;
+          if (x === core.x || y === core.y || x === core.x + core.width - 1 || y === core.y + core.height - 1) {
+            structures[tileIndex(x, y)] = 1;
+          }
+        }
+      }
+    }
+    publicGround.push(at(plan.capture), at(plan.muster), at({ ...plan.assembly, width: 1, height: 1 }),
+      at({ x: -1, y: 4, width: 3, height: 11 }));
+    if (id < 2) {
+      // The first outside queue position is ten Tiles from the centre. Its
+      // seven-Tile column tail needs dry ground beyond the final site grounds.
+      markRect(grounds, at({ x: -3, y: 8, width: 7, height: 10 }));
+      publicGround.push(at({ x: -1, y: 8, width: 3, height: 10 }));
+    }
+  }
+  const resources = structures.slice();
+  for (const area of publicGround) markRect(resources, area);
+  // A landmark can enclose a small yard between future houses and walls.
+  // Such a yard is not a resource site: its road must remain reachable even
+  // after every planned building exists. Reuse the terrain flood for this mask.
+  const access = new Int32Array(TILE_COUNT);
+  labelLand(Uint8Array.from(structures, (blocked) => blocked === 1 ? TERRAIN.river : TERRAIN.plain), access, []);
+  for (let tile = 0; tile < TILE_COUNT; tile += 1) if (access[tile] !== access[0]) resources[tile] = 1;
+  return { structures, resources, grounds };
+}
+
+function markRect(mask: Uint8Array, rect: GroundRect): void {
+  for (let y = Math.max(0, rect.y); y < Math.min(MAP_HEIGHT, rect.y + rect.height); y += 1) {
+    for (let x = Math.max(0, rect.x); x < Math.min(MAP_WIDTH, rect.x + rect.width); x += 1) mask[tileIndex(x, y)] = 1;
+  }
+}
+
+/** Four-connected seeded paths around fixed grounds; the seed only breaks equal-distance ties. */
+function groundPath(from: number, to: number, forbidden: Uint8Array, salt: number): number[] {
+  const parent = new Int32Array(TILE_COUNT).fill(-2);
+  const queue = new Int32Array(TILE_COUNT);
+  parent[from] = -1;
+  queue[0] = from;
+  let head = 0;
+  let tail = 1;
+  while (head < tail && parent[to] === -2) {
+    const tile = queue[head];
+    head += 1;
+    if (tile === undefined) continue;
+    const x = tileX(tile);
+    const y = tileY(tile);
+    const rotation = (Math.imul(tile ^ salt, 0x45d9f3b) >>> 16) & 3;
+    for (let step = 0; step < 4; step += 1) {
+      const direction = (rotation + step) & 3;
+      const nx = x + (direction === 1 ? 1 : direction === 3 ? -1 : 0);
+      const ny = y + (direction === 2 ? 1 : direction === 0 ? -1 : 0);
+      if (nx < 0 || ny < 0 || nx >= MAP_WIDTH || ny >= MAP_HEIGHT) continue;
+      const next = tileIndex(nx, ny);
+      if (forbidden[next] === 1 || parent[next] !== -2) continue;
+      parent[next] = tile;
+      queue[tail] = next;
+      tail += 1;
+    }
+  }
+  if (parent[to] === -2) throw new Error('reserved settlement grounds leave no connected path');
+  const path: number[] = [];
+  let tile = to;
+  while (tile >= 0) {
+    path.push(tile);
+    tile = parent[tile] ?? -1;
+  }
+  return path.reverse();
 }
 
 /**
@@ -784,9 +884,10 @@ function placeResources(
   rng: Rng,
   halves: Uint8Array,
   sites: readonly Site[],
+  reserved: Uint8Array,
 ): ResourceNode[] {
   const resources: ResourceNode[] = [];
-  const taken = new Uint8Array(TILE_COUNT);
+  const taken = reserved.slice();
 
   for (const site of sites) taken[tileIndex(site.x, site.y)] = 1;
 
@@ -855,7 +956,7 @@ function nodeTiles(
  * network — this one is connected by construction, which is exactly what the
  * invariant asks.
  */
-function carveRoads(terrain: Uint8Array, rng: Rng, sites: readonly Site[]): Road[] {
+function carveRoads(terrain: Uint8Array, rng: Rng, sites: readonly Site[], forbidden: Uint8Array): Road[] {
   const [first, ...rest] = sites;
   if (first === undefined) return [];
 
@@ -886,7 +987,7 @@ function carveRoads(terrain: Uint8Array, rng: Rng, sites: readonly Site[]): Road
     }
 
     const site = elementAt(pending, bestIndex);
-    roads.push(layRoad(terrain, rng, bestFrom, site));
+    roads.push(layRoad(terrain, rng, bestFrom, site, forbidden));
     reached.push(site);
     pending.splice(bestIndex, 1);
   }
@@ -895,42 +996,15 @@ function carveRoads(terrain: Uint8Array, rng: Rng, sites: readonly Site[]): Road
 }
 
 /**
- * Lays one road between two sites, as an L: across, then up or down, or the
- * other way round.
- *
- * The elbow is drawn rather than fixed, so that a road leaves a settlement in
- * whichever direction the seed says. The tiles are recorded as the road is
- * walked, endpoints included, so the road is also the evidence that the two
- * features really are joined.
+ * Lays one road between two sites around their future roofs and walls.
+ * Seeded tie breaking varies equal-length paths; the Stronghold's sole opening
+ * forces its roads through the Gate. Endpoints are included as evidence that
+ * both features really are joined.
  */
-function layRoad(terrain: Uint8Array, rng: Rng, from: Site, to: Site): Road {
+function layRoad(terrain: Uint8Array, rng: Rng, from: Site, to: Site, forbidden: Uint8Array): Road {
   const start = tileIndex(from.x, from.y);
   const end = tileIndex(to.x, to.y);
-  const tiles: number[] = [start];
-  let x = from.x;
-  let y = from.y;
-
-  const across = (): void => {
-    while (x !== to.x) {
-      x += x < to.x ? 1 : -1;
-      tiles.push(tileIndex(x, y));
-    }
-  };
-  const along = (): void => {
-    while (y !== to.y) {
-      y += y < to.y ? 1 : -1;
-      tiles.push(tileIndex(x, y));
-    }
-  };
-
-  if (rng.nextBelow(2) === 0) {
-    across();
-    along();
-  } else {
-    along();
-    across();
-  }
-
+  const tiles = groundPath(start, end, forbidden, rng.nextUint32());
   for (const tile of tiles) layRoadTile(terrain, tile);
   return { from: start, to: end, tiles };
 }
@@ -946,11 +1020,23 @@ function layRoad(terrain: Uint8Array, rng: Rng, from: Site, to: Site): Road {
 function layRoadTile(terrain: Uint8Array, tile: number): void {
   const here = elementAt(terrain, tile);
 
-  if (here === TERRAIN.river) {
-    terrain[tile] = TERRAIN.ford;
+  if (here === TERRAIN.river || here === TERRAIN.ford) {
+    widenCrossing(terrain, tile);
     return;
   }
   if (isOpenTerrain(here)) terrain[tile] = TERRAIN.road;
+}
+
+/** A crossing carries the whole marching column, not only its centre Tile. */
+function widenCrossing(terrain: Uint8Array, tile: number): void {
+  const atX = tileX(tile);
+  const atY = tileY(tile);
+  for (let y = Math.max(0, atY - 2); y <= Math.min(MAP_HEIGHT - 1, atY + 2); y += 1) {
+    for (let x = Math.max(0, atX - 2); x <= Math.min(MAP_WIDTH - 1, atX + 2); x += 1) {
+      const index = tileIndex(x, y);
+      if (terrain[index] === TERRAIN.river) terrain[index] = TERRAIN.ford;
+    }
+  }
 }
 
 /**
@@ -978,7 +1064,7 @@ function joinLand(terrain: Uint8Array, rivers: readonly River[]): void {
     const ford = fordBetweenLandmasses(terrain, labels, rivers);
     if (ford < 0) throw new Error('the rivers parted the land and nothing on them can join it again');
 
-    terrain[ford] = TERRAIN.ford;
+    widenCrossing(terrain, ford);
   }
 }
 

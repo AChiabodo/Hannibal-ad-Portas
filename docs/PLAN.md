@@ -79,7 +79,7 @@ A debug page that renders the entire generated catalogue: every Squad figure in 
 
 ## 4. Systems, as decided
 
-**Map.** `generateMap(seed) → MapGrid`, a pure function on a **96×96** grid of 16×16 tiles. Organic, not mirrored, with invariants that tests assert: full land connectivity, resource parity between halves within tolerance, at least N fords per river, minimum distance between Strongholds, every settlement reachable. Contents: 2 Strongholds, 4–6 capturable minor settlements, rivers with fords, forests, hills, resource nodes (grain, timber, stone, iron), roads generated as paths joining the nodes. Not the real Italy — an abstract Italic theatre, and we say so rather than invite the wrong expectation.
+**Map.** `generateMap(seed) → MapGrid`, a pure function on a **160×160** grid of 16×16 tiles (ADR-0030). Organic, not mirrored, with invariants that tests assert: full land connectivity, resource parity between halves within tolerance, at least N fords per river, separated maximum settlement grounds, every settlement reachable. Contents: 2 Strongholds, 4–6 capturable minor settlements, rivers with fords, forests, hills, resource nodes (grain, timber, stone, iron), roads generated as paths joining the nodes. Reserved grounds remain walkable except for actual structures and started Works. Not the real Italy — an abstract Italic theatre.
 
 **Terrain.** Orthogonal top-down, square tiles, sprites drawn three-quarter. **No playable elevation** (ADR-0007): the heightmap is generative noise for placing biomes, never a height. Terrain *types* carry the modifiers: plain, hill (defensive), forest (conceals, penalises cavalry), ford (disorders), road (speed), farmland. Terrain tiles are autotiled with the **dual-grid technique — five tiles plus rotation**, not forty-seven variants.
 
@@ -89,7 +89,7 @@ A debug page that renders the entire generated catalogue: every Squad figure in 
 
 **Economy.** No worker units (ADR-0005). Population is a pool allocated to buildings and land; production matures on a timer; **resources accumulate per settlement** while denarii form one treasury. Construction is a labour allocation plus a timer. Three settlement tiers gate Squad tiers — the progression *is* the tiers, so there is no technology tree. **Payroll** is charged every Season: unpaid Carthaginian Squads lose morale and eventually desert.
 
-**Squads.** The atomic unit (ADR-0004). Pathfinding is A* on the 96×96 grid with path caching; at a dozen Squads, flow fields are unnecessary. Formations matter (frontage versus depth) and are a property of the Squad itself.
+**Squads.** The atomic unit (ADR-0004). Pathfinding is A* on the 160×160 grid with bounded path caching and shared formation footprints. Formations matter in space and combat. Gates and Breaches use real marching columns and one-Squad FIFO traffic; no individual soldier paths (ADR-0030).
 
 **Combat.** Morale-primary: **Squads break, they do not die to the last man.** Levers: the matchup matrix (`spear > cavalry > light > archers > spear`), flanking and rear attacks as morale shock as well as damage, terrain, fatigue, ammunition, faction character, Payroll, and being cut off from Territory. Rout is automatic and rallying is automatic — no micro-recovery, consistent with ADR-0004. No generals. Corpses are visual residue that fades after about thirty seconds and never touches state.
 

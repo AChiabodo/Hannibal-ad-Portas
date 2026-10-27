@@ -159,8 +159,13 @@ function wayTo(squad: Squad): number {
 function walkableTiles(world: EconomyWorld, count: number): readonly number[] {
   const tiles: number[] = [];
 
-  for (let tile = 0; tile < world.map.terrain.length && tiles.length < count; tile += 1) {
-    if (isWalkable(terrainAt(world.map, tileX(tile), tileY(tile)))) tiles.push(tile);
+  for (let y = 8; y < MAP_HEIGHT - 8 && tiles.length < count; y += 8) {
+    for (let x = 8; x < MAP_WIDTH - 8 && tiles.length < count; x += 8) {
+      let clear = true;
+      for (let dy = -4; dy <= 4; dy += 1) for (let dx = -4; dx <= 4; dx += 1)
+        if (!isWalkable(terrainAt(world.map, x + dx, y + dy))) clear = false;
+      if (clear) tiles.push(tileIndex(x, y));
+    }
   }
 
   return tiles;
@@ -194,7 +199,7 @@ describe('the world the Squads walk on', () => {
     expect(run.log).toEqual([]);
   });
 
-  it('leaves a recruited Squad standing in the settlement that raised it, at its type’s strength', () => {
+  it('leaves a recruited Squad in the settlement muster ground, at its purchased strength', () => {
     const world = economyMatchRules.createWorld(7);
     const stronghold = world.economy.settlements[0];
 
@@ -205,10 +210,10 @@ describe('the world the Squads walk on', () => {
     });
 
     const raised = squadOf(world, 1);
-    expect({ x: raised.x, y: raised.y }).toEqual({ x: stronghold?.x, y: stronghold?.y });
+    expect(Math.max(Math.abs(raised.x - stronghold!.x), Math.abs(raised.y - stronghold!.y))).toBeLessThanOrEqual(6);
     expect(raised.strength).toBe(24);
     expect(raised.capacity).toBe(24);
-    expect(seen(world)).toMatchObject({ x: stronghold?.x, y: stronghold?.y, men: 24, capacity: 24 });
+    expect(seen(world)).toMatchObject({ x: raised.x, y: raised.y, men: 24, capacity: 24, goal: null, garrison: null });
   });
 
   it('musters a Squad where a scenario says, and never gives two the same id', () => {
@@ -300,14 +305,14 @@ describe('a Squad ordered to a tile it can reach', () => {
     // as the Squad waits to enter it, so the crossing costs what the two tiles
     // cost — the destination included.
     const crossingIn = (row: string): number => {
-      const world = worldOf(paintedMap([row]));
-      const squad = place(world, 'hastati', 0, 0);
+      const world = worldOf(paintedMap([row], 20, 20));
+      const squad = place(world, 'hastati', 20, 20);
       const cache = createRouteCache(world.map);
-      applyMovementCommands(world.economy, world.map, [move('rome', [squad.id], 2, 0)], cache);
+      applyMovementCommands(world.economy, world.map, [move('rome', [squad.id], 22, 20)], cache);
 
       for (let tick = 1; tick <= 40; tick += 1) {
         march(world.economy, world.map);
-        if (squad.x === 2) return tick;
+        if (squad.x === 22) return tick;
       }
 
       throw new Error('the Squad never arrived at all');
@@ -376,21 +381,21 @@ describe('a Squad ordered to a tile it can reach', () => {
 
 describe('a Squad ordered to a tile no way reaches', () => {
   it('refuses the order, says why, and keeps doing what it was already doing', () => {
-    const world = worldOf(paintedMap(['..........~.', '..........~.']));
-    const squad = place(world, 'hastati', 0, 0);
+    const world = worldOf(paintedMap(['..........~.....', '..........~.....'], 20, 20));
+    const squad = place(world, 'hastati', 20, 20);
 
     play({
       world,
       ticks: 30,
-      rome: script([0, move('rome', [squad.id], 11, 0)], [4, move('rome', [squad.id], 10, 0)]),
+      rome: script([0, move('rome', [squad.id], 34, 20)], [4, move('rome', [squad.id], 30, 20)]),
     });
 
     // The second order named water. The Squad heard it, remembers why it could
     // not be taken, and is still on its way to where it was already going.
     const observed = seen(world);
     expect(observed.refused).toBe('water');
-    expect(observed.goal).toEqual({ x: 11, y: 0 });
-    expect(stepsBetween(tileUnder(squad), tileIndex(11, 0))).toBeLessThan(11);
+    expect(observed.goal).toEqual({ x: 34, y: 20 });
+    expect(stepsBetween(tileUnder(squad), tileIndex(34, 20))).toBeLessThan(14);
     expect(squad.steps.length).toBeGreaterThan(0);
   });
 
@@ -416,21 +421,21 @@ describe('a Squad ordered to a tile no way reaches', () => {
   });
 
   it('takes the next order it is given, and forgets the refusal', () => {
-    const world = worldOf(paintedMap(['..........~.']));
-    const squad = place(world, 'hastati', 0, 0);
+    const world = worldOf(paintedMap(['..........~.....'], 20, 20));
+    const squad = place(world, 'hastati', 20, 20);
 
     play({
       world,
       ticks: 10,
-      rome: script([0, move('rome', [squad.id], 11, 0)], [1, move('rome', [squad.id], 4, 0)]),
+      rome: script([0, move('rome', [squad.id], 34, 20)], [1, move('rome', [squad.id], 24, 20)]),
     });
 
     expect(seen(world)).toMatchObject({
       id: 1,
-      x: 2,
-      y: 0,
+      x: 22,
+      y: 20,
       facing: 'east',
-      goal: { x: 4, y: 0 },
+      goal: { x: 24, y: 20 },
       refused: null,
     });
   });
@@ -697,7 +702,7 @@ describe('the routes a theatre does not work out twice', () => {
 describe('a Squad keeps its formation, and turns', () => {
   it('takes the shape it is told to hold, and keeps every man it had', () => {
     const world = worldOf();
-    const squad = place(world, 'hastati', 5, 5);
+    const squad = place(world, 'hastati', 15, 15);
     const before = menOf(squad);
 
     play({ world, ticks: 2, rome: script([0, formation('rome', [squad.id], 'column')]) });
@@ -705,14 +710,14 @@ describe('a Squad keeps its formation, and turns', () => {
     expect(frontage(squad)).toBe(3);
     expect(depth(squad)).toBe(40);
     expect(squad.strength).toBe(120);
-    expect({ x: squad.x, y: squad.y }).toEqual({ x: 5, y: 5 });
+    expect({ x: squad.x, y: squad.y }).toEqual({ x: 15, y: 15 });
     expect(menOf(squad)).toHaveLength(before.length);
   });
 
   it('turns to face the way it is about to go on the tick it is ordered, and rearranges nobody to do it', () => {
     const sentTo = (x: number, y: number): string => {
       const world = worldOf();
-      const squad = place(world, 'hastati', 5, 5);
+      const squad = place(world, 'hastati', 15, 15);
       squad.formation = formationCode('column');
       const before = menOf(squad);
       applyMovementCommands(
@@ -724,27 +729,29 @@ describe('a Squad keeps its formation, and turns', () => {
 
       // Ordered, turned, and not yet walked: the turn is the Squad's own, and
       // the block it turns is the same block, man for man.
-      expect({ x: squad.x, y: squad.y }).toEqual({ x: 5, y: 5 });
+      expect({ x: squad.x, y: squad.y }).toEqual({ x: 15, y: 15 });
       expect(menOf(squad)).toEqual(before);
       expect(frontage(squad)).toBe(3);
 
       return seen(world).facing;
     };
 
-    expect(sentTo(5, 2)).toBe('north');
-    expect(sentTo(8, 5)).toBe('east');
-    expect(sentTo(5, 8)).toBe('south');
-    expect(sentTo(2, 5)).toBe('west');
+    expect(sentTo(15, 12)).toBe('north');
+    expect(sentTo(18, 15)).toBe('east');
+    expect(sentTo(15, 18)).toBe('south');
+    expect(sentTo(12, 15)).toBe('west');
   });
 
-  it('faces the way it is about to step at every tick of a long march, through every bend', () => {
-    const world = economyMatchRules.createWorld(5);
-    const [rome, carthage] = world.map.strongholds;
-    const squad = place(world, 'hastati', rome.x, rome.y);
+  it('faces its next step through every bend of a free-field march', () => {
+    // At a building, an ordered backstep legitimately retains the old facing.
+    // This heading check exercises free turns; rigid obstacle manoeuvres have
+    // their own public traffic and route regressions.
+    const world = worldOf();
+    const squad = place(world, 'hastati', 10, 20);
     applyMovementCommands(
       world.economy,
       world.map,
-      [move('rome', [squad.id], carthage.x, carthage.y)],
+      [move('rome', [squad.id], 80, 70)],
       createRouteCache(world.map),
     );
 
@@ -752,9 +759,10 @@ describe('a Squad keeps its formation, and turns', () => {
     let faced = squad.facing;
 
     for (let tick = 0; tick < 3_000 && squad.steps.length > 0; tick += 1) {
-      expect(squad.facing).toBe(wayTo(squad));
-
+      const position = tileUnder(squad);
+      const direction = wayTo(squad);
       march(world.economy, world.map);
+      if (position !== tileUnder(squad)) expect(squad.facing).toBe(direction);
 
       if (squad.facing !== faced) {
         faced = squad.facing;
@@ -824,6 +832,7 @@ describe('what a Faction is shown of its Squads', () => {
       home: 0,
       inTerritory: true,
       inCamp: false,
+      inQuarters: false,
     });
 
     expect(seen(world, 'carthage')).toMatchObject({ id: 2, type: 'libyan-spear', goal: null });

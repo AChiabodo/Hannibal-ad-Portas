@@ -40,6 +40,7 @@
  */
 import { FORMATIONS, type Formation } from './command.ts';
 import { NO_REFUSAL } from './route.ts';
+import type { Facing } from '../content/formation.ts';
 
 /**
  * The four directions a Squad can face, as state holds them.
@@ -58,7 +59,7 @@ export const FACING = {
 } as const;
 
 /** One of the four directions a Squad can face. */
-export type Facing = keyof typeof FACING;
+export type { Facing } from '../content/formation.ts';
 
 /** The four facings, in code order: what a report, a dump or a drawing walks. */
 export const FACINGS: readonly Facing[] = ['north', 'east', 'south', 'west'];
@@ -303,6 +304,22 @@ function requireStrength(shape: Shape): number {
  * like, how wide it stands, where its men stand in it — is derived from these.
  */
 export interface Block extends Shape {
+  /** Shared FIFO for physical Gate/Breach passage; all values are authoritative integers. */
+  access?: { settlement: number; passage: number; ticket: number; active: number; reason: number;
+    yielding: number; goalX: number; goalY: number };
+  /** Aggregate admission/departure; no individual soldier state. */
+  garrisonJourney?: {
+    settlement: number;
+    phase: number;
+    remaining: number;
+    ticket: number;
+    goalX: number;
+    goalY: number;
+    fromOutside: number;
+    reason?: number;
+  };
+  /** Requested shape retained while a real marching column clears an access. */
+  marchFormation?: number;
   /**
    * The shape it holds, as a `FORMATION` code: the one part of `Shape` a rule
    * writes, when a Formation Command arrives.

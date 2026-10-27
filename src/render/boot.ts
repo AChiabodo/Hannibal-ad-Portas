@@ -25,7 +25,7 @@
  * on.
  *
  * **One texture per image, and why that is the responsive answer.** The whole
- * 96×96 theatre is composed once, on boot, into a single 1552×1552 buffer, and so
+ * 160×160 theatre is composed once, on boot, into a single 2576×2576 buffer, and so
  * is its fog. Panning and zooming move one container: no tile is culled, no
  * sprite is created or destroyed, and the work per frame is the same at the
  * corner of the map as at its centre. The fog texture is rebuilt only when the

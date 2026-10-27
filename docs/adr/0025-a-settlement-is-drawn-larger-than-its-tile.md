@@ -1,5 +1,18 @@
 # A settlement is drawn larger than its tile, under the fog, and picked by its drawing
 
+**Partially superseded by [ADR-0030](0030-settlements-occupy-ground-and-show-their-works.md),
+2026-10-25, for the agreed redesign.** A Settlement will occupy real ground rather
+than remain a single simulation tile behind an enlarged drawing. The old fixed
+sprite dimensions are not a constraint on the new design. Agreement between
+drawing and picking, and the Observation / Fog of war knowledge boundary, remain
+applicable. Remembered settlements will retain their last observed appearance,
+clearly marked as memory and never updated without renewed sight; this supersedes
+the neutral-silhouette-only memory decision below. Observed and remembered
+appearance follows the portions actually seen, not automatic whole-settlement
+revelation. Access and Garrison transitions follow ADR-0030; precise geometry and
+depth treatment are delegated within that design. This amendment records design
+decisions, not a delivered implementation.
+
 **Amended by issue #67, 2026-10-21.** The approved comparative art work revises
 the dimensions below to three tiles (48 pixels) for a minor settlement and four
 and a half (72 pixels) for a Stronghold, so restored 1:1 infantry Figures do not

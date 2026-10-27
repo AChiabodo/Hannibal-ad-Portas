@@ -149,3 +149,49 @@ describe('the siege Controller', () => {
     expect(commands).toContainEqual({ kind: 'assault', faction: 'rome', squads: [1, 2], settlement: 1 });
   });
 });
+
+
+it('can target an observed fortress wall without ever seeing its centre (#74)', () => {
+  const visible = observation({ contacts: [], appearances: [{ id: 1, kind: 'stronghold', x: 80, y: 80,
+    gateSide: 3, owner: null, memory: 'seen', tiles: [{ cell: 137, seen: 10, visible: true,
+      structure: { kind: 'wall', side: 0, condition: 'intact' } }] }] });
+  expect(decide('rome', visible, 'centurio', 11).commands).toContainEqual({ kind: 'assault', faction: 'rome', squads: [1, 2, 3], settlement: 1 });
+});
+
+
+it('prices observed sentry presence without inventing an unseen full garrison (#74)', () => {
+  const visible = observation({ contacts: [], squads: [squad(1, 71, 80, { men: 24, capacity: 24 })],
+    appearances: [{ id: 1, kind: 'stronghold', x: 80, y: 80, gateSide: 3, owner: null, memory: 'seen',
+      tiles: [{ cell: 137, seen: 10, visible: true, garrison: false,
+        structure: { kind: 'wall', side: 0, condition: 'intact' } }] }] });
+  expect(decide('rome', visible, 'centurio', 11).commands).toContainEqual({ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 });
+  const guarded = { ...visible, appearances: visible.appearances!.map((site) => ({ ...site, tiles: site.tiles.map((tile) => ({ ...tile, garrison: true })) })) };
+  expect(decide('rome', guarded, 'centurio', 11).commands).toEqual([]);
+});
+
+
+it('keeps an accepted physical perimeter approach assigned to its active siege (#74)', () => {
+  const ai = createAi<SiegeObservation, SiegeCommand>({ ticksPerSecond: 10,
+    registry: createBehaviourRegistry([createSiegeBehaviour({ ...CONTENT, settlementRadius: 7 })]) });
+  const visible = observation({ squads: [squad(1, 87, 69, { men: 24, capacity: 24, goal: { x: 85, y: 71 } })],
+    fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'assault', ram: null, garrison: 0 }] });
+  expect(ai.decide({ faction: 'rome', tick: 0, visible })).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
+});
+
+
+it('counts a real body already adjacent to a wall rather than only its anchor (#74)', () => {
+  const ai = createAi<SiegeObservation, SiegeCommand>({ ticksPerSecond: 10,
+    registry: createBehaviourRegistry([createSiegeBehaviour({ ...CONTENT, settlementRadius: 7 })]) });
+  const visible = observation({ squads: [{ ...squad(1, 70, 80), formation: 'line', facing: 'south' }],
+    fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'assault', ram: null, garrison: 0 }] });
+  expect(ai.decide({ faction: 'rome', tick: 0, visible })).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
+});
+
+
+it('continues an assault through a remembered breach when the ram is hidden and already paid (#74)', () => {
+  const visible = observation({ treasury: 0, squads: [squad(1, 80, 80)],
+    fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'assault', ram: null, garrison: 0 }],
+    appearances: [{ id: 1, kind: 'stronghold', x: 80, y: 80, gateSide: 3, memory: 'seen', owner: null,
+      tiles: [{ cell: 305, seen: 10, visible: false, structure: { kind: 'gate', side: 3, condition: 'breached' } }] }] });
+  expect(decide('rome', visible, 'centurio', 11).commands).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
+});

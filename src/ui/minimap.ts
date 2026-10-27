@@ -17,7 +17,7 @@
  *
  * ## Why one pixel per tile, and what that costs
  *
- * At 96×96 tiles the map is 96 pixels square, which fits the corner of the
+ * At 160×160 tiles the map is 160 pixels square, which fits the corner of the
  * viewport without shrinking the theatre. The cost is that a tile is one pixel
  * and a landmark has to be one too: a settlement is the colour of whoever holds
  * it, a resource node the lightest shade of what it holds, and both are *hues

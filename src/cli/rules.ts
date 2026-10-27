@@ -105,6 +105,9 @@ import {
 import { squadTypesOf } from '../content/index.ts';
 import { playAiMatchAt } from './ai-match.ts';
 import type { DifficultyName } from '../ai/difficulty.ts';
+import { blockedTile, settlementSide, sitePoint } from '../sim/settlement-space.ts';
+import { formationFootprint } from '../content/formation.ts';
+import { facingOf } from '../sim/squad.ts';
 
 /**
  * What the rules own in the drawing Match: integers, and nothing else.
@@ -491,11 +494,20 @@ function squadIdsOf(world: EconomyWorld, faction: Faction): readonly number[] {
  */
 function groundNear(map: MapGrid, site: Site, count: number, spread = MARCH_SPREAD): readonly Site[] {
   const ground: Site[] = [];
+  // These harnesses muster full lines facing south. Reserve the largest body,
+  // not just its anchor, so it can leave past the permanent headquarters.
+  const body = formationFootprint(120, 'line', 'south');
+  const owner = site === map.strongholds[1] ? 1 : 0;
 
   for (let y = site.y - spread; y <= site.y + spread; y += 1) {
     for (let x = site.x - spread; x <= site.x + spread; x += 1) {
       if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) continue;
       if (!isWalkable(terrainAt(map, x, y))) continue;
+      let blocked = false;
+      for (let row = y + body.y; row < y + body.y + body.height; row += 1)
+        for (let col = x + body.x; col < x + body.x + body.width; col += 1)
+          if (blockedTile(map, owner, col, row)) blocked = true;
+      if (blocked) continue;
       if (ground.length === count) return ground;
 
       ground.push({ x, y });
@@ -653,12 +665,15 @@ export function siegeWorld(seed: number): SiegeWorld {
   const world = createSiegeWorld(seed);
   const [, carthage] = world.map.strongholds;
 
-  for (const site of wallsOf(world.map, carthage, SIEGE_SQUADS)) {
+  const target = world.economy.settlements[1]!;
+  const inward = facingOf((settlementSide(world.economy, target) + 2) % 4);
+  for (const site of wallsOf(world, SIEGE_SQUADS)) {
     musterSquad(world.economy, world.map, {
       faction: 'rome',
       squadType: SIEGE_TYPE,
       x: site.x,
       y: site.y,
+      facing: inward,
     });
   }
 
@@ -742,24 +757,13 @@ function playSiegeTheatre(seed: number, ticks: number): MatchRun {
 }
 
 /**
- * Walkable tiles at a Stronghold's walls: the ring a tile deep, in reading order.
- *
- * The square `groundNear` gives, less the centre: a besieging army has to be
- * *at* the walls — `SIEGE_RADIUS` is one tile — for the Siege to be laid at all,
- * and the centre tile is where the garrison stands.
+ * Disjoint full-sized lines one Tile outside the actual perimeter, facing it.
+ * The front-rank anchor keeps each formation's rear outside the intact Walls.
  */
-function wallsOf(map: MapGrid, site: Site, count: number): readonly Site[] {
-  const ring = groundNear(map, site, count + 1, 1).filter(
-    (tile) => tile.x !== site.x || tile.y !== site.y,
-  );
-
-  if (ring.length < count) {
-    throw new Error(
-      `the theatre has only ${String(ring.length)} tiles at a Stronghold's walls to stand a force on`,
-    );
-  }
-
-  return ring.slice(0, count);
+function wallsOf(world: SiegeWorld, count: number): readonly Site[] {
+  const site = world.economy.settlements[1]!;
+  return Array.from({ length: count }, (_, index) =>
+    sitePoint(world.economy, site, { x: index === 0 ? 0 : Math.ceil(index / 2) * 5 * (index % 2 === 1 ? -1 : 1), y: 8 }));
 }
 
 /**

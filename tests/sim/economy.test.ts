@@ -263,7 +263,7 @@ describe('a Build Command', () => {
     expect(applyEconomyCommand(economy, build('rome', 0, 'farm'))).toBe(true);
 
     expect(economy.settlements[0]?.stocks[RESOURCE.timber]).toBe(4);
-    expect(economy.settlements[0]?.works).toEqual([{ building: buildingId('farm'), remaining: 400 }]);
+    expect(economy.settlements[0]?.works).toEqual([{ building: buildingId('farm'), remaining: 400, ordinal: 0, origin: 0 }]);
   });
 
   it('refuses a settlement the Faction does not hold, and one nobody holds', () => {
@@ -299,10 +299,11 @@ describe('a Build Command', () => {
     expect(full.settlements[0]?.works).toHaveLength(4);
   });
 
-  it('refuses a building the settlement cannot afford, and leaves its stock alone', () => {
+  it('queues an unaffordable building without charging its stock', () => {
     const economy = economyOf(testSettlement({ stocks: [0, 5, 0, 0] }));
 
-    expect(applyEconomyCommand(economy, build('rome', 0, 'farm'))).toBe(false);
+    expect(applyEconomyCommand(economy, build('rome', 0, 'farm'))).toBe(true);
+    expect(economy.pending).toMatchObject([{ kind: 0, reason: 2 }]);
     expect(economy.settlements[0]?.stocks[RESOURCE.timber]).toBe(5);
   });
 });
@@ -340,14 +341,16 @@ describe('a Recruit Command', () => {
     expect(high.squads).toHaveLength(1);
   });
 
-  it('refuses the other Faction’s roster, a type nobody knows, and one it cannot pay for', () => {
+  it('refuses invalid rosters and queues an unaffordable legal recruitment', () => {
     const economy = economyOf(testSettlement({ stocks: [100, 0, 0, 100] }));
 
     expect(applyEconomyCommand(economy, recruit('rome', 0, 'libyan-spear', 24, 1))).toBe(false);
     expect(applyEconomyCommand(economy, recruit('rome', 0, 'no-such-type', 24, 1))).toBe(false);
 
     const poor = economyOf(testSettlement({ stocks: [0, 0, 0, 0] }));
-    expect(applyEconomyCommand(poor, recruit('rome', 0, 'hastati', 24, 1))).toBe(false);
+    expect(applyEconomyCommand(poor, recruit('rome', 0, 'hastati', 24, 1))).toBe(true);
+    expect(poor.pending).toMatchObject([{ kind: 1, reason: 2 }]);
+    expect(poor.squads).toEqual([]);
   });
 
   it('raises every real size for its exact proportional cost, with the capacity it was bought as', () => {

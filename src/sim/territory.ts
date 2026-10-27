@@ -49,7 +49,7 @@
  * A Squad winters under cover when it is in **quarters**:
  *
  * - inside one of its Faction's settlements — garrisoned in it, or standing on
- *   its centre; or
+ *   within its inhabited core; or
  * - holding position within `CAMP_RADIUS` of a settlement its Faction holds that
  *   has a standing **Castrum** (`content/buildings.ts`).
  *
@@ -77,6 +77,8 @@ import { factionOf, type Faction, type FactionCode } from './faction.ts';
 import { MAP_HEIGHT, MAP_WIDTH, TILE_COUNT, tileIndex, type Site } from './map.ts';
 import type { Season, SeasonHooks } from './season.ts';
 import { FIELD } from './squad.ts';
+import { coreOf, squadGround } from './settlement-space.ts';
+import { containsTile } from '../content/settlement-layout.ts';
 
 /**
  * How far from a settlement its Faction's writ reaches, in tiles, Chebyshev.
@@ -398,14 +400,19 @@ function hasCamp(settlement: Settlement): boolean {
   return settlement.works.some((work) => work.remaining === 0 && work.building === CAMP);
 }
 
-/** Whether a Squad stands inside one of its Faction's settlements: on its centre, or garrisoned. */
+/** A whole field body inside an owned inhabited core, or a protected wall defender. */
 function insideSettlement(economy: Economy, squad: Squad): boolean {
   if (squad.garrison !== FIELD) return true;
-
-  return economy.settlements.some(
-    (settlement) =>
-      settlement.owner === squad.owner && settlement.x === squad.x && settlement.y === squad.y,
-  );
+  const body = squadGround(squad);
+  return economy.settlements.some((settlement) => {
+    if (settlement.owner !== squad.owner) return false;
+    const core = coreOf(economy, settlement);
+    const inset = settlement.id < 2 ? 1 : 0;
+    const shelter = { x: core.x + inset, y: core.y + inset,
+      width: core.width - inset * 2, height: core.height - inset * 2 };
+    return containsTile(shelter, body.x, body.y) &&
+      containsTile(shelter, body.x + body.width - 1, body.y + body.height - 1);
+  });
 }
 
 /** Whether a Squad is within `radius` tiles of a site, counting Chebyshev, as `siege.ts`'s `inReach` does. */

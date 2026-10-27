@@ -52,7 +52,7 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 
 ## What every Command carries
 
-- **`kind`** — one of the twelve Commands in the table below. Nothing else is a
+- **`kind`** — one of the thirteen Commands in the table below. Nothing else is a
   Command.
 - **`faction`** — `"rome"` or `"carthage"`: the Faction that issued the Command. It
   is part of the Command because a log has to be readable without the Players
@@ -77,12 +77,13 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 | `hold`        | `faction`, `squads`                       | Hold position: stand, face the enemy, do not pursue.                                                    |
 | `garrison`    | `faction`, `squads`, `settlement`         | Take up garrison inside a settlement: man its walls instead of the field.                                |
 | `withdraw`    | `faction`, `squads`                       | Break off and fall back. Which ground is behind you is the rules' question, not the Command's.          |
-| `build`       | `faction`, `settlement`, `building`       | Start building `building` in a settlement: a labour allocation plus a timer, not a construction site.   |
+| `build`       | `faction`, `settlement`, `building`       | Request a visible Work in its assigned lot; wait unpaid if space or resources are unavailable. |
 | `recruit`     | `faction`, `settlement`, `squadType`, `men`, `count` | Raise `count` Squads of `squadType`, each of `men` real soldiers, in a settlement.                  |
 | `assault`     | `faction`, `squads`, `settlement`         | Take a settlement by force. Fast, expensive, needs the ram, and Rome's alone (ADR-0008).                |
 | `blockade`    | `faction`, `squads`, `settlement`         | Starve a settlement into surrender. Slow, cheap in lives, breakable by a relieving army (ADR-0008).     |
 | `formation`   | `faction`, `squads`, `formation`          | Set the shape the Squads hold: `line` for frontage, `column` for depth (PLAN §4).                       |
 | `group`       | `faction`, `group`, `squads`              | Bind Squads to a numbered control group, or clear it with an empty list.                                |
+| `cancelPending` | `faction`, `settlement`, `order` | Cancel an owned unpaid construction or recruitment request by its observed order ID. |
 <!-- vocabulary:end -->
 
 ### Ground arrival allocation (#68)
@@ -98,8 +99,9 @@ Separation uses the purchased files/ranks shared with the formation declaration,
 including column depth and a specialist's declared Figure count. Its conservative
 radius in Tiles is `ceil(max(files, ranks) / 6) + 1`; two arrival centres must be
 at least the sum of their radii apart on one axis, regardless of arrival facing.
-This reserves arrivals within this Command only. It introduces no occupancy or
-collision rules: routes may overlap, including through one-Tile fords.
+This reserves arrivals within this Command. Actual formation footprints must also
+fit the terrain and active settlement obstacles. Gates and Breaches admit one
+Squad at a time; river crossings provide room for real marching columns.
 
 Off-map and water clicks refuse the whole ground order with `off-map` or `water`.
 Disconnected Squads receive `unreachable` and claim no slot. An eligible Squad
@@ -163,6 +165,7 @@ code fails the build.
 { "kind": "blockade", "faction": "carthage", "squads": [7], "settlement": 12 }
 { "kind": "formation", "faction": "rome", "squads": [3, 5], "formation": "column" }
 { "kind": "group", "faction": "rome", "group": 2, "squads": [3, 5] }
+{ "kind": "cancelPending", "faction": "rome", "settlement": 5, "order": 1 }
 ```
 <!-- examples:end -->
 
@@ -182,7 +185,7 @@ Two refusals live at different layers, and the difference matters.
 **Malformed** means it is not a Command: the vocabulary refuses it at the seam,
 saying where the value went wrong.
 
-- a `kind` that is not one of the twelve;
+- a `kind` that is not one of the thirteen;
 - a field the vocabulary does not have — `squad` is a typo for `squads`, and a
   Command that silently orders nobody is the worst kind of accepted input;
 - a missing field, a field of the wrong type, a fraction, a negative id, an
@@ -198,7 +201,7 @@ the command at command.squads[1] is not a Squad id: 1.5
 ```
 
 **Illegal** means it is a Command, but not one that Faction may issue now: an
-enemy Squad, a tile in the sea, a building nobody can afford, an Assault by
+enemy Squad, a tile in the sea, a building above the settlement's Tier, an Assault by
 Carthage, a Blockade with nothing to besiege. Only the rules of the tick can answer that,
 because only they can look at the world and say why, so `command.ts` owns the
 first question and nothing of the second.

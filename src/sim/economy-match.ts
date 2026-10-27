@@ -88,12 +88,15 @@ import { eyeOf, SETTLEMENT_VISION, SQUAD_VISION, type Eye } from './fog.ts';
 import { generateMap, type MapGrid, type Site } from './map.ts';
 import { applyMovementCommands, goalOf, march, routeCacheFor } from './movement.ts';
 import { refusalOf, type RouteRefusal } from './route.ts';
+import { pendingOrderCost } from './pending-orders.ts';
+import { workOrdinal } from './settlement-space.ts';
 import { fadeResidue, recordCasualties } from './residue.ts';
 import { facingOf, FIELD, formationOf, isRouting, type Facing } from './squad.ts';
 import {
   attritionSeasons,
   holdsTerritory,
   inCamp,
+  inQuarters,
   territoryOf,
   territoryView,
   type Territory,
@@ -133,6 +136,8 @@ export type VisibleStocks = ResourceAmounts;
 
 /** What a Faction sees of one work: what it is building, and how far along it is. */
 export interface VisibleWork {
+  readonly ordinal?: number;
+  readonly origin?: Faction;
   /** The building's id, so a Controller can name it in a Build Command. */
   readonly building: string;
 
@@ -144,7 +149,19 @@ export interface VisibleWork {
 }
 
 /** What a Faction sees of one settlement it holds: what it is, what it has, where its people are. */
+export interface VisiblePendingOrder {
+  readonly cost?: ResourceAmounts;
+  readonly id: number;
+  readonly kind: 'build' | 'recruit';
+  readonly building: string;
+  readonly squadType: string;
+  readonly men: number;
+  readonly count: number;
+  readonly reason: 'space' | 'resources';
+}
+
 export interface VisibleSettlement {
+  readonly pending?: readonly VisiblePendingOrder[];
   /** Its id, as a Build or Recruit Command names it. */
   readonly id: number;
 
@@ -172,6 +189,12 @@ export interface VisibleSettlement {
 
 /** What a Faction sees of one Squad it keeps: what it is, where it stands and what it costs to keep. */
 export interface VisibleSquad {
+  readonly passage?: {
+    readonly settlement: number;
+    readonly phase: 'approaching' | 'waiting' | 'entering' | 'leaving';
+    readonly remaining: number;
+    readonly reason?: string;
+  };
   /** Its id, as a Command names it. */
   readonly id: number;
 
@@ -292,6 +315,7 @@ export interface VisibleSquad {
    * changed hands with the village it stands in is not Carthage's to winter in.
    */
   readonly inCamp: boolean;
+  readonly inQuarters?: boolean;
 }
 
 /** Everything a Faction may know of the economy: its own, and nothing of the other's. */
@@ -428,7 +452,7 @@ export const observeEconomy: MatchSetup<EconomyWorld, EconomyVisible>['observe']
     treasury: world.economy.treasuries[owner] ?? 0,
     settlements: world.economy.settlements
       .filter((settlement) => settlement.owner === owner)
-      .map((settlement) => visibleSettlement(world.map, settlement)),
+      .map((settlement) => visibleSettlement(world.map, settlement, world.economy)),
     squads: world.economy.squads
       .filter((squad) => squad.owner === owner)
       .map((squad) => visibleSquad(world.economy, territory, squad)),
@@ -440,7 +464,8 @@ export const observeEconomy: MatchSetup<EconomyWorld, EconomyVisible>['observe']
  * Squads that march between them (PLAN §4, B4).
  *
  * Vision is a rule and not a drawing decision, so the radii are `fog.ts`'s and
- * the composition — a settlement sees eight tiles, a Squad four — is here, where
+ * the composition — a settlement watches its centre and core corners with radius
+ * eight, a Squad its own position with radius four — is here, where
  * the settlements and the Squads are both in hand. The page refreshes its fog
  * from exactly this list, which is what makes what a Player sees on the map and
  * what the Faction's Controller is allowed to know one answer rather than two.
@@ -451,7 +476,8 @@ export function eyesOfEconomy(world: EconomyWorld, faction: Faction): readonly E
   return [
     ...world.economy.settlements
       .filter((settlement) => settlement.owner === owner)
-      .map((settlement) => eyeOf(settlement, SETTLEMENT_VISION)),
+      .flatMap((settlement) => [eyeOf(settlement, SETTLEMENT_VISION), ...[-6, 6].flatMap((dx) => [-6, 6].map((dy) =>
+        eyeOf({ x: settlement.x + dx, y: settlement.y + dy }, SETTLEMENT_VISION)))]),
     ...world.economy.squads
       .filter((squad) => squad.owner === owner)
       .map((squad) => eyeOf(squad, SQUAD_VISION)),
@@ -459,7 +485,7 @@ export function eyesOfEconomy(world: EconomyWorld, faction: Faction): readonly E
 }
 
 /** A settlement, as its holder reads it: where it is, and how its people are spent. */
-function visibleSettlement(map: MapGrid, settlement: Settlement): VisibleSettlement {
+function visibleSettlement(map: MapGrid, settlement: Settlement, economy: Economy): VisibleSettlement {
   const allocation = allocate(settlement, landCapacity(map, settlement));
 
   return {
@@ -471,9 +497,18 @@ function visibleSettlement(map: MapGrid, settlement: Settlement): VisibleSettlem
     stocks: namedStock(settlement.stocks),
     land: namedStock(allocation.land),
     works: settlement.works.map((work) => ({
+      ordinal: workOrdinal(settlement, work),
+      origin: (work.origin ?? settlement.origin ?? settlement.owner) === 1 ? 'carthage' : 'rome',
       building: buildingOf(work.building)?.id ?? 'unknown',
       remaining: work.remaining,
       standing: work.remaining === 0,
+    })),
+    pending: (economy.pending ?? []).filter((order) => order.settlement === settlement.id).map((order) => ({
+      id: order.id, kind: order.kind === 0 ? 'build' : 'recruit',
+      cost: pendingOrderCost(order),
+      building: order.kind === 0 ? buildingOf(order.content)?.id ?? 'unknown' : '',
+      squadType: order.kind === 1 ? squadTypeOf(order.content)?.id ?? 'unknown' : '',
+      men: order.men, count: order.count, reason: order.reason === 2 ? 'resources' : 'space',
     })),
   };
 }
@@ -484,6 +519,20 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
 
   return {
     id: squad.id,
+    ...(squad.garrisonJourney === undefined ? {} : { passage: {
+      settlement: squad.garrisonJourney.settlement,
+      phase: (['approaching', 'waiting', 'entering', 'leaving'] as const)[squad.garrisonJourney.phase] ?? 'waiting',
+      remaining: squad.garrisonJourney.remaining,
+      ...(squad.garrisonJourney.reason === 1 ? { reason: 'access-busy' as const } :
+        squad.garrisonJourney.reason === 2 ? { reason: 'exit-blocked' as const } : {}),
+    } }),
+    ...(squad.garrisonJourney !== undefined || squad.access === undefined ? {} : { passage: {
+      settlement: squad.access.settlement,
+      phase: squad.access.active === 1 ? 'entering' as const : 'waiting' as const,
+      remaining: 0,
+      ...(squad.access.reason === 1 ? { reason: 'access-busy' as const } :
+        squad.access.reason === 2 ? { reason: 'exit-blocked' as const } : {}),
+    } }),
     type: type?.id ?? 'unknown',
     x: squad.x,
     y: squad.y,
@@ -506,6 +555,7 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
     home: squad.home,
     inTerritory: holdsTerritory(territory, squad.owner, squad),
     inCamp: inCamp(economy, squad),
+    inQuarters: inQuarters(economy, squad),
   };
 }
 

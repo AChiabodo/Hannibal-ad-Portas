@@ -9,6 +9,7 @@
  * on this leaf and never on another behaviour.
  */
 
+import type { ObservedSettlement } from '../content/settlement-appearance.ts';
 import type { Site } from './site.ts';
 
 /** How long a Squad sighting stays planning evidence, in seconds (D4). */
@@ -31,4 +32,34 @@ export interface Contact extends Site {
 export function planningContacts(contacts: readonly Contact[], tick: number, ticksPerSecond: number): Contact[] {
   return contacts.filter((contact) => tick >= contact.seen && tick - contact.seen <
     ticksPerSecond * (contact.kind === 'squad' ? SQUAD_CONTACT_SECONDS : SETTLEMENT_CONTACT_SECONDS));
+}
+
+
+/** Merge centre sightings with permitted architectural sightings, never live map identities. */
+export function permittedContacts(visible: {
+  readonly contacts?: readonly Contact[];
+  readonly appearances?: readonly ObservedSettlement[];
+  readonly settlements?: readonly { readonly id?: number }[];
+}): readonly Contact[] {
+  const owned = new Set((visible.settlements ?? []).map((site) => site.id));
+  const contacts = new Map((visible.contacts ?? []).filter((contact) => contact.kind === 'squad' || !owned.has(contact.id))
+    .map((contact) => [`${contact.kind === 'squad' ? 'unit' : 'site'}:${contact.id}`, contact]));
+  for (const appearance of visible.appearances ?? []) {
+    if (owned.has(appearance.id)) continue;
+    const features = appearance.tiles.filter((tile) => tile.work !== undefined || tile.structure !== undefined || tile.tier !== undefined || tile.ram !== undefined);
+    if (features.length === 0) continue;
+    const seen = Math.max(...features.map((tile) => tile.seen));
+    const key = `site:${appearance.id}`;
+    const existing = contacts.get(key);
+    if (existing !== undefined && existing.seen >= seen) continue;
+    contacts.set(key, { id: appearance.id, kind: appearance.kind, x: appearance.x, y: appearance.y, seen, type: null });
+  }
+  return [...contacts.values()];
+}
+
+/** Latest observed sentry presence; an unread wall does not mean an empty one. */
+export function recordedGarrison(appearance: ObservedSettlement | undefined): boolean | undefined {
+  const sightings = appearance?.tiles.filter((tile) => tile.structure !== undefined && tile.garrison !== undefined)
+    .sort((one, other) => other.seen - one.seen);
+  return sightings?.[0]?.garrison;
 }

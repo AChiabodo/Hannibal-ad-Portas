@@ -54,6 +54,7 @@
  * makes that a compile error); the game's omniscient mode watches, and nothing
  * else.
  */
+import type { SettlementMemory } from './settlement-knowledge.ts';
 import type { Faction } from './faction.ts';
 import {
   isTerrain,
@@ -167,6 +168,8 @@ export interface FogView {
  * type per Match, and it is the one the Observation carries.
  */
 export interface Fog extends FogView {
+  /** Private authoritative numeric snapshots; public appearance DTOs decode these. */
+  settlements?: SettlementMemory[];
   readonly terrain: Uint8Array;
   readonly visible: Uint8Array;
   readonly contacts: LastKnownContact[];
@@ -213,7 +216,7 @@ export function createFog(): Fog {
   const terrain = new Uint8Array(TILE_COUNT);
   terrain.fill(UNSEEN);
 
-  return { terrain, visible: new Uint8Array(TILE_COUNT), contacts: [] };
+  return { terrain, visible: new Uint8Array(TILE_COUNT), contacts: [], settlements: [] };
 }
 
 /**

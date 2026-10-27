@@ -30,6 +30,7 @@
  * hand on the Match through the object it handed over.
  */
 import { FACTIONS, isFaction, type Faction } from './faction.ts';
+import type { Formation } from '../content/formation.ts';
 
 /** The field every Command carries: the Faction that issued it. */
 const FACTION_FIELD = 'faction';
@@ -70,7 +71,7 @@ export class CommandValidationError extends Error {
  * C1 owns what each shape means for movement and combat. The vocabulary names
  * only that the choice exists, because a Controller has to be able to make it.
  */
-export type Formation = 'line' | 'column';
+export type { Formation } from '../content/formation.ts';
 
 /**
  * The part every Command shares: the Faction it is addressed to.
@@ -157,6 +158,13 @@ export interface RecruitCommand extends CommandBase {
   readonly count: number;
 }
 
+/** Cancel an owned construction/recruitment request which has not yet started. */
+export interface CancelPendingCommand extends CommandBase {
+  readonly kind: 'cancelPending';
+  readonly settlement: number;
+  readonly order: number;
+}
+
 /** Take a settlement by force: the fast, expensive path of a Siege, and Rome's alone (ADR-0008). */
 export interface AssaultCommand extends CommandBase {
   readonly kind: 'assault';
@@ -217,7 +225,8 @@ export type Command =
   | AssaultCommand
   | BlockadeCommand
   | FormationCommand
-  | GroupCommand;
+  | GroupCommand
+  | CancelPendingCommand;
 
 /** The `kind` of any Command in the vocabulary. */
 export type CommandKind = Command['kind'];
@@ -243,6 +252,7 @@ export const COMMAND_KINDS: readonly CommandKind[] = [
   'blockade',
   'formation',
   'group',
+  'cancelPending',
 ];
 
 /** Every formation a Squad can hold: frontage and depth, in the order `docs/COMMANDS.md` lists them. */
@@ -396,6 +406,7 @@ const READERS: {
   blockade: readBlockade,
   formation: readFormation,
   group: readGroup,
+  cancelPending: readCancelPending,
 };
 
 /** The fields a march carries: a Move and an Attack-move differ only in their name. */
@@ -488,6 +499,17 @@ function readBuild(value: Candidate, path: string): BuildCommand {
     settlement: requireId(value.settlement, `${path}.settlement`, 'settlement'),
     building: requireContentId(value.building, `${path}.building`, 'building'),
   };
+}
+
+function readCancelPending(value: Candidate, path: string): CancelPendingCommand {
+  requireFields(value, path, 'cancelPending', ['kind', FACTION_FIELD, 'settlement', 'order']);
+  return { kind: 'cancelPending', faction: requireFaction(value.faction, `${path}.faction`),
+    settlement: requireId(value.settlement, `${path}.settlement`, 'settlement'),
+    order: requireId(value.order, `${path}.order`, 'pending order') };
+}
+
+export function cancelPending(faction: Faction, settlement: number, order: number): CancelPendingCommand {
+  return readCancelPending({ kind: 'cancelPending', faction, settlement, order }, ROOT);
 }
 
 function readRecruit(value: Candidate, path: string): RecruitCommand {

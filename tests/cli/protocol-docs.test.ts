@@ -190,11 +190,11 @@ describe('the protocol documentation', () => {
       .split('\n')
       .map((line) => JSON.parse(line) as string);
 
-    expect(rows).toEqual(['96x0', '4x0,90x1,2x0']);
-    expect(gridOf(Array.from({ length: MAP_HEIGHT }, () => rows[0] ?? '96x0'))).toHaveLength(
+    expect(rows).toEqual(['160x0', '4x0,154x1,2x0']);
+    expect(gridOf(Array.from({ length: MAP_HEIGHT }, () => rows[0] ?? '160x0'))).toHaveLength(
       MAP_WIDTH * MAP_HEIGHT,
     );
-    expect(gridOf([...Array.from({ length: MAP_HEIGHT - 1 }, () => '96x0'), rows[1] ?? ''])).toHaveLength(
+    expect(gridOf([...Array.from({ length: MAP_HEIGHT - 1 }, () => '160x0'), rows[1] ?? ''])).toHaveLength(
       MAP_WIDTH * MAP_HEIGHT,
     );
   });
