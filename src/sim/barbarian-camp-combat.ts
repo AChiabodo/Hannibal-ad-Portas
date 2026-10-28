@@ -6,10 +6,11 @@ import { eyesOfEconomy } from './economy-match.ts';
 import { factionCode } from './faction.ts';
 import { eyeCovers } from './fog.ts';
 import { MAP_WIDTH } from './map.ts';
-import { orderedSquads, orderSquadTo, routeCacheFor } from './movement.ts';
+import { orderedSquads } from './movement.ts';
 import type { SiegeWorld } from './siege.ts';
 import { NO_REFUSAL, refusalCode } from './route.ts';
 import { FIELD, isRouting } from './squad.ts';
+import { approachAttackTarget, clearWorkLine, workAttackDistance } from './work-combat.ts';
 
 export interface BarbarianCampState { hp: number }
 export interface CampAttackOrder { readonly squad: number; readonly target: number; readonly owner: number }
@@ -42,9 +43,17 @@ export function orderCampAttacks(world: SiegeWorld, commands: readonly Command[]
     }
     if (camp.hp <= 0) continue;
     const owner = factionCode(command.faction);
+    const rect = { x: site.x, y: site.y, width: 1, height: 1 };
     for (const squad of orderedSquads(world.economy, owner, command.squads)) {
       if (squad.garrison !== FIELD) continue;
-      orderSquadTo(world.map, squad, site, routeCacheFor(world.map));
+      const reach = squadTypeOf(squad.type)?.arm === 'archers' ? 4 : 2;
+      if (workAttackDistance(squad.x, squad.y, rect) > reach || !clearWorkLine(world, owner, squad.x, squad.y, rect)) {
+        approachAttackTarget(world, squad, owner, rect);
+      } else {
+        squad.steps = [];
+        squad.wait = 0;
+        squad.refused = NO_REFUSAL;
+      }
       if (squad.refused === NO_REFUSAL) world.campOrders!.push({ squad: squad.id, target: command.target.id, owner });
     }
   }
@@ -74,7 +83,9 @@ export function advanceCampAttacks(world: SiegeWorld, tick: number): void {
     if (engagedWith(world.economy, squad) !== undefined) continue;
     const type = squadTypeOf(squad.type);
     const reach = type?.arm === 'archers' ? 4 : 2;
-    if (Math.max(Math.abs(squad.x - site.x), Math.abs(squad.y - site.y)) > reach || tick % EXCHANGE_TICKS !== 0) continue;
+    const rect = { x: site.x, y: site.y, width: 1, height: 1 };
+    if (workAttackDistance(squad.x, squad.y, rect) > reach ||
+      !clearWorkLine(world, order.owner, squad.x, squad.y, rect) || tick % EXCHANGE_TICKS !== 0) continue;
     camp.hp = Math.max(0, camp.hp - (type?.arm === 'cavalry' ? 2 : 4));
     if (camp.hp === 0) world.economy.treasuries[order.owner] = (world.economy.treasuries[order.owner] ?? 0) + CAMP_REWARD;
   }

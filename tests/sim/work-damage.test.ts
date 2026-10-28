@@ -75,6 +75,23 @@ it('allows an enemy to damage a visible completed work', () => {
   expect(farm.hp).toBeLessThan(farm.maxHp!);
 });
 
+it('fires at a work from a clear ranged position without advancing into melee range', () => {
+  const map = testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] });
+  const economy = createEconomy(map);
+  const settlement = economy.settlements[0]!;
+  settlement.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0 });
+  const rect = workGround(economy, settlement, 'farm', 0)!;
+  const attacker = musterSquad(economy, map, { faction: 'carthage', squadType: 'balearic-slinger', men: 24,
+    x: rect.x + rect.width + 3, y: rect.y });
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs() };
+  refreshSiegeFog(world, 0);
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([attackStructure('carthage', [attacker.id], { kind: 'work', settlement: 0, building: 'farm', ordinal: 0 })]);
+  expect(observeSiege(world, 'carthage').squads.find((squad) => squad.id === attacker.id)?.goal).toBeNull();
+  expect(observeSiege(world, 'rome').settlements[0]!.works[0]!.hp).toBeLessThan(60);
+});
+
 it('approaches a visible work from a reachable side when its western approach is blocked', () => {
   const map = testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] });
   const economy = createEconomy(map);

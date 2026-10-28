@@ -4,10 +4,48 @@ import { createEconomy } from '../../src/sim/economy';
 import { createFogs } from '../../src/sim/fog';
 import { createMatch } from '../../src/sim/match';
 import { musterSquad } from '../../src/sim/movement';
+import { TERRAIN, tileIndex } from '../../src/sim/map';
 import { startCalendar } from '../../src/sim/season';
 import { createSiege, observeSiege, siegeMatchRules, type SiegeWorld } from '../../src/sim/siege';
 import { refreshSiegeFog } from '../../src/sim/siege-fog';
 import { testMap } from './economy-fixtures';
+
+it.each([false, true])('fires on a camp at ranged distance only with a clear line (blocked: %s)', (blocked) => {
+  const map = { ...testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] }),
+    barbarianCamps: [{ x: 60, y: 60, variant: 0 }] };
+  if (blocked) map.terrain[tileIndex(58, 60)] = TERRAIN.river;
+  const economy = createEconomy(map);
+  const slinger = musterSquad(economy, map, { faction: 'carthage', squadType: 'balearic-slinger', men: 24, x: 56, y: 60 });
+  musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 60, y: 64 });
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs(), barbarianCamps: [{ hp: 4 }], campOrders: [] };
+  refreshSiegeFog(world, 0);
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([attackStructure('carthage', [slinger.id], { kind: 'camp', id: 0 })]);
+  const visible = observeSiege(world, 'carthage');
+  expect(visible.barbarianCamps?.[0]?.condition).toBe(blocked ? 'standing' : 'ruin');
+  if (!blocked) expect(visible.squads.find((squad) => squad.id === slinger.id)?.goal).toBeNull();
+  if (blocked) {
+    for (let tick = 0; tick < 100; tick += 1) match.step();
+    expect(observeSiege(world, 'carthage').barbarianCamps?.[0]?.condition).toBe('ruin');
+  }
+});
+
+it('moves a ranged squad into range before it can damage a camp', () => {
+  const map = { ...testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] }),
+    barbarianCamps: [{ x: 60, y: 60, variant: 0 }] };
+  const economy = createEconomy(map);
+  const slinger = musterSquad(economy, map, { faction: 'carthage', squadType: 'balearic-slinger', men: 24, x: 55, y: 60 });
+  musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 60, y: 64 });
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs(), barbarianCamps: [{ hp: 4 }], campOrders: [] };
+  refreshSiegeFog(world, 0);
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([attackStructure('carthage', [slinger.id], { kind: 'camp', id: 0 })]);
+  expect(observeSiege(world, 'carthage').barbarianCamps?.[0]?.condition).toBe('standing');
+  for (let tick = 0; tick < 100; tick += 1) match.step();
+  expect(observeSiege(world, 'carthage').barbarianCamps?.[0]?.condition).toBe('ruin');
+});
 
 it('destroys a visible camp and awards the final attacker once', () => {
   const map = { ...testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] }),

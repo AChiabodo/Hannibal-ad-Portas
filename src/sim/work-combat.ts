@@ -59,7 +59,7 @@ function observed(world: SiegeWorld, owner: number, rect: GroundRect): boolean {
 }
 
 /** Choose an accessible point around the actual work, not one fixed side. */
-function approachWork(world: SiegeWorld, squad: import('./economy.ts').Squad, owner: number, rect: GroundRect): void {
+export function approachAttackTarget(world: SiegeWorld, squad: import('./economy.ts').Squad, owner: number, rect: GroundRect): void {
   const candidates: { x: number; y: number }[] = [];
   for (let y = rect.y - 2; y < rect.y + rect.height + 2; y += 1) {
     for (let x = rect.x - 2; x < rect.x + rect.width + 2; x += 1) {
@@ -103,9 +103,14 @@ export function orderWorkAttacks(world: SiegeWorld, commands: readonly Command[]
     }
     for (const squad of squads) {
       if (squad.garrison !== FIELD) continue;
-      if (workAttackDistance(squad.x, squad.y, rect) > 2 || !clearWorkLine(world, owner, squad.x, squad.y, rect)) {
-        approachWork(world, squad, owner, rect);
+      const reach = squadTypeOf(squad.type)?.arm === 'archers' ? 4 : 2;
+      if (workAttackDistance(squad.x, squad.y, rect) > reach || !clearWorkLine(world, owner, squad.x, squad.y, rect)) {
+        approachAttackTarget(world, squad, owner, rect);
         if (squad.refused !== NO_REFUSAL) continue;
+      } else {
+        squad.steps = [];
+        squad.wait = 0;
+        squad.refused = NO_REFUSAL;
       }
       world.workOrders.push({ squad: squad.id, owner, settlement: site.id, work: index });
     }
