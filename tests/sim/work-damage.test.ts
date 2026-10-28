@@ -13,6 +13,51 @@ import { testMap } from './economy-fixtures';
 import { settlementComposition } from '../../src/art/settlement-composition';
 import { TERRAIN, tileIndex } from '../../src/sim/map';
 
+it('stops an approach with a visible reason when the work leaves sight', () => {
+  const map = testMap({ strongholds: [{ x: 50, y: 50 }, { x: 110, y: 110 }] });
+  const economy = createEconomy(map);
+  const site = economy.settlements[0]!;
+  site.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0 });
+  const rect = workGround(economy, site, 'farm', 0)!;
+  const attacker = musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: rect.x - 25, y: rect.y });
+  const spotter = musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: rect.x - 2, y: rect.y + 4 });
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs() };
+  refreshSiegeFog(world, 0);
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([attackStructure('carthage', [attacker.id], { kind: 'work', settlement: 0, building: 'farm', ordinal: 0 })]);
+  expect(observeSiege(world, 'carthage').squads.find((squad) => squad.id === attacker.id)?.goal).not.toBeNull();
+  match.step([move('carthage', [spotter.id], rect.x - 2, rect.y + 20)]);
+  for (let i = 0; i < 100; i += 1) {
+    const shown = observeSiege(world, 'carthage').squads.find((squad) => squad.id === attacker.id)!;
+    if (shown.refused === 'target-not-visible') break;
+    match.step();
+  }
+  expect(observeSiege(world, 'carthage').squads.find((squad) => squad.id === attacker.id))
+    .toMatchObject({ goal: null, refused: 'target-not-visible' });
+});
+
+it('stops an approach and explains when an observed work starts repairing', () => {
+  const map = testMap({ strongholds: [{ x: 50, y: 50 }, { x: 110, y: 110 }] });
+  const economy = createEconomy(map);
+  const site = economy.settlements[0]!;
+  site.population = 0;
+  site.stocks.fill(20);
+  site.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0, hp: 40 });
+  const rect = workGround(economy, site, 'farm', 0)!;
+  const attacker = musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: rect.x - 16, y: rect.y });
+  musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: rect.x - 2, y: rect.y });
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs() };
+  refreshSiegeFog(world, 0);
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([attackStructure('carthage', [attacker.id], { kind: 'work', settlement: 0, building: 'farm', ordinal: 0 })]);
+  expect(observeSiege(world, 'carthage').squads.find((squad) => squad.id === attacker.id)?.goal).not.toBeNull();
+  match.step([repairWork('rome', 0, 'farm', 0)]);
+  expect(observeSiege(world, 'carthage').squads.find((squad) => squad.id === attacker.id))
+    .toMatchObject({ goal: null, refused: 'target-repairing' });
+});
+
 it('allows an enemy to damage a visible completed work', () => {
   const map = testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] });
   const economy = createEconomy(map);

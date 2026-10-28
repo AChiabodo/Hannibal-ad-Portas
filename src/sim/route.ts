@@ -140,7 +140,7 @@ function requirePace(pace: number): number {
  * allocation can additionally exhaust separated arrival positions near its
  * target: `no-space` is assigned by movement, never by the route search.
  */
-export type RouteRefusal = 'off-map' | 'water' | 'unreachable' | 'no-space' | 'garrison-full' | 'garrison-type' | 'target-not-visible';
+export type RouteRefusal = 'off-map' | 'water' | 'unreachable' | 'no-space' | 'garrison-full' | 'garrison-type' | 'target-not-visible' | 'target-unavailable' | 'target-repairing';
 
 /**
  * The refusals in code order: what state holds, spelled out.
@@ -150,7 +150,7 @@ export type RouteRefusal = 'off-map' | 'water' | 'unreachable' | 'no-space' | 'g
  * the numbers are, the way `RESOURCE_KINDS` is for resources, so the words and
  * the codes cannot drift apart.
  */
-export const ROUTE_REFUSALS: readonly RouteRefusal[] = ['off-map', 'water', 'unreachable', 'no-space', 'garrison-full', 'garrison-type', 'target-not-visible'];
+export const ROUTE_REFUSALS: readonly RouteRefusal[] = ['off-map', 'water', 'unreachable', 'no-space', 'garrison-full', 'garrison-type', 'target-not-visible', 'target-unavailable', 'target-repairing'];
 
 /** The code a Squad holds when its last order was taken: not a refusal at all. */
 export const NO_REFUSAL = -1;

@@ -94,9 +94,11 @@ export function orderWorkAttacks(world: SiegeWorld, commands: readonly Command[]
     const work = site?.works[index];
     const rect = site === undefined ? undefined : workGround(world.economy, site, target.building, target.ordinal);
     const squads = orderedSquads(world.economy, owner, command.squads);
+    const seen = rect !== undefined && observed(world, owner, rect);
     if (site === undefined || site.owner === owner || work === undefined || work.remaining > 0 ||
-      (work.hp ?? WORK_MAX_HP) <= 0 || work.repairTicks !== undefined || rect === undefined || !observed(world, owner, rect)) {
-      for (const squad of squads) squad.refused = refusalCode('target-not-visible');
+      (work.hp ?? WORK_MAX_HP) <= 0 || work.repairTicks !== undefined || !seen) {
+      for (const squad of squads) squad.refused = refusalCode(!seen ? 'target-not-visible' :
+        work?.repairTicks !== undefined ? 'target-repairing' : 'target-unavailable');
       continue;
     }
     for (const squad of squads) {
@@ -118,14 +120,26 @@ export function advanceWorkAttacks(world: SiegeWorld, tick: number): void {
     const rect = site === undefined || work === undefined || building === undefined ? undefined :
       workGround(world.economy, site, building, workOrdinal(site, work));
     const squad = world.economy.squads.find((item) => item.id === order.squad && item.owner === order.owner);
+    const seen = rect !== undefined && observed(world, order.owner, rect);
     if (site === undefined || site.owner === order.owner || work === undefined || work.remaining > 0 ||
       (work.hp ?? WORK_MAX_HP) <= 0 || work.repairTicks !== undefined || rect === undefined || squad === undefined || squad.strength <= 0 ||
-      squad.garrison !== FIELD || isRouting(squad) || !observed(world, order.owner, rect)) return false;
+      squad.garrison !== FIELD || isRouting(squad) || !seen) {
+      if (squad !== undefined && squad.garrison === FIELD && !isRouting(squad)) {
+        squad.steps = [];
+        squad.wait = 0;
+        squad.refused = refusalCode(!seen ? 'target-not-visible' :
+          work?.repairTicks !== undefined ? 'target-repairing' : 'target-unavailable');
+      }
+      return false;
+    }
     if (engagedWith(world.economy, squad) !== undefined || tick % EXCHANGE_TICKS !== 0) return true;
     const type = squadTypeOf(squad.type);
     const reach = type?.arm === 'archers' ? 4 : 2;
     if (workAttackDistance(squad.x, squad.y, rect) > reach || !clearWorkLine(world, order.owner, squad.x, squad.y, rect)) return true;
     damageWork(work, type?.arm === 'cavalry' ? 2 : 4);
-    return (work.hp ?? WORK_MAX_HP) > 0;
+    if ((work.hp ?? WORK_MAX_HP) > 0) return true;
+    squad.steps = [];
+    squad.wait = 0;
+    return false;
   });
 }
