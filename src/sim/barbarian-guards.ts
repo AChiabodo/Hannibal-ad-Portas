@@ -84,7 +84,13 @@ export function advanceCampGuards(world: SiegeWorld, tick: number): void {
         continue;
       }
       if (guard.steps.length === 0 && engagedWith(world.economy, guard) === undefined && tick % 120 === 0) {
-        const direction = (guard.id + Math.floor(tick / 120)) % 4;
+        // Keep a heading for several legs, then pick a reproducible new one.
+        // Cycling the four directions every leg traps survivors in a 3-tile square.
+        let heading = (Math.floor(tick / 480) + Math.imul(guard.id, 0x9e3779b9)) | 0;
+        heading ^= heading >>> 16;
+        heading = Math.imul(heading, 0x7feb352d);
+        heading ^= heading >>> 15;
+        const direction = (heading >>> 0) % 4;
         const x = Math.max(0, Math.min(MAP_WIDTH - 1, guard.x + (direction === 0 ? 3 : direction === 2 ? -3 : 0)));
         const y = Math.max(0, Math.min(MAP_HEIGHT - 1, guard.y + (direction === 1 ? 3 : direction === 3 ? -3 : 0)));
         orderSquadTo(world.map, guard, { x, y }, routes);
