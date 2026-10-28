@@ -86,7 +86,7 @@ const TERRAIN_LABEL_WIDTH = Math.max(
 const TERRAIN_X = PLATE_PADDING + TERRAIN_LABEL_WIDTH + TERRAIN_LABEL_GAP;
 
 /** The separation section's own arithmetic: three tiles of ground a side, and a row per Faction. */
-const SEPARATION_CELL = SEPARATION_SIZE + 3;
+const SEPARATION_CELL = SEPARATION_SIZE + 1;
 const SEPARATION_CAPTION_HEIGHT = LINE_HEIGHT + 3;
 const SEPARATION_LABEL_WIDTH = Math.max(...SEPARATION_FACTIONS.map((faction) => measureText(faction)));
 const SEPARATION_X = PLATE_PADDING + SEPARATION_LABEL_WIDTH + TERRAIN_LABEL_GAP;
