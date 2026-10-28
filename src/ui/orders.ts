@@ -239,7 +239,7 @@ export function squadOrders(
       costs: [], subject: null, note: null, shortcut: null,
       target: 'enemy', targetHint: translate('target.enemy'),
       ...(open
-        ? enemyTargets(visible).length === 0 && !('barbarianCamps' in visible &&
+        ? enemyTargets(visible).length === 0 && visibleWorkTargets(visible).length === 0 && !('barbarianCamps' in visible &&
             visible.barbarianCamps?.some((camp) => camp.memory === 'seen' && camp.condition === 'standing') === true)
           ? blocked(translate('reason.noEnemy'))
           : { enabled: true, reason: null }
@@ -514,6 +514,23 @@ export function enemyTargets(visible: EconomyVisible | SiegeVisible): readonly E
   if (!isSiege(visible)) return [];
 
   return visible.enemies.map((enemy) => ({ id: enemy.id, x: enemy.x, y: enemy.y, type: enemy.type }));
+}
+
+/** Visible cells belonging to hostile, completed and attackable works. */
+export function visibleWorkTargets(visible: EconomyVisible | SiegeVisible): readonly {
+  readonly settlement: number; readonly building: string; readonly ordinal: number; readonly x: number; readonly y: number;
+}[] {
+  if (!isSiege(visible)) return [];
+  const own = new Set(visible.settlements.map((site) => site.id));
+  return (visible.appearances ?? []).flatMap((site) => {
+    if (own.has(site.id) || site.owner === null) return [];
+    return site.tiles.flatMap((tile) => {
+      const work = tile.work;
+      if (!tile.visible || work === undefined || (work.stage !== 2 && work.stage !== 3)) return [];
+      return [{ settlement: site.id, building: work.building, ordinal: work.ordinal,
+        x: site.x - 12 + tile.cell % 25, y: site.y - 12 + Math.floor(tile.cell / 25) }];
+    });
+  });
 }
 
 /** Whether an enemy walled settlement is *known*: a Stronghold is walled by its kind. */

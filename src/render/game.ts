@@ -113,6 +113,7 @@ import {
   controlGroupViews,
   enemyAt,
   enemyTargets,
+  visibleWorkTargets,
   garrisonReach,
   settlementAt,
   neutralMoveDestination,
@@ -177,6 +178,7 @@ type OrderPoint =
   | { readonly kind: 'ground'; readonly x: number; readonly y: number }
   | { readonly kind: 'enemy'; readonly squad: number }
   | { readonly kind: 'camp'; readonly camp: number }
+  | { readonly kind: 'work'; readonly settlement: number; readonly building: string; readonly ordinal: number }
   | { readonly kind: 'settlement'; readonly settlement: number };
 
 /** A Squad, as the page reports it: what the Observation says, and where it is drawn. */
@@ -1835,7 +1837,10 @@ export function createGame(options: GameOptions): Game {
       if (enemy !== null) return submitOrder(offer, { kind: 'enemy', squad: enemy.id });
       const camp = visible().barbarianCamps?.find((site) => site.memory === 'seen' && site.condition === 'standing' &&
         tile.x >= site.x && tile.x < site.x + 2 && tile.y >= site.y && tile.y < site.y + 2);
-      return camp === undefined ? false : submitOrder(offer, { kind: 'camp', camp: camp.id });
+      if (camp !== undefined) return submitOrder(offer, { kind: 'camp', camp: camp.id });
+      const work = visibleWorkTargets(visible()).find((candidate) => candidate.x === tile.x && candidate.y === tile.y);
+      return work === undefined ? false : submitOrder(offer, { kind: 'work', settlement: work.settlement,
+        building: work.building, ordinal: work.ordinal });
     }
     if (offer.target === 'settlement') {
       // The structure a Player can see is the target, by the rectangle it is drawn
@@ -1927,7 +1932,9 @@ export function createGame(options: GameOptions): Game {
         return point?.kind === 'ground' ? attackMove(faction, squads, point.x, point.y) : null;
       case 'attack':
         return point?.kind === 'enemy' ? attack(faction, squads, point.squad) :
-          point?.kind === 'camp' ? attackStructure(faction, squads, { kind: 'camp', id: point.camp }) : null;
+          point?.kind === 'camp' ? attackStructure(faction, squads, { kind: 'camp', id: point.camp }) :
+            point?.kind === 'work' ? attackStructure(faction, squads, { kind: 'work', settlement: point.settlement,
+              building: point.building, ordinal: point.ordinal }) : null;
       case 'hold':
         return hold(faction, squads);
       case 'withdraw':
