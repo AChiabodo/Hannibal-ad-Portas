@@ -143,7 +143,7 @@ export interface VisibleWork {
   readonly maxHp?: number;
   readonly repairing?: boolean;
   readonly repairRemaining?: number;
-  readonly repairWaiting?: 'workers' | 'resources';
+  readonly repairWaiting?: 'workers' | 'resources' | 'siege';
   readonly ordinal?: number;
   readonly origin?: Faction;
   /** The building's id, so a Controller can name it in a Build Command. */

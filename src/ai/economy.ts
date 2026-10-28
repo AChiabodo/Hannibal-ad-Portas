@@ -55,7 +55,7 @@ interface Settlement {
   readonly pending?: readonly { readonly kind: 'build' | 'recruit'; readonly building?: string | null; readonly squadType?: string | null }[];
   readonly works: readonly { readonly building: string; readonly standing: boolean; readonly remaining: number;
     readonly ordinal?: number; readonly hp?: number; readonly maxHp?: number; readonly repairing?: boolean;
-    readonly repairWaiting?: 'workers' | 'resources' }[];
+    readonly repairWaiting?: 'workers' | 'resources' | 'siege' }[];
 }
 
 /** Only owned economic facts, plus the fronts the Faction can already observe. */

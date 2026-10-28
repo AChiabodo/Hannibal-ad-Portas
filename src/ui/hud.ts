@@ -1256,8 +1256,8 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement,
       const cost = building === undefined ? null : workRepairCost(building, work.hp ?? 0);
       const costText = cost === null ? '' : RESOURCE_KINDS.map((kind) => `${resourceLabel(kind)} ${amountOf(cost, kind)}`).join(', ');
       const ordinal = work.ordinal ?? 0;
-      const requested = work.repairWaiting === 'resources';
-      const suffix = requested ? translate(front?.siege !== null ? 'settlement.repairSiege' : 'pending.resources') :
+      const requested = work.repairWaiting === 'resources' || work.repairWaiting === 'siege';
+      const suffix = requested ? translate(work.repairWaiting === 'siege' ? 'settlement.repairSiege' : 'pending.resources') :
         work.repairing ? message('settlement.workRepairProgress', { seconds: Math.ceil((work.repairRemaining ?? 0) / TICK_HZ) }) +
         (work.repairWaiting === undefined ? '' : ` - ${translate('settlement.repairWorkers')}`) :
         front?.siege !== null ? translate('settlement.repairSiege') : costText;

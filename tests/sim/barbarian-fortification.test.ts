@@ -9,6 +9,33 @@ import { musterSquad } from '../../src/sim/movement';
 import { createSiege, observeSiege, siegeMatchRulesForDifficulty } from '../../src/sim/siege';
 import { testMap } from './economy-fixtures';
 
+it('reports a queued work repair as waiting for the assault to end', () => {
+  const rules = siegeMatchRulesForDifficulty('imperator');
+  const initial = rules.createWorld(4);
+  const map = { ...testMap({ strongholds: [{ x: 40, y: 40 }, { x: 110, y: 110 }], settlements: [] }),
+    barbarianCamps: [{ x: 55, y: 40, variant: 0 }] };
+  const economy = createEconomy(map);
+  const site = economy.settlements[0]!;
+  site.stocks.fill(0);
+  site.population = 0;
+  site.works.push({ building: buildingCode('granary')!, ordinal: 0, remaining: 0, hp: 40 });
+  const world = { ...initial, map, economy, siege: createSiege(map, economy), fog: createFogs(),
+    barbarianCamps: [{ hp: 60 }], campOrders: [] };
+  createCampGuards(world);
+  const match = createMatch({ seed: 4, rules: { ...rules, createWorld: () => world } });
+  match.step([repairWork('rome', 0, 'granary', 0)]);
+  expect(observeSiege(world, 'rome').settlements[0]?.works[0]?.repairWaiting).toBe('resources');
+  for (let tick = 0; tick < 950 && observeSiege(world, 'rome').fronts[0]?.siege !== 'assault'; tick += 1) match.step();
+  expect(observeSiege(world, 'rome').fronts[0]?.siege).toBe('assault');
+  site.stocks.fill(100);
+  match.step();
+  expect(observeSiege(world, 'rome').settlements[0]?.works[0]).toMatchObject({ repairing: false, repairWaiting: 'siege' });
+  for (const squad of economy.squads) if (squad.owner === 2) squad.strength = 0;
+  match.step();
+  match.step();
+  expect(observeSiege(world, 'rome').settlements[0]?.works[0]).toMatchObject({ repairing: true });
+});
+
 it('reports an active barbarian assault, damages walls and refuses new repairs until the raiders retreat', () => {
   const rules = siegeMatchRulesForDifficulty('imperator');
   const initial = rules.createWorld(4);

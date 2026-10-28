@@ -800,6 +800,12 @@ export const observeSiege: MatchSetup<SiegeWorld, SiegeVisible>['observe'] = (wo
 
   return {
     ...seen,
+    settlements: seen.settlements.map((settlement) => {
+      const front = frontAt(world.siege, settlement.id);
+      if (front === undefined || !hasActiveSiege(front)) return settlement;
+      return { ...settlement, works: settlement.works.map((work) => work.repairWaiting === 'resources' ?
+        { ...work, repairWaiting: 'siege' as const } : work) };
+    }),
     barbarianCamps: (world.fog[faction].barbarianCamps ?? []).map((camp) => ({ id: camp.id, x: camp.x, y: camp.y,
       variant: camp.variant, condition: camp.condition === 0 ? 'standing' as const : 'ruin' as const,
       memory: world.fog[faction].visible[camp.y * MAP_WIDTH + camp.x] === 1 ? 'seen' as const : 'remembered' as const })),
