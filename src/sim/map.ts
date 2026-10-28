@@ -257,7 +257,7 @@ export function generateMap(seed: number): MapGrid {
   growPatches(terrain, rng, new Uint32Array(TILE_COUNT));
   const strongholds = chooseStrongholds(terrain, rng);
   const halves = halfTiles(strongholds);
-  const settlements = chooseSettlements(terrain, rng, strongholds, halves);
+  const settlements = chooseSettlements(terrain, rng, strongholds, halves, seed);
   const reservations = siteReservations([...strongholds, ...settlements]);
   const rivers = carveRivers(terrain, rng, reservations.grounds);
   plantFords(terrain, rng, rivers);
@@ -780,9 +780,13 @@ function chooseSettlements(
   rng: Rng,
   strongholds: readonly [Site, Site],
   halves: Uint8Array,
+  seed: number,
 ): Site[] {
   const [rome, carthage] = strongholds;
   const count = MIN_SETTLEMENTS + rng.nextBelow(MAX_SETTLEMENTS - MIN_SETTLEMENTS + 1);
+  // An odd number must not always give Rome the extra opportunity. A separate
+  // seeded stream keeps the opening pair and all earlier draws unchanged.
+  const extraHalf = makeRng((seed ^ 0x761ab291) >>> 0).nextBelow(2) as Half;
   const settlements: Site[] = [];
   const blocked = new Uint8Array(TILE_COUNT);
 
@@ -790,7 +794,7 @@ function chooseSettlements(
   blockAround(blocked, carthage.x, carthage.y);
 
   for (let placed = 0; placed < count; placed += 1) {
-    const half: Half = placed % 2 === 0 ? 0 : 1;
+    const half: Half = count % 2 === 1 && placed === count - 1 ? extraHalf : placed % 2 === 0 ? 0 : 1;
     const candidates: number[] = [];
 
     for (let y = STRONGHOLD_INSET; y < MAP_HEIGHT - STRONGHOLD_INSET; y += 1) {
