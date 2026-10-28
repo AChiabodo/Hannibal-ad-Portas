@@ -10,7 +10,7 @@ import { canOccupy, coreOf, occupiedGround, squadGround, workGround, workOrdinal
 import type { Squad } from './economy.ts';
 import { clearWorkLine, damageWork, workAttackDistance } from './work-combat.ts';
 import { damageFortification, defendAgainstBarbarian, siegePosition, STRUCTURE, type SiegeWorld } from './siege.ts';
-import { outsideCore, perimeterDistance } from './settlement-siege-geometry.ts';
+import { insideCore, outsideCore, perimeterDistance } from './settlement-siege-geometry.ts';
 
 /** Not a player Faction and never a valid Command issuer. */
 export const BARBARIAN_OWNER = 2;
@@ -53,7 +53,7 @@ export function advanceCampGuards(world: SiegeWorld, tick: number): void {
     const site = world.economy.settlements[front.settlement];
     const active = site !== undefined && world.economy.squads.some((squad) => squad.owner === BARBARIAN_OWNER &&
       squad.barbarianRaidTarget === site.id && tick < (squad.barbarianRaidUntil ?? 0) && !isRouting(squad) &&
-      squad.strength > 0 && outsideCore(world.economy, site, squad) && perimeterDistance(world.economy, site, squad) <= 2);
+      squad.strength > 0 && perimeterDistance(world.economy, site, squad) <= 2);
     if (!active) delete front.barbarianAssault;
   }
   if (tick > 0 && tick % REINFORCEMENT_TICKS === 0) {
@@ -117,6 +117,10 @@ export function advanceCampGuards(world: SiegeWorld, tick: number): void {
       const front = world.siege.fronts[settlement.id];
       const fortified = front !== undefined && front.structures.length > 0 &&
         front.structures.every((structure) => structure.hp > 0);
+      if (front?.barbarianAssault === 1 && insideCore(world.economy, settlement, guard)) {
+        defendAgainstBarbarian(world, settlement.id, guard, tick);
+        if (guard.strength <= 0 || isRouting(guard)) continue;
+      }
       const works = settlement.works.flatMap((work) => {
         const name = buildingOf(work.building)?.id;
         if (name === undefined || work.remaining > 0 || work.repairTicks !== undefined || (work.hp ?? WORK_MAX_HP) <= 0) return [];

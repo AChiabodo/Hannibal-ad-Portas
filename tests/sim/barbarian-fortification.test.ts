@@ -68,3 +68,27 @@ it('lets the garrison inflict casualties on barbarians attacking the walls', () 
   }
   expect(sawCasualties).toBe(true);
 });
+
+it('keeps an assault active and fights the garrison when raiders enter through a breach', () => {
+  const rules = siegeMatchRulesForDifficulty('imperator');
+  const initial = rules.createWorld(4);
+  const map = { ...testMap({ strongholds: [{ x: 40, y: 40 }, { x: 110, y: 110 }], settlements: [] }),
+    barbarianCamps: [{ x: 55, y: 40, variant: 0 }] };
+  const economy = createEconomy(map);
+  const defender = musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', x: 40, y: 40 });
+  defender.garrison = 0;
+  const world = { ...initial, map, economy, siege: createSiege(map, economy), fog: createFogs(),
+    barbarianCamps: [{ hp: 60 }], campOrders: [] };
+  createCampGuards(world);
+  const guard = world.economy.squads.find((squad) => squad.owner === 2)!;
+  guard.x = 41; guard.y = 40;
+  guard.barbarianRaidTarget = 0; guard.barbarianRaidUntil = 1000;
+  const front = world.siege.fronts[0]!;
+  front.structures.find((piece) => piece.kind === 1)!.hp = 0;
+  front.barbarianAssault = 1;
+  const match = createMatch({ seed: 4, rules: { ...rules, createWorld: () => world } });
+  for (let tick = 0; tick < 21; tick += 1) match.step();
+  expect(observeSiege(world, 'rome').fronts.find((value) => value.settlement === 0)?.siege).toBe('assault');
+  const visible = observeSiege(world, 'rome');
+  expect(visible.enemies.find((enemy) => enemy.neutral)?.appearance?.men).toBeLessThan(24);
+});

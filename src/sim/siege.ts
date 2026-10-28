@@ -334,7 +334,11 @@ export function hasActiveSiege(front: Front): boolean {
 
 /** Apply the ordinary wall defence to a barbarian attacker when defenders man it. */
 export function defendAgainstBarbarian(world: SiegeWorld, settlement: number, guard: Squad, tick: number): void {
-  if (garrisonOf(world.economy, settlement).length > 0) punish(world, [guard], tick);
+  if (garrisonOf(world.economy, settlement).length === 0) return;
+  const site = world.economy.settlements[settlement];
+  const front = world.siege.fronts[settlement];
+  if (site !== undefined && front !== undefined && insideCore(world.economy, site, guard)) storm(world, front, [guard], tick);
+  else punish(world, [guard], tick);
 }
 
 /** Everything a Match's Sieges own: one front per settlement, and which are Strongholds. */
