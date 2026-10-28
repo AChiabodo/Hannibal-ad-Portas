@@ -59,6 +59,7 @@ export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squ
     const waiting = squad.access;
     if (waiting === undefined || waiting.active === 1) continue;
     const leader = economy.squads.find((other) => other.id !== squad.id && other.access !== undefined && same(waiting, other.access) &&
+      (waiting.settlement !== -1 || other.owner === squad.owner) &&
       (other.access.active === 1 || other.access.ticket < waiting.ticket));
     if (waiting.yielding !== 0) {
       if (squad.steps.length === 0) {
@@ -74,7 +75,9 @@ export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squ
     if (!lane.some((rect) => intersects(rect, squadGround(squad)))) continue;
     const access = physicalAccesses(map, squad.owner).find((at) => at.settlement === waiting.settlement && at.passage === waiting.passage);
     if (access === undefined) continue;
-    const shifts = [-4, 4, -8, 8, -12, 12].flatMap((offset) => [
+    const shifts = [-4, 4, -8, 8, -12, 12].flatMap((offset) => access.settlement === -1 ? [
+      { x: offset, y: 0 }, { x: 0, y: offset },
+    ] : [
       { x: access.rect.width === 3 ? offset : 0, y: access.rect.height === 3 ? offset : 0 },
       { x: access.rect.height === 3 ? offset : 0, y: access.rect.width === 3 ? offset : 0 },
     ]);
@@ -94,8 +97,10 @@ export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squ
 /** A waiting body stays where it is, exposed if fielded, until its lane and next space are free. */
 export function trafficStep(economy: Economy, map: MapGrid, squad: Squad, x: number, y: number, formation: number, facing: number): boolean {
   const access = squad.access;
+  const rect = squadGround(squad, x, y, formation, facing);
   if (access !== undefined) {
     const older = economy.squads.some((other) => other.id !== squad.id && other.access !== undefined && same(access, other.access) &&
+      (access.settlement !== -1 || other.owner === squad.owner) &&
       (other.access.active === 1 || other.access.ticket < access.ticket || (other.access.ticket === access.ticket && other.id < squad.id))) ||
       (access.passage === 0 && economy.squads.some((other) => {
         const journey = other.garrisonJourney;
@@ -109,8 +114,14 @@ export function trafficStep(economy: Economy, map: MapGrid, squad: Squad, x: num
         return true;
       }));
     if (older && access.active === 0 && access.yielding !== 1) { access.reason = 1; return false; }
+    if (access.settlement === -1 && access.active === 0 && access.yielding === 0) {
+      const bridge = physicalAccesses(map, squad.owner).find((at) => at.settlement === -1 && at.passage === access.passage);
+      if (bridge !== undefined && intersects(rect, bridge.rect) && !bridgeExitClear(economy, squad, bridge)) {
+        access.reason = 2;
+        return false;
+      }
+    }
   }
-  const rect = squadGround(squad, x, y, formation, facing);
   const changed = squadGround(squad, squad.x, squad.y, formation, facing);
   const nearby = physicalAccesses(map, squad.owner).some((at) => near(rect, at));
   if (nearby && economy.squads.some((other) => other.id !== squad.id && other.garrison === FIELD &&
@@ -118,6 +129,27 @@ export function trafficStep(economy: Economy, map: MapGrid, squad: Squad, x: num
     if (access !== undefined) access.reason = 2;
     return false;
   }
-  if (access !== undefined) { if (access.yielding === 0) access.active = 1; access.reason = access.yielding === 0 ? 0 : 1; }
+  if (access !== undefined) {
+    const bridge = access.settlement === -1 ? physicalAccesses(map, squad.owner).find((at) => at.settlement === -1 && at.passage === access.passage) : undefined;
+    if (access.yielding === 0 && (access.settlement !== -1 || (bridge !== undefined && intersects(rect, bridge.rect)))) access.active = 1;
+    access.reason = access.yielding === 0 ? 0 : 1;
+  }
+  return true;
+}
+
+/** A stationary friendly body must leave the bridge and its far landing clear. */
+function bridgeExitClear(economy: Economy, squad: Squad, bridge: PhysicalAccess): boolean {
+  let x = squad.x, y = squad.y, entered = false;
+  for (const tile of squad.steps) {
+    const nx = tileX(tile), ny = tileY(tile);
+    const facing = ny < y ? 0 : nx > x ? 1 : ny > y ? 2 : 3;
+    const rect = squadGround(squad, nx, ny, 1, facing);
+    const crossing = intersects(rect, bridge.rect);
+    if (crossing) entered = true;
+    if (entered && economy.squads.some((other) => other.id !== squad.id && other.owner === squad.owner &&
+      other.garrison === FIELD && other.steps.length === 0 && intersects(rect, squadGround(other)))) return false;
+    if (entered && !crossing) return true;
+    x = nx; y = ny;
+  }
   return true;
 }

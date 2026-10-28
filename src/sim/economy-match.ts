@@ -538,7 +538,7 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
       ...(squad.garrisonJourney.reason === 1 ? { reason: 'access-busy' as const } :
         squad.garrisonJourney.reason === 2 ? { reason: 'exit-blocked' as const } : {}),
     } }),
-    ...(squad.garrisonJourney !== undefined || squad.access === undefined ? {} : { passage: {
+    ...(squad.garrisonJourney !== undefined || squad.access === undefined || squad.access.settlement < 0 ? {} : { passage: {
       settlement: squad.access.settlement,
       phase: squad.access.active === 1 ? 'entering' as const : 'waiting' as const,
       remaining: 0,

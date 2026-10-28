@@ -621,6 +621,7 @@ function avoidFieldBodies(economy: Economy, map: MapGrid, squad: Squad): void {
 }
 
 function accessColumn(squad: Squad): boolean {
+  if (squad.access?.settlement === -1) return true;
   const journey = squad.garrisonJourney;
   return journey !== undefined && journey.fromOutside === 1 && (journey.phase === 0 || journey.phase === 2);
 }
