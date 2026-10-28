@@ -182,6 +182,14 @@ export interface FortificationRepairCommand extends CommandBase {
   readonly side: Facing;
 }
 
+/** Order or cancel repair of one owned completed work. */
+export interface WorkRepairCommand extends CommandBase {
+  readonly kind: 'repairWork' | 'cancelWorkRepair';
+  readonly settlement: number;
+  readonly building: string;
+  readonly ordinal: number;
+}
+
 /** Take a settlement by force: the fast, expensive path of a Siege, and Rome's alone (ADR-0008). */
 export interface AssaultCommand extends CommandBase {
   readonly kind: 'assault';
@@ -245,7 +253,8 @@ export type Command =
   | FormationCommand
   | GroupCommand
   | CancelPendingCommand
-  | FortificationRepairCommand;
+  | FortificationRepairCommand
+  | WorkRepairCommand;
 
 /** The `kind` of any Command in the vocabulary. */
 export type CommandKind = Command['kind'];
@@ -275,6 +284,8 @@ export const COMMAND_KINDS: readonly CommandKind[] = [
   'repairFortification',
   'cancelFortificationRepair',
   'attackStructure',
+  'repairWork',
+  'cancelWorkRepair',
 ];
 
 /** Every formation a Squad can hold: frontage and depth, in the order `docs/COMMANDS.md` lists them. */
@@ -438,7 +449,25 @@ const READERS: {
   cancelPending: readCancelPending,
   repairFortification: (value, path) => readFortificationRepair('repairFortification', value, path),
   cancelFortificationRepair: (value, path) => readFortificationRepair('cancelFortificationRepair', value, path),
+  repairWork: (value, path) => readWorkRepair('repairWork', value, path),
+  cancelWorkRepair: (value, path) => readWorkRepair('cancelWorkRepair', value, path),
 };
+
+function readWorkRepair(kind: WorkRepairCommand['kind'], value: Candidate, path: string): WorkRepairCommand {
+  requireFields(value, path, kind, ['kind', FACTION_FIELD, 'settlement', 'building', 'ordinal']);
+  return { kind, faction: requireFaction(value.faction, `${path}.faction`),
+    settlement: requireId(value.settlement, `${path}.settlement`, 'settlement'),
+    building: requireContentId(value.building, `${path}.building`, 'building'),
+    ordinal: requireId(value.ordinal, `${path}.ordinal`, 'ordinal') };
+}
+
+export function repairWork(faction: Faction, settlement: number, building: string, ordinal: number): WorkRepairCommand {
+  return readWorkRepair('repairWork', { kind: 'repairWork', faction, settlement, building, ordinal }, ROOT);
+}
+
+export function cancelWorkRepair(faction: Faction, settlement: number, building: string, ordinal: number): WorkRepairCommand {
+  return readWorkRepair('cancelWorkRepair', { kind: 'cancelWorkRepair', faction, settlement, building, ordinal }, ROOT);
+}
 
 function readFortificationRepair(kind: FortificationRepairCommand['kind'], value: Candidate, path: string): FortificationRepairCommand {
   requireFields(value, path, kind, ['kind', FACTION_FIELD, 'settlement', 'structure', 'side']);

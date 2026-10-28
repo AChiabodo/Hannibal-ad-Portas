@@ -58,12 +58,14 @@ import {
   build,
   cancelPending,
   cancelFortificationRepair,
+  cancelWorkRepair,
   formation,
   garrison,
   hold,
   move,
   recruit,
   repairFortification,
+  repairWork,
   withdraw,
   type Command,
   type Formation,
@@ -1687,6 +1689,17 @@ export function createGame(options: GameOptions): Game {
     }
     else if (action === 'tutorialRetry') options.tutorialAction?.('retry');
     else if (action === 'tutorialExit') options.tutorialAction?.('exit');
+    else if (action.startsWith('repairWork:') || action.startsWith('cancelWorkRepair:')) {
+      const settlement = human.selection.settlement;
+      const [kind, building, ordinalText] = action.split(':');
+      const ordinal = Number(ordinalText);
+      const work = visible().settlements.find((site) => site.id === settlement)?.works
+        .find((item) => item.building === building && item.ordinal === ordinal);
+      if (settlement !== null && work !== undefined) human.submit(kind === 'repairWork'
+        ? repairWork(faction, settlement, work.building, ordinal)
+        : cancelWorkRepair(faction, settlement, work.building, ordinal));
+      repaint();
+    }
     else if (action.startsWith('repairFortification:') || action.startsWith('cancelFortificationRepair:')) {
       const settlement = human.selection.settlement;
       const [kind, structureKind, side] = action.split(':');

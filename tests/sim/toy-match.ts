@@ -41,6 +41,8 @@ export const CODE_OF: Record<CommandKind, number> = {
   cancelPending: 13,
   repairFortification: 14,
   cancelFortificationRepair: 15,
+  repairWork: 17,
+  cancelWorkRepair: 18,
 };
 
 /** One Squad: a block, with everything a Tick might move or spend. */

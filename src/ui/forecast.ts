@@ -219,15 +219,23 @@ export function projectSettlement(settlement: VisibleSettlement, season: Season)
     const code = buildingCode(work.building);
     const building = code === undefined ? undefined : buildingOf(code);
     if (building === undefined) { workStaffing.push(false); continue; }
-    workStaffing.push(available >= building.labour);
-
-    needed += building.labour;
     // A work's housing and storage count once it stands; its labour is claimed
     // in build order whether it stands or is still going up.
     if (work.standing) {
       housing += building.housing;
       storage += building.storage;
     }
+
+    if (work.standing && (work.hp === 0 || work.repairing)) {
+      workStaffing.push(false);
+      if (work.repairing) {
+        needed += 2;
+        if (work.repairWaiting === undefined && available >= 2) { available -= 2; staffed += 2; }
+      }
+      continue;
+    }
+    workStaffing.push(available >= building.labour);
+    needed += building.labour;
 
     // A work with no hands does not take any, and does not block the next one.
     if (available < building.labour) continue;

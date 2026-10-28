@@ -72,7 +72,7 @@ describe('the greeting: what an agent is, and what it may say', () => {
     const hello = helloMessage(HELLO);
 
     expect(hello.commands).toContain('assault');
-    expect(hello.commands).toHaveLength(16);
+    expect(hello.commands).toHaveLength(18);
     expect(hello.commands).toContain('cancelPending');
     expect(hello.formations).toEqual(['line', 'column']);
     expect(hello.terrain).toContainEqual({ id: 'plain', code: 0 });

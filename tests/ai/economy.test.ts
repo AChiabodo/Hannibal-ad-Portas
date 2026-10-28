@@ -7,12 +7,23 @@ import { TICK_HZ } from '../../src/sim/clock.ts';
 import { observeSiege, siegeMatchRules, type SiegeVisible } from '../../src/sim/siege.ts';
 import { isLegalSize, squadTypeCode, squadTypeOf, type SquadType } from '../../src/content/index.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
+import { buildingCode } from '../../src/content/buildings.ts';
 
 function economyAi() {
   return createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry: economyRegistry });
 }
 
 describe('the economy Controller', () => {
+  it('repairs its observed ruined work when resources allow', () => {
+    const world = siegeMatchRules.createWorld(7);
+    const site = world.economy.settlements[0]!;
+    site.stocks.fill(30);
+    site.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0, hp: 0 });
+    const ai = economyAi();
+    ai.decide({ faction: 'rome', tick: 0, visible: observeSiege(world, 'rome') });
+    const offered = ai.readLog().flatMap((decision) => decision.candidates.flatMap((candidate) => candidate.commands));
+    expect(offered).toContainEqual({ kind: 'repairWork', faction: 'rome', settlement: 0, building: 'farm', ordinal: 0 });
+  });
   it('repairs its observed breached wall when it can afford the stone', () => {
     const world = siegeMatchRules.createWorld(7);
     world.economy.settlements[0]!.stocks[2] = 30;

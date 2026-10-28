@@ -53,7 +53,9 @@ interface Settlement {
   readonly stocks: Resources;
   readonly land: Resources;
   readonly pending?: readonly { readonly kind: 'build' | 'recruit'; readonly building?: string | null; readonly squadType?: string | null }[];
-  readonly works: readonly { readonly building: string; readonly standing: boolean; readonly remaining: number }[];
+  readonly works: readonly { readonly building: string; readonly standing: boolean; readonly remaining: number;
+    readonly ordinal?: number; readonly hp?: number; readonly maxHp?: number; readonly repairing?: boolean;
+    readonly repairWaiting?: 'workers' | 'resources' }[];
 }
 
 /** Only owned economic facts, plus the fronts the Faction can already observe. */
@@ -77,11 +79,15 @@ type EconomyCommand = {
 } | {
   readonly kind: 'repairFortification'; readonly faction: Faction; readonly settlement: number;
   readonly structure: 'wall' | 'gate'; readonly side: 'north' | 'east' | 'south' | 'west';
+} | {
+  readonly kind: 'repairWork'; readonly faction: Faction; readonly settlement: number;
+  readonly building: string; readonly ordinal: number;
 };
 
 /** Content is supplied at composition; the AI has no path to simulation modules. */
 export function createEconomyBehaviour(content: {
   readonly fortificationRepairStone?: (maxHp: number, hp: number) => number;
+  readonly workRepairCost?: (building: Building, hp: number) => Resources;
   readonly recruitmentPreference?: (observation: Observation<EconomyObservation>, type: string) => {
     readonly utility: number; readonly reason: string;
   };
@@ -122,6 +128,7 @@ export function createEconomyBehaviour(content: {
       for (const work of settlement.works) {
         const building = buildings.get(work.building);
         if (building === undefined || building.labour > available) continue;
+        if (work.standing && (work.hp === 0 || work.repairing)) continue;
         available -= building.labour;
         // Payroll is charged at the next Season boundary. A staffed market
         // finishing before then can fund that bill; it need not be standing
@@ -146,6 +153,20 @@ export function createEconomyBehaviour(content: {
       const funds = budget(observation);
       for (const settlement of observation.visible.settlements) {
         const front = observation.visible.fronts?.find((candidate) => candidate.settlement === settlement.id);
+        if (front?.siege === null && content.workRepairCost !== undefined) {
+          for (const work of settlement.works) {
+            const building = buildings.get(work.building);
+            if (building === undefined || work.hp === undefined || work.maxHp === undefined || work.hp >= work.maxHp ||
+              work.repairing || work.repairWaiting === 'resources' || work.ordinal === undefined) continue;
+            const cost = content.workRepairCost(building, work.hp);
+            if (Object.keys(cost).some((key) => cost[key as keyof Resources] > settlement.stocks[key as keyof Resources])) continue;
+            candidates.push({ id: `repair-work-${settlement.id}-${work.building}-${work.ordinal}`,
+              utility: work.hp === 0 ? 180 : 60 + Math.floor(80 * (work.maxHp - work.hp) / work.maxHp),
+              reason: `Repair the observed ${work.building} with local resources.`,
+              commands: [{ kind: 'repairWork', faction: observation.faction, settlement: settlement.id,
+                building: work.building, ordinal: work.ordinal }] });
+          }
+        }
         if (front?.siege === null && content.fortificationRepairStone !== undefined) {
           for (const structure of front.structures ?? []) {
             const maximum = structure.maxHp;

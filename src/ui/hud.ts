@@ -47,7 +47,8 @@ import {
 } from '../art/pixel-buffer.ts';
 import { BADGE_TILE, ICON_TILE, badgeIcon, commandIcon, type BadgeName, type CommandIconName } from '../art/icons.ts';
 import { garrisonCapacity } from '../content/fortifications.ts';
-import { amountOf } from '../content/index.ts';
+import { amountOf, buildingCode, buildingOf } from '../content/index.ts';
+import { workRepairCost } from '../content/buildings.ts';
 import type { EconomyVisible, VisibleSettlement, VisibleSquad } from '../sim/economy-match.ts';
 import type { Faction } from '../sim/faction.ts';
 import { SEASON_TICKS } from '../sim/season.ts';
@@ -266,7 +267,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = `repairFortification:${string}:${string}` | `cancelFortificationRepair:${string}:${string}` | `cancelPending:${number}` | `garrisonSelect:${number}` | `garrisonExit:${number}` | `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works' | 'management' | 'catalogue'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore' | 'tutorialNext' | 'tutorialRetry' | 'tutorialExit' | 'tutorialHelp';
+export type HudAction = `repairWork:${string}:${number}` | `cancelWorkRepair:${string}:${number}` | `repairFortification:${string}:${string}` | `cancelFortificationRepair:${string}:${string}` | `cancelPending:${number}` | `garrisonSelect:${number}` | `garrisonExit:${number}` | `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works' | 'management' | 'catalogue'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore' | 'tutorialNext' | 'tutorialRetry' | 'tutorialExit' | 'tutorialHelp';
 
 export interface HudButton {
   readonly action: HudAction;
@@ -1249,6 +1250,21 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement,
       text: `${order.kind === 'build' ? workLabel(order.building) : `${squadLabel(order.squadType)} ${order.count} x ${order.men}`} - ${order.reason === 'space' ? translate('pending.space') : translate('pending.resources')}${order.cost === undefined ? '' : message('pending.cost', { cost: RESOURCE_KINDS.map((kind) => `${resourceLabel(kind)} ${amountOf(order.cost!, kind)}`).join(', ') })}`,
       actions: [{ action: `cancelPending:${order.id}` as const, text: translate('settlement.cancel') }],
     })),
+    ...settlement.works.filter((work) => work.standing && (work.repairing || (work.hp ?? 0) < (work.maxHp ?? 0))).map((work) => {
+      const code = buildingCode(work.building);
+      const building = code === undefined ? undefined : buildingOf(code);
+      const cost = building === undefined ? null : workRepairCost(building, work.hp ?? 0);
+      const costText = cost === null ? '' : RESOURCE_KINDS.map((kind) => `${resourceLabel(kind)} ${amountOf(cost, kind)}`).join(', ');
+      const ordinal = work.ordinal ?? 0;
+      const requested = work.repairWaiting === 'resources';
+      const suffix = requested ? translate(front?.siege !== null ? 'settlement.repairSiege' : 'pending.resources') :
+        work.repairing ? message('settlement.workRepairProgress', { seconds: Math.ceil((work.repairRemaining ?? 0) / TICK_HZ) }) +
+        (work.repairWaiting === undefined ? '' : ` - ${translate('settlement.repairWorkers')}`) :
+        front?.siege !== null ? translate('settlement.repairSiege') : costText;
+      return { text: `${workLabel(work.building)} ${ordinal + 1} - ${work.hp ?? 0}/${work.maxHp ?? 0} - ${suffix}`,
+        actions: work.repairing || requested ? [{ action: `cancelWorkRepair:${work.building}:${ordinal}` as const, text: translate('settlement.cancel') }] :
+          front?.siege === null ? [{ action: `repairWork:${work.building}:${ordinal}` as const, text: translate('settlement.repair') }] : [] };
+    }),
     ...(front?.structures ?? []).filter((structure) => structure.repairing || structure.hp < (structure.maxHp ?? structure.hp)).map((structure) => {
       const max = structure.maxHp ?? structure.hp;
       const stone = fortificationRepairStone(max, structure.hp);

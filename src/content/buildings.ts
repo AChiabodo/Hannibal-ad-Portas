@@ -33,6 +33,14 @@ import type { Tier } from './squads.ts';
 /** Initial durability of a completed economic work. */
 export const WORK_MAX_HP = 60;
 
+/** Repair costs at most one quarter of the original cost, rounded to whole units. */
+export function workRepairCost(building: Pick<BuildingType, 'cost'>, hp: number): ResourceAmounts {
+  const damage = Math.max(0, WORK_MAX_HP - hp);
+  const component = (amount: number): number => Math.ceil(amount * damage / (WORK_MAX_HP * 4));
+  return { grain: component(building.cost.grain), timber: component(building.cost.timber),
+    stone: component(building.cost.stone), iron: component(building.cost.iron) };
+}
+
 /** One building a settlement can raise. */
 export interface BuildingType {
   /** The id a Build Command names, and the key of this table. */

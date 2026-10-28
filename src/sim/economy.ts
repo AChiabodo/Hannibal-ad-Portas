@@ -185,6 +185,9 @@ export interface Work {
   hp?: number;
   /** Remaining work-repair time; unfinished construction cannot be repaired. */
   repairTicks?: number;
+  repairOwner?: number;
+  repairOrder?: number;
+  repairRequest?: number;
   /** Ordering of a construction that started alongside a fortification repair. */
   readonly queueOrder?: number;
   /** Permanent copy number and original builder, preserved on conquest. */

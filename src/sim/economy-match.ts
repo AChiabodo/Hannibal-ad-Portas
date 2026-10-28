@@ -139,6 +139,9 @@ export type VisibleStocks = ResourceAmounts;
 export interface VisibleWork {
   readonly hp?: number;
   readonly maxHp?: number;
+  readonly repairing?: boolean;
+  readonly repairRemaining?: number;
+  readonly repairWaiting?: 'workers' | 'resources';
   readonly ordinal?: number;
   readonly origin?: Faction;
   /** The building's id, so a Controller can name it in a Build Command. */
@@ -506,6 +509,10 @@ function visibleSettlement(map: MapGrid, settlement: Settlement, economy: Econom
       building: buildingOf(work.building)?.id ?? 'unknown',
       remaining: work.remaining,
       ...(work.remaining === 0 ? { hp: work.hp ?? WORK_MAX_HP, maxHp: WORK_MAX_HP } : {}),
+      repairing: work.repairTicks !== undefined,
+      ...(work.repairTicks === undefined ? {} : { repairRemaining: work.repairTicks }),
+      ...(work.repairRequest === undefined ? {} : { repairWaiting: 'resources' as const }),
+      ...(work.repairTicks === undefined || allocation.repairs?.includes(work.repairOrder ?? 0) ? {} : { repairWaiting: 'workers' as const }),
       standing: work.remaining === 0,
     })),
     pending: (economy.pending ?? []).filter((order) => order.settlement === settlement.id).map((order) => ({

@@ -415,6 +415,7 @@ export const STRINGS = {
   'settlement.repair': { it: 'Ripara', en: 'Repair' },
   'settlement.repairCost': { it: '{structure} {side}: {hp}/{max} - {stone} pietra', en: '{structure} {side}: {hp}/{max} - {stone} stone' },
   'settlement.repairProgress': { it: '{structure} {side}: riparazione {seconds} s', en: '{structure} {side}: repairing {seconds} s' },
+  'settlement.workRepairProgress': { it: 'Riparazione {seconds} s', en: 'Repairing {seconds} s' },
   'settlement.repairWorkers': { it: 'In attesa di lavoratori', en: 'Waiting for workers' },
   'settlement.repairPassage': { it: 'In attesa del passaggio libero', en: 'Waiting for the passage to clear' },
   'settlement.repairSiege': { it: 'Assedio: riparazione non avviabile', en: 'Siege: repair cannot start' },

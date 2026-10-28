@@ -7,6 +7,7 @@ import {
   build,
   cancelPending,
   cancelFortificationRepair,
+  cancelWorkRepair,
   formation,
   garrison,
   group,
@@ -14,6 +15,7 @@ import {
   move,
   recruit,
   repairFortification,
+  repairWork,
   withdraw,
   type Command,
 } from '../../src/sim/command';
@@ -44,4 +46,6 @@ export const ONE_OF_EACH: readonly Command[] = [
   repairFortification('rome', 5, 'wall', 'north'),
   cancelFortificationRepair('rome', 5, 'wall', 'north'),
   attackStructure('rome', [1], { kind: 'camp', id: 0 }),
+  repairWork('rome', 5, 'farm', 0),
+  cancelWorkRepair('rome', 5, 'farm', 0),
 ];

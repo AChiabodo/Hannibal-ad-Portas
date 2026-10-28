@@ -87,6 +87,8 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 | `repairFortification` | `faction`, `settlement`, `structure`, `side` | Start a paid repair of one owned wall or gate outside a Siege. |
 | `cancelFortificationRepair` | `faction`, `settlement`, `structure`, `side` | Cancel a paid fortification repair without a refund. |
 | `attackStructure` | `faction`, `squads`, `target` | Attack a currently visible barbarian camp or completed economic Work. A Work target names its settlement, building and ordinal. |
+| `repairWork` | `faction`, `settlement`, `building`, `ordinal` | Repair a damaged owned Work outside a Siege. |
+| `cancelWorkRepair` | `faction`, `settlement`, `building`, `ordinal` | Cancel an owned Work repair without refund. |
 <!-- vocabulary:end -->
 
 ### Ground arrival allocation (#68)
@@ -172,6 +174,8 @@ code fails the build.
 { "kind": "repairFortification", "faction": "rome", "settlement": 5, "structure": "wall", "side": "north" }
 { "kind": "cancelFortificationRepair", "faction": "rome", "settlement": 5, "structure": "wall", "side": "north" }
 { "kind": "attackStructure", "faction": "rome", "squads": [3], "target": { "kind": "camp", "id": 0 } }
+{ "kind": "repairWork", "faction": "rome", "settlement": 5, "building": "farm", "ordinal": 0 }
+{ "kind": "cancelWorkRepair", "faction": "rome", "settlement": 5, "building": "farm", "ordinal": 0 }
 ```
 <!-- examples:end -->
 

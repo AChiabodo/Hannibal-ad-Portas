@@ -184,6 +184,7 @@ export {
   blockade,
   build,
   cancelFortificationRepair,
+  cancelWorkRepair,
   COMMAND_KINDS,
   CommandValidationError,
   FORMATIONS,
@@ -194,6 +195,7 @@ export {
   move,
   recruit,
   repairFortification,
+  repairWork,
   validateCommand,
   withdraw,
 } from './command.ts';
@@ -210,6 +212,7 @@ export type {
   Formation,
   FormationCommand,
   FortificationRepairCommand,
+  WorkRepairCommand,
   GarrisonCommand,
   GroupCommand,
   HoldCommand,

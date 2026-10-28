@@ -9,7 +9,7 @@ import { createExpansionBehaviour } from '../ai/expansion.ts';
 import { createBehaviourRegistry, type Behaviour, type BehaviourContext, type BehaviourRegistry,
   type Candidate, type Contribution } from '../ai/registry.ts';
 import { DIFFICULTY, type Difficulty, type DifficultyName } from '../ai/difficulty.ts';
-import { BUILDINGS } from '../content/buildings.ts';
+import { BUILDINGS, workRepairCost } from '../content/buildings.ts';
 import { fortificationRepairStone } from '../content/fortifications.ts';
 import { MATCHUP } from '../content/arms.ts';
 import { payrollBill, recruitCost, SQUAD_TYPES } from '../content/squads.ts';
@@ -29,7 +29,7 @@ export interface AiMatchRun extends MatchRun {
   readonly decisions: readonly AiDecision<Command>[];
 }
 
-const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES, fortificationRepairStone,
+const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES, fortificationRepairStone, workRepairCost,
   recruitCost, payrollBill,
   grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, baseStorage: BASE_STORAGE, taxPerDenarius: TAX_PER_DENARIUS,
   ticksUntilPayroll: ticksUntilSeason };

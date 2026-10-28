@@ -82,6 +82,7 @@ import type { Command, SiegePath } from './command.ts';
 import { bearing, BREAKING_MORALE, woundsOf } from './combat.ts';
 import { advanceCampAttacks, openBarbarianCamps, orderCampAttacks, type BarbarianCampState, type CampAttackOrder } from './barbarian-camp-combat.ts';
 import { advanceWorkAttacks, orderWorkAttacks, type WorkAttackOrder } from './work-combat.ts';
+import { advanceWorkRepairs, orderWorkRepair, startWorkRepairRequests } from './work-repair.ts';
 import type { MatchSetup, VictoryReason } from './driver.ts';
 import {
   economyMatchRules,
@@ -520,6 +521,9 @@ export function suppliedBy(siege: Siege): Supplied {
  */
 export function applySiegeCommand(world: SiegeWorld, command: Command, routes: RouteCache): boolean {
   switch (command.kind) {
+    case 'repairWork':
+    case 'cancelWorkRepair':
+      return orderWorkRepair(world, command);
     case 'repairFortification':
     case 'cancelFortificationRepair':
       return orderFortificationRepair(world, command);
@@ -584,6 +588,8 @@ function assignFortificationRepairLabour(world: SiegeWorld): void {
     if (site === undefined) continue;
     const orders = front.structures.filter((item) => item.repairTicks !== undefined && item.repairTicks > 0 && item.repairOwner === site.owner)
       .map((item) => item.repairOrder ?? 0);
+    orders.push(...site.works.filter((work) => work.repairTicks !== undefined && work.repairOwner === site.owner)
+      .map((work) => work.repairOrder ?? 0));
     if (orders.length > 0) site.repairOrders = orders;
     else delete site.repairOrders;
   }
@@ -693,6 +699,7 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
     orderWorkAttacks(world, commands);
     advanceCampGuards(world, tick);
     startFortificationRequests(world);
+    startWorkRepairRequests(world);
     for (const command of commands) {
       applySiegeCommand(world, command, routes);
       assignFortificationRepairLabour(world);
@@ -703,6 +710,7 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
     const changes = stepEconomyWorld(world, tick, commands, suppliedBy(world.siege), true);
 
     advanceFortificationRepairs(world);
+    advanceWorkRepairs(world);
     assignFortificationRepairLabour(world);
     advanceCampAttacks(world, tick);
     advanceWorkAttacks(world, tick);
@@ -1331,6 +1339,9 @@ function take(
   settlement.origin ??= previous === 1 ? 1 : 0;
   for (const work of settlement.works) work.origin ??= settlement.origin;
   settlement.owner = taker;
+  for (const work of settlement.works) {
+    delete work.repairTicks; delete work.repairOrder; delete work.repairOwner; delete work.repairRequest;
+  }
   for (const structure of front.structures) {
     delete structure.repairTicks; delete structure.repairOwner; delete structure.repairOrder; delete structure.repairRequest;
   }
