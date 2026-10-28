@@ -292,6 +292,8 @@ export function damageFortification(structure: Structure, damage: number): boole
  * points.
  */
 export interface Front {
+  /** A barbarian raider is actively attacking this front. */
+  barbarianAssault?: number;
   /** Last Tier applied to these structures, so growth preserves existing damage. */
   tier?: number;
   /** The settlement this front is about: the economy's own id. */
@@ -323,6 +325,16 @@ export interface Front {
 
   /** How it was taken, as a `SIEGE` code: what the reason for the Match names. */
   takenPath: number;
+}
+
+/** Player sieges and barbarian attacks both prevent starting repairs. */
+export function hasActiveSiege(front: Front): boolean {
+  return front.path !== SIEGE.none || front.barbarianAssault === 1;
+}
+
+/** Apply the ordinary wall defence to a barbarian attacker when defenders man it. */
+export function defendAgainstBarbarian(world: SiegeWorld, settlement: number, guard: Squad, tick: number): void {
+  if (garrisonOf(world.economy, settlement).length > 0) punish(world, [guard], tick);
 }
 
 /** Everything a Match's Sieges own: one front per settlement, and which are Strongholds. */
@@ -555,7 +567,7 @@ function orderFortificationRepair(world: SiegeWorld, command: Extract<Command, {
     return true;
   }
   const maximum = fortificationHp(site.tier, item.kind === STRUCTURE.gate);
-  if (front.path !== SIEGE.none || item.repairTicks !== undefined || item.repairRequest !== undefined || item.hp >= maximum) return false;
+  if (hasActiveSiege(front) || item.repairTicks !== undefined || item.repairRequest !== undefined || item.hp >= maximum) return false;
   item.repairRequest = world.economy.nextPendingId ?? 1;
   world.economy.nextPendingId = item.repairRequest + 1;
   item.repairOwner = owner;
@@ -572,7 +584,7 @@ function startFortificationRequests(world: SiegeWorld, onlyId?: number): void {
       if (item.repairRequest === undefined) continue;
       if (onlyId !== undefined && item.repairRequest !== onlyId) continue;
       if (item.repairOwner !== site.owner) { delete item.repairRequest; delete item.repairOwner; continue; }
-      if (front.path !== SIEGE.none) continue;
+      if (hasActiveSiege(front)) continue;
       const maximum = fortificationHp(site.tier, item.kind === STRUCTURE.gate);
       if (item.hp >= maximum) { delete item.repairRequest; delete item.repairOwner; continue; }
       const damage = maximum - item.hp;
@@ -1049,7 +1061,7 @@ function relieved(world: SiegeWorld, settlement: Settlement): boolean {
 }
 
 /** Distinct exterior destinations keep a siege army off roofs, walls and other bodies. */
-function siegePosition(world: SiegeWorld, site: Settlement, squad: Squad, reserved: readonly GroundRect[]): Site | undefined {
+export function siegePosition(world: SiegeWorld, site: Settlement, squad: Squad, reserved: readonly GroundRect[]): Site | undefined {
   if (outsideCore(world.economy, site, squad) && perimeterDistance(world.economy, site, squad) <= SIEGE_RADIUS) return squad;
   const core = coreOf(world.economy, site);
   const options: Site[] = [];
@@ -1467,14 +1479,14 @@ function visibleFront(economy: Economy, front: Front): VisibleFront {
       hp: structure.hp,
       repairing: structure.repairTicks !== undefined,
       ...(structure.repairTicks === undefined ? {} : { repairRemaining: Math.max(0, structure.repairTicks) }),
-      ...(structure.repairRequest === undefined ? {} : { repairWaiting: front.path === SIEGE.none ? 'resources' as const : 'siege' as const }),
+      ...(structure.repairRequest === undefined ? {} : { repairWaiting: hasActiveSiege(front) ? 'siege' as const : 'resources' as const }),
       ...(structure.repairTicks === undefined ? {} : structure.repairTicks < 0 ? { repairWaiting: 'passage' as const } :
         !staffed.includes(structure.repairOrder ?? 0) ? { repairWaiting: 'workers' as const } : {}),
       maxHp: fortificationHp(front.tier ?? 1, structure.kind === STRUCTURE.gate),
       standing: structure.hp > 0,
     })),
     breached: breached(front),
-    siege: front.path === SIEGE.none ? null : pathOf(front.path),
+    siege: front.path === SIEGE.none ? front.barbarianAssault === 1 ? 'assault' : null : pathOf(front.path),
     besieger: front.besieger === UNOWNED ? null : factionOf(front.besieger),
     ram: front.ram > 0 || front.ramTicks > 0
       ? { hp: front.ram, remaining: front.ramTicks, built: front.ramTicks === 0 }

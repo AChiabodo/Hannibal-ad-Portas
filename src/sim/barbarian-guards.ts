@@ -1,5 +1,6 @@
 /** A neutral camp's defenders use the ordinary Squad movement and combat rules. */
 import { squadTypeCode, squadTypeOf } from '../content/squads.ts';
+import { intersects } from '../content/settlement-layout.ts';
 import { buildingOf, WORK_MAX_HP } from '../content/buildings.ts';
 import { FIELD, isRouting, standingAt } from './squad.ts';
 import { engagedWith, enemyWithin } from './combat.ts';
@@ -8,7 +9,8 @@ import { orderSquadTo, routeCacheFor } from './movement.ts';
 import { canOccupy, coreOf, occupiedGround, squadGround, workGround, workOrdinal } from './settlement-space.ts';
 import type { Squad } from './economy.ts';
 import { clearWorkLine, damageWork, workAttackDistance } from './work-combat.ts';
-import type { SiegeWorld } from './siege.ts';
+import { damageFortification, defendAgainstBarbarian, siegePosition, STRUCTURE, type SiegeWorld } from './siege.ts';
+import { outsideCore, perimeterDistance } from './settlement-siege-geometry.ts';
 
 /** Not a player Faction and never a valid Command issuer. */
 export const BARBARIAN_OWNER = 2;
@@ -46,6 +48,14 @@ function spawnGuard(world: SiegeWorld, campId: number): void {
 
 /** Defend the surrounding ground; surviving orphans wander without raiding. */
 export function advanceCampGuards(world: SiegeWorld, tick: number): void {
+  for (const front of world.siege.fronts) {
+    if (front.barbarianAssault !== 1) continue;
+    const site = world.economy.settlements[front.settlement];
+    const active = site !== undefined && world.economy.squads.some((squad) => squad.owner === BARBARIAN_OWNER &&
+      squad.barbarianRaidTarget === site.id && tick < (squad.barbarianRaidUntil ?? 0) && !isRouting(squad) &&
+      squad.strength > 0 && outsideCore(world.economy, site, squad) && perimeterDistance(world.economy, site, squad) <= 2);
+    if (!active) delete front.barbarianAssault;
+  }
   if (tick > 0 && tick % REINFORCEMENT_TICKS === 0) {
     for (const [campId, camp] of (world.barbarianCamps ?? []).entries()) {
       if (camp.hp <= 0 || world.economy.squads.some((squad) => squad.barbarianCamp === campId)) continue;
@@ -103,11 +113,15 @@ export function advanceCampGuards(world: SiegeWorld, tick: number): void {
     const settlement = guard.barbarianRaidTarget === undefined ? undefined : world.economy.settlements[guard.barbarianRaidTarget];
     if (settlement !== undefined && tick < (guard.barbarianRaidUntil ?? 0) &&
       (settlement.owner === 0 || settlement.owner === 1)) {
+      const core = coreOf(world.economy, settlement);
+      const front = world.siege.fronts[settlement.id];
+      const fortified = front !== undefined && front.structures.length > 0 &&
+        front.structures.every((structure) => structure.hp > 0);
       const works = settlement.works.flatMap((work) => {
         const name = buildingOf(work.building)?.id;
         if (name === undefined || work.remaining > 0 || work.repairTicks !== undefined || (work.hp ?? WORK_MAX_HP) <= 0) return [];
         const rect = workGround(world.economy, settlement, name, workOrdinal(settlement, work));
-        return rect === undefined ? [] : [{ work, rect }];
+        return rect === undefined || fortified && intersects(core, rect) ? [] : [{ work, rect }];
       });
       works.sort((a, b) => workAttackDistance(guard.x, guard.y, a.rect) - workAttackDistance(guard.x, guard.y, b.rect));
       const targetWork = works[0];
@@ -122,7 +136,25 @@ export function advanceCampGuards(world: SiegeWorld, tick: number): void {
         }
         continue;
       }
-      const core = coreOf(world.economy, settlement);
+      if (front !== undefined && front.structures.length > 0 && fortified) {
+        if (outsideCore(world.economy, settlement, guard) && perimeterDistance(world.economy, settlement, guard) <= 1) {
+          const dx = guard.x - settlement.x, dy = guard.y - settlement.y;
+          const side = Math.abs(dx) >= Math.abs(dy) ? dx >= 0 ? 1 : 3 : dy >= 0 ? 2 : 0;
+          const gate = front.structures.find((structure) => structure.kind === STRUCTURE.gate && structure.side === side);
+          const aligned = side % 2 === 0 ? Math.abs(dx) <= 2 : Math.abs(dy) <= 2;
+          const piece = gate !== undefined && aligned ? gate :
+            front.structures.find((structure) => structure.kind === STRUCTURE.wall && structure.side === side);
+          if (piece !== undefined) {
+            front.barbarianAssault = 1;
+            damageFortification(piece, 3);
+            defendAgainstBarbarian(world, settlement.id, guard, tick);
+          }
+        } else {
+          const target = siegePosition(world, settlement, guard, []);
+          if (target !== undefined) orderSquadTo(world.map, guard, target, routes);
+        }
+        continue;
+      }
       const x = Math.max(core.x - 1, Math.min(core.x + core.width, home.x));
       const y = Math.max(core.y - 1, Math.min(core.y + core.height, home.y));
       orderSquadTo(world.map, guard, { x, y }, routes);

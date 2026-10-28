@@ -6,6 +6,7 @@ import { allocate, landCapacity } from './economy.ts';
 import { factionCode } from './faction.ts';
 import { workOrdinal } from './settlement-space.ts';
 import type { SiegeWorld } from './siege.ts';
+import { hasActiveSiege } from './siege.ts';
 
 export function orderWorkRepair(world: SiegeWorld, command: WorkRepairCommand): boolean {
   const site = world.economy.settlements[command.settlement];
@@ -17,7 +18,7 @@ export function orderWorkRepair(world: SiegeWorld, command: WorkRepairCommand): 
     delete work.repairTicks; delete work.repairOrder; delete work.repairOwner; delete work.repairRequest;
     return true;
   }
-  if (world.siege.fronts[site.id]?.path !== 0 || work.remaining > 0 || work.repairTicks !== undefined ||
+  if (world.siege.fronts[site.id] === undefined || hasActiveSiege(world.siege.fronts[site.id]!) || work.remaining > 0 || work.repairTicks !== undefined ||
     work.repairRequest !== undefined || (work.hp ?? WORK_MAX_HP) >= WORK_MAX_HP) return false;
   work.repairRequest = world.economy.nextPendingId ?? 1;
   world.economy.nextPendingId = work.repairRequest + 1;
@@ -33,7 +34,7 @@ export function startWorkRepairRequests(world: SiegeWorld, onlyId?: number): voi
       if (work.repairRequest === undefined) continue;
       if (onlyId !== undefined && work.repairRequest !== onlyId) continue;
       if (work.repairOwner !== site.owner) { delete work.repairRequest; delete work.repairOwner; continue; }
-      if (world.siege.fronts[site.id]?.path !== 0) continue;
+      if (world.siege.fronts[site.id] === undefined || hasActiveSiege(world.siege.fronts[site.id]!)) continue;
       const building = buildingOf(work.building);
       if (building === undefined || work.remaining > 0 || (work.hp ?? WORK_MAX_HP) >= WORK_MAX_HP) {
         delete work.repairRequest; delete work.repairOwner; continue;
