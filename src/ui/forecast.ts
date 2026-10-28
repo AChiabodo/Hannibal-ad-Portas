@@ -214,6 +214,10 @@ export function projectSettlement(settlement: VisibleSettlement, season: Season)
   let housing = BASE_HOUSING;
   let storage = BASE_STORAGE;
   const workStaffing: boolean[] = [];
+  if (settlement.repairWorkforce !== undefined) {
+    staffed += settlement.repairWorkforce.staffed;
+    needed += settlement.repairWorkforce.needed;
+  }
 
   for (const work of settlement.works) {
     const code = buildingCode(work.building);
@@ -228,19 +232,20 @@ export function projectSettlement(settlement: VisibleSettlement, season: Season)
 
     if (work.standing && (work.hp === 0 || work.repairing)) {
       workStaffing.push(false);
-      if (work.repairing) {
+      if (work.repairing && settlement.repairWorkforce === undefined) {
         needed += 2;
         if (work.repairWaiting === undefined && available >= 2) { available -= 2; staffed += 2; }
       }
       continue;
     }
-    workStaffing.push(available >= building.labour);
+    const isStaffed = work.staffed ?? available >= building.labour;
+    workStaffing.push(isStaffed);
     needed += building.labour;
 
     // A work with no hands does not take any, and does not block the next one.
-    if (available < building.labour) continue;
+    if (!isStaffed) continue;
 
-    available -= building.labour;
+    if (work.staffed === undefined) available -= building.labour;
     staffed += building.labour;
     if (!work.standing) continue;
 

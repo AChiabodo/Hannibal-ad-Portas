@@ -11,6 +11,8 @@ import { CONSTRUCTION_CATEGORIES } from '../../src/ui/construction';
 import { settlementOrders } from '../../src/ui/orders';
 import { translate } from '../../src/ui/strings';
 import { measureText } from '../../src/art/font';
+import { build, repairFortification, repairWork } from '../../src/sim/command';
+import { observeSiege, siegeMatchRules } from '../../src/sim/siege';
 
 const visible: EconomyVisible = {
   season: 'spring', year: 1, treasury: 20, territory: new Uint8Array(TILE_COUNT), squads: [],
@@ -20,6 +22,28 @@ const visible: EconomyVisible = {
 };
 
 describe('the economic decision panel', () => {
+  it('reports the real worker allocation while a wall repair precedes a construction', () => {
+    const match = createMatch({ seed: 7, rules: siegeMatchRules });
+    const site = match.state.world.economy.settlements[0]!;
+    site.population = 4;
+    site.stocks.fill(100);
+    match.state.world.siege.fronts[0]!.structures.find((wall) => wall.kind === 1 && wall.side === 0)!.hp = 30;
+    match.step([repairFortification('rome', 0, 'wall', 'north'), build('rome', 0, 'farm')]);
+    const observed = observeSiege(match.state.world, 'rome').settlements[0]!;
+    expect(observed.works).toHaveLength(1);
+    expect(projectSettlement(observed, 'summer')).toMatchObject({ workStaffing: [false], staffed: 2 });
+  });
+  it('counts concurrent work and wall repairs without double counting their workers', () => {
+    const match = createMatch({ seed: 7, rules: siegeMatchRules });
+    const site = match.state.world.economy.settlements[0]!;
+    site.population = 4;
+    site.stocks.fill(100);
+    site.works.push({ building: BUILDINGS.findIndex((item) => item.id === 'house'), ordinal: 0, remaining: 0, hp: 0 });
+    match.state.world.siege.fronts[0]!.structures.find((wall) => wall.kind === 1 && wall.side === 0)!.hp = 30;
+    match.step([repairWork('rome', 0, 'house', 0), repairFortification('rome', 0, 'wall', 'north')]);
+    const observed = observeSiege(match.state.world, 'rome').settlements[0]!;
+    expect(projectSettlement(observed, 'summer')).toMatchObject({ workStaffing: [false], staffed: 4, needed: 4 });
+  });
   it('lays out every building paragraph as separate rows when inspecting and scrolling an offer', () => {
     for (const faction of ['rome', 'carthage'] as const) {
       for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {

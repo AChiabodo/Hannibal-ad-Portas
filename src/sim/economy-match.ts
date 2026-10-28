@@ -137,6 +137,8 @@ export type VisibleStocks = ResourceAmounts;
 
 /** What a Faction sees of one work: what it is building, and how far along it is. */
 export interface VisibleWork {
+  /** Actual staffing when repairs participate in the settlement's allocation. */
+  readonly staffed?: boolean;
   readonly hp?: number;
   readonly maxHp?: number;
   readonly repairing?: boolean;
@@ -167,6 +169,8 @@ export interface VisiblePendingOrder {
 }
 
 export interface VisibleSettlement {
+  /** Labour used and requested by active repairs, when they compete with Works. */
+  readonly repairWorkforce?: { readonly staffed: number; readonly needed: number };
   readonly pending?: readonly VisiblePendingOrder[];
   /** Its id, as a Build or Recruit Command names it. */
   readonly id: number;
@@ -503,13 +507,19 @@ function visibleSettlement(map: MapGrid, settlement: Settlement, economy: Econom
     population: settlement.population,
     stocks: namedStock(settlement.stocks),
     land: namedStock(allocation.land),
-    works: settlement.works.map((work) => ({
+    ...(settlement.repairOrders === undefined ? {} : { repairWorkforce: {
+      needed: settlement.repairOrders.length * 2, staffed: (allocation.repairs?.length ?? 0) * 2,
+    } }),
+    works: settlement.works.map((work, index) => ({
       ordinal: workOrdinal(settlement, work),
       origin: (work.origin ?? settlement.origin ?? settlement.owner) === 1 ? 'carthage' : 'rome',
       building: buildingOf(work.building)?.id ?? 'unknown',
       remaining: work.remaining,
       ...(work.remaining === 0 ? { hp: work.hp ?? WORK_MAX_HP, maxHp: WORK_MAX_HP } : {}),
       repairing: work.repairTicks !== undefined,
+      ...(settlement.repairOrders === undefined ? {} : {
+        staffed: (allocation.works[index] ?? 0) >= (buildingOf(work.building)?.labour ?? 0),
+      }),
       ...(work.repairTicks === undefined ? {} : { repairRemaining: work.repairTicks }),
       ...(work.repairRequest === undefined ? {} : { repairWaiting: 'resources' as const }),
       ...(work.repairTicks === undefined || allocation.repairs?.includes(work.repairOrder ?? 0) ? {} : { repairWaiting: 'workers' as const }),

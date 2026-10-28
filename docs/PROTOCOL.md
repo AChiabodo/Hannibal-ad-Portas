@@ -193,6 +193,11 @@ Each entry of `settlements`:
 | `pending`    | Unpaid requests awaiting space or resources, including their cost and cancellation id. |
 <!-- settlement:end -->
 
+When active repairs compete for workers, an owned settlement also exposes
+`repairWorkforce` (`staffed` and `needed` people) and each Work exposes its
+current `staffed` decision. These fields describe the owner's present allocation;
+they do not expose another Faction's economy or predict future changes.
+
 Each entry of `squads`:
 
 <!-- squad:start -->
