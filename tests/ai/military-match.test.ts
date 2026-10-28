@@ -35,13 +35,19 @@ function scenario(hiddenX = 70): SiegeWorld {
 describe('military decisions in a headless Match', () => {
   it('brings the exhausted seed 9 scout home instead of abandoning it after the second Season', () => {
     let final: SiegeVisible | undefined;
+    let scoutId: number | undefined;
     const run = runMatch({ seed: 9, ticks: 5501, rules: siegeMatchRules, observe: observeSiege,
-      outcome(world) { final = observeSiege(world, 'carthage'); return siegeMatchOutcome(world); },
+      outcome(world) {
+        final = observeSiege(world, 'carthage');
+        scoutId ??= final.squads[0]?.id;
+        return siegeMatchOutcome(world);
+      },
       players: [{ faction: 'rome', controller: scriptedController<SiegeVisible>([]) },
         { faction: 'carthage', controller: createArmyController('tiro') }],
     });
-    expect(run.log).toContainEqual({ tick: 4200, command: { kind: 'withdraw', faction: 'carthage', squads: [1] } });
-    expect(final!.squads.find((squad) => squad.id === 1)).toMatchObject({ inQuarters: true, goal: null, routing: false });
+    expect(scoutId).toBeDefined();
+    expect(run.log).toContainEqual({ tick: 4200, command: { kind: 'withdraw', faction: 'carthage', squads: [scoutId] } });
+    expect(final!.squads.find((squad) => squad.id === scoutId)).toMatchObject({ inQuarters: true, goal: null, routing: false });
     const replay = runMatch({ seed: 9, ticks: 5501, rules: siegeMatchRules, observe: observeSiege,
       outcome: siegeMatchOutcome, players: [
         { faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
