@@ -19,9 +19,10 @@ export function pendingOrderCost(order: PendingOrder): ResourceAmounts {
 }
 
 /** Stable arrival order, no charges or mutations for a request which still waits. */
-export function advancePendingOrders(economy: Economy): void {
+export function advancePendingOrders(economy: Economy, onlyId?: number): void {
   const kept: PendingOrder[] = [];
   for (const order of economy.pending ?? []) {
+    if (onlyId !== undefined && order.id !== onlyId) { kept.push(order); continue; }
     const site = economy.settlements[order.settlement];
     if (site === undefined || site.owner !== order.owner) continue;
     if (!startOrder(economy, site, order)) kept.push(order);

@@ -1,9 +1,33 @@
 import { expect, it } from 'vitest';
 import { createMatch } from '../../src/sim/match';
-import { build, cancelFortificationRepair, move, repairFortification, type Command } from '../../src/sim/command';
+import { build, cancelFortificationRepair, move, repairFortification, repairWork, type Command } from '../../src/sim/command';
 import { observeSiege, siegeMatchRules, type SiegeWorld } from '../../src/sim/siege';
 import { musterSquad } from '../../src/sim/movement';
 import { buildingCode } from '../../src/content/buildings';
+
+it('shares arrival priority between unpaid wall and building repairs', () => {
+  const run = (wallFirst: boolean) => {
+    const world = siegeMatchRules.createWorld(7);
+    const site = world.economy.settlements[0]!;
+    site.stocks.fill(20);
+    site.stocks[2] = 0;
+    site.works.push({ building: buildingCode('house')!, ordinal: 0, remaining: 0, hp: 0 });
+    world.siege.fronts[0]!.structures.find((item) => item.kind === 1 && item.side === 0)!.hp = 0;
+    const match = createMatch<SiegeWorld, Command>({ seed: 7, rules: { ...siegeMatchRules, createWorld: () => world } });
+    const wall = repairFortification('rome', 0, 'wall', 'north');
+    const house = repairWork('rome', 0, 'house', 0);
+    match.step(wallFirst ? [wall, house] : [house, wall]);
+    site.stocks[2] = 4;
+    match.step();
+    return observeSiege(world, 'rome');
+  };
+  const wallFirst = run(true);
+  expect(wallFirst.fronts[0]!.structures.find((item) => item.kind === 'wall' && item.side === 'north')?.repairing).toBe(true);
+  expect(wallFirst.settlements[0]!.works.find((work) => work.building === 'house')?.repairWaiting).toBe('resources');
+  const houseFirst = run(false);
+  expect(houseFirst.settlements[0]!.works.find((work) => work.building === 'house')?.repairing).toBe(true);
+  expect(houseFirst.fronts[0]!.structures.find((item) => item.kind === 'wall' && item.side === 'north')?.repairWaiting).toBe('resources');
+});
 
 it('keeps an unpaid repair request visible and starts it when stone is available', () => {
   const world = siegeMatchRules.createWorld(7);

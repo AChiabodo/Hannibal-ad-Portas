@@ -84,6 +84,7 @@ import { bearing, BREAKING_MORALE, woundsOf } from './combat.ts';
 import { advanceCampAttacks, openBarbarianCamps, orderCampAttacks, type BarbarianCampState, type CampAttackOrder } from './barbarian-camp-combat.ts';
 import { advanceWorkAttacks, orderWorkAttacks, type WorkAttackOrder } from './work-combat.ts';
 import { advanceWorkRepairs, orderWorkRepair, startWorkRepairRequests } from './work-repair.ts';
+import { advancePendingOrders } from './pending-orders.ts';
 import type { MatchSetup, VictoryReason } from './driver.ts';
 import {
   economyMatchRules,
@@ -563,12 +564,13 @@ function orderFortificationRepair(world: SiegeWorld, command: Extract<Command, {
 }
 
 /** Start affordable queued requests, but never begin one during a Siege. */
-function startFortificationRequests(world: SiegeWorld): void {
+function startFortificationRequests(world: SiegeWorld, onlyId?: number): void {
   for (const front of world.siege.fronts) {
     const site = world.economy.settlements[front.settlement];
     if (site === undefined) continue;
     for (const item of [...front.structures].sort((a, b) => (a.repairRequest ?? Infinity) - (b.repairRequest ?? Infinity))) {
       if (item.repairRequest === undefined) continue;
+      if (onlyId !== undefined && item.repairRequest !== onlyId) continue;
       if (item.repairOwner !== site.owner) { delete item.repairRequest; delete item.repairOwner; continue; }
       if (front.path !== SIEGE.none) continue;
       const maximum = fortificationHp(site.tier, item.kind === STRUCTURE.gate);
@@ -581,6 +583,22 @@ function startFortificationRequests(world: SiegeWorld): void {
       item.repairOrder = item.repairRequest;
       delete item.repairRequest;
     }
+  }
+}
+
+/** All unpaid jobs compete in their original order, irrespective of job type. */
+function startQueuedJobs(world: SiegeWorld): void {
+  const ids = (world.economy.pending ?? []).map((order) => order.id);
+  for (const site of world.economy.settlements) {
+    for (const work of site.works) if (work.repairRequest !== undefined) ids.push(work.repairRequest);
+  }
+  for (const front of world.siege.fronts) {
+    for (const item of front.structures) if (item.repairRequest !== undefined) ids.push(item.repairRequest);
+  }
+  for (const id of ids.sort((a, b) => a - b)) {
+    advancePendingOrders(world.economy, id);
+    startFortificationRequests(world, id);
+    startWorkRepairRequests(world, id);
   }
 }
 
@@ -701,8 +719,7 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
     orderCampAttacks(world, commands);
     orderWorkAttacks(world, commands);
     advanceCampGuards(world, tick);
-    startFortificationRequests(world);
-    startWorkRepairRequests(world);
+    startQueuedJobs(world);
     for (const command of commands) {
       applySiegeCommand(world, command, routes);
       assignFortificationRepairLabour(world);

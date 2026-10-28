@@ -27,10 +27,11 @@ export function orderWorkRepair(world: SiegeWorld, command: WorkRepairCommand): 
 }
 
 /** Requests stay unpaid and vulnerable until affordable and outside a Siege. */
-export function startWorkRepairRequests(world: SiegeWorld): void {
+export function startWorkRepairRequests(world: SiegeWorld, onlyId?: number): void {
   for (const site of world.economy.settlements) {
     for (const work of [...site.works].sort((a, b) => (a.repairRequest ?? Infinity) - (b.repairRequest ?? Infinity))) {
       if (work.repairRequest === undefined) continue;
+      if (onlyId !== undefined && work.repairRequest !== onlyId) continue;
       if (work.repairOwner !== site.owner) { delete work.repairRequest; delete work.repairOwner; continue; }
       if (world.siege.fronts[site.id]?.path !== 0) continue;
       const building = buildingOf(work.building);

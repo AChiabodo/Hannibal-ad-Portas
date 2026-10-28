@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { buildingCode } from '../../src/content/buildings';
-import { attackStructure, cancelWorkRepair, move, repairWork } from '../../src/sim/command';
+import { attackStructure, build, cancelWorkRepair, move, repairWork } from '../../src/sim/command';
 import { createEconomy } from '../../src/sim/economy';
 import { createFogs } from '../../src/sim/fog';
 import { createMatch } from '../../src/sim/match';
@@ -181,6 +181,31 @@ it('keeps an unfunded work repair unpaid until resources are available', () => {
   site.stocks.fill(20);
   match.step();
   expect(observeSiege(world, 'rome').settlements[0]!.works[0]).toMatchObject({ hp: 30, repairing: true });
+});
+
+it('starts affordable construction and repair requests in their arrival order', () => {
+  const run = (first: 'repair' | 'build') => {
+    const map = testMap();
+    const economy = createEconomy(map);
+    const site = economy.settlements[0]!;
+    site.stocks.fill(20);
+    site.stocks[1] = 0;
+    site.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0, hp: 0 });
+    const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+      siege: createSiege(map, economy), fog: createFogs() };
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    const orders = [repairWork('rome', 0, 'farm', 0), build('rome', 0, 'house')];
+    match.step(first === 'repair' ? orders : orders.reverse());
+    site.stocks[1] = 4;
+    match.step();
+    return observeSiege(world, 'rome').settlements[0]!;
+  };
+  const repairFirst = run('repair');
+  expect(repairFirst.works.find((work) => work.building === 'farm')?.repairing).toBe(true);
+  expect(repairFirst.pending?.some((order) => order.building === 'house')).toBe(true);
+  const buildFirst = run('build');
+  expect(buildFirst.works.some((work) => work.building === 'house')).toBe(true);
+  expect(buildFirst.works.find((work) => work.building === 'farm')?.repairWaiting).toBe('resources');
 });
 
 it('remembers a work as last seen until its ruin is observed again', () => {
