@@ -895,17 +895,21 @@ function markRect(mask: Uint8Array, rect: GroundRect): void {
 }
 
 /** Four-connected seeded paths around fixed grounds; the seed only breaks equal-distance ties. */
-function groundPath(from: number, to: number, forbidden: Uint8Array, salt: number): number[] {
+function groundPath(from: number, to: number, forbidden: Uint8Array, salt: number, existing?: Uint8Array): number[] {
   const parent = new Int32Array(TILE_COUNT).fill(-2);
+  const distance = new Int32Array(TILE_COUNT).fill(-1);
+  const reuse = new Int32Array(TILE_COUNT);
   const queue = new Int32Array(TILE_COUNT);
   parent[from] = -1;
+  distance[from] = 0;
   queue[0] = from;
   let head = 0;
   let tail = 1;
-  while (head < tail && parent[to] === -2) {
+  while (head < tail && (existing !== undefined || parent[to] === -2)) {
     const tile = queue[head];
     head += 1;
     if (tile === undefined) continue;
+    if (tile === to) break;
     const x = tileX(tile);
     const y = tileY(tile);
     const rotation = (Math.imul(tile ^ salt, 0x45d9f3b) >>> 16) & 3;
@@ -915,8 +919,19 @@ function groundPath(from: number, to: number, forbidden: Uint8Array, salt: numbe
       const ny = y + (direction === 2 ? 1 : direction === 0 ? -1 : 0);
       if (nx < 0 || ny < 0 || nx >= MAP_WIDTH || ny >= MAP_HEIGHT) continue;
       const next = tileIndex(nx, ny);
-      if (forbidden[next] === 1 || parent[next] !== -2) continue;
+      if (forbidden[next] === 1) continue;
+      const nextDistance = (distance[tile] ?? 0) + 1;
+      const nextReuse = (reuse[tile] ?? 0) + (existing?.[next] === 1 ? 1 : 0);
+      if (parent[next] !== -2) {
+        if (existing !== undefined && distance[next] === nextDistance && nextReuse > (reuse[next] ?? 0)) {
+          parent[next] = tile;
+          reuse[next] = nextReuse;
+        }
+        continue;
+      }
       parent[next] = tile;
+      distance[next] = nextDistance;
+      reuse[next] = nextReuse;
       queue[tail] = next;
       tail += 1;
     }
@@ -1036,11 +1051,14 @@ function nodeTiles(
  */
 function carveRoads(terrain: Uint8Array, rng: Rng, sites: readonly Site[], forbidden: Uint8Array): Road[] {
   const roads: Road[] = [];
+  const existing = new Uint8Array(TILE_COUNT);
   const component = sites.map((_, index) => index);
   const join = (a: number, b: number): void => {
     const first = elementAt(component, a);
     const second = elementAt(component, b);
-    roads.push(layRoad(terrain, rng, elementAt(sites, a), elementAt(sites, b), forbidden));
+    const road = layRoad(terrain, rng, elementAt(sites, a), elementAt(sites, b), forbidden, existing);
+    roads.push(road);
+    for (const tile of road.tiles) existing[tile] = 1;
     for (let index = 0; index < component.length; index += 1) {
       if (component[index] === second) component[index] = first;
     }
@@ -1073,10 +1091,10 @@ function carveRoads(terrain: Uint8Array, rng: Rng, sites: readonly Site[], forbi
  * forces its roads through the Gate. Endpoints are included as evidence that
  * both features really are joined.
  */
-function layRoad(terrain: Uint8Array, rng: Rng, from: Site, to: Site, forbidden: Uint8Array): Road {
+function layRoad(terrain: Uint8Array, rng: Rng, from: Site, to: Site, forbidden: Uint8Array, existing: Uint8Array): Road {
   const start = tileIndex(from.x, from.y);
   const end = tileIndex(to.x, to.y);
-  const tiles = groundPath(start, end, forbidden, rng.nextUint32());
+  const tiles = groundPath(start, end, forbidden, rng.nextUint32(), existing);
   for (const tile of tiles) layRoadTile(terrain, tile);
   return { from: start, to: end, tiles };
 }
