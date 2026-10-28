@@ -1349,7 +1349,9 @@ function knownSiteLines(site: KnownSite): Pick<HudDetail, 'lines' | 'priority'> 
 
   if (site.appearance !== undefined) {
     const observed = new Map(site.appearance.tiles.flatMap((tile) => tile.work === undefined ? [] : [[`${tile.work.building}:${tile.work.ordinal}`, tile.work] as const]));
-    for (const work of observed.values()) lines.push({ label: workLabel(work.building), value: work.stage >= 2 ? translate('observed.finished') : work.stage === 1 ? translate('observed.incomplete') : translate('observed.foundation') });
+    for (const work of observed.values()) lines.push({ label: workLabel(work.building), value: translate(
+      work.stage === 5 ? 'observed.repairing' : work.stage === 4 ? 'observed.ruin' : work.stage === 3 ? 'observed.damaged' :
+        work.stage === 2 ? 'observed.finished' : work.stage === 1 ? 'observed.incomplete' : 'observed.foundation') });
     if (site.appearance.tier !== undefined) lines.push({ label: translate('ui.tier'), value: String(site.appearance.tier) });
   }
   return { lines, priority: [0] };

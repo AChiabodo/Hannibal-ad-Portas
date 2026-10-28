@@ -1,9 +1,10 @@
 /** Numeric, authoritative settlement sightings; projection never reads the live world. */
 import { buildingOf } from '../content/index.ts';
+import { WORK_MAX_HP } from '../content/buildings.ts';
 import { fortificationHp } from '../content/fortifications.ts';
 import { containsTile, settlementGroundFeatures } from '../content/settlement-layout.ts';
 import type { ObservedSettlement, ObservedSettlementTile } from '../content/settlement-appearance.ts';
-import type { Settlement } from './economy.ts';
+import type { Settlement, Work } from './economy.ts';
 import type { Fog } from './fog.ts';
 import { MAP_HEIGHT, MAP_WIDTH, tileIndex } from './map.ts';
 import { settlementSide, workGround, workOrdinal } from './settlement-space.ts';
@@ -105,7 +106,7 @@ function appearanceFrame(world: SiegeWorld, site: Settlement): Int32Array {
   const garrison = world.economy.squads.some((squad) => squad.garrison === site.id && squad.strength > 0);
   const origin = (site as Settlement & { readonly origin?: number }).origin ?? (site.id === 1 ? 1 : 0);
   const signature = `${site.owner}:${origin}:${site.tier}:${front?.structures.map((part) => part.hp).join(',') ?? ''}:${front?.ram ?? 0}:${front?.ramTicks === 0 ? 2 : 1}:${garrison ? 1 : 0}:` +
-    site.works.map((work) => `${work.building}.${workOrdinal(site, work)}.${work.origin ?? site.owner}.${workStage(work.building, work.remaining)}`).join(',');
+    site.works.map((work) => `${work.building}.${workOrdinal(site, work)}.${work.origin ?? site.owner}.${workStage(work)}`).join(',');
   const cached = FRAMES.get(site);
   if (cached?.signature === signature) return cached.cells;
   const cells = new Int32Array(WIDTH * WIDTH * STRIDE).fill(-1);
@@ -148,7 +149,7 @@ function appearanceFrame(world: SiegeWorld, site: Settlement): Int32Array {
       const offset = cell * STRIDE;
       cells[offset + BUILDING] = work.building;
       cells[offset + ORDINAL] = ordinal;
-      cells[offset + STAGE] = workStage(work.building, work.remaining);
+      cells[offset + STAGE] = workStage(work);
       cells[offset + WORK_ORIGIN] = work.origin ?? (site.owner === 1 ? 1 : 0);
     }
   }
@@ -156,8 +157,11 @@ function appearanceFrame(world: SiegeWorld, site: Settlement): Int32Array {
   return cells;
 }
 
-function workStage(building: number, remaining: number): number {
-  return remaining === 0 ? 2 : remaining * 2 > (buildingOf(building)?.buildTicks ?? 0) ? 0 : 1;
+function workStage(work: Work): number {
+  if (work.remaining > 0) return work.remaining * 2 > (buildingOf(work.building)?.buildTicks ?? 0) ? 0 : 1;
+  if (work.repairTicks !== undefined) return 5;
+  if (work.hp === 0) return 4;
+  return (work.hp ?? WORK_MAX_HP) < WORK_MAX_HP ? 3 : 2;
 }
 
 function structureAt(front: Front | undefined, gateSide: number, x: number, y: number): Front['structures'][number] | undefined {

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { buildingCode } from '../../src/content/buildings';
-import { attackStructure, cancelWorkRepair, repairWork } from '../../src/sim/command';
+import { attackStructure, cancelWorkRepair, move, repairWork } from '../../src/sim/command';
 import { createEconomy } from '../../src/sim/economy';
 import { createFogs } from '../../src/sim/fog';
 import { createMatch } from '../../src/sim/match';
@@ -10,6 +10,7 @@ import { workGround } from '../../src/sim/settlement-space';
 import { createSiege, observeSiege, siegeMatchRules, type SiegeWorld } from '../../src/sim/siege';
 import { refreshSiegeFog } from '../../src/sim/siege-fog';
 import { testMap } from './economy-fixtures';
+import { settlementComposition } from '../../src/art/settlement-composition';
 
 it('allows an enemy to damage a visible completed work', () => {
   const map = testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] });
@@ -180,4 +181,37 @@ it('keeps an unfunded work repair unpaid until resources are available', () => {
   site.stocks.fill(20);
   match.step();
   expect(observeSiege(world, 'rome').settlements[0]!.works[0]).toMatchObject({ hp: 30, repairing: true });
+});
+
+it('remembers a work as last seen until its ruin is observed again', () => {
+  const map = testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] });
+  const economy = createEconomy(map);
+  const site = economy.settlements[0]!;
+  const work = { building: buildingCode('farm')!, remaining: 0, ordinal: 0, hp: 60 };
+  site.works.push(work);
+  const rect = workGround(economy, site, 'farm', 0)!;
+  const scout = musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: rect.x - 2, y: rect.y });
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs() };
+  refreshSiegeFog(world, 0);
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  const stages = () => observeSiege(world, 'carthage').appearances?.find((item) => item.id === 0)?.tiles
+    .filter((tile) => tile.work?.building === 'farm').map((tile) => tile.work!.stage) ?? [];
+  expect(stages()).toContain(2);
+  match.step([move('carthage', [scout.id], 55, 55)]);
+  for (let i = 0; i < 220; i += 1) match.step();
+  work.hp = 0;
+  match.step();
+  expect(stages()).toContain(2);
+  expect(stages()).not.toContain(4);
+  match.step([move('carthage', [scout.id], rect.x - 2, rect.y)]);
+  for (let i = 0; i < 220; i += 1) match.step();
+  expect(stages()).toContain(4);
+});
+
+it('draws damaged, ruined and repairing works differently from an intact work', () => {
+  const draw = (stage: number) => settlementComposition({ kind: 'stronghold', owner: 'rome', tier: 1,
+    works: [{ building: 'farm', ordinal: 0, origin: 'rome', stage }] }).pixels;
+  const intact = draw(2);
+  for (const stage of [3, 4, 5]) expect(draw(stage).some((pixel, index) => pixel !== intact[index])).toBe(true);
 });
