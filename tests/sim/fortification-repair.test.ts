@@ -4,6 +4,7 @@ import { build, cancelFortificationRepair, move, repairFortification, repairWork
 import { observeSiege, siegeMatchRules, type SiegeWorld } from '../../src/sim/siege';
 import { musterSquad } from '../../src/sim/movement';
 import { buildingCode } from '../../src/content/buildings';
+import { physicalAccesses } from '../../src/sim/settlement-space';
 
 it('shares arrival priority between unpaid wall and building repairs', () => {
   const run = (wallFirst: boolean, immediate = false) => {
@@ -137,10 +138,13 @@ it('keeps a repaired breach open until the body occupying its passage leaves', (
   const match = createMatch<SiegeWorld, Command>({ seed: 7, rules: { ...siegeMatchRules, createWorld: () => world } });
   match.step([repairFortification('rome', 0, 'wall', 'north')]);
   for (let tick = 0; tick < 220; tick += 1) match.step();
-  expect(observeSiege(world, 'rome').fronts[0]!.structures.find((item) => item.kind === 'wall' && item.side === 'north')).toMatchObject({ hp: 0, repairing: true, repairRemaining: 0 });
+  expect(observeSiege(world, 'rome').fronts[0]!.structures.find((item) => item.kind === 'wall' && item.side === 'north'))
+    .toMatchObject({ hp: 0, repairing: true, repairRemaining: 0, repairWaiting: 'passage' });
+  expect(physicalAccesses(world.map, 1).some((access) => access.settlement === 0 && access.passage === 1)).toBe(true);
   match.step([move('rome', [squad.id], site.x, site.y - 15)]);
   for (let tick = 0; tick < 250; tick += 1) match.step();
   expect(observeSiege(world, 'rome').fronts[0]!.structures.find((item) => item.kind === 'wall' && item.side === 'north')).toMatchObject({ hp: 60, repairing: false });
+  expect(physicalAccesses(world.map, 1).some((access) => access.settlement === 0 && access.passage === 1)).toBe(false);
 });
 
 it('assigns scarce workers to fortifications in the order their repairs were requested', () => {

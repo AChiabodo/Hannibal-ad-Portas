@@ -143,6 +143,28 @@ it('preserves stored resources when a granary is ruined', () => {
   expect(observeSiege(world, 'rome').settlements[0]!.stocks.stone).toBeGreaterThanOrEqual(50);
 }, 30000);
 
+it.each([false, true])('preserves full house and granary capacity while ruined or repairing (repairing: %s)', (repairing) => {
+  const map = testMap();
+  const economy = createEconomy(map);
+  const site = economy.settlements[0]!;
+  site.population = 12;
+  site.stocks.fill(55);
+  site.works.push(
+    { building: buildingCode('house')!, remaining: 0, ordinal: 0, hp: 0 },
+    { building: buildingCode('granary')!, remaining: 0, ordinal: 0, hp: 0 },
+  );
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs() };
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  for (let tick = 0; tick < SEASON_TICKS - 10; tick += 1) match.step();
+  if (repairing) match.step([repairWork('rome', 0, 'house', 0), repairWork('rome', 0, 'granary', 0)]);
+  for (let tick = 0; tick < 12; tick += 1) match.step();
+  const observed = observeSiege(world, 'rome').settlements[0]!;
+  expect(observed.works.every((work) => work.hp === 0 && work.repairing === repairing)).toBe(true);
+  expect(observed.population).toBeGreaterThan(12);
+  expect(observed.stocks.stone).toBeGreaterThan(30);
+}, 30000);
+
 it('does not damage a work that is still under construction', () => {
   const map = testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] });
   const economy = createEconomy(map);
