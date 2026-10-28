@@ -129,6 +129,27 @@ it('stops a ruined farm from producing without removing the work', () => {
   expect(harvest(60)).toBeGreaterThan(harvest(0));
 }, 30000);
 
+it('suspends production while a damaged farm is being repaired', () => {
+  const harvest = (repairing: boolean): number => {
+    const map = testMap();
+    const economy = createEconomy(map);
+    const site = economy.settlements[0]!;
+    site.population = 4;
+    site.stocks.fill(10);
+    site.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0, hp: 50 });
+    const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+      siege: createSiege(map, economy), fog: createFogs() };
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    for (let tick = 0; tick < SEASON_TICKS - 10; tick += 1) match.step();
+    if (repairing) match.step([repairWork('rome', 0, 'farm', 0)]);
+    for (let tick = 0; tick < 12; tick += 1) match.step();
+    const visible = observeSiege(world, 'rome').settlements[0]!;
+    expect(visible.works[0]).toMatchObject({ hp: 50, repairing });
+    return visible.stocks.grain;
+  };
+  expect(harvest(false)).toBeGreaterThan(harvest(true));
+}, 30000);
+
 it('preserves stored resources when a granary is ruined', () => {
   const map = testMap();
   const economy = createEconomy(map);
@@ -268,6 +289,35 @@ it('cancels a paid work repair without refunding or restoring its health', () =>
   match.step([cancelWorkRepair('rome', 0, 'farm', 0)]);
   expect(observeSiege(world, 'rome').settlements[0]!.works[0]).toMatchObject({ hp: 30, repairing: false });
   expect(observeSiege(world, 'rome').settlements[0]!.stocks.timber).toBe(afterPayment);
+});
+
+it('protects a repair stalled for workers until cancellation, without refunding it', () => {
+  const map = testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] });
+  const economy = createEconomy(map);
+  const site = economy.settlements[0]!;
+  site.stocks.fill(20);
+  site.population = 1;
+  site.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0, hp: 50 });
+  const rect = workGround(economy, site, 'farm', 0)!;
+  const attacker = musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: rect.x - 2, y: rect.y });
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs() };
+  refreshSiegeFog(world, 0);
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([repairWork('rome', 0, 'farm', 0)]);
+  const paid = observeSiege(world, 'rome').settlements[0]!.stocks.timber;
+  const attack = attackStructure('carthage', [attacker.id], { kind: 'work', settlement: 0, building: 'farm', ordinal: 0 });
+  match.step([attack]);
+  for (let tick = 0; tick < 20; tick += 1) match.step();
+  expect(observeSiege(world, 'rome').settlements[0]!.works[0])
+    .toMatchObject({ hp: 50, repairing: true, repairRemaining: 30, repairWaiting: 'workers' });
+  expect(observeSiege(world, 'carthage').squads.find((squad) => squad.id === attacker.id)?.refused).toBe('target-repairing');
+  match.step([cancelWorkRepair('rome', 0, 'farm', 0)]);
+  expect(observeSiege(world, 'rome').settlements[0]!.stocks.timber).toBe(paid);
+  expect(observeSiege(world, 'rome').settlements[0]!.works[0]).toMatchObject({ hp: 50, repairing: false });
+  match.step([attack]);
+  for (let tick = 0; tick < 10; tick += 1) match.step();
+  expect(observeSiege(world, 'rome').settlements[0]!.works[0]!.hp).toBeLessThan(50);
 });
 
 it('keeps an unfunded work repair unpaid until resources are available', () => {
