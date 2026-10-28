@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { createCampGuards } from '../../src/sim/barbarian-guards';
-import { repairFortification, repairWork } from '../../src/sim/command';
+import { blockade, repairFortification, repairWork } from '../../src/sim/command';
 import { buildingCode } from '../../src/content/buildings';
 import { createEconomy } from '../../src/sim/economy';
 import { createFogs } from '../../src/sim/fog';
@@ -8,6 +8,47 @@ import { createMatch } from '../../src/sim/match';
 import { musterSquad } from '../../src/sim/movement';
 import { createSiege, observeSiege, siegeMatchRulesForDifficulty } from '../../src/sim/siege';
 import { testMap } from './economy-fixtures';
+
+it.each(['barbarians', 'blockaders'] as const)(
+  'keeps queued repairs blocked when %s are defeated but the other siege continues', (firstToLeave) => {
+    const rules = siegeMatchRulesForDifficulty('imperator');
+    const initial = rules.createWorld(4);
+    const map = { ...testMap({ strongholds: [{ x: 40, y: 40 }, { x: 110, y: 110 }], settlements: [] }),
+      barbarianCamps: [{ x: 55, y: 40, variant: 0 }] };
+    const economy = createEconomy(map);
+    const site = economy.settlements[0]!;
+    site.stocks.fill(0);
+    site.population = 0;
+    site.works.push({ building: buildingCode('granary')!, ordinal: 0, remaining: 0, hp: 40 });
+    const world = { ...initial, map, economy, siege: createSiege(map, economy), fog: createFogs(),
+      barbarianCamps: [{ hp: 60 }], campOrders: [] };
+    world.siege.fronts[0]!.structures.find((piece) => piece.kind === 1 && piece.side === 0)!.hp = 30;
+    createCampGuards(world);
+    const match = createMatch({ seed: 4, rules: { ...rules, createWorld: () => world } });
+    match.step([repairWork('rome', 0, 'granary', 0), repairFortification('rome', 0, 'wall', 'north')]);
+    for (let tick = 0; tick < 950 && observeSiege(world, 'rome').fronts[0]?.siege !== 'assault'; tick += 1) match.step();
+    expect(observeSiege(world, 'rome').fronts[0]?.siege).toBe('assault');
+    const raider = economy.squads.find((squad) => squad.owner === 2)!;
+    const blocker = musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', x: 28, y: 40 });
+    match.step([blockade('carthage', [blocker.id], 0)]);
+    expect(observeSiege(world, 'rome').fronts[0]?.siege).toBe('blockade');
+    site.stocks.fill(100);
+    if (firstToLeave === 'barbarians') raider.strength = 0;
+    else economy.squads.splice(economy.squads.indexOf(blocker), 1);
+    for (let tick = 0; tick < 3; tick += 1) match.step();
+    expect(observeSiege(world, 'rome').fronts[0]?.siege).toBe(firstToLeave === 'barbarians' ? 'blockade' : 'assault');
+    expect(observeSiege(world, 'rome').settlements[0]?.works[0]).toMatchObject({ repairing: false, repairWaiting: 'siege' });
+    expect(observeSiege(world, 'rome').fronts[0]!.structures.find((piece) => piece.kind === 'wall' && piece.side === 'north'))
+      .toMatchObject({ repairing: false, repairWaiting: 'siege' });
+    if (firstToLeave === 'barbarians') economy.squads.splice(economy.squads.indexOf(blocker), 1);
+    else raider.strength = 0;
+    for (let tick = 0; tick < 3; tick += 1) match.step();
+    expect(observeSiege(world, 'rome').fronts[0]?.siege).toBeNull();
+    expect(observeSiege(world, 'rome').settlements[0]?.works[0]).toMatchObject({ repairing: true });
+    expect(observeSiege(world, 'rome').fronts[0]!.structures.find((piece) => piece.kind === 'wall' && piece.side === 'north'))
+      .toMatchObject({ repairing: true });
+  },
+);
 
 it('reports a queued work repair as waiting for the assault to end', () => {
   const rules = siegeMatchRulesForDifficulty('imperator');
