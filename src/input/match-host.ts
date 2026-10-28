@@ -9,7 +9,7 @@ import { createMatch, type MatchRules } from '../sim/match.ts';
 import { createPacing } from '../sim/pacing.ts';
 import type { LoggedCommand } from '../sim/replay.ts';
 import { MATCH_TICKS } from '../sim/season.ts';
-import { observeSiege, siegeMatchOutcome, siegeMatchRules, type SiegeWorld, type SiegeVisible } from '../sim/siege.ts';
+import { observeSiege, siegeMatchOutcome, siegeMatchRulesForDifficulty, type SiegeWorld, type SiegeVisible } from '../sim/siege.ts';
 import { requireTickCount } from '../sim/ticks.ts';
 import { createHuman } from './human.ts';
 
@@ -25,7 +25,7 @@ export interface BrowserMatchOptions {
 }
 
 export function createBrowserMatch(options: BrowserMatchOptions) {
-  const match = createMatch({ seed: options.seed, rules: options.rules ?? siegeMatchRules });
+  const match = createMatch({ seed: options.seed, rules: options.rules ?? siegeMatchRulesForDifficulty(options.difficulty) });
   const pacing = createPacing();
   let result: MatchResult | null = null;
   const human = createHuman(options.faction, () => result === null);

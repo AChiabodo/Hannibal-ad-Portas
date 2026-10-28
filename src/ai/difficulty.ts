@@ -1,7 +1,7 @@
 /**
  * The three difficulty levels an AI opponent plays at (PLAN §4, D5).
  *
- * Difficulty changes the opponent's *thinking* and nothing else. It never
+ * Difficulty changes the opponent's thinking and the cadence of neutral raids. It never
  * grants a Faction resources, production or vision: those are the rules', and a
  * difficulty that reached them would be dishonest against the Observation
  * contract and would make balance impossible to measure. Every number here is a
@@ -20,8 +20,8 @@
  * - **Scouting quality** (`scoutsPer`, `refreshSeconds`) — how large a share of
  *   the army explores, and how soon a last-known contact is worth refreshing.
  *
- * Nothing about the level belongs to the simulation: it lives in `ai/` and
- * leaves as Commands an ordinary Controller could have emitted.
+ * The opponent's thinking lives in `ai/`; the shared neutral raid cadence is
+ * also selected in the Match rules, without changing Faction resources or vision.
  */
 
 /** The three levels, from the rawest recruit to the general who wins wars. */

@@ -71,7 +71,8 @@
  */
 import { bearingOf, figuresOf, stockAt, squadTypeOf } from '../content/index.ts';
 import { fortificationHp, fortificationRepairStone, garrisonCapacity } from '../content/fortifications.ts';
-import { advanceCampGuards, BARBARIAN_OWNER, createCampGuards } from './barbarian-guards.ts';
+import { advanceCampGuards, BARBARIAN_OWNER, BARBARIAN_RAID_PERIOD, createCampGuards,
+  type BarbarianDifficulty } from './barbarian-guards.ts';
 import { bindSiegeSpace, siteRect, invalidateSpace, canOccupy, occupiedGround, squadGround, coreOf, physicalAccesses } from './settlement-space.ts';
 import { containsTile, settlementLayout, intersects, type GroundRect } from '../content/settlement-layout.ts';
 import { perimeterDistance, outsideCore, insideCore, rectDistance } from './settlement-siege-geometry.ts';
@@ -334,6 +335,8 @@ export interface Siege {
 
 /** The world `siegeMatchRules` plays: the economy's Match, with its fortifications beside it. */
 export interface SiegeWorld extends EconomyWorld {
+  /** Match-wide neutral raid cadence, the same for both player Factions. */
+  barbarianRaidPeriod?: number;
   barbarianCamps?: BarbarianCampState[];
   campOrders?: CampAttackOrder[];
   workOrders?: WorkAttackOrder[];
@@ -727,14 +730,20 @@ export const siegeMatchRules: MatchRules<SiegeWorld, Command> = {
 };
 
 /** Opens the Siege world a seed describes: the economy's Match with its walls. */
-export function createSiegeWorld(seed: number): SiegeWorld {
+export function createSiegeWorld(seed: number, difficulty: BarbarianDifficulty = 'centurio'): SiegeWorld {
   const world = economyMatchRules.createWorld(seed);
 
-  const complete = { ...world, siege: createSiege(world.map, world.economy), fog: createFogs() };
+  const complete = { ...world, siege: createSiege(world.map, world.economy), fog: createFogs(),
+    barbarianRaidPeriod: BARBARIAN_RAID_PERIOD[difficulty] };
   openBarbarianCamps(complete);
   createCampGuards(complete);
   refreshSiegeFog(complete, 0);
   return complete;
+}
+
+/** The same deterministic rules with a selected neutral raid cadence. */
+export function siegeMatchRulesForDifficulty(difficulty: BarbarianDifficulty): MatchRules<SiegeWorld, Command> {
+  return { ...siegeMatchRules, createWorld: (seed) => createSiegeWorld(seed, difficulty) };
 }
 
 /**

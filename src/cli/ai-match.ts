@@ -17,7 +17,7 @@ import { TICK_HZ } from '../sim/clock.ts';
 import { BASE_HOUSING, BASE_STORAGE, GRAIN_PER_HEAD, TAX_PER_DENARIUS } from '../sim/economy.ts';
 import type { Command } from '../sim/command.ts';
 import { runMatch, type MatchRun } from '../sim/driver.ts';
-import { RELIEF_RADIUS, RAM_COST, SIEGE_RADIUS, ASSAULT_TICKS, WALL_SHOCK, canAssault, observeSiege, siegeMatchOutcome, siegeMatchRules,
+import { RELIEF_RADIUS, RAM_COST, SIEGE_RADIUS, ASSAULT_TICKS, WALL_SHOCK, canAssault, observeSiege, siegeMatchOutcome, siegeMatchRulesForDifficulty,
   type SiegeVisible } from '../sim/siege.ts';
 import { FATIGUE_MAX } from '../sim/squad.ts';
 import { MAP_WIDTH, MAP_HEIGHT, TERRAIN } from '../sim/map.ts';
@@ -245,8 +245,7 @@ export function createArmyController(
 
 /**
  * Two fresh AIs against the complete Siege Match, at a stated difficulty. The
- * difficulty reaches only the behaviours and the Controller's operational clock;
- * the rules are the same Match at every level.
+ * difficulty sets both the Controllers and the shared neutral raid cadence.
  */
 export function playAiMatch(
   seed: number,
@@ -259,7 +258,7 @@ export function playAiMatch(
   const carthage = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ,
     operationalSeconds: difficulty.reactionSeconds, registry });
   const run = runMatch({
-    seed, ticks, rules: siegeMatchRules, observe: observeSiege, outcome: siegeMatchOutcome,
+    seed, ticks, rules: siegeMatchRulesForDifficulty(difficulty.name), observe: observeSiege, outcome: siegeMatchOutcome,
     players: [{ faction: 'rome', controller: rome }, { faction: 'carthage', controller: carthage }],
   });
   // Stable sort preserves strategic → operational → tactical within a Faction.

@@ -4,14 +4,20 @@ import { FIELD, isRouting, standingAt } from './squad.ts';
 import { engagedWith, enemyWithin } from './combat.ts';
 import { MAP_HEIGHT, MAP_WIDTH } from './map.ts';
 import { orderSquadTo, routeCacheFor } from './movement.ts';
-import { canOccupy, occupiedGround, squadGround } from './settlement-space.ts';
+import { canOccupy, coreOf, occupiedGround, squadGround } from './settlement-space.ts';
 import type { Squad } from './economy.ts';
 import type { SiegeWorld } from './siege.ts';
 
 /** Not a player Faction and never a valid Command issuer. */
 export const BARBARIAN_OWNER = 2;
+export type BarbarianDifficulty = 'tiro' | 'centurio' | 'imperator';
+export const BARBARIAN_RAID_PERIOD: Readonly<Record<BarbarianDifficulty, number>> = {
+  tiro: 1800, centurio: 1200, imperator: 600,
+};
 const GUARD_MEN = 24;
 const REINFORCEMENT_TICKS = 600;
+const RAID_RADIUS = 24;
+const RAID_DURATION = 400;
 
 /** Create a finite initial field force at each generated camp. */
 export function createCampGuards(world: SiegeWorld): void {
@@ -55,6 +61,8 @@ export function advanceCampGuards(world: SiegeWorld, tick: number): void {
         guard.steps = [];
         guard.wait = 0;
         guard.barbarianRetired = 1;
+        delete guard.barbarianRaidTarget;
+        delete guard.barbarianRaidUntil;
       }
       // Orphans never seek a fight: stop before wandering into another Squad.
       // If an enemy closes into contact the normal combat rules let them defend.
@@ -72,13 +80,35 @@ export function advanceCampGuards(world: SiegeWorld, tick: number): void {
       continue;
     }
     if (tick % 20 !== 0) continue;
+    const period = world.barbarianRaidPeriod ?? BARBARIAN_RAID_PERIOD.centurio;
+    if (tick > 0 && tick % period === 0) {
+      const sites = world.economy.settlements.filter((site) => (site.owner === 0 || site.owner === 1) &&
+        Math.max(Math.abs(site.x - home.x), Math.abs(site.y - home.y)) <= RAID_RADIUS);
+      sites.sort((a, b) => Math.max(Math.abs(a.x - home.x), Math.abs(a.y - home.y)) -
+        Math.max(Math.abs(b.x - home.x), Math.abs(b.y - home.y)) || a.id - b.id);
+      if (sites[0] !== undefined) {
+        guard.barbarianRaidTarget = sites[0].id;
+        guard.barbarianRaidUntil = tick + RAID_DURATION;
+      }
+    }
     if (engagedWith(world.economy, guard) !== undefined) continue;
     const targets = world.economy.squads.filter((squad) => squad.owner !== BARBARIAN_OWNER && squad.garrison === FIELD &&
       Math.max(Math.abs(squad.x - home.x), Math.abs(squad.y - home.y)) <= 8);
     targets.sort((a, b) => Math.max(Math.abs(a.x - guard.x), Math.abs(a.y - guard.y)) -
       Math.max(Math.abs(b.x - guard.x), Math.abs(b.y - guard.y)) || a.id - b.id);
     const target = targets[0];
-    if (target !== undefined) orderSquadTo(world.map, guard, target, routes);
-    else if (Math.max(Math.abs(guard.x - home.x), Math.abs(guard.y - home.y)) > 2) orderSquadTo(world.map, guard, home, routes);
+    if (target !== undefined) { orderSquadTo(world.map, guard, target, routes); continue; }
+    const settlement = guard.barbarianRaidTarget === undefined ? undefined : world.economy.settlements[guard.barbarianRaidTarget];
+    if (settlement !== undefined && tick < (guard.barbarianRaidUntil ?? 0) &&
+      (settlement.owner === 0 || settlement.owner === 1)) {
+      const core = coreOf(world.economy, settlement);
+      const x = Math.max(core.x - 1, Math.min(core.x + core.width, home.x));
+      const y = Math.max(core.y - 1, Math.min(core.y + core.height, home.y));
+      orderSquadTo(world.map, guard, { x, y }, routes);
+    } else {
+      delete guard.barbarianRaidTarget;
+      delete guard.barbarianRaidUntil;
+      if (Math.max(Math.abs(guard.x - home.x), Math.abs(guard.y - home.y)) > 2) orderSquadTo(world.map, guard, home, routes);
+    }
   }
 }

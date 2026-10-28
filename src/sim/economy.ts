@@ -221,6 +221,9 @@ export interface Squad extends Block {
   barbarianCamp?: number;
   /** Set when a surviving camp defender has become a wandering orphan. */
   barbarianRetired?: number;
+  /** Temporary nearby target and deadline for a neutral raid. */
+  barbarianRaidTarget?: number;
+  barbarianRaidUntil?: number;
   /** What a Command names it by, and what an Observation reports: an id is never reused. */
   readonly id: number;
 

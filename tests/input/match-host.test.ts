@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { createBrowserMatch } from '../../src/input/match-host.ts';
 import { assault, build, recruit } from '../../src/sim/command.ts';
 import { idleController, scriptedController } from '../../src/sim/controller.ts';
-import { siegeMatchRules, type SiegeVisible } from '../../src/sim/siege.ts';
+import { siegeMatchRules, siegeMatchRulesForDifficulty, type SiegeVisible } from '../../src/sim/siege.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
 import { runMatch } from '../../src/sim/driver.ts';
 import { observeSiege, siegeMatchOutcome } from '../../src/sim/siege.ts';
@@ -58,7 +58,7 @@ for (const faction of ['rome', 'carthage'] as const) {
     expect(host.observe().squads[0]).toMatchObject({
       men: 24, capacity: 24, payroll: faction === 'rome' ? 3 : 2,
     });
-    const run = runMatch({ seed: 13, ticks: 1, rules: siegeMatchRules, observe: observeSiege, outcome: siegeMatchOutcome,
+    const run = runMatch({ seed: 13, ticks: 1, rules: siegeMatchRulesForDifficulty('imperator'), observe: observeSiege, outcome: siegeMatchOutcome,
       players: [{ faction: 'rome', controller: scriptedController<SiegeVisible>(host.applied()) },
         { faction: 'carthage', controller: scriptedController<SiegeVisible>(host.applied()) }] });
     expect(host.match.hash()).toBe(run.hash);
