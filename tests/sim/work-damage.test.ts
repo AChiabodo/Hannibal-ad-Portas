@@ -184,20 +184,19 @@ it('keeps an unfunded work repair unpaid until resources are available', () => {
 });
 
 it('starts affordable construction and repair requests in their arrival order', () => {
-  const run = (first: 'repair' | 'build') => {
+  const run = (first: 'repair' | 'build', immediate = false) => {
     const map = testMap();
     const economy = createEconomy(map);
     const site = economy.settlements[0]!;
     site.stocks.fill(20);
-    site.stocks[1] = 0;
+    site.stocks[1] = immediate ? 4 : 0;
     site.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0, hp: 0 });
     const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
       siege: createSiege(map, economy), fog: createFogs() };
     const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
     const orders = [repairWork('rome', 0, 'farm', 0), build('rome', 0, 'house')];
     match.step(first === 'repair' ? orders : orders.reverse());
-    site.stocks[1] = 4;
-    match.step();
+    if (!immediate) { site.stocks[1] = 4; match.step(); }
     return observeSiege(world, 'rome').settlements[0]!;
   };
   const repairFirst = run('repair');
@@ -206,6 +205,12 @@ it('starts affordable construction and repair requests in their arrival order', 
   const buildFirst = run('build');
   expect(buildFirst.works.some((work) => work.building === 'house')).toBe(true);
   expect(buildFirst.works.find((work) => work.building === 'farm')?.repairWaiting).toBe('resources');
+  const immediateRepair = run('repair', true);
+  expect(immediateRepair.works.find((work) => work.building === 'farm')?.repairing).toBe(true);
+  expect(immediateRepair.pending?.some((order) => order.building === 'house')).toBe(true);
+  const immediateBuild = run('build', true);
+  expect(immediateBuild.works.some((work) => work.building === 'house')).toBe(true);
+  expect(immediateBuild.works.find((work) => work.building === 'farm')?.repairWaiting).toBe('resources');
 });
 
 it('remembers a work as last seen until its ruin is observed again', () => {
