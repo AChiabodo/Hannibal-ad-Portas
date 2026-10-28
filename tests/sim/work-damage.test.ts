@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { buildingCode } from '../../src/content/buildings';
-import { attackStructure, build, cancelWorkRepair, move, repairWork } from '../../src/sim/command';
+import { attackStructure, blockade, build, cancelWorkRepair, move, repairWork } from '../../src/sim/command';
 import { createEconomy } from '../../src/sim/economy';
 import { createFogs } from '../../src/sim/fog';
 import { createMatch } from '../../src/sim/match';
@@ -202,6 +202,35 @@ it('does not damage a work that is still under construction', () => {
   for (let i = 0; i < 40; i += 1) match.step();
   expect(observeSiege(world, 'rome').settlements[0]!.works[0]).toMatchObject({ remaining: 100 });
   expect(observeSiege(world, 'rome').settlements[0]!.works[0]!.hp).toBeUndefined();
+});
+
+it('protects a work under construction but allows damage after completion during a blockade', () => {
+  const map = testMap({ strongholds: [{ x: 25, y: 25 }, { x: 110, y: 110 }] });
+  const economy = createEconomy(map);
+  const site = economy.settlements[0]!;
+  site.population = 4;
+  site.works.push({ building: buildingCode('farm')!, remaining: 5, ordinal: 0 });
+  const rect = workGround(economy, site, 'farm', 0)!;
+  const attacker = musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: rect.x - 2, y: rect.y });
+  const blocker = musterSquad(economy, map, { faction: 'carthage', squadType: 'libyan-spear', men: 48, x: 25, y: 33 });
+  blocker.facing = 0;
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs() };
+  refreshSiegeFog(world, 0);
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  const attack = attackStructure('carthage', [attacker.id], { kind: 'work', settlement: 0, building: 'farm', ordinal: 0 });
+  match.step([blockade('carthage', [blocker.id], 0), attack]);
+  expect(observeSiege(world, 'rome').fronts[0]?.siege).toBe('blockade');
+  expect(observeSiege(world, 'rome').settlements[0]!.works[0]).toMatchObject({ remaining: 4, standing: false });
+  expect(observeSiege(world, 'rome').settlements[0]!.works[0]?.hp).toBeUndefined();
+  expect(observeSiege(world, 'carthage').squads.find((squad) => squad.id === attacker.id)?.refused).toBe('target-unavailable');
+  for (let tick = 0; tick < 4; tick += 1) match.step();
+  expect(observeSiege(world, 'rome').fronts[0]?.siege).toBe('blockade');
+  expect(observeSiege(world, 'rome').settlements[0]!.works[0]).toMatchObject({ remaining: 0, hp: 60, standing: true });
+  match.step([attack]);
+  for (let tick = 0; tick < 10; tick += 1) match.step();
+  expect(observeSiege(world, 'rome').fronts[0]?.siege).toBe('blockade');
+  expect(observeSiege(world, 'rome').settlements[0]!.works[0]!.hp).toBeLessThan(60);
 });
 
 it('does not shoot through an intact wall at an interior work', () => {
