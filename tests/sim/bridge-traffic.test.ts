@@ -91,6 +91,22 @@ describe('bridge traffic', () => {
     expect(farTick).toBeGreaterThan(nearTick);
   });
 
+  it('lets a faster squad engage the bridge first when it can arrive before a slower squad', () => {
+    const { world, match } = stage();
+    const foot = musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'libyan-spear', men: 24, x: 49, y: 53 });
+    const horse = musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'numidian-horse', men: 12, x: 46, y: 46 });
+    match.step([move('carthage', [foot.id], 70, 53), move('carthage', [horse.id], 70, 46)]);
+    let footTick = -1, horseTick = -1;
+    for (let tick = 0; tick < 400; tick += 1) {
+      match.step();
+      const shown = observeSiege(match.state.world, 'carthage').squads;
+      if (shown.find((squad) => squad.id === foot.id)?.x === 55 && footTick < 0) footTick = tick;
+      if (shown.find((squad) => squad.id === horse.id)?.x === 55 && horseTick < 0) horseTick = tick;
+    }
+    expect(horseTick).toBeGreaterThanOrEqual(0);
+    expect(footTick).toBeGreaterThan(horseTick);
+  });
+
   it('waits before entering while a friendly body blocks the far exit', () => {
     const { world, match } = stage();
     const first = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 43, y: 50 });

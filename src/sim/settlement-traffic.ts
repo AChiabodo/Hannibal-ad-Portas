@@ -1,10 +1,11 @@
 /** One authoritative FIFO per physical opening, shared by field and wall-duty journeys. */
 import { containsTile, intersects, type GroundRect } from '../content/settlement-layout.ts';
+import { squadTypeOf } from '../content/squads.ts';
 import type { Economy, Squad } from './economy.ts';
-import { tileX, tileY, type MapGrid } from './map.ts';
+import { tileX, tileY, type MapGrid, type Terrain } from './map.ts';
 import { canOccupy, coreOf, occupiedGround, physicalAccesses, squadGround, type PhysicalAccess } from './settlement-space.ts';
 import { FIELD } from './squad.ts';
-import { NO_REFUSAL } from './route.ts';
+import { NO_REFUSAL, paceCost } from './route.ts';
 
 function same(one: NonNullable<Squad['access']>, other: NonNullable<Squad['access']>): boolean {
   return one.settlement === other.settlement && one.passage === other.passage;
@@ -18,19 +19,22 @@ function onRoute(squad: Squad, access: PhysicalAccess): boolean {
   return squad.steps.some((tile) => containsTile(access.rect, tileX(tile), tileY(tile)));
 }
 
-/** A bridge is claimed by the arrival nearest the entrance; simultaneous arrivals use ticket order. */
-function before(other: Squad, squad: Squad, access: PhysicalAccess): boolean {
+/** A bridge is claimed by the earliest predicted arrival; ties use ticket order. */
+function before(other: Squad, squad: Squad, access: PhysicalAccess, map: MapGrid): boolean {
   const one = other.access;
   const two = squad.access;
   if (one === undefined || two === undefined || !same(one, two)) return false;
   if (access.settlement !== -1) return one.active === 1 || one.ticket < two.ticket || (one.ticket === two.ticket && other.id < squad.id);
   if (one.active !== two.active) return one.active === 1;
   if (one.active === 1) return one.ticket < two.ticket || (one.ticket === two.ticket && other.id < squad.id);
-  const distance = (body: Squad): number => {
+  const arrival = (body: Squad): number => {
     const index = body.steps.findIndex((tile) => containsTile(access.rect, tileX(tile), tileY(tile)));
-    return index < 0 ? Number.POSITIVE_INFINITY : index;
+    if (index < 0) return Number.POSITIVE_INFINITY;
+    const pace = squadTypeOf(body.type)?.pace ?? 1;
+    return body.wait + body.steps.slice(1, index + 1).reduce((sum, tile) =>
+      sum + paceCost(map.terrain[tile] as Terrain, pace), 0);
   };
-  const theirs = distance(other), ours = distance(squad);
+  const theirs = arrival(other), ours = arrival(squad);
   return theirs < ours || (theirs === ours && (one.ticket < two.ticket || (one.ticket === two.ticket && other.id < squad.id)));
 }
 
@@ -76,7 +80,7 @@ export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squ
     if (waiting === undefined || waiting.active === 1) continue;
     const passage = physicalAccesses(map, squad.owner).find((at) => at.settlement === waiting.settlement && at.passage === waiting.passage);
     const leader = passage === undefined ? undefined : economy.squads.find((other) => other.id !== squad.id &&
-      (waiting.settlement !== -1 || other.owner === squad.owner) && before(other, squad, passage));
+      (waiting.settlement !== -1 || other.owner === squad.owner) && before(other, squad, passage, map));
     if (waiting.yielding !== 0) {
       if (squad.steps.length === 0) {
         if (leader === undefined) {
@@ -117,7 +121,7 @@ export function trafficStep(economy: Economy, map: MapGrid, squad: Squad, x: num
   if (access !== undefined) {
     const passage = physicalAccesses(map, squad.owner).find((at) => at.settlement === access.settlement && at.passage === access.passage);
     const older = (passage !== undefined && economy.squads.some((other) => other.id !== squad.id &&
-      (access.settlement !== -1 || other.owner === squad.owner) && before(other, squad, passage))) ||
+      (access.settlement !== -1 || other.owner === squad.owner) && before(other, squad, passage, map))) ||
       (access.passage === 0 && economy.squads.some((other) => {
         const journey = other.garrisonJourney;
         if (other.id === squad.id || journey?.settlement !== access.settlement || journey.ticket <= 0 || journey.ticket >= access.ticket ||
