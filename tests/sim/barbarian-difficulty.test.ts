@@ -4,6 +4,7 @@ import { createSiege, observeSiege, siegeMatchRulesForDifficulty } from '../../s
 import { createEconomy } from '../../src/sim/economy';
 import { createFogs } from '../../src/sim/fog';
 import { createCampGuards } from '../../src/sim/barbarian-guards';
+import { replay } from '../../src/sim/replay';
 import { testMap } from './economy-fixtures';
 
 it('keeps the same map and camp strength while configuring the shared raid interval', () => {
@@ -16,6 +17,8 @@ it('keeps the same map and camp strength while configuring the shared raid inter
   expect(hard.hash()).toBe(again.hash());
   for (let tick = 0; tick < 650; tick += 1) { hard.step(); again.step(); }
   expect(hard.hash()).toBe(again.hash());
+  expect(replay({ seed: 4, rules: siegeMatchRulesForDifficulty('imperator'), log: [], ticks: 650, everyTicks: 650 }).hash)
+    .toBe(hard.hash());
 });
 
 for (const faction of ['rome', 'carthage'] as const) {
