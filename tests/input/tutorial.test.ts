@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { createTutorial, type Tutorial } from '../../src/input/tutorial.ts';
 import { build, recruit, move, attack, attackMove, blockade } from '../../src/sim/command.ts';
+import { generateMap } from '../../src/sim/map.ts';
 
 function showCurrentControl(practice: Tutorial): void {
   const goal = practice.lesson.goal;
@@ -147,13 +148,14 @@ it('finishes the final lesson sequence only after a normal AI encounter, capture
   for (let tick = 0; tick < 10000 && host.result === null && !encounter; tick += 1) {
     host.advance(1);
     opponentActed ||= host.applied('carthage').length > 0;
-    const enemy = host.observe().enemies[0];
+    const enemy = host.observe().enemies.find((entry) => entry.neutral !== true);
     if (enemy !== undefined) host.human.submit(attack('rome', [first.id], enemy.id));
-    encounter = host.observe().squads.some(({ engaged }) => engaged);
+    encounter = enemy !== undefined && host.observe().squads.some(({ engaged }) => engaged);
   }
   expect(opponentActed).toBe(true);
   expect(encounter).toBe(true);
-  host.human.submit(move('rome', host.observe().squads.map(({ id }) => id), 35, 79));
+  const village = generateMap(7).settlements[0]!;
+  host.human.submit(move('rome', host.observe().squads.map(({ id }) => id), village.x, village.y));
   host.advance(800);
   expect(host.observe().settlements.some(({ id }) => id === 2)).toBe(true);
   readAvailable(practice);
