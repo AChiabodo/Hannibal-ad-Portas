@@ -243,7 +243,8 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
             const tile = open[cursor]!, x = tile % width;
             for (const next of [x > 0 ? tile - 1 : -1, x + 1 < width ? tile + 1 : -1,
               tile >= width ? tile - width : -1, tile + width < width * height ? tile + width : -1]) {
-              if (next < 0 || guidance[next] !== -1 || terrain[next] === water || obstacles[next] === 1) continue;
+              if (next < 0 || guidance[next] !== -1 || terrain[next] === water ||
+                (terrain[next] !== undefined && content.additionalWater?.includes(terrain[next]!) === true) || obstacles[next] === 1) continue;
               guidance[next] = guidance[tile]! + 1;
               open.push(next);
             }

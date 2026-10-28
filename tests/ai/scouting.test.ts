@@ -14,6 +14,32 @@ import { observeSiege, siegeMatchRules } from '../../src/sim/siege.ts';
 import type { SiegeVisible } from '../../src/sim/siege.ts';
 
 describe('the scouting Controller', () => {
+  it('plans around a known lake as it would around an equally impassable river', () => {
+    const world = siegeMatchRules.createWorld(7);
+    const home = world.economy.settlements[0]!;
+    musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: home.x, y: home.y });
+    const base = observeSiege(world, 'rome');
+    const observed = (water: number): SiegeVisible => {
+      const terrain = new Uint8Array(MAP_WIDTH * MAP_HEIGHT);
+      for (let y = 0; y < MAP_HEIGHT; y += 1) {
+        for (let x = 110; x < MAP_WIDTH; x += 1) terrain[y * MAP_WIDTH + x] = UNSEEN;
+      }
+      for (let y = 85; y < 125; y += 1) {
+        for (let x = 110; x < 128; x += 1) terrain[y * MAP_WIDTH + x] = water;
+      }
+      return { ...base, appearances: [], fog: { ...base.fog, terrain } };
+    };
+    const decide = (water: number) => createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ,
+      registry: createBehaviourRegistry<SiegeVisible, Command>([
+        createScoutingBehaviour({ width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
+          additionalWater: [TERRAIN.lake], vision: SQUAD_VISION, settlementRadius: 7, ticksPerSecond: TICK_HZ,
+          squadTypes: SQUAD_TYPES, scoutTypes: ['hastati', 'gaul', 'numidian-horse'] }, DIFFICULTY.imperator),
+      ]) }).decide({ faction: 'rome', tick: 0, visible: observed(water) });
+    const river = decide(TERRAIN.river);
+    expect(river.some((command) => command.kind === 'move')).toBe(true);
+    expect(decide(TERRAIN.lake)).toEqual(river);
+  });
+
   it('uses two distinct opening patrols at Imperator when a two-Squad army can provide them', () => {
     const world = siegeMatchRules.createWorld(7);
     const home = world.economy.settlements[0]!;
