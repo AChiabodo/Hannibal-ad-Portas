@@ -5,7 +5,7 @@ import { createFogs } from '../../src/sim/fog';
 import { startCalendar } from '../../src/sim/season';
 import { musterSquad } from '../../src/sim/movement';
 import { createSiege, observeSiege, siegeMatchRules, type SiegeWorld } from '../../src/sim/siege';
-import { blockade, type Command } from '../../src/sim/command';
+import { blockade, repairFortification, repairWork, type Command } from '../../src/sim/command';
 import { testMap } from './economy-fixtures';
 import { buildingCode } from '../../src/content/buildings';
 
@@ -62,6 +62,60 @@ it('keeps an occupied stronghold when its plaza is held but its wall defenders r
   const match = createMatch<SiegeWorld, Command>({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
   for (let tick = 0; tick < 151; tick += 1) match.step();
   expect(observeSiege(match.state.world, 'rome').settlements.some((site) => site.id === 0)).toBe(true);
+});
+
+it('cancels a fortification repair when a breached stronghold is captured', () => {
+  const map = testMap({ strongholds: [{ x: 25, y: 25 }, { x: 75, y: 75 }] });
+  const economy = createEconomy(map);
+  const site = economy.settlements[0]!;
+  site.population = 2;
+  site.stocks.fill(100);
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    fog: createFogs(), siege: createSiege(map, economy) };
+  const front = world.siege.fronts[0]!;
+  front.structures.find((piece) => piece.kind === 0)!.hp = 0;
+  front.structures.find((piece) => piece.kind === 1 && piece.side === 0)!.hp = 0;
+  musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 24, y: 25 });
+  const match = createMatch<SiegeWorld, Command>({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([repairFortification('rome', 0, 'wall', 'north')]);
+  const paid = observeSiege(world, 'rome');
+  expect(paid.fronts[0]!.structures.find((piece) => piece.kind === 'wall' && piece.side === 'north'))
+    .toMatchObject({ hp: 0, repairing: true, repairRemaining: 179 });
+  const stocks = paid.settlements[0]!.stocks;
+  for (let tick = 0; tick < 10; tick += 1) match.step();
+  expect(observeSiege(world, 'rome').fronts[0]!.structures.find((piece) => piece.kind === 'wall' && piece.side === 'north')?.repairRemaining).toBe(169);
+  for (let tick = 0; tick < 141; tick += 1) match.step();
+  const captured = observeSiege(world, 'carthage');
+  expect(captured.settlements.find((current) => current.id === 0)?.stocks).toEqual(stocks);
+  expect(captured.fronts.find((current) => current.settlement === 0)!.structures.find((piece) => piece.kind === 'wall' && piece.side === 'north'))
+    .toMatchObject({ hp: 0, repairing: false });
+});
+
+it('cancels a paid repair on capture without healing or refund and lets the new owner repair', () => {
+  const map = testMap({ strongholds: [{ x: 25, y: 25 }, { x: 75, y: 75 }], settlements: [{ x: 110, y: 100 }] });
+  const economy = createEconomy(map);
+  const site = economy.settlements[2]!;
+  site.owner = 1;
+  site.population = 2;
+  site.stocks.fill(100);
+  site.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0, hp: 0 });
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    fog: createFogs(), siege: createSiege(map, economy) };
+  musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x: 109, y: 100 });
+  const match = createMatch<SiegeWorld, Command>({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([repairWork('carthage', 2, 'farm', 0)]);
+  const paid = observeSiege(world, 'carthage').settlements.find((current) => current.id === 2)!;
+  expect(paid.works[0]).toMatchObject({ hp: 0, repairing: true, repairRemaining: 179 });
+  expect(paid.stocks.timber).toBeLessThan(100);
+  for (let tick = 0; tick < 10; tick += 1) match.step();
+  expect(observeSiege(world, 'carthage').settlements.find((current) => current.id === 2)!.works[0]?.repairRemaining).toBe(169);
+  for (let tick = 0; tick < 141; tick += 1) match.step();
+  const captured = observeSiege(world, 'rome').settlements.find((current) => current.id === 2)!;
+  expect(captured.works[0]).toMatchObject({ hp: 0, repairing: false });
+  expect(captured.stocks).toEqual(paid.stocks);
+  match.step([repairWork('rome', 2, 'farm', 0)]);
+  expect(observeSiege(world, 'rome').settlements.find((current) => current.id === 2)!.works[0])
+    .toMatchObject({ hp: 0, repairing: true, repairRemaining: 179 });
 });
 
 it('preserves captured Works and their tradition while discarding unpaid orders of the former owner', () => {
