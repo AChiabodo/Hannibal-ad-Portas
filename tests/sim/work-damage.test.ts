@@ -366,6 +366,73 @@ it('starts affordable construction and repair requests in their arrival order', 
   expect(immediateBuild.works.find((work) => work.building === 'farm')?.repairWaiting).toBe('resources');
 });
 
+it('keeps a productive work staffed before allocating workers to a new work repair', () => {
+  const map = testMap();
+  const economy = createEconomy(map);
+  const site = economy.settlements[0]!;
+  site.population = 5;
+  site.stocks.fill(20);
+  site.works.push(
+    { building: buildingCode('farm')!, remaining: 0, ordinal: 0 },
+    { building: buildingCode('lumber-camp')!, remaining: 0, ordinal: 0, hp: 30 },
+  );
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs() };
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([repairWork('rome', 0, 'lumber-camp', 0)]);
+  const works = observeSiege(world, 'rome').settlements[0]!.works;
+  expect(works.find((work) => work.building === 'farm')?.staffed).toBe(true);
+  expect(works.find((work) => work.building === 'lumber-camp'))
+    .toMatchObject({ repairing: true, repairRemaining: 90, repairWaiting: 'workers' });
+});
+
+it('shares workers between building repairs and construction in the chosen order', () => {
+  const run = (first: 'repair' | 'build') => {
+    const map = testMap();
+    const economy = createEconomy(map);
+    const site = economy.settlements[0]!;
+    site.population = 4;
+    site.stocks.fill(20);
+    site.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0, hp: 30 });
+    const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+      siege: createSiege(map, economy), fog: createFogs() };
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    const repair = repairWork('rome', 0, 'farm', 0);
+    const construction = build('rome', 0, 'lumber-camp');
+    match.step(first === 'repair' ? [repair, construction] : [construction, repair]);
+    return observeSiege(world, 'rome').settlements[0]!.works;
+  };
+  const repairFirst = run('repair');
+  expect(repairFirst.find((work) => work.building === 'farm')).toMatchObject({ repairing: true, repairRemaining: 89 });
+  expect(repairFirst.find((work) => work.building === 'lumber-camp')?.remaining).toBe(350);
+  const buildFirst = run('build');
+  expect(buildFirst.find((work) => work.building === 'farm')).toMatchObject({ repairing: true, repairRemaining: 90, repairWaiting: 'workers' });
+  expect(buildFirst.find((work) => work.building === 'lumber-camp')?.remaining).toBe(349);
+});
+
+it('rejoins the normal work order after a repair completes', () => {
+  const map = testMap();
+  const economy = createEconomy(map);
+  const site = economy.settlements[0]!;
+  site.population = 6;
+  site.stocks.fill(20);
+  site.works.push(
+    { building: buildingCode('farm')!, remaining: 50, ordinal: 0, queueOrder: 1 },
+    { building: buildingCode('lumber-camp')!, remaining: 0, ordinal: 0, hp: 59 },
+  );
+  economy.nextPendingId = 2;
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs() };
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([repairWork('rome', 0, 'lumber-camp', 0)]);
+  for (let tick = 0; tick < 2; tick += 1) match.step();
+  expect(observeSiege(world, 'rome').settlements[0]!.works.find((work) => work.building === 'lumber-camp'))
+    .toMatchObject({ hp: 60, repairing: false });
+  const before = observeSiege(world, 'rome').settlements[0]!.works.find((work) => work.building === 'farm')!.remaining;
+  match.step();
+  expect(observeSiege(world, 'rome').settlements[0]!.works.find((work) => work.building === 'farm')!.remaining).toBe(before - 1);
+});
+
 it('remembers a work as last seen until its ruin is observed again', () => {
   const map = testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] });
   const economy = createEconomy(map);
