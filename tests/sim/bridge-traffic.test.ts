@@ -140,6 +140,22 @@ describe('bridge traffic', () => {
       .toMatchObject({ x: 70, y: 50, goal: null });
   });
 
+  it('clears the bridge after a fighting squad is destroyed and its opponent leaves', () => {
+    const { world, match } = stage();
+    const traveller = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 43, y: 50 });
+    const blocker = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 52, y: 50 });
+    const enemy = musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'libyan-spear', men: 24, x: 56, y: 50 });
+    enemy.strength = 1;
+    enemy.morale = 99;
+    match.step([move('rome', [traveller.id], 70, 50), attack('rome', [blocker.id], enemy.id), attack('carthage', [enemy.id], blocker.id)]);
+    for (let tick = 0; tick < 250 && observeSiege(world, 'carthage').squads.some((squad) => squad.id === enemy.id); tick += 1) match.step();
+    expect(observeSiege(world, 'carthage').squads.some((squad) => squad.id === enemy.id)).toBe(false);
+    match.step([move('rome', [blocker.id], 38, 40)]);
+    for (let tick = 0; tick < 600; tick += 1) match.step();
+    expect(observeSiege(world, 'rome').squads.find((squad) => squad.id === traveller.id))
+      .toMatchObject({ x: 70, y: 50, goal: null });
+  });
+
   it('allows opposing squads to engage at a bridge rather than pass through each other', () => {
     const { world, match } = stage();
     const roman = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 52, y: 50 });
