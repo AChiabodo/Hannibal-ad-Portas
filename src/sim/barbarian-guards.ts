@@ -1,11 +1,13 @@
 /** A neutral camp's defenders use the ordinary Squad movement and combat rules. */
 import { squadTypeCode, squadTypeOf } from '../content/squads.ts';
+import { buildingOf, WORK_MAX_HP } from '../content/buildings.ts';
 import { FIELD, isRouting, standingAt } from './squad.ts';
 import { engagedWith, enemyWithin } from './combat.ts';
 import { MAP_HEIGHT, MAP_WIDTH } from './map.ts';
 import { orderSquadTo, routeCacheFor } from './movement.ts';
-import { canOccupy, coreOf, occupiedGround, squadGround } from './settlement-space.ts';
+import { canOccupy, coreOf, occupiedGround, squadGround, workGround, workOrdinal } from './settlement-space.ts';
 import type { Squad } from './economy.ts';
+import { clearWorkLine, damageWork, workAttackDistance } from './work-combat.ts';
 import type { SiegeWorld } from './siege.ts';
 
 /** Not a player Faction and never a valid Command issuer. */
@@ -101,6 +103,25 @@ export function advanceCampGuards(world: SiegeWorld, tick: number): void {
     const settlement = guard.barbarianRaidTarget === undefined ? undefined : world.economy.settlements[guard.barbarianRaidTarget];
     if (settlement !== undefined && tick < (guard.barbarianRaidUntil ?? 0) &&
       (settlement.owner === 0 || settlement.owner === 1)) {
+      const works = settlement.works.flatMap((work) => {
+        const name = buildingOf(work.building)?.id;
+        if (name === undefined || work.remaining > 0 || work.repairTicks !== undefined || (work.hp ?? WORK_MAX_HP) <= 0) return [];
+        const rect = workGround(world.economy, settlement, name, workOrdinal(settlement, work));
+        return rect === undefined ? [] : [{ work, rect }];
+      });
+      works.sort((a, b) => workAttackDistance(guard.x, guard.y, a.rect) - workAttackDistance(guard.x, guard.y, b.rect));
+      const targetWork = works[0];
+      if (targetWork !== undefined) {
+        const { work, rect } = targetWork;
+        if (workAttackDistance(guard.x, guard.y, rect) <= 2 && clearWorkLine(world, guard.owner, guard.x, guard.y, rect)) {
+          damageWork(work, 4);
+        } else {
+          const x = guard.x < rect.x ? rect.x - 2 : guard.x >= rect.x + rect.width ? rect.x + rect.width + 1 : guard.x;
+          const y = guard.y < rect.y ? rect.y - 2 : guard.y >= rect.y + rect.height ? rect.y + rect.height + 1 : guard.y;
+          orderSquadTo(world.map, guard, { x, y }, routes);
+        }
+        continue;
+      }
       const core = coreOf(world.economy, settlement);
       const x = Math.max(core.x - 1, Math.min(core.x + core.width, home.x));
       const y = Math.max(core.y - 1, Math.min(core.y + core.height, home.y));

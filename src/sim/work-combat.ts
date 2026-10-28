@@ -23,14 +23,14 @@ export function damageWork(work: Work, damage: number): boolean {
   return true;
 }
 
-function distance(x: number, y: number, rect: GroundRect): number {
+export function workAttackDistance(x: number, y: number, rect: GroundRect): number {
   const dx = Math.max(rect.x - x, 0, x - (rect.x + rect.width - 1));
   const dy = Math.max(rect.y - y, 0, y - (rect.y + rect.height - 1));
   return Math.max(dx, dy);
 }
 
 /** A blow cannot pass through walls or other occupied terrain on its way to a work. */
-function clearLine(world: SiegeWorld, owner: number, x: number, y: number, rect: GroundRect): boolean {
+export function clearWorkLine(world: SiegeWorld, owner: number, x: number, y: number, rect: GroundRect): boolean {
   const targetX = Math.max(rect.x, Math.min(x, rect.x + rect.width - 1));
   const targetY = Math.max(rect.y, Math.min(y, rect.y + rect.height - 1));
   const dx = Math.abs(targetX - x), dy = Math.abs(targetY - y);
@@ -80,7 +80,7 @@ export function orderWorkAttacks(world: SiegeWorld, commands: readonly Command[]
     }
     for (const squad of squads) {
       if (squad.garrison !== FIELD) continue;
-      if (distance(squad.x, squad.y, rect) > 2) {
+      if (workAttackDistance(squad.x, squad.y, rect) > 2) {
         orderSquadTo(world.map, squad, { x: rect.x - 1, y: rect.y }, routeCacheFor(world.map));
         if (squad.refused !== NO_REFUSAL) continue;
       }
@@ -103,7 +103,7 @@ export function advanceWorkAttacks(world: SiegeWorld, tick: number): void {
     if (engagedWith(world.economy, squad) !== undefined || tick % EXCHANGE_TICKS !== 0) return true;
     const type = squadTypeOf(squad.type);
     const reach = type?.arm === 'archers' ? 4 : 2;
-    if (distance(squad.x, squad.y, rect) > reach || !clearLine(world, order.owner, squad.x, squad.y, rect)) return true;
+    if (workAttackDistance(squad.x, squad.y, rect) > reach || !clearWorkLine(world, order.owner, squad.x, squad.y, rect)) return true;
     damageWork(work, type?.arm === 'cavalry' ? 2 : 4);
     return (work.hp ?? WORK_MAX_HP) > 0;
   });
