@@ -133,7 +133,7 @@ describe('what a Faction reads of the economy', () => {
 
     const works = observeEconomy(world, 'rome').settlements[0]?.works ?? [];
 
-    expect(works).toEqual([{ building: 'lumber-camp', remaining: 12, standing: false, ordinal: 0, origin: 'rome' }]);
+    expect(works).toEqual([{ building: 'lumber-camp', remaining: 12, standing: false, repairing: false, ordinal: 0, origin: 'rome' }]);
   });
 });
 
