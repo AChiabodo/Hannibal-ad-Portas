@@ -8,6 +8,7 @@ import { engagedWith, EXCHANGE_TICKS } from './combat.ts';
 import { eyesOfEconomy } from './economy-match.ts';
 import { factionCode } from './faction.ts';
 import { eyeCovers } from './fog.ts';
+import { MAP_HEIGHT, MAP_WIDTH } from './map.ts';
 import { orderedSquads, orderSquadTo, routeCacheFor } from './movement.ts';
 import { NO_REFUSAL, refusalCode } from './route.ts';
 import { blockedTile, workGround, workOrdinal } from './settlement-space.ts';
@@ -57,6 +58,26 @@ function observed(world: SiegeWorld, owner: number, rect: GroundRect): boolean {
   return false;
 }
 
+/** Choose an accessible point around the actual work, not one fixed side. */
+function approachWork(world: SiegeWorld, squad: import('./economy.ts').Squad, owner: number, rect: GroundRect): void {
+  const candidates: { x: number; y: number }[] = [];
+  for (let y = rect.y - 2; y < rect.y + rect.height + 2; y += 1) {
+    for (let x = rect.x - 2; x < rect.x + rect.width + 2; x += 1) {
+      if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT || workAttackDistance(x, y, rect) === 0 ||
+        !clearWorkLine(world, owner, x, y, rect)) continue;
+      candidates.push({ x, y });
+    }
+  }
+  candidates.sort((a, b) => Math.abs(a.x - squad.x) + Math.abs(a.y - squad.y) -
+    Math.abs(b.x - squad.x) - Math.abs(b.y - squad.y) || a.y - b.y || a.x - b.x);
+  const routes = routeCacheFor(world.map);
+  if (candidates.length === 0) squad.refused = refusalCode('unreachable');
+  for (const candidate of candidates) {
+    orderSquadTo(world.map, squad, candidate, routes);
+    if (squad.refused === NO_REFUSAL) return;
+  }
+}
+
 export function orderWorkAttacks(world: SiegeWorld, commands: readonly Command[]): void {
   world.workOrders ??= [];
   for (const command of commands) {
@@ -80,8 +101,8 @@ export function orderWorkAttacks(world: SiegeWorld, commands: readonly Command[]
     }
     for (const squad of squads) {
       if (squad.garrison !== FIELD) continue;
-      if (workAttackDistance(squad.x, squad.y, rect) > 2) {
-        orderSquadTo(world.map, squad, { x: rect.x - 1, y: rect.y }, routeCacheFor(world.map));
+      if (workAttackDistance(squad.x, squad.y, rect) > 2 || !clearWorkLine(world, owner, squad.x, squad.y, rect)) {
+        approachWork(world, squad, owner, rect);
         if (squad.refused !== NO_REFUSAL) continue;
       }
       world.workOrders.push({ squad: squad.id, owner, settlement: site.id, work: index });
