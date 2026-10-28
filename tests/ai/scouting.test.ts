@@ -56,16 +56,17 @@ describe('the scouting Controller', () => {
   it('plans a march against a recent last-known enemy and stops trusting it after two minutes', () => {
     const world = siegeMatchRules.createWorld(7);
     const home = world.economy.settlements[0]!;
-    for (let i = 0; i < 3; i += 1) musterSquad(world.economy, world.map, {
+    const squadIds: number[] = [];
+    for (let i = 0; i < 3; i += 1) squadIds.push(musterSquad(world.economy, world.map, {
       faction: 'rome', squadType: 'hastati', x: home.x, y: home.y,
-    });
+    }).id);
     const base = observeSiege(world, 'rome');
     const visible: SiegeVisible = { ...base,
       contacts: [{ kind: 'squad', id: 99, type: 'gaul', x: home.x + 5, y: home.y, seen: 0 }],
     };
     const decide = (tick: number) => createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ,
       registry: militaryRegistry }).decide({ faction: 'rome', tick, visible });
-    expect(decide(1)).toContainEqual({ kind: 'move', faction: 'rome', squads: [1], x: home.x + 5, y: home.y });
+    expect(decide(1)).toContainEqual({ kind: 'move', faction: 'rome', squads: [squadIds[0]], x: home.x + 5, y: home.y });
     expect(decide(1200).filter((command) => command.kind === 'move')).toEqual([]);
     expect(decide(1).filter((command) => command.kind === 'attack')).toEqual([]);
   });

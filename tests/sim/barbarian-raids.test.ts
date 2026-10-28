@@ -4,6 +4,7 @@ import { createEconomy } from '../../src/sim/economy';
 import { createFogs } from '../../src/sim/fog';
 import { createMatch } from '../../src/sim/match';
 import { createCampGuards } from '../../src/sim/barbarian-guards';
+import { repairWork } from '../../src/sim/command';
 import { createSiege, observeSiege, siegeMatchRulesForDifficulty } from '../../src/sim/siege';
 import { testMap } from './economy-fixtures';
 
@@ -36,15 +37,17 @@ for (const state of ['construction', 'repair'] as const) {
     const economy = createEconomy(map);
     economy.settlements[2]!.owner = 0;
     economy.settlements[2]!.population = 0;
+    economy.settlements[2]!.stocks.fill(100);
     economy.settlements[2]!.works.push({ building: buildingCode('farm')!, ordinal: 0,
-      remaining: state === 'construction' ? 100 : 0, ...(state === 'repair' ? { hp: 40, repairTicks: 1000 } : {}) });
+      remaining: state === 'construction' ? 100 : 0, ...(state === 'repair' ? { hp: 40 } : {}) });
     const world = { ...initial, map, economy, siege: createSiege(map, economy), fog: createFogs(),
       barbarianCamps: [{ hp: 60 }], campOrders: [] };
     createCampGuards(world);
     const match = createMatch({ seed: 4, rules: { ...rules, createWorld: () => world } });
+    if (state === 'repair') match.step([repairWork('rome', 2, 'farm', 0)]);
     for (let tick = 0; tick < 900; tick += 1) match.step();
     const work = observeSiege(world, 'rome').settlements.find((site) => site.id === 2)?.works[0];
     if (state === 'construction') expect(work).toMatchObject({ remaining: 100 });
-    else expect(work).toMatchObject({ hp: 40 });
+    else expect(work).toMatchObject({ hp: 40, repairing: true });
   });
 }
