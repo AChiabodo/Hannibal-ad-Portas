@@ -49,7 +49,7 @@ import {
   economyMatchRules,
   emptyMatchOutcome,
   emptyMatchRules,
-  factionOf,
+  factionCode,
   fogMatchOutcome,
   fogMatchRules,
   garrison,
@@ -480,7 +480,7 @@ function marchSides(map: MapGrid): readonly MarchSide[] {
 /** The ids of every Squad a Faction owns, in the order the economy holds them. */
 function squadIdsOf(world: EconomyWorld, faction: Faction): readonly number[] {
   return world.economy.squads
-    .filter((squad) => factionOf(squad.owner) === faction)
+    .filter((squad) => squad.owner === factionCode(faction))
     .map((squad) => squad.id);
 }
 

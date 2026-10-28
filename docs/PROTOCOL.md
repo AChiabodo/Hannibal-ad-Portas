@@ -175,6 +175,7 @@ outside it. What is not here, the Faction cannot know.
 | `enemies`     | Enemy field Squads **in your sight right now**: `id`, `type`, `x`, `y`, and `appearance` (`men`, `capacity`, `figures`, `formation`, `facing`). Appearance exists only in current sight; it is never retained in `contacts`. No enemy morale, fatigue, ammunition, stocks or goal is exposed (ADR-0029). |
 | `fronts`      | The Sieges you can read (see below).                                                   |
 | `appearances` | Observed settlement portions and their last seen architecture, Works and conditions. |
+| `barbarianCamps` | Discovered barbarian camps and their last observed standing or ruined condition; hidden changes remain unknown. |
 <!-- observation:end -->
 
 Each entry of `settlements`:
