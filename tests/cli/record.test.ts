@@ -93,6 +93,10 @@ describe('recording a Match', () => {
 });
 
 describe('a record is a text file, and the file is the record', () => {
+  it('rejects invalid difficulty or difficulty on unrelated rules', () => {
+    expect(() => readRecord(edited((record) => { record.rules = 'ai'; record.difficulty = 'unknown'; }))).toThrow(/difficulty/);
+    expect(() => readRecord(edited((record) => { record.difficulty = 'tiro'; }))).toThrow(/difficulty/);
+  });
   it('reads back exactly what it wrote', () => {
     const record = recordOf(RULES.march.play(1, 40), 'march');
 

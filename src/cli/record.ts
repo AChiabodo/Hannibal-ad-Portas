@@ -58,6 +58,7 @@ import { requireTickCount } from '../sim/ticks.ts';
 import { InputError } from './failure.ts';
 import { endingWords } from './report.ts';
 import { RULES, isRulesName, type RulesName } from './rules.ts';
+import { isDifficultyName, type DifficultyName } from '../ai/difficulty.ts';
 
 /**
  * How often a recorded Match is fingerprinted, in ticks: one game second.
@@ -80,6 +81,8 @@ export const CHECKPOINT_TICKS = 10;
  * somebody edited.
  */
 export interface MatchRecord {
+  /** Shared raid difficulty, for Matches whose rules support it. */
+  readonly difficulty?: DifficultyName;
   /** The Match's seed: with the log, the whole of its reproducibility. */
   readonly seed: number;
 
@@ -135,12 +138,16 @@ export class UnreplayableMatchError extends Error {
  * @throws UnreplayableMatchError when replaying the Match's own log reaches a
  *   different hash, or the same world with a different ending.
  */
-export function recordOf(run: MatchRun, rules: RulesName): MatchRecord {
+export function recordOf(run: MatchRun, rules: RulesName, difficulty?: DifficultyName): MatchRecord {
+  if (difficulty !== undefined && (!isDifficultyName(difficulty) || (rules !== 'ai' && rules !== 'siege'))) {
+    throw new InputError('record.difficulty must name a supported difficulty on an ai or siege Match');
+  }
   const replayed = RULES[rules].replay({
     seed: run.seed,
     log: run.log,
     ticks: run.result.tick,
     everyTicks: CHECKPOINT_TICKS,
+    ...(difficulty === undefined ? {} : { difficulty }),
   });
 
   if (replayed.hash !== run.hash) {
@@ -158,6 +165,7 @@ export function recordOf(run: MatchRun, rules: RulesName): MatchRecord {
   return {
     seed: run.seed,
     rules,
+    ...(difficulty === undefined ? {} : { difficulty }),
     everyTicks: CHECKPOINT_TICKS,
     result: run.result,
     checkpoints: replayed.checkpoints,
@@ -206,7 +214,7 @@ export function readRecordFile(path: string): MatchRecord {
 }
 
 /** The fields a record carries, in the order it is written in. */
-const FIELDS = ['seed', 'rules', 'everyTicks', 'result', 'checkpoints', 'log'] as const;
+const FIELDS = ['seed', 'rules', 'difficulty', 'everyTicks', 'result', 'checkpoints', 'log'] as const;
 
 /** A value that must be sixteen lowercase hexadecimal digits, the shape `hashState` returns. */
 const STATE_HASH = /^[0-9a-f]{16}$/;
@@ -233,13 +241,17 @@ export function readRecord(text: string): MatchRecord {
 
   const seed = readSeed(record.seed);
   const rules = readRules(record.rules);
+  const difficulty = record.difficulty;
+  if (difficulty !== undefined && (typeof difficulty !== 'string' || !isDifficultyName(difficulty) || (rules !== 'ai' && rules !== 'siege'))) {
+    throw new InputError('record.difficulty must name a supported difficulty on an ai or siege Match');
+  }
   const everyTicks = readEveryTicks(record.everyTicks);
   const result = readResult(record.result);
   const checkpoints = readCheckpoints(record.checkpoints);
   const log = readLog(record.log, result.tick);
   requireSchedule(checkpoints, everyTicks, result.tick);
 
-  return { seed, rules, everyTicks, result, checkpoints, log };
+  return { seed, rules, ...(difficulty === undefined ? {} : { difficulty }), everyTicks, result, checkpoints, log };
 }
 
 /** @throws InputError when the text is not JSON at all. */

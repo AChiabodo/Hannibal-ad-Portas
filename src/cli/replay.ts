@@ -98,6 +98,7 @@ export function replayRecord(record: MatchRecord): ReplayReport {
     log: record.log,
     ticks,
     everyTicks: record.everyTicks,
+    ...(record.difficulty === undefined ? {} : { difficulty: record.difficulty }),
   });
   const departure = departureOf(record, replayed);
 

@@ -105,6 +105,7 @@ import {
 import { squadTypesOf } from '../content/index.ts';
 import { playAiMatchAt } from './ai-match.ts';
 import type { DifficultyName } from '../ai/difficulty.ts';
+import { siegeMatchRulesForDifficulty } from '../sim/siege.ts';
 import { blockedTile, settlementSide, sitePoint } from '../sim/settlement-space.ts';
 import { formationFootprint } from '../content/formation.ts';
 import { facingOf } from '../sim/squad.ts';
@@ -802,6 +803,7 @@ export type RulesName = (typeof RULES_NAMES)[number];
  * Controllers, and the log is the whole of what they contributed (E2).
  */
 export interface ReplayRequest {
+  readonly difficulty?: DifficultyName;
   readonly seed: number;
   readonly log: CommandLog<Command>;
   /** How many ticks the Match ran: the tick it ended on. */
@@ -903,7 +905,7 @@ export const RULES = {
   ai: {
     description: 'two AI Controllers — economy, field, scouting and siege — with scored decision logs',
     play: playAiMatchAt,
-    replay: replayer(siegeMatchRules, siegeMatchOutcome),
+    replay: (request: ReplayRequest) => replayer(siegeMatchRulesForDifficulty(request.difficulty ?? 'centurio'), siegeMatchOutcome)(request),
   },
   economy: {
     description: 'the Match on the theatre and the economy: map, seasons, settlements, Payroll',
@@ -950,7 +952,7 @@ export const RULES = {
   siege: {
     description: 'the bare theatre under a Siege, with nobody commanding: what the agent harness plays',
     play: playSiegeTheatre,
-    replay: replayer(siegeMatchRules, siegeMatchOutcome),
+    replay: (request: ReplayRequest) => replayer(siegeMatchRulesForDifficulty(request.difficulty ?? 'centurio'), siegeMatchOutcome)(request),
   },
 
   assault: {

@@ -40,7 +40,7 @@ import { runMatchAsync, type MatchRun, type Question } from '../sim/driver.ts';
 import { requireTickCount } from '../sim/ticks.ts';
 import type { Faction } from '../sim/faction.ts';
 import { TICK_HZ } from '../sim/clock.ts';
-import { siegeMatchOutcome, siegeMatchRules, observeSiege, type SiegeVisible } from '../sim/siege.ts';
+import { siegeMatchOutcome, siegeMatchRulesForDifficulty, observeSiege, type SiegeVisible } from '../sim/siege.ts';
 import type { DifficultyName } from '../ai/difficulty.ts';
 import type { RulesName } from './rules.ts';
 import { createArmyController } from './ai-match.ts';
@@ -190,7 +190,7 @@ export async function playAgentMatch(options: AgentMatchOptions): Promise<AgentR
       {
         seed: options.seed,
         ticks: options.ticks,
-        rules: siegeMatchRules,
+        rules: siegeMatchRulesForDifficulty(options.difficulty ?? 'centurio'),
         observe: observeSiege,
         outcome: siegeMatchOutcome,
         players,
