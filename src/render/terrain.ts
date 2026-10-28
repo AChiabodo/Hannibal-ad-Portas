@@ -61,6 +61,7 @@ import { nodeMarker, type NodeKind } from '../art/nodes.ts';
 import { blit, createPixelBuffer, fillRect, type PixelBuffer } from '../art/pixel-buffer.ts';
 import { RAMPS, shadeAt } from '../art/palette.ts';
 import { landscapeDetail } from '../art/landscape-details.ts';
+import { bridgeDeck } from '../art/bridge.ts';
 import type { Season } from '../sim/season.ts';
 
 /**
@@ -169,12 +170,16 @@ export function renderTerrain(map: MapGrid, season: Season = 'spring', detailSee
   colourSeason(theatre, map, season);
   if (detailSeed !== undefined) decorateLand(theatre, map, season, detailSeed);
 
+  const bridges = bridgeDirections(map);
+
   for (let y = 0; y < MAP_HEIGHT; y += 1) {
     for (let x = 0; x < MAP_WIDTH; x += 1) {
-      if (terrainAt(map, x, y) !== TERRAIN.road) continue;
+      const terrain = terrainAt(map, x, y);
+      if (terrain !== TERRAIN.road && terrain !== TERRAIN.bridge) continue;
 
       const at = tilePixel(x, y);
-      blit(theatre, roadTile(roadMask(map, x, y)), at.x, at.y);
+      if (terrain === TERRAIN.bridge) blit(theatre, bridgeDeck(bridges[y * MAP_WIDTH + x] === 1), at.x, at.y);
+      else blit(theatre, roadTile(roadMask(map, x, y)), at.x, at.y);
     }
   }
 
@@ -184,6 +189,39 @@ export function renderTerrain(map: MapGrid, season: Season = 'spring', detailSee
   }
 
   return theatre;
+}
+
+/** The adjoining road sets the direction for an entire connected bridge. */
+function bridgeDirections(map: MapGrid): Uint8Array {
+  const result = new Uint8Array(MAP_WIDTH * MAP_HEIGHT);
+  for (let first = 0; first < map.terrain.length; first += 1) {
+    if (map.terrain[first] !== TERRAIN.bridge || result[first] !== 0) continue;
+    const group = [first];
+    result[first] = 3;
+    let horizontalRoads = 0, verticalRoads = 0;
+    let minX = MAP_WIDTH, maxX = 0, minY = MAP_HEIGHT, maxY = 0;
+    for (let at = 0; at < group.length; at += 1) {
+      const tile = group[at] as number;
+      const x = tile % MAP_WIDTH, y = Math.floor(tile / MAP_WIDTH);
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= MAP_WIDTH || ny >= MAP_HEIGHT) continue;
+        const next = ny * MAP_WIDTH + nx;
+        if (map.terrain[next] === TERRAIN.road) {
+          if (dx !== 0) horizontalRoads += 1;
+          else verticalRoads += 1;
+        } else if (map.terrain[next] === TERRAIN.bridge && result[next] === 0) {
+          result[next] = 3;
+          group.push(next);
+        }
+      }
+    }
+    const horizontal = horizontalRoads === verticalRoads ? maxY - minY >= maxX - minX : horizontalRoads > verticalRoads;
+    for (const tile of group) result[tile] = horizontal ? 1 : 2;
+  }
+  return result;
 }
 
 /** Sparse seed-specific plants and rocks; paths and resource markers are drawn later. */

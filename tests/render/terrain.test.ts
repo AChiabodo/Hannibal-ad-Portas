@@ -103,6 +103,18 @@ function fingerprint(buffer: PixelBuffer): string {
 }
 
 describe('the material a terrain is drawn with', () => {
+  it('renders bridge decking aligned to its adjoining road', () => {
+    const horizontal = mapWith(TERRAIN.river, { x: 10, y: 10 }, TERRAIN.bridge);
+    horizontal.terrain[tileIndex(9, 10)] = TERRAIN.road;
+    horizontal.terrain[tileIndex(11, 10)] = TERRAIN.road;
+    const vertical = mapWith(TERRAIN.river, { x: 10, y: 10 }, TERRAIN.bridge);
+    vertical.terrain[tileIndex(10, 9)] = TERRAIN.road;
+    vertical.terrain[tileIndex(10, 11)] = TERRAIN.road;
+    const h = renderTerrain(horizontal);
+    const v = renderTerrain(vertical);
+    const at = tilePixel(10, 10);
+    expect(pixelAt(h, at.x + 4, at.y + 5)).not.toEqual(pixelAt(v, at.x + 4, at.y + 5));
+  });
   it('connects a road visually to its adjacent bridge', () => {
     const map = mapWith(TERRAIN.plain, { x: 10, y: 10 }, TERRAIN.road);
     map.terrain[tileIndex(11, 10)] = TERRAIN.bridge;
