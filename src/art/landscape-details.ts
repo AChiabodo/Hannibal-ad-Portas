@@ -3,7 +3,7 @@ import { RAMPS, shadeAt } from './palette.ts';
 import { createPixelBuffer, fillRect, type PixelBuffer } from './pixel-buffer.ts';
 
 type LandscapeSeason = 'spring' | 'summer' | 'autumn' | 'winter';
-type LandscapeKind = 'tree' | 'rock';
+type LandscapeKind = 'tree' | 'rock' | 'bush';
 const cache = new Map<string, PixelBuffer>();
 
 export function landscapeDetail(kind: LandscapeKind, season: LandscapeSeason, variant: number): PixelBuffer {
@@ -17,6 +17,15 @@ export function landscapeDetail(kind: LandscapeKind, season: LandscapeSeason, va
     fillRect(buffer, 2, 6, 6 + (shape % 2), 3, stone);
     fillRect(buffer, 3, 5, 4, 1, stone);
     if (season === 'winter') fillRect(buffer, 3, 5, 4, 1, shadeAt(RAMPS.stone, 6));
+  } else if (kind === 'bush') {
+    const foliage = season === 'autumn' ? shadeAt(RAMPS.bronze, 4) : shadeAt(RAMPS.olive, 3);
+    fillRect(buffer, 1, 6, 8, 4, foliage);
+    fillRect(buffer, 2 + shape % 2, 4, 5 + shape % 2, 3, foliage);
+    fillRect(buffer, 3, 6, 2, 1, shadeAt(RAMPS.olive, 4));
+    if (season === 'winter') {
+      fillRect(buffer, 2 + shape % 2, 4, 5 + shape % 2, 1, shadeAt(RAMPS.stone, 6));
+      fillRect(buffer, 1, 6, 2, 1, shadeAt(RAMPS.stone, 6));
+    }
   } else {
     fillRect(buffer, 4, 7, 2, 4, shadeAt(RAMPS.bronze, 2));
     const foliage = season === 'autumn' ? shadeAt(RAMPS.bronze, 4) : shadeAt(RAMPS.olive, 3);

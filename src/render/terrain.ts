@@ -204,6 +204,8 @@ function decorateLand(buffer: PixelBuffer, map: MapGrid, season: Season, seed: n
       if (terrain === TERRAIN.forest || terrain === TERRAIN.hill) {
         blit(buffer, landscapeDetail(terrain === TERRAIN.forest ? 'tree' : 'rock', season, hash % 3),
           at.x + 3, at.y + 2);
+      } else if ((hash >>> 17) % 4 === 0) {
+        blit(buffer, landscapeDetail('bush', season, hash % 3), at.x + 3, at.y + 2);
       } else {
         fillRect(buffer, px, py, 1, 2, colour);
       }
