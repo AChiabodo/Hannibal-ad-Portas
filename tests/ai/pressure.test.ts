@@ -35,9 +35,10 @@ for (const faction of ['rome', 'carthage'] as const) {
       let noticed: number | null = null;
       const host = createBrowserMatch({ seed: 1, faction, difficulty, afterTick(visible) {
         if (noticed !== null) return;
-        const notice = book.read(visible, host.match.state.tick).find((notice) => notice.kind === 'contact');
+        const notice = book.read(visible, host.match.state.tick).find((entry) => entry.kind === 'contact' &&
+          visible.enemies.some((enemy) => enemy.id === entry.target?.id && enemy.neutral !== true));
         if (notice !== undefined) {
-          expect(visible.enemies.some((enemy) => enemy.id === notice.target?.id)).toBe(true);
+          expect(visible.enemies.some((enemy) => enemy.id === notice.target?.id && enemy.neutral !== true)).toBe(true);
           noticed = notice.raised;
         }
       } });

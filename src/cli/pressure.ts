@@ -38,23 +38,25 @@ export function diagnosePressure(seed: number, faction: Faction, difficulty: Dif
     outcome: siegeMatchOutcome, players: [
       { faction, controller: { decide(observation) {
         const visible = observation.visible;
-        const notice = notices.read(visible, observation.tick).find((entry) => entry.kind === 'contact');
+        const notice = notices.read(visible, observation.tick).find((entry) => entry.kind === 'contact' &&
+          visible.enemies.some((enemy) => enemy.id === entry.target?.id && enemy.neutral !== true));
         if (contactNotice === null && notice?.target != null) {
           contactNotice = { tick: notice.raised, x: notice.target.x, y: notice.target.y };
         }
-        const spotted = visible.enemies[0];
+        const spotted = visible.enemies.find((enemy) => enemy.neutral !== true);
         if (contact === null && spotted !== undefined) contact = { tick: observation.tick, ...spotted };
         for (const front of visible.fronts) {
           if (!visible.settlements.some((site) => site.id === front.settlement)) continue;
           const before = last?.fronts.find((entry) => entry.settlement === front.settlement);
           // An issued siege order alone is insufficient: the walls must actually lose health.
-          if (pressure === null && before !== undefined && front.structures.some((wall, index) =>
+          if (pressure === null && before !== undefined && front.besieger === enemy && front.structures.some((wall, index) =>
             wall.hp < before.structures[index]!.hp)) {
             pressure = { tick: observation.tick, settlement: front.settlement, effect: 'wall-damage' };
           }
           // Presence at the walls makes this actual contention, not just a submitted Order.
           if (pressure === null && front.siege === 'blockade' && front.besieger === enemy &&
             visible.enemies.some((squad) => {
+              if (squad.neutral === true) return false;
               const site = visible.settlements.find((site) => site.id === front.settlement)!;
               const plan = settlementLayout('stronghold').core;
               const core = { ...plan, x: site.x + plan.x, y: site.y + plan.y };
