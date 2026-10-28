@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { CAMP_REWARD } from '../../src/sim/barbarian-camp-combat';
 import { attackStructure, move } from '../../src/sim/command';
 import { createEconomy } from '../../src/sim/economy';
 import { createFogs } from '../../src/sim/fog';
@@ -9,6 +10,33 @@ import { startCalendar } from '../../src/sim/season';
 import { createSiege, observeSiege, siegeMatchRules, type SiegeWorld } from '../../src/sim/siege';
 import { refreshSiegeFog } from '../../src/sim/siege-fog';
 import { testMap } from './economy-fixtures';
+
+it.each(['rome', 'carthage'] as const)(
+  'awards the contested camp once to %s after both factions damage it in the same tick', (finalFaction) => {
+    const map = { ...testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] }),
+      barbarianCamps: [{ x: 60, y: 60, variant: 0 }] };
+    const economy = createEconomy(map);
+    const roman = musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x: 58, y: 60 });
+    const carthaginian = musterSquad(economy, map, { faction: 'carthage', squadType: 'balearic-slinger', men: 24, x: 64, y: 60 });
+    const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+      siege: createSiege(map, economy), fog: createFogs(), barbarianCamps: [{ hp: 8 }], campOrders: [] };
+    refreshSiegeFog(world, 0);
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    const beforeRome = observeSiege(world, 'rome').treasury;
+    const beforeCarthage = observeSiege(world, 'carthage').treasury;
+    const romanOrder = attackStructure('rome', [roman.id], { kind: 'camp', id: 0 });
+    const carthaginianOrder = attackStructure('carthage', [carthaginian.id], { kind: 'camp', id: 0 });
+    const commands = finalFaction === 'rome' ? [carthaginianOrder, romanOrder] : [romanOrder, carthaginianOrder];
+    match.step(commands);
+    expect(observeSiege(world, 'rome').barbarianCamps?.[0]?.condition).toBe('ruin');
+    expect(observeSiege(world, 'rome').treasury).toBe(beforeRome + (finalFaction === 'rome' ? CAMP_REWARD : 0));
+    expect(observeSiege(world, 'carthage').treasury).toBe(beforeCarthage + (finalFaction === 'carthage' ? CAMP_REWARD : 0));
+    match.step(commands);
+    for (let tick = 0; tick < 20; tick += 1) match.step();
+    expect(observeSiege(world, 'rome').treasury).toBe(beforeRome + (finalFaction === 'rome' ? CAMP_REWARD : 0));
+    expect(observeSiege(world, 'carthage').treasury).toBe(beforeCarthage + (finalFaction === 'carthage' ? CAMP_REWARD : 0));
+  },
+);
 
 it.each([false, true])('fires on a camp at ranged distance only with a clear line (blocked: %s)', (blocked) => {
   const map = { ...testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] }),
