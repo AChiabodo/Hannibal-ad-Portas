@@ -18,6 +18,22 @@ function onRoute(squad: Squad, access: PhysicalAccess): boolean {
   return squad.steps.some((tile) => containsTile(access.rect, tileX(tile), tileY(tile)));
 }
 
+/** A bridge is claimed by the arrival nearest the entrance; simultaneous arrivals use ticket order. */
+function before(other: Squad, squad: Squad, access: PhysicalAccess): boolean {
+  const one = other.access;
+  const two = squad.access;
+  if (one === undefined || two === undefined || !same(one, two)) return false;
+  if (access.settlement !== -1) return one.active === 1 || one.ticket < two.ticket || (one.ticket === two.ticket && other.id < squad.id);
+  if (one.active !== two.active) return one.active === 1;
+  if (one.active === 1) return one.ticket < two.ticket || (one.ticket === two.ticket && other.id < squad.id);
+  const distance = (body: Squad): number => {
+    const index = body.steps.findIndex((tile) => containsTile(access.rect, tileX(tile), tileY(tile)));
+    return index < 0 ? Number.POSITIVE_INFINITY : index;
+  };
+  const theirs = distance(other), ours = distance(squad);
+  return theirs < ours || (theirs === ours && (one.ticket < two.ticket || (one.ticket === two.ticket && other.id < squad.id)));
+}
+
 /** The column faces each actual leg, including its first rotation in place. */
 function routeBodies(squad: Squad): readonly GroundRect[] {
   const result: GroundRect[] = [];
@@ -58,9 +74,9 @@ export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squ
   for (const squad of economy.squads) {
     const waiting = squad.access;
     if (waiting === undefined || waiting.active === 1) continue;
-    const leader = economy.squads.find((other) => other.id !== squad.id && other.access !== undefined && same(waiting, other.access) &&
-      (waiting.settlement !== -1 || other.owner === squad.owner) &&
-      (other.access.active === 1 || other.access.ticket < waiting.ticket));
+    const passage = physicalAccesses(map, squad.owner).find((at) => at.settlement === waiting.settlement && at.passage === waiting.passage);
+    const leader = passage === undefined ? undefined : economy.squads.find((other) => other.id !== squad.id &&
+      (waiting.settlement !== -1 || other.owner === squad.owner) && before(other, squad, passage));
     if (waiting.yielding !== 0) {
       if (squad.steps.length === 0) {
         if (leader === undefined) {
@@ -99,9 +115,9 @@ export function trafficStep(economy: Economy, map: MapGrid, squad: Squad, x: num
   const access = squad.access;
   const rect = squadGround(squad, x, y, formation, facing);
   if (access !== undefined) {
-    const older = economy.squads.some((other) => other.id !== squad.id && other.access !== undefined && same(access, other.access) &&
-      (access.settlement !== -1 || other.owner === squad.owner) &&
-      (other.access.active === 1 || other.access.ticket < access.ticket || (other.access.ticket === access.ticket && other.id < squad.id))) ||
+    const passage = physicalAccesses(map, squad.owner).find((at) => at.settlement === access.settlement && at.passage === access.passage);
+    const older = (passage !== undefined && economy.squads.some((other) => other.id !== squad.id &&
+      (access.settlement !== -1 || other.owner === squad.owner) && before(other, squad, passage))) ||
       (access.passage === 0 && economy.squads.some((other) => {
         const journey = other.garrisonJourney;
         if (other.id === squad.id || journey?.settlement !== access.settlement || journey.ticket <= 0 || journey.ticket >= access.ticket ||

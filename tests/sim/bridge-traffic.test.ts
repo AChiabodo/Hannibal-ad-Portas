@@ -75,6 +75,22 @@ describe('bridge traffic', () => {
     expect(shown.find((squad) => squad.id === second.id)).toMatchObject({ x: 41, y: 50, goal: null });
   });
 
+  it('gives the crossing to the closer arrival even when another squad registered first', () => {
+    const { world, match } = stage();
+    const farther = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 46, y: 46 });
+    const nearer = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 49, y: 53 });
+    match.step([move('rome', [farther.id], 70, 46), move('rome', [nearer.id], 70, 53)]);
+    let farTick = -1, nearTick = -1;
+    for (let tick = 0; tick < 400; tick += 1) {
+      match.step();
+      const shown = observeSiege(match.state.world, 'rome').squads;
+      if (shown.find((squad) => squad.id === farther.id)?.x === 55 && farTick < 0) farTick = tick;
+      if (shown.find((squad) => squad.id === nearer.id)?.x === 55 && nearTick < 0) nearTick = tick;
+    }
+    expect(nearTick).toBeGreaterThanOrEqual(0);
+    expect(farTick).toBeGreaterThan(nearTick);
+  });
+
   it('waits before entering while a friendly body blocks the far exit', () => {
     const { world, match } = stage();
     const first = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 43, y: 50 });
