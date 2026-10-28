@@ -4,6 +4,13 @@ import { createBrowserMatch } from '../../src/input/match-host.ts';
 import { PRESSURE_LIMITS } from '../../src/cli/pressure.ts';
 import { createNoticeBook } from '../../src/ui/conditions.ts';
 
+it('skirts a discovered neutral threat without abandoning exploration on seed 8', () => {
+  const result = diagnosePressure(8, 'carthage', 'imperator');
+  expect(result.contact).not.toBeNull();
+  expect(result.contact!.tick).toBeLessThanOrEqual(1200);
+  expect(result.pass).toBe(true);
+}, 15000);
+
 it('discovers the southern Carthaginian start on seed 7 before the Imperator contact deadline', () => {
   const result = diagnosePressure(7, 'carthage', 'imperator');
   expect(result.contact).not.toBeNull();

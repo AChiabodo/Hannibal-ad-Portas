@@ -36,6 +36,7 @@ const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES, fortific
 const canContinueAssault = createAssaultReadiness({ squadTypes: SQUAD_TYPES, siegeRadius: SIEGE_RADIUS, settlementRadius: 7,
   assaultTicks: ASSAULT_TICKS, wallShock: WALL_SHOCK });
 const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ,
+  mapWidth: MAP_WIDTH, impassableTerrain: [UNSEEN, TERRAIN.river, TERRAIN.lake],
   canContinueAssault, settlementRadius: 7 };
 const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river, additionalWater: [TERRAIN.lake],
   vision: SQUAD_VISION, settlementRadius: 7, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,

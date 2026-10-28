@@ -198,8 +198,10 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
       if (obstacle) obstacles[index({ x, y })] = 1;
     }
     /** Both the known ground and the recorded physical obstacles constrain a patrol. */
+    const danger = contacts.filter((contact) => contact.kind === 'squad');
     const blocked = (tile: number) => terrain[tile] === unseen || terrain[tile] === water ||
-      (terrain[tile] !== undefined && content.additionalWater?.includes(terrain[tile]!) === true) || obstacles[tile] === 1;
+      (terrain[tile] !== undefined && content.additionalWater?.includes(terrain[tile]!) === true) || obstacles[tile] === 1 ||
+      danger.some((contact) => distance(contact, { x: tile % width, y: Math.floor(tile / width) }) <= vision + 1);
     const walkable = (tile: number) => !blocked(tile);
     let gains: Int32Array | null = null;
     function gain(tile: number): number {

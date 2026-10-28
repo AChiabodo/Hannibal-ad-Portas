@@ -11,6 +11,7 @@ import type { Command } from '../../src/sim/command.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
 import { FATIGUE_MAX } from '../../src/sim/squad.ts';
 import { observeSiege, siegeMatchRules, type SiegeVisible } from '../../src/sim/siege.ts';
+import { MAP_HEIGHT, MAP_WIDTH, TERRAIN } from '../../src/sim/map.ts';
 
 function ai() {
   return createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry: militaryRegistry });
@@ -31,6 +32,30 @@ function battlefield(): SiegeVisible {
 }
 
 describe('the military Controller', () => {
+  it('evades an unengaged neutral threat locally on known ground and falls back to recovery when necessary', () => {
+    const base = battlefield();
+    const terrain = new Uint8Array(MAP_WIDTH * MAP_HEIGHT).fill(TERRAIN.plain);
+    const scout = { ...base.squads[0]!, x: 80, y: 80, men: 24, capacity: 24, fatigue: 20, goal: null };
+    const visible: SiegeVisible = { ...base, fog: { ...base.fog, terrain }, squads: [scout],
+      enemies: [{ id: 99, type: 'gaul', neutral: true, x: 83, y: 80 }] };
+    const decide = (view: SiegeVisible) => ai().decide({ faction: 'rome', tick: 1, visible: view });
+    const move = decide(visible).find((command) => command.kind === 'move');
+    expect(move).toBeDefined();
+    if (move?.kind !== 'move') return;
+    expect(Math.max(Math.abs(move.x - 83), Math.abs(move.y - 80))).toBeGreaterThan(3);
+    expect(terrain[move.y * MAP_WIDTH + move.x]).toBe(TERRAIN.plain);
+    expect(decide({ ...visible, squads: [{ ...scout, goal: { x: move.x, y: move.y } }] })
+      .some((command) => command.kind === 'withdraw')).toBe(false);
+    const blocked = new Uint8Array(terrain.length).fill(255);
+    expect(decide({ ...visible, fog: { ...visible.fog, terrain: blocked } }))
+      .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [scout.id] });
+    expect(decide({ ...visible, squads: [{ ...scout, engaged: true }] }))
+      .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [scout.id] });
+    expect(decide({ ...visible, squads: [{ ...scout, refused: 'unreachable' }] }))
+      .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [scout.id] });
+    expect(decide({ ...visible, squads: [{ ...scout, men: 10 }] }))
+      .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [scout.id] });
+  });
   it('funds a defensive approach with the power the line retains after marching', () => {
     const base = battlefield();
     for (const count of [2, 3]) {

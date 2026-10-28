@@ -10,7 +10,7 @@ import { restingAtHome, returningHome } from './recovery.ts';
 
 type Faction = Observation<unknown>['faction'];
 
-interface Enemy extends Site { readonly id: number; readonly type: string }
+interface Enemy extends Site { readonly id: number; readonly type: string; readonly neutral?: boolean }
 interface Squad extends Enemy {
   readonly men: number;
   /** The men it was recruited with: what its survivors and its power are read against. */
@@ -23,10 +23,12 @@ interface Squad extends Enemy {
   readonly engaged: boolean;
   readonly garrison: number | null;
   readonly goal: Site | null;
+  readonly refused?: string | null;
   readonly passage?: { readonly settlement: number; readonly phase: string };
 }
 
 export interface MilitaryObservation {
+  readonly fog?: { readonly terrain: Uint8Array };
   readonly appearances?: readonly ObservedSettlement[];
   readonly year: number;
   readonly season: Season;
@@ -47,6 +49,8 @@ interface MilitaryType {
 }
 
 interface MilitaryContent {
+  readonly mapWidth?: number;
+  readonly impassableTerrain?: readonly number[];
   readonly settlementRadius?: number;
   readonly canContinueAssault?: AssaultReadiness;
   readonly squadTypes: readonly MilitaryType[];
@@ -228,6 +232,36 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
         if (!exhausted && !lost) return true;
         assigned.add(squad.id);
         const sheltered = squad.inQuarters ?? squad.inCamp ?? visible.settlements.some((settlement) => distance(squad, settlement) === 0);
+        // A healthy scout can step away from a local neutral threat without
+        // committing to a long trip home. Candidate destinations must be known
+        // and traversable; ordinary movement rules still validate the route.
+        const width = content.mapWidth;
+        const terrain = visible.fog?.terrain;
+        const neutralThreat = !exhausted && !squad.engaged && enemies.length > 0 && enemies.every((enemy) => enemy.neutral === true);
+        if (neutralThreat && width !== undefined && terrain !== undefined && squad.refused == null) {
+          const separation = (site: Site) => Math.min(...enemies.map((enemy) => distance(site, enemy)));
+          if (squad.goal !== null && separation(squad.goal) > separation(squad)) {
+            reasons.push(`Squad ${squad.id} continues its local withdrawal from a neutral threat.`);
+            return false;
+          }
+          const height = terrain.length / width;
+          const currentDistance = separation(squad);
+          const candidates: Site[] = [];
+          for (const [dx, dy] of [[-4, 0], [4, 0], [0, -4], [0, 4], [-3, -3], [-3, 3], [3, -3], [3, 3]] as const) {
+            const x = squad.x + dx, y = squad.y + dy;
+            if (x < 0 || y < 0 || x >= width || y >= height) continue;
+            const tile = terrain[y * width + x];
+            if (tile === undefined || content.impassableTerrain?.includes(tile) === true) continue;
+            if (separation({ x, y }) > currentDistance) candidates.push({ x, y });
+          }
+          candidates.sort((a, b) => separation(b) - separation(a) || a.y - b.y || a.x - b.x);
+          const safe = candidates[0];
+          if (safe !== undefined) {
+            commands.push({ kind: 'move', faction, squads: [squad.id], ...safe });
+            reasons.push(`Squad ${squad.id} steps away from a neutral threat on observed ground.`);
+            return false;
+          }
+        }
         if (squad.engaged || (!returning && (enemies.length > 0 || (exhausted && !sheltered)))) {
           commands.push({ kind: 'withdraw', faction, squads: [squad.id] });
           reasons.push(`Withdraw Squad ${squad.id}: strength ${squad.men}, morale ${squad.morale}, local power ${support} against ${threat}; recover in friendly quarters rather than remain spent in the field.`);
