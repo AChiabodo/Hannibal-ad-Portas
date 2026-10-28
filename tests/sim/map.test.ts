@@ -20,6 +20,8 @@ import {
   MAP_WIDTH,
   RESOURCE_KINDS,
   TILE_COUNT,
+  TERRAIN,
+  tileIndex,
   isTerrain,
   type MapGrid,
 } from '../../src/sim/map';
@@ -33,6 +35,7 @@ import {
   strongholdProblems,
   terrainProblems,
 } from './map-invariants';
+import { testMap } from './economy-fixtures';
 
 /** The seeds the per-criterion tests walk: the first dozen, which is fast and varied. */
 const SEEDS = Array.from({ length: 12 }, (_, seed) => seed);
@@ -71,6 +74,22 @@ describe('a map nobody drew', () => {
 });
 
 describe('the fairness the theatre is held to', () => {
+  it('requires separate crossings on a substantial river, not on a bypassable short stream', () => {
+    const makeStream = (length: number, ford: boolean): MapGrid => {
+      const map = testMap();
+      const tiles = Array.from({ length }, (_, i) => tileIndex(55, 10 + i));
+      for (const tile of tiles) map.terrain[tile] = TERRAIN.river;
+      if (ford) map.terrain[tiles[Math.floor(length / 2)] as number] = TERRAIN.ford;
+      return { ...map, rivers: [{ tiles }] };
+    };
+    const shortWithoutFord = makeStream(10, false);
+    const shortWithFord = makeStream(10, true);
+    expect(connectivityProblems(shortWithoutFord)).toEqual([]);
+    expect(connectivityProblems(shortWithFord)).toEqual([]);
+    expect(riverProblems(shortWithoutFord)).toEqual([]);
+    expect(riverProblems(shortWithFord)).toEqual([]);
+    expect(riverProblems(makeStream(100, true))).toContain('river 0 has fewer than two distinct crossings');
+  });
   it('leaves the land in one piece, with every settlement and resource node walkable from the Strongholds', () => {
     expect(problemsOver(SEEDS, connectivityProblems)).toEqual([]);
   });

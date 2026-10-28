@@ -175,6 +175,17 @@ export function riverProblems(map: MapGrid): readonly string[] {
 
   for (const [index, river] of map.rivers.entries()) {
     const fords = river.tiles.filter((tile) => terrainOf(map, tile) === TERRAIN.ford);
+    // Several adjacent ford tiles are one wide crossing, not multiple choices.
+    let crossings = 0;
+    let previousCrossing = false;
+    for (const tile of river.tiles) {
+      const current = terrainOf(map, tile) === TERRAIN.ford || terrainOf(map, tile) === TERRAIN.bridge;
+      if (current && !previousCrossing) crossings += 1;
+      previousCrossing = current;
+    }
+    // The current generator treats a course of 100 or more tiles as substantial.
+    // Short, bypassable streams need not offer multiple crossing points.
+    if (river.tiles.length >= 100 && crossings < 2) problems.push(`river ${index} has fewer than two distinct crossings`);
 
     for (const tile of fords) {
       if (dryNeighbours(map, tile) < 2) {
@@ -186,7 +197,7 @@ export function riverProblems(map: MapGrid): readonly string[] {
     }
 
     const crossable = fords.filter((tile) => isStraightFord(map, tile)).length;
-    if (crossable < MIN_FORDS_PER_RIVER) {
+    if (river.tiles.length >= 100 && crossable < MIN_FORDS_PER_RIVER) {
       problems.push(
         `river ${index} has ${crossable} fords a Squad can cross, fewer than the ` +
           `${MIN_FORDS_PER_RIVER} the contract states`,
@@ -215,7 +226,6 @@ export function riverProblems(map: MapGrid): readonly string[] {
       }
     }
 
-    if (river.tiles.length < 100) problems.push(`river ${index} is too short to be a substantial watercourse`);
   }
 
   return problems;
