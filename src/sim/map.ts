@@ -597,13 +597,61 @@ function randomTileIn(region: Region, rng: Rng): number {
 function carveRivers(terrain: Uint8Array, rng: Rng, grounds: Uint8Array): River[] {
   const count = 1 + rng.nextBelow(2);
   const firstIsVertical = rng.nextBelow(2) === 0;
+  const original = terrain.slice();
   const rivers: River[] = [];
 
   for (let index = 0; index < count; index += 1) {
     rivers.push(carveRiver(terrain, rng, index === 0 ? firstIsVertical : !firstIsVertical, grounds));
   }
 
-  return rivers;
+  const cleaned = rivers.map((river, index) => ({
+    tiles: removeBlindTongues(river.tiles, rivers.flatMap((other, otherIndex) => otherIndex === index ? [] : other.tiles)),
+  }));
+  const retained = new Set(cleaned.flatMap((river) => river.tiles));
+  for (const river of rivers) for (const tile of river.tiles) {
+    if (!retained.has(tile)) terrain[tile] = elementAt(original, tile);
+  }
+  return cleaned;
+}
+
+/** Remove a long doubled-back strip only when it has no branch or confluence. */
+function removeBlindTongues(tiles: readonly number[], otherRivers: readonly number[]): number[] {
+  const path = [...tiles];
+  const other = new Set(otherRivers);
+  for (;;) {
+    const positions = new Map(path.map((tile, index) => [tile, index]));
+    let first = -1, last = -1;
+    for (let i = 0; i < path.length; i += 1) {
+      const tile = elementAt(path, i);
+      const x = tileX(tile), y = tileY(tile);
+      const neighbours = [x > 0 ? tile - 1 : -1, x < MAP_WIDTH - 1 ? tile + 1 : -1,
+        y > 0 ? tile - MAP_WIDTH : -1, y < MAP_HEIGHT - 1 ? tile + MAP_WIDTH : -1];
+      for (const neighbour of neighbours) {
+        const j = positions.get(neighbour);
+        if (j === undefined || j - i < 9 || j - i <= last - first) continue;
+        const reach = path.slice(i, j + 1);
+        const xs = reach.map(tileX), ys = reach.map(tileY);
+        const width = Math.max(...xs) - Math.min(...xs) + 1;
+        const height = Math.max(...ys) - Math.min(...ys) + 1;
+        if (Math.min(width, height) !== 2 || Math.max(width, height) < 5 || width * height !== reach.length) continue;
+        const removed = new Set(reach.slice(1, -1));
+        let safe = true;
+        for (const part of removed) {
+          const px = tileX(part), py = tileY(part);
+          const beside = [px > 0 ? part - 1 : -1, px < MAP_WIDTH - 1 ? part + 1 : -1,
+            py > 0 ? part - MAP_WIDTH : -1, py < MAP_HEIGHT - 1 ? part + MAP_WIDTH : -1];
+          if (other.has(part) || beside.some((next) => other.has(next) ||
+            (positions.has(next) && !removed.has(next) && next !== tile && next !== neighbour))) {
+            safe = false;
+            break;
+          }
+        }
+        if (safe) { first = i; last = j; }
+      }
+    }
+    if (first < 0) return path;
+    path.splice(first + 1, last - first - 1);
+  }
 }
 
 /** Inland lakes and their wet banks, kept clear of water, sites and map edges. */

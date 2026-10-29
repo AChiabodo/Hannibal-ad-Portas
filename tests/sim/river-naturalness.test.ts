@@ -36,4 +36,27 @@ describe('river shape', () => {
     }));
     expect(issues).toEqual([]);
   });
+
+  it('does not extend seed 581 into a ten-tile blind tongue of water', () => {
+    const map = generateMap(581);
+    const river = map.rivers[1]!;
+    expect(river.tiles).toContain(tileIndex(122, 58));
+    expect(river.tiles).toContain(tileIndex(123, 58));
+    expect(river.tiles).not.toContain(tileIndex(122, 67));
+    expect(river.tiles).not.toContain(tileIndex(123, 67));
+  });
+
+  it('retains a compact bend and a confluence between distinct rivers', () => {
+    const compact = generateMap(4).rivers[1]!.tiles;
+    const start = compact.indexOf(tileIndex(36, 11));
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(compact.slice(start, start + 4)).toEqual([
+      tileIndex(36, 11), tileIndex(36, 12), tileIndex(37, 12), tileIndex(37, 11),
+    ]);
+    const rivers = generateMap(31).rivers;
+    for (const x of [122, 123, 124, 125, 126, 127, 128]) {
+      expect(rivers[0]!.tiles).toContain(tileIndex(x, 39));
+      expect(rivers[1]!.tiles).toContain(tileIndex(x, 39));
+    }
+  });
 });
