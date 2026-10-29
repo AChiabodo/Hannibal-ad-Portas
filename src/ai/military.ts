@@ -10,7 +10,10 @@ import { restingAtHome, returningHome } from './recovery.ts';
 
 type Faction = Observation<unknown>['faction'];
 
-interface Enemy extends Site { readonly id: number; readonly type: string; readonly neutral?: boolean }
+interface Enemy extends Site {
+  readonly id: number; readonly type: string; readonly neutral?: boolean;
+  readonly appearance?: { readonly men: number };
+}
 interface Squad extends Enemy {
   readonly men: number;
   /** The men it was recruited with: what its survivors and its power are read against. */
@@ -147,21 +150,12 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
   // funded with rested power that triggers an immediate withdrawal on arrival.
   const approachPower = (squad: Squad, target: Site) =>
     power(squad, distance(squad, target) > CONTACT_RADIUS ? content.fatigueMax : squad.fatigue);
-  /**
-   * What an observed enemy Squad is worth: its **type's** nominal bearing and
-   * nerve, never its actual men.
-   *
-   * An enemy's headcount is not in this Faction's Observation (ADR-0020), and a
-   * Controller must not be handed it, so the estimate is the public roster's
-   * largest size at full nerve — the content table's fact, not the enemy's. It is
-   * the same estimate at every difficulty and to both Factions, which is what
-   * keeps this from being privileged vision; before #66 it read the type's morale
-   * alone and priced a 48-man body the same as a 120-man one.
-   */
+  /** Current appearances expose headcount (ADR-0029), but never morale or fatigue.
+   * Remembered contacts carry no appearance and use the conservative roster size. */
   const enemyPower = (enemy: Enemy) => {
     const type = types.get(enemy.type);
 
-    return type === undefined ? unknown : type.strength * type.impact * type.morale * PERCENT;
+    return type === undefined ? unknown : (enemy.appearance?.men ?? type.strength) * type.impact * type.morale * PERCENT;
   };
   function spent(squad: Squad, observation: Observation<MilitaryObservation>): boolean {
     const type = types.get(squad.type);

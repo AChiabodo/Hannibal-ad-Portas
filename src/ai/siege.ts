@@ -42,7 +42,7 @@ export interface SiegeObservation {
   readonly season: Season;
   readonly treasury: number;
   readonly squads: readonly SiegeSquad[];
-  readonly enemies: readonly (Site & { readonly type: string })[];
+  readonly enemies: readonly (Site & { readonly type: string; readonly appearance?: { readonly men: number } })[];
   readonly contacts: readonly Contact[];
   readonly fronts: readonly VisibleSiegeFront[];
 }
@@ -95,7 +95,7 @@ export type SiegeCommand =
  * has seen is not a target at all.
  *
  * Since #66 power is **men brought to bear** — `strength × impact`, priced with
- * nominal figures for an enemy whose headcount is not in the Observation — so a
+ * currently observed headcount when available and nominal figures otherwise — so a
  * ring of five 24-man Squads is worth the 120 men it is and not five times one of
  * them (ADR-0028). The target is drawn from the same
  * age-limited contact memory the other planning policies read, not from the raw
@@ -113,9 +113,9 @@ export function createSiegeBehaviour(
   difficulty: Difficulty = DIFFICULTY.centurio,
 ): Behaviour<SiegeObservation, SiegeCommand> {
   const types = new Map(content.squadTypes.map((type) => [type.id, type]));
-  const nominal = (typeId: string) => {
-    const type = types.get(typeId);
-    return type === undefined ? content.garrisonEstimate : type.strength * type.impact * type.morale;
+  const observed = (enemy: SiegeObservation['enemies'][number]) => {
+    const type = types.get(enemy.type);
+    return type === undefined ? content.garrisonEstimate : (enemy.appearance?.men ?? type.strength) * type.impact * type.morale;
   };
   const power = (squad: SiegeSquad) => {
     const type = types.get(squad.type);
@@ -146,7 +146,7 @@ export function createSiegeBehaviour(
       const stated = (reason: string) => `${reason} ${sighting}`;
 
       const relief = visible.enemies.filter((enemy) => Math.max(0, distance(enemy, place) - (content.settlementRadius ?? 0)) <= content.reliefRadius);
-      const reliefPower = relief.reduce((sum, enemy) => sum + nominal(enemy.type), 0);
+      const reliefPower = relief.reduce((sum, enemy) => sum + observed(enemy), 0);
       const presence = recordedGarrison(visible.appearances?.find((site) => site.id === target.id));
       const garrison = front === undefined || front.garrisonKnown === false ? presence === false ? 0 : 1 : front.garrison;
       const threat = garrison * content.garrisonEstimate + reliefPower;

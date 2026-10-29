@@ -46,6 +46,15 @@ function decide(faction: 'rome' | 'carthage', visible: SiegeObservation,
 }
 
 describe('the siege Controller', () => {
+  it('prices visible relief using its observed formation and assumes the roster size when appearance is absent', () => {
+    const relief = { type: 'gaul', x: 82, y: 80 };
+    const visible = observation({ squads: [squad(1, 80, 80, { men: 24, capacity: 24 })],
+      enemies: [{ ...relief, appearance: { men: 24 } }],
+      fronts: [{ settlement: 1, breached: false, besieger: null, ram: null, garrison: 0 }] });
+    expect(decide('rome', visible).commands.some((command) => command.kind === 'assault')).toBe(true);
+    expect(decide('rome', { ...visible, enemies: [relief] }).commands)
+      .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [1] });
+  });
   it('does not emit an empty withdrawal for a front whose Squads are already returning', () => {
     const { commands } = decide('rome', observation({ squads: [],
       fronts: [{ settlement: 1, breached: false, besieger: 'rome', ram: null, garrison: 1 }],

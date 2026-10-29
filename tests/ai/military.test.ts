@@ -32,6 +32,20 @@ function battlefield(): SiegeVisible {
 }
 
 describe('the military Controller', () => {
+  it('prices a visible small formation using its public appearance and keeps a conservative estimate when hidden', () => {
+    const base = battlefield();
+    const troops = base.squads.map((squad) => ({ ...squad, men: 24, capacity: 24 }));
+    const enemy = { id: 10, type: 'hastati', x: 25, y: 20,
+      appearance: { men: 24, capacity: 24, figures: 24, formation: 'line' as const, facing: 'west' as const } };
+    const visible: SiegeVisible = { ...base, squads: troops, enemies: [enemy] };
+    const decide = (view: SiegeVisible) => ai().decide({ faction: 'rome', tick: 1, visible: view });
+    expect(decide(visible).some((command) => command.kind === 'attack' && command.target === 10)).toBe(true);
+    expect(decide({ ...visible, enemies: [{ id: enemy.id, type: enemy.type, x: enemy.x, y: enemy.y }] })
+      .some((command) => command.kind === 'attack')).toBe(false);
+    const remembered: SiegeVisible = { ...visible, enemies: [],
+      contacts: [{ id: enemy.id, kind: 'squad', type: enemy.type, x: enemy.x, y: enemy.y, seen: 0 }] };
+    expect(decide(remembered).some((command) => command.kind === 'attack' || command.kind === 'move')).toBe(false);
+  });
   it('evades an unengaged neutral threat locally on known ground and falls back to recovery when necessary', () => {
     const base = battlefield();
     const terrain = new Uint8Array(MAP_WIDTH * MAP_HEIGHT).fill(TERRAIN.plain);
