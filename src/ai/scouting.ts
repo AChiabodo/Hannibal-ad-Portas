@@ -153,7 +153,11 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
         // Cover the missed band first before sweeping farther in that direction.
         const between = (y: number) => lonePatrol && Math.abs(position.y - ownLatitude) > vision * 2 &&
           y >= Math.min(position.y, ownLatitude) && y <= Math.max(position.y, ownLatitude);
-        choices.sort((a, b) => Number(between(b)) - Number(between(a)) ||
+        // From an edge start, continue across the theatre before revisiting
+        // the short band behind a detour; central starts still cover missed bands.
+        const forward = (y: number) => lonePatrol && (ownLatitude < height / 4 ? y >= position.y :
+          ownLatitude > height * 3 / 4 ? y <= position.y : false);
+        choices.sort((a, b) => Number(forward(b)) - Number(forward(a)) || Number(between(b)) - Number(between(a)) ||
           Math.abs(a - position.y) - Math.abs(b - position.y) || (northFirst ? a - b : b - a));
       }
       for (const y of choices) {
@@ -225,7 +229,18 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const reasons: string[] = [];
     const targets: Site[] = [];
     for (const [patrol, squad] of scouts.entries()) {
-      const course = found ? undefined : explorationCourse(visible.settlements[0] ?? squad, patrol, terrain, squad, scouts.length === 1);
+      let course = found ? undefined : explorationCourse(visible.settlements[0] ?? squad, patrol, terrain, squad, scouts.length === 1);
+      // A lone scout must skirt a remembered patrol, rather than repeatedly
+      // choosing an unreachable frontier behind it. Two scouts retain their
+      // complementary courses so one detour cannot redirect both patrols.
+      if (scouts.length === 1 && course !== undefined && Math.abs(course.x - squad.x) > vision * 2) {
+        const threat = danger.find((contact) => contact.x >= Math.min(squad.x, course!.x) && contact.x <= Math.max(squad.x, course!.x) &&
+          Math.abs(contact.y - course!.y) <= vision * 4 && Math.abs(contact.y - squad.y) < vision * 4);
+        if (threat !== undefined) {
+          const y = Math.max(vision, Math.min(height - 1 - vision, threat.y + (squad.y >= threat.y ? 1 : -1) * vision * 4));
+          if (Math.abs(squad.y - threat.y) < vision * 4) course = { x: squad.x, y };
+        }
+      }
       const fits = new Int8Array(width * height).fill(-1);
       // An anchor on dry ground is insufficient: at least one column pose must fit.
       const arrivals = (['north', 'east', 'south', 'west'] as const).map((facing) => formationFootprint(squad.capacity, 'column', facing));
