@@ -149,7 +149,7 @@ export function formatMap(seed: number): string {
 function summary(map: MapGrid): string[] {
   const [rome, carthage] = map.strongholds;
   const fords = map.rivers.map(
-    (river) => river.tiles.filter((tile) => terrainAt(map, tileX(tile), tileY(tile)) === TERRAIN.ford).length,
+    (river) => new Set(river.tiles.filter((tile) => terrainAt(map, tileX(tile), tileY(tile)) === TERRAIN.ford)).size,
   );
   const riverWord = map.rivers.length === 1 ? 'river' : 'rivers';
   const settlementWord = map.settlements.length === 1 ? 'minor settlement' : 'minor settlements';

@@ -98,6 +98,10 @@ describe('a generated map, written out for inspection', () => {
     expect(dump).toContain(`carrying ${fords.join(' and ')} fords`);
   });
 
+  it('counts a ford tile once even when the river path revisits it', () => {
+    expect(formatMap(9)).toContain('carrying 15 and 24 fords');
+  });
+
   it('names every terrain and every resource in its legend, so a glyph can be read', () => {
     const dump = formatMap(SEED);
 
