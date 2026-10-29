@@ -212,8 +212,6 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
       // field squad unless an offensive siege already needs it. The normal
       // garrison command checks whether the observed destination is reachable.
       // Reissue the order until its ordinary admission journey completes.
-      // Even a spent squad already in these quarters can defend its own walls;
-      // do not recall an exhausted squad across the field for this purpose.
       for (const site of visible.settlements) {
         const front = visible.fronts?.find((entry) => entry.settlement === site.id);
         if (front === undefined || front.siege == null || front.besieger === faction ||
@@ -226,8 +224,7 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
             (squad.passage.phase === 'approaching' || squad.passage.phase === 'entering');
           return (local(squad) || (!attacking && (admission || !returningHome(squad, visible.settlements)) &&
             !visible.enemies.some((enemy) => distance(squad, enemy) <= CONTACT_RADIUS))) &&
-            squad.refused == null && squad.passage?.phase !== 'leaving' && !squad.engaged &&
-            (local(squad) || !spent(squad, observation)) &&
+            squad.refused == null && squad.passage?.phase !== 'leaving' && !squad.engaged && !spent(squad, observation) &&
             !assigned.has(squad.id) && squad.men + (front.garrisonMen ?? 0) <= front.garrisonCapacity! &&
             type !== undefined && type.arm !== 'cavalry' && type.figures !== 1;
         });

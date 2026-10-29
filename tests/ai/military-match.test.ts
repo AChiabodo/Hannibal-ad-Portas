@@ -35,22 +35,6 @@ function scenario(hiddenX = 70): SiegeWorld {
 }
 
 describe('military decisions in a headless Match', () => {
-  it('defends an observed blockade with tired infantry already in the Stronghold', () => {
-    const world = theatre();
-    const defender = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 18, x: 20, y: 20 });
-    defender.morale = 4;
-    const attacker = musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 29, y: 20 });
-    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
-    match.step([blockade('carthage', [attacker.id], 0)]);
-    const controller = createArmyController('centurio');
-    let reachedWalls = false;
-    for (let tick = 0; tick < 100; tick += 1) {
-      const visible = observeSiege(world, 'rome');
-      if (visible.squads.find((squad) => squad.id === defender.id)?.garrison === 0) reachedWalls = true;
-      match.step(controller.decide({ faction: 'rome', tick: match.state.tick, visible }));
-    }
-    expect(reachedWalls).toBe(true);
-  });
   it('does not repeat an unreachable recall after ordinary route validation refuses it', () => {
     const world = theatre();
     for (let y = 0; y < MAP_HEIGHT; y += 1) world.map.terrain[tileIndex(50, y)] = TERRAIN.river;
