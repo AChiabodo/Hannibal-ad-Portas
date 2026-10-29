@@ -33,6 +33,20 @@ function scenario(hiddenX = 70): SiegeWorld {
 }
 
 describe('military decisions in a headless Match', () => {
+  it('sends a ready defender to its own empty walls when an observed blockade begins', () => {
+    const rome = createArmyController('centurio'), carthage = createArmyController('centurio');
+    let blockadeSeen = false, defenderOnWalls = false;
+    runMatch({ seed: 7, ticks: 1800, rules: siegeMatchRules, observe: observeSiege, outcome: siegeMatchOutcome,
+      players: [{ faction: 'rome', controller: rome }, { faction: 'carthage', controller: { decide(observation) {
+        const front = observation.visible.fronts.find((entry) => entry.settlement === 1);
+        if (front?.siege === 'blockade' && front.besieger === 'rome') blockadeSeen = true;
+        if (blockadeSeen && front !== undefined && front.garrison > 0 &&
+          observation.visible.squads.some((squad) => squad.garrison === 1)) defenderOnWalls = true;
+        return carthage.decide(observation);
+      } } }] });
+    expect(blockadeSeen).toBe(true);
+    expect(defenderOnWalls).toBe(true);
+  }, 30000);
   it('clears a stationary friendly body blocking an entering squad at its own gate', () => {
     const rome = createArmyController('centurio'), carthage = createArmyController('centurio');
     let blocked: { id: number; blocker: number; x: number; y: number } | undefined;

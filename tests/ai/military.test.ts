@@ -32,6 +32,31 @@ function battlefield(): SiegeVisible {
 }
 
 describe('the military Controller', () => {
+  it('assigns eligible home infantry to empty walls only when its own observed front is besieged', () => {
+    const base = battlefield();
+    const defender = { ...base.squads[0]!, x: 20, y: 20, men: 24, capacity: 24, inQuarters: true };
+    const front = { ...base.fronts.find((entry) => entry.settlement === 0)!,
+      settlement: 0, breached: false, besieger: 'carthage' as const, siege: 'blockade' as const,
+      ram: null, garrison: 0, garrisonMen: 0, garrisonCapacity: 60, hold: 0 };
+    const visible: SiegeVisible = { ...base, enemies: [], squads: [defender], fronts: [front] };
+    const decide = (view: SiegeVisible) => ai().decide({ faction: 'rome', tick: 1, visible: view });
+    expect(decide(visible)).toContainEqual({ kind: 'garrison', faction: 'rome', squads: [defender.id], settlement: 0 });
+    expect(decide({ ...visible, fronts: [{ ...front, siege: 'assault', besieger: null }] }))
+      .toContainEqual({ kind: 'garrison', faction: 'rome', squads: [defender.id], settlement: 0 });
+    expect(decide({ ...visible, fronts: [] }).some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, fronts: [{ ...front, garrisonCapacity: 10 }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [{ ...defender, type: 'numidian-horse' }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [{ ...defender, type: 'elephant' }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, fronts: [{ ...front, settlement: 1 }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, fronts: [{ ...front, structures: [] }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [{ ...defender, x: 80, y: 80 }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+  });
   it('clears only a known friendly gate blockage, without directing a squad onto unexplored ground', () => {
     const base = battlefield();
     const terrain = new Uint8Array(MAP_WIDTH * MAP_HEIGHT).fill(TERRAIN.plain);

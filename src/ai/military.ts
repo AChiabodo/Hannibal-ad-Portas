@@ -49,6 +49,7 @@ interface MilitaryType {
   readonly impact: number;
   readonly morale: number;
   readonly arm: string;
+  readonly figures?: number;
 }
 
 interface MilitaryContent {
@@ -93,6 +94,8 @@ export function createMilitaryRecruitment(content: MilitaryContent) {
 
 type MilitaryCommand = {
   readonly kind: 'hold' | 'withdraw'; readonly faction: Faction; readonly squads: readonly number[];
+} | {
+  readonly kind: 'garrison'; readonly faction: Faction; readonly squads: readonly number[]; readonly settlement: number;
 } | {
   readonly kind: 'attack'; readonly faction: Faction; readonly squads: readonly number[]; readonly target: number;
 } | {
@@ -199,11 +202,32 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
       const assigned = new Set<number>();
       let withdrawing = false;
       let committed = false;
+      // A known hostile siege makes the owner's empty walls urgent: one
+      // suitable field squad already in the quarters can defend them without
+      // guessing where an unseen attacker stands. Keep issuing the same order
+      // while the ordinary admission journey completes.
+      for (const site of visible.settlements) {
+        const front = visible.fronts?.find((entry) => entry.settlement === site.id);
+        if (front === undefined || front.siege == null || front.besieger === faction ||
+          front.garrison !== 0 || front.garrisonCapacity === undefined || (front.structures?.length ?? 0) === 0) continue;
+        const defender = squads.find((squad) => {
+          const type = types.get(squad.type);
+          return squad.inQuarters === true && distance(squad, site) <= (content.settlementRadius ?? 7) &&
+            squad.passage?.phase !== 'leaving' && !squad.engaged && !spent(squad, observation) &&
+            !assigned.has(squad.id) && squad.men + (front.garrisonMen ?? 0) <= front.garrisonCapacity! &&
+            type !== undefined && type.arm !== 'cavalry' && type.figures !== 1;
+        });
+        if (defender === undefined) continue;
+        assigned.add(defender.id);
+        commands.push({ kind: 'garrison', faction, squads: [defender.id], settlement: site.id });
+        reasons.push(`Defend the observed siege at settlement ${site.id} from its empty walls.`);
+      }
       const fallingBack = (squad: Squad) => returningHome(squad, visible.settlements);
       // Decide support eligibility before local engagements: men who are leaving
       // or have lost their ability to fight cannot keep another Squad in contact.
       const supportSquads = squads.filter((squad) => !spent(squad, observation) && !fallingBack(squad));
       const ready = squads.filter((squad) => {
+        if (assigned.has(squad.id)) return false;
         const returning = fallingBack(squad);
         if (returning && !squad.engaged) {
           assigned.add(squad.id);

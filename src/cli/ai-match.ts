@@ -168,12 +168,12 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
   /** The D5 army: the siege owns its Squads, and the field owns the rest. */
   const siegeBehaviour: Behaviour<SiegeVisible, Command> = { ...siege, tactical: (context) => {
     const field = fieldOf(context);
-    // Recovery owns both a new withdrawal and the march it leaves on later
-    // ticks. Remove those Squads before the siege evaluates its available power.
-    const withdrawn = new Set(field?.commands.filter((command) => command.kind === 'withdraw')
+    // Recovery and home-wall defence take precedence over an offensive siege.
+    // Do not count those Squads as available for the attack.
+    const unavailable = new Set(field?.commands.filter((command) => command.kind === 'withdraw' || command.kind === 'garrison')
       .flatMap((command) => command.squads) ?? []);
     const { visible } = context.observation;
-    const squads = visible.squads.filter((squad) => !withdrawn.has(squad.id) &&
+    const squads = visible.squads.filter((squad) => !unavailable.has(squad.id) &&
       !restingAtHome(squad, visible.settlements, SQUAD_TYPES.find((type) => type.id === squad.type)?.morale ?? 0) &&
       !returningHome(squad, visible.settlements));
     const proposed = siege.tactical!({ ...context, observation: { ...context.observation,
