@@ -6,6 +6,17 @@ import { findRoute, moveCost } from '../../src/sim/route';
 import { blockedTile } from '../../src/sim/settlement-space';
 
 describe('lakes and marshes', () => {
+  it('provides a ford on the long branch before the confluence on seed 2', () => {
+    const map = generateMap(2);
+    expect(map.rivers).toHaveLength(2);
+    const [one, two] = map.rivers;
+    const other = new Set(one!.tiles);
+    const junction = two!.tiles.findIndex((tile) => other.has(tile));
+    expect(junction).toBeGreaterThan(20);
+    const branch = two!.tiles.slice(0, junction);
+    expect(branch.some((tile) => map.terrain[tile] === TERRAIN.ford || map.terrain[tile] === TERRAIN.bridge)).toBe(true);
+  });
+
   it('generates water to go around and walkable, slower marsh in the landscape', () => {
     const maps = Array.from({ length: 20 }, (_, seed) => generateMap(seed));
     expect(maps.some((map) => map.terrain.includes(TERRAIN.lake))).toBe(true);

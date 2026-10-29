@@ -723,6 +723,22 @@ function plantFords(terrain: Uint8Array, rng: Rng, rivers: readonly River[]): vo
       widenCrossing(terrain, elementAt(fords, at));
     }
   }
+  // A confluence divides each river into separate barriers. Evenly spaced
+  // crossings for the whole river can all land on one side of the junction.
+  for (const [index, river] of rivers.entries()) {
+    const shared = new Set(rivers.flatMap((other, otherIndex) => otherIndex === index ? [] : other.tiles));
+    if (!river.tiles.some((tile) => shared.has(tile))) continue;
+    let start = 0;
+    for (let end = 0; end <= river.tiles.length; end += 1) {
+      if (end < river.tiles.length && !shared.has(river.tiles[end]!)) continue;
+      const reach = river.tiles.slice(start, end);
+      if (reach.length >= 20 && !reach.some((tile) => terrain[tile] === TERRAIN.ford)) {
+        const candidates = reach.filter((tile) => terrain[tile] === TERRAIN.river && isStraightFord(terrain, tile));
+        if (candidates.length > 0) widenCrossing(terrain, elementAt(candidates, Math.floor(candidates.length / 2)));
+      }
+      start = end + 1;
+    }
+  }
 }
 
 /** Whether a river tile can be crossed straight over: two opposite neighbours are already dry. */
