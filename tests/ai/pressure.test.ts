@@ -11,6 +11,14 @@ it('skirts a discovered neutral threat without abandoning exploration on seed 8'
   expect(result.pass).toBe(true);
 }, 15000);
 
+it('covers both nearby opposite-side bands with one Centurio scout on seed 7', () => {
+  const result = diagnosePressure(7, 'rome', 'centurio');
+  expect(result.contact).not.toBeNull();
+  expect(result.contact!.tick).toBeLessThanOrEqual(1800);
+  expect(result.pressure).not.toBeNull();
+  expect(result.pass).toBe(true);
+}, 30000);
+
 it('discovers the southern Carthaginian start on seed 7 before the Imperator contact deadline', () => {
   const result = diagnosePressure(7, 'carthage', 'imperator');
   expect(result.contact).not.toBeNull();

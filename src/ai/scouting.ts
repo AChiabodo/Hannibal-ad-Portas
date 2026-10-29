@@ -157,8 +157,14 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
         // the short band behind a detour; central starts still cover missed bands.
         const forward = (y: number) => lonePatrol && (ownLatitude < height / 4 ? y >= position.y :
           ownLatitude > height * 3 / 4 ? y <= position.y : false);
-        choices.sort((a, b) => Number(forward(b)) - Number(forward(a)) || Number(between(b)) - Number(between(a)) ||
-          Math.abs(a - position.y) - Math.abs(b - position.y) || (northFirst ? a - b : b - a));
+        // A single patrol starting near the middle first explores nearby bands
+        // on both sides of home latitude. Two planned patrols keep their
+        // complementary sweeps even before the second has deployed.
+        const nearHome = (y: number) => lonePatrol && difficulty.openingScouts === 1 && Math.abs(ownLatitude - middle) <= height / 8 &&
+          Math.abs(position.y - ownLatitude) <= vision * 4 && Math.abs(y - ownLatitude) <= vision * 3;
+        choices.sort((a, b) => Number(forward(b)) - Number(forward(a)) || Number(nearHome(b)) - Number(nearHome(a)) ||
+          Number(between(b)) - Number(between(a)) || Math.abs(a - position.y) - Math.abs(b - position.y) ||
+          (northFirst ? a - b : b - a));
       }
       for (const y of choices) {
         if (terrain[y * width + x] === content.unseen) return { x, y };
