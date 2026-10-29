@@ -144,7 +144,14 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const columns = [opposite, opposite + inward, opposite - inward];
     for (const x of columns) {
       if (x < 0 || x >= width) continue;
-      for (const y of [first, ...initial, ...reverse]) {
+      // A detour can carry the scout past unexplored bands. Once it reaches
+      // the opposite side, search the nearest outstanding band before travelling
+      // to an edge; retain the patrol direction when distances are equal.
+      const choices = [first, ...initial, ...reverse];
+      if (Math.abs(position.x - opposite) <= vision * 3) {
+        choices.sort((a, b) => Math.abs(a - position.y) - Math.abs(b - position.y) || (northFirst ? a - b : b - a));
+      }
+      for (const y of choices) {
         if (terrain[y * width + x] === content.unseen) return { x, y };
       }
     }
