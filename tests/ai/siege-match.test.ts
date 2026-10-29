@@ -32,6 +32,26 @@ function replayOf(seed: number, name: DifficultyName = 'centurio'): string {
 }
 
 describe('the shipped siege AI in a headless Match', () => {
+  it('does not abandon a paid assault when the ram location is out of sight on seed 12 (#76)', () => {
+    let tick = 0;
+    const samples: { tick: number; treasury: number; front: SiegeVisible['fronts'][number] | undefined }[] = [];
+    runMatch({ seed: 12, ticks: 595, rules: siegeMatchRulesForDifficulty('imperator'), outcome: siegeMatchOutcome,
+      observe(world, faction) {
+        const visible = observeSiege(world, faction);
+        if (faction === 'rome') {
+          if (tick === 591 || tick === 592) samples.push({ tick, treasury: visible.treasury,
+            front: visible.fronts.find((front) => front.settlement === 1) });
+          tick += 1;
+        }
+        return visible;
+      },
+      players: [{ faction: 'rome', controller: createArmyController('imperator') },
+        { faction: 'carthage', controller: createArmyController('imperator') }] });
+    expect(samples).toHaveLength(2);
+    for (const sample of samples) expect(sample).toMatchObject({ treasury: 5,
+      front: { siege: 'assault', besieger: 'rome', ram: null, ramKnown: false } });
+  }, 20000);
+
   it.each(['tiro', 'centurio', 'imperator'] as const)('completes a real Carthaginian Blockade at %s', (level) => {
     const setup = { seed: 13, ticks: HEADLESS_TICKS, rules: siegeMatchRules,
       observe: observeSiege, outcome: siegeMatchOutcome };

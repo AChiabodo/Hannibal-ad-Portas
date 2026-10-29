@@ -204,3 +204,16 @@ it('continues an assault through a remembered breach when the ram is hidden and 
       tiles: [{ cell: 305, seen: 10, visible: false, structure: { kind: 'gate', side: 3, condition: 'breached' } }] }] });
   expect(decide('rome', visible, 'centurio', 11).commands).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
 });
+
+it('keeps an active assault when its ram is outside sight, but blockades when its absence is visible', () => {
+  const visible = observation({ treasury: 0, squads: [squad(1, 80, 80)],
+    fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'assault',
+      ram: null, ramKnown: false, garrison: 0 }] });
+  expect(decide('rome', visible).commands).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
+  const seen = { ...visible, fronts: visible.fronts.map(front => ({ ...front, ramKnown: true })) };
+  expect(decide('rome', seen).commands).toEqual([{ kind: 'blockade', faction: 'rome', squads: [1], settlement: 1 }]);
+  const paid = { ...seen, fronts: seen.fronts.map(front => ({ ...front, ram: { built: false } })) };
+  expect(decide('rome', paid).commands).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
+  const uncommitted = { ...visible, fronts: visible.fronts.map(front => ({ ...front, siege: null, besieger: null })) };
+  expect(decide('rome', uncommitted).commands).toEqual([{ kind: 'blockade', faction: 'rome', squads: [1], settlement: 1 }]);
+});

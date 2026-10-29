@@ -28,6 +28,7 @@ interface VisibleSiegeFront {
   readonly besieger: Faction | null;
   readonly siege?: 'assault' | 'blockade' | null;
   readonly ram: { readonly built: boolean; readonly hp?: number; readonly remaining?: number } | null;
+  readonly ramKnown?: boolean;
   readonly garrison: number;
   readonly garrisonMen?: number;
   readonly garrisonKnown?: boolean;
@@ -194,12 +195,18 @@ export function createSiegeBehaviour(
       function assaultPath(): boolean {
         if (!content.canAssault(faction)) return false;
         if (knownBreach) return true;
-        return front?.ram != null || visible.treasury >= content.ramCost;
+        return front?.ram != null || visible.treasury >= content.ramCost ||
+          (front?.ramKnown === false && front.besieger === faction && front.siege === 'assault');
       }
       /** The stated grounds for the path, with the numbers the decision read. */
       function grounds(assault: boolean, settlement: number, ours: number, theirs: number): string {
         const against = `${String(ours)} power against ${String(theirs)}`;
         if (assault) {
+          if (front?.ramKnown === false && front.besieger === faction && front.siege === 'assault' &&
+              front.ram === null && visible.treasury < content.ramCost && !knownBreach) {
+            return `Continue the assault on settlement ${String(settlement)}: the ram's location is not visible; ` +
+              `keep the existing order with ${against}.`;
+          }
           return knownBreach
             ? `Assault settlement ${String(settlement)}: the walls are breached; storm the centre with ${against}.`
             : `Assault settlement ${String(settlement)}: ${faction} has the ram at the walls or can pay ` +

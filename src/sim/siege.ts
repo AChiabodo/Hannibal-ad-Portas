@@ -413,6 +413,9 @@ export interface VisibleFront {
   /** The ram at the walls, or `null` when there is none. */
   readonly ram: VisibleRam | null;
 
+  /** False when the ram's location is out of sight; null then does not imply absence. */
+  readonly ramKnown?: boolean;
+
   /** Capture checks the holder has held the centre. */
   readonly hold: number;
 
@@ -1501,6 +1504,7 @@ function visibleFront(economy: Economy, front: Front): VisibleFront {
     ram: front.ram > 0 || front.ramTicks > 0
       ? { hp: front.ram, remaining: front.ramTicks, built: front.ramTicks === 0 }
       : null,
+    ramKnown: true,
     hold: front.hold,
     garrison: garrisonOf(economy, front.settlement).length,
     garrisonKnown: true,
@@ -1538,7 +1542,7 @@ function filteredFront(world: SiegeWorld, front: Front, owner: number, eyes: Ret
   delete publicFront.garrisonMen;
   delete publicFront.garrisonCapacity;
   return { ...publicFront, structures, breached: structures.some((structure) => !structure.standing),
-    ram: ramSeen ? full.ram : null, hold: sees(site.x, site.y) ? full.hold : 0,
+    ram: ramSeen ? full.ram : null, ramKnown: ramSeen, hold: sees(site.x, site.y) ? full.hold : 0,
     garrisonKnown: structures.length > 0,
     garrison: structures.length > 0 && full.garrison > 0 ? 1 : 0 };
 }
