@@ -27,7 +27,7 @@ interface Squad extends Enemy {
   readonly garrison: number | null;
   readonly goal: Site | null;
   readonly refused?: string | null;
-  readonly passage?: { readonly settlement: number; readonly phase: string };
+  readonly passage?: { readonly settlement: number; readonly phase: string; readonly reason?: string };
 }
 
 export interface MilitaryObservation {
@@ -316,6 +316,36 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
           allocated += assign(squad, target, `against observed enemy ${target.id}: reinforce a winnable field engagement.`);
         }
         reasons.push(`Attack observed weakness ${target.id}: line ${available} against threat ${threat}.`);
+      }
+      // A stationary field squad in its own quarters can occupy the landing
+      // needed by another squad entering the gate. Move it aside using only
+      // the owner's observed bodies and terrain; keep that move until the
+      // passage is clear rather than immediately replacing it with Hold.
+      for (const waiting of visible.squads.filter((squad) => squad.passage?.reason === 'exit-blocked')) {
+        const site = visible.settlements.find((settlement) => settlement.id === waiting.passage?.settlement);
+        if (site === undefined || content.mapWidth === undefined || visible.fog === undefined) continue;
+        const blocker = ready.find((squad) => squad.id !== waiting.id && squad.inQuarters === true &&
+          !assigned.has(squad.id) && distance(squad, waiting) <= 4);
+        if (blocker === undefined) continue;
+        if (blocker.goal !== null) {
+          assigned.add(blocker.id);
+          continue;
+        }
+        if (blocker.refused != null) continue;
+        const horizontal = Math.abs(waiting.x - site.x) >= Math.abs(waiting.y - site.y);
+        const inwardX = site.x > blocker.x ? 1 : site.x < blocker.x ? -1 : 0;
+        const inwardY = site.y > blocker.y ? 1 : site.y < blocker.y ? -1 : 0;
+        const sidewaysX = blocker.x < waiting.x ? -1 : 1;
+        const sidewaysY = blocker.y < waiting.y ? -1 : 1;
+        const x = blocker.x + (horizontal ? inwardX * 3 : sidewaysX * 3);
+        const y = blocker.y + (horizontal ? sidewaysY * 3 : inwardY * 3);
+        const width = content.mapWidth, terrain = visible.fog.terrain;
+        const tile = x < 0 || y < 0 || x >= width || y >= terrain.length / width ? undefined : terrain[y * width + x];
+        if (tile === undefined || content.impassableTerrain?.includes(tile) === true ||
+          visible.squads.some((other) => other.id !== blocker.id && distance(other, { x, y }) <= 2)) continue;
+        commands.push({ kind: 'move', faction, squads: [blocker.id], x, y });
+        assigned.add(blocker.id);
+        reasons.push(`Clear friendly gate traffic at settlement ${site.id}.`);
       }
       if (reserve !== undefined && !assigned.has(reserve.id)) {
         commands.push({ kind: 'hold', faction, squads: [reserve.id] });

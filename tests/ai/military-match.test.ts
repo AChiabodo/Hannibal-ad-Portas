@@ -33,6 +33,29 @@ function scenario(hiddenX = 70): SiegeWorld {
 }
 
 describe('military decisions in a headless Match', () => {
+  it('clears a stationary friendly body blocking an entering squad at its own gate', () => {
+    const rome = createArmyController('centurio'), carthage = createArmyController('centurio');
+    let blocked: { id: number; blocker: number; x: number; y: number } | undefined;
+    let cleared = false;
+    runMatch({ seed: 7, ticks: 1000, rules: siegeMatchRules, observe: observeSiege, outcome: siegeMatchOutcome,
+      players: [{ faction: 'rome', controller: rome }, { faction: 'carthage', controller: { decide(observation) {
+        const squads = observation.visible.squads;
+        if (blocked === undefined) {
+          const waiting = squads.find((squad) => squad.passage?.reason === 'exit-blocked');
+          const blocker = squads.find((squad) => squad.id !== waiting?.id && squad.inQuarters && squad.goal === null &&
+            waiting !== undefined && Math.max(Math.abs(squad.x - waiting.x), Math.abs(squad.y - waiting.y)) <= 4);
+          if (waiting !== undefined && blocker !== undefined) blocked = { id: waiting.id, blocker: blocker.id, x: blocker.x, y: blocker.y };
+        } else {
+          const waiting = squads.find((squad) => squad.id === blocked!.id);
+          const blocker = squads.find((squad) => squad.id === blocked!.blocker);
+          if (waiting?.passage?.reason !== 'exit-blocked' && blocker !== undefined &&
+            (blocker.x !== blocked.x || blocker.y !== blocked.y)) cleared = true;
+        }
+        return carthage.decide(observation);
+      } } }] });
+    expect(blocked).toBeDefined();
+    expect(cleared).toBe(true);
+  }, 30000);
   it('brings the exhausted seed 9 scout home instead of abandoning it after the second Season', () => {
     let final: SiegeVisible | undefined;
     let scoutId: number | undefined;

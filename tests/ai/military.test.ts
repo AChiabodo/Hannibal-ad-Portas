@@ -32,6 +32,24 @@ function battlefield(): SiegeVisible {
 }
 
 describe('the military Controller', () => {
+  it('clears only a known friendly gate blockage, without directing a squad onto unexplored ground', () => {
+    const base = battlefield();
+    const terrain = new Uint8Array(MAP_WIDTH * MAP_HEIGHT).fill(TERRAIN.plain);
+    const waiting = { ...base.squads[0]!, x: 26, y: 20, inQuarters: false,
+      passage: { settlement: 0, phase: 'entering' as const, remaining: 0, reason: 'exit-blocked' as const } };
+    const blocker = { ...base.squads[1]!, x: 25, y: 18, inQuarters: true, goal: null };
+    const visible: SiegeVisible = { ...base, enemies: [], squads: [waiting, blocker], fog: { ...base.fog, terrain } };
+    const decide = (view: SiegeVisible) => ai().decide({ faction: 'rome', tick: 1, visible: view });
+    const clearing = decide(visible).find((command) => command.kind === 'move' && command.squads.includes(blocker.id));
+    expect(clearing).toBeDefined();
+    if (clearing?.kind !== 'move') return;
+    const unseen = terrain.slice();
+    unseen[clearing.y * MAP_WIDTH + clearing.x] = 255;
+    expect(decide({ ...visible, fog: { ...visible.fog, terrain: unseen } })
+      .some((command) => command.kind === 'move' && command.squads.includes(blocker.id))).toBe(false);
+    expect(decide({ ...visible, squads: [{ ...waiting, passage: undefined }, blocker] })
+      .some((command) => command.kind === 'move' && command.squads.includes(blocker.id))).toBe(false);
+  });
   it('prices a visible small formation using its public appearance and keeps a conservative estimate when hidden', () => {
     const base = battlefield();
     const troops = base.squads.map((squad) => ({ ...squad, men: 24, capacity: 24 }));
