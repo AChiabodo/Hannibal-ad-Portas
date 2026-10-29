@@ -175,6 +175,7 @@ export function riverProblems(map: MapGrid): readonly string[] {
   if (map.rivers.length === 0) problems.push('the theatre has no river at all');
 
   for (const [index, river] of map.rivers.entries()) {
+    if (new Set(river.tiles).size !== river.tiles.length) problems.push(`river ${index} revisits its own course`);
     const fords = river.tiles.filter((tile) => terrainOf(map, tile) === TERRAIN.ford);
     // A wide crossing is one connected component, including ford or bridge
     // tiles beside the recorded river path; revisiting it cannot make another.

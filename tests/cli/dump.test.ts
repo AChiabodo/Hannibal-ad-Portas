@@ -8,7 +8,7 @@
  * things a reader cannot count for themselves.
  */
 import { describe, expect, it } from 'vitest';
-import { formatMap } from '../../src/cli/dump';
+import { formatMap, formatMapGrid } from '../../src/cli/dump';
 import {
   MAP_HEIGHT,
   MAP_WIDTH,
@@ -99,7 +99,14 @@ describe('a generated map, written out for inspection', () => {
   });
 
   it('counts a ford tile once even when the river path revisits it', () => {
-    expect(formatMap(9)).toContain('carrying 15 and 24 fords');
+    const base = generateMap(SEED);
+    const terrain = new Uint8Array(base.terrain.length).fill(TERRAIN.plain);
+    const ford = tileIndex(20, 20);
+    const river = tileIndex(20, 19);
+    terrain[ford] = TERRAIN.ford;
+    terrain[river] = TERRAIN.river;
+    const map = { ...base, terrain, rivers: [{ tiles: [ford, river, ford] }] };
+    expect(formatMapGrid(SEED, map)).toContain('carrying 1 fords');
   });
 
   it('names every terrain and every resource in its legend, so a glyph can be read', () => {

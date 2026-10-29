@@ -130,7 +130,11 @@ const LEGEND: readonly string[] = [
  * command's, so the shell prompt never lands on the last row of the map.
  */
 export function formatMap(seed: number): string {
-  const map = generateMap(seed);
+  return formatMapGrid(seed, generateMap(seed));
+}
+
+/** Format an already generated theatre, including testable diagnostic fixtures. */
+export function formatMapGrid(seed: number, map: MapGrid): string {
   const lines = [
     `seed ${String(seed)} — ${String(MAP_WIDTH)}×${String(MAP_HEIGHT)} tiles of ` +
       `${String(TILE_SIZE)}×${String(TILE_SIZE)} pixels`,

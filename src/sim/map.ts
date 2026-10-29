@@ -691,8 +691,25 @@ function carveRiver(terrain: Uint8Array, rng: Rng, vertical: boolean, grounds: U
     if (from === undefined) throw new Error('a river lost its previous reach');
     tiles.push(...groundPath(from, to, forbidden, rng.nextUint32()).slice(1));
   }
-  for (const tile of tiles) terrain[tile] = TERRAIN.river;
-  return { tiles };
+  const course = removeRiverLoops(tiles);
+  for (const tile of course) terrain[tile] = TERRAIN.river;
+  return { tiles: course };
+}
+
+/** Erase a reach that revisits its own path, without changing the RNG stream. */
+function removeRiverLoops(tiles: readonly number[]): number[] {
+  const path: number[] = [];
+  const positions = new Map<number, number>();
+  for (const tile of tiles) {
+    const seen = positions.get(tile);
+    if (seen === undefined) {
+      positions.set(tile, path.length);
+      path.push(tile);
+      continue;
+    }
+    while (path.length > seen + 1) positions.delete(path.pop()!);
+  }
+  return path;
 }
 
 /**
