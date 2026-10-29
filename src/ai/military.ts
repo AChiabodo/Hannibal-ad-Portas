@@ -32,6 +32,8 @@ interface Squad extends Enemy {
 
 export interface MilitaryObservation {
   readonly fog?: { readonly terrain: Uint8Array };
+  readonly barbarianCamps?: readonly (Site & { readonly id: number; readonly condition: 'standing' | 'ruin';
+    readonly memory: 'seen' | 'remembered' })[];
   readonly appearances?: readonly ObservedSettlement[];
   readonly year: number;
   readonly season: Season;
@@ -98,6 +100,9 @@ type MilitaryCommand = {
   readonly kind: 'garrison'; readonly faction: Faction; readonly squads: readonly number[]; readonly settlement: number;
 } | {
   readonly kind: 'attack'; readonly faction: Faction; readonly squads: readonly number[]; readonly target: number;
+} | {
+  readonly kind: 'attackStructure'; readonly faction: Faction; readonly squads: readonly number[];
+  readonly target: { readonly kind: 'camp'; readonly id: number };
 } | {
   readonly kind: 'move'; readonly faction: Faction; readonly squads: readonly number[]; readonly x: number; readonly y: number;
 };
@@ -348,6 +353,25 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
           allocated += assign(squad, target, `against observed enemy ${target.id}: reinforce a winnable field engagement.`);
         }
         reasons.push(`Attack observed weakness ${target.id}: line ${available} against threat ${threat}.`);
+      }
+      // A nearby camp is a continuing threat to an owned settlement. Only a
+      // currently visible, unguarded camp can be attacked; remembered camps
+      // may already have changed while outside sight. Keep a conservative
+      // force estimate even when no guard is visible.
+      const guard = types.get('gaul');
+      const campRisk = guard === undefined ? unknown : guard.strength * guard.impact * guard.morale * PERCENT;
+      for (const camp of [...visible.barbarianCamps ?? []].sort((a, b) => a.id - b.id)) {
+        if (camp.memory !== 'seen' || camp.condition !== 'standing' ||
+          !visible.settlements.some((site) => distance(site, camp) <= 24) ||
+          visible.enemies.some((enemy) => distance(enemy, camp) <= 8)) continue;
+        const eligible = ready.filter((squad) => !assigned.has(squad.id) && !squad.engaged &&
+          !squad.inQuarters && !squad.inCamp && squad.refused == null && distance(squad, camp) <= 6);
+        if (eligible.reduce((sum, squad) => sum + approachPower(squad, camp), 0) * PERCENT < campRisk * margin) continue;
+        const attacker = eligible.sort((a, b) => distance(a, camp) - distance(b, camp) || a.id - b.id)[0];
+        if (attacker === undefined) continue;
+        commands.push({ kind: 'attackStructure', faction, squads: [attacker.id], target: { kind: 'camp', id: camp.id } });
+        assigned.add(attacker.id);
+        reasons.push(`Clear visible camp ${camp.id} threatening a nearby settlement.`);
       }
       // A stationary field squad in its own quarters can occupy the landing
       // needed by another squad entering the gate. Move it aside using only

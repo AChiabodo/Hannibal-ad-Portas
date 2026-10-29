@@ -32,6 +32,26 @@ function battlefield(): SiegeVisible {
 }
 
 describe('the military Controller', () => {
+  it('attacks only a visible nearby camp when it has a sufficiently strong available force', () => {
+    const base = battlefield();
+    const squad = { ...base.squads[0]!, x: 24, y: 20, men: 120, capacity: 120, inQuarters: false };
+    const camp = { id: 0, x: 28, y: 20, variant: 0, condition: 'standing' as const, memory: 'seen' as const };
+    const visible: SiegeVisible = { ...base, enemies: [], squads: [squad], barbarianCamps: [camp] };
+    const decide = (view: SiegeVisible) => ai().decide({ faction: 'rome', tick: 1, visible: view });
+    expect(decide(visible)).toContainEqual({ kind: 'attackStructure', faction: 'rome', squads: [squad.id], target: { kind: 'camp', id: 0 } });
+    const controller = ai();
+    controller.decide({ faction: 'rome', tick: 1, visible });
+    expect(controller.decide({ faction: 'rome', tick: 2, visible: { ...visible,
+      barbarianCamps: [{ ...camp, memory: 'remembered' }] } }).some((command) => command.kind === 'attackStructure')).toBe(false);
+    for (const camps of [[], [{ ...camp, memory: 'remembered' as const }], [{ ...camp, condition: 'ruin' as const }],
+      [{ ...camp, x: 100, y: 100 }]]) {
+      expect(decide({ ...visible, barbarianCamps: camps }).some((command) => command.kind === 'attackStructure')).toBe(false);
+    }
+    expect(decide({ ...visible, squads: [{ ...squad, men: 24, capacity: 24 }] })
+      .some((command) => command.kind === 'attackStructure')).toBe(false);
+    expect(decide({ ...visible, enemies: [{ id: 99, type: 'gaul', neutral: true, x: 28, y: 21 }] })
+      .some((command) => command.kind === 'attackStructure')).toBe(false);
+  });
   it('assigns eligible home infantry to empty walls only when its own observed front is besieged', () => {
     const base = battlefield();
     const defender = { ...base.squads[0]!, x: 20, y: 20, men: 24, capacity: 24, inQuarters: true };
