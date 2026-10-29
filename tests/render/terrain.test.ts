@@ -120,6 +120,19 @@ describe('the material a terrain is drawn with', () => {
     map.terrain[tileIndex(11, 10)] = TERRAIN.bridge;
     expect(roadMask(map, 10, 10) & 0b0010).not.toBe(0);
   });
+  it('connects a road to its ford without joining an unrelated nearby ford', () => {
+    const road = tileIndex(10, 10);
+    const ford = tileIndex(11, 10);
+    const map: MapGrid = { ...flatMap(), roads: [{ from: road, to: ford, tiles: [road, ford] }] };
+    map.terrain[road] = TERRAIN.road;
+    map.terrain[ford] = TERRAIN.ford;
+    map.terrain[tileIndex(10, 9)] = TERRAIN.ford;
+
+    expect(roadMask(map, 10, 10)).toBe(0b0010);
+    const theatre = renderTerrain(map);
+    const at = tilePixel(10, 10);
+    expect(pixelAt(theatre, at.x + 15, at.y + 8)).toEqual(pixelAt(roadTile(0b0010), 15, 8));
+  });
   it('covers every terrain the map knows, and never draws two terrains as one', () => {
     const drawn = new Set<TerrainMaterial>();
 

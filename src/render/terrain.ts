@@ -280,18 +280,35 @@ function colourSeason(buffer: PixelBuffer, map: MapGrid, season: Season): void {
   }
 }
 
-/**
- * Which of a road tile's four neighbours are roads, as a clockwise four-bit mask.
- *
- * A ford is not a road even where a road made it: the crossing is water, and a
- * road that ran through a ford would be a road drawn over a river. The path ends
- * at each bank and the ford is what crosses, which is what the map says.
- */
+/** The generated road paths are static; their edges are presentation data only. */
+const ROAD_EDGES = new WeakMap<MapGrid['roads'], ReadonlySet<number>>();
+
+function roadEdge(a: number, b: number): number {
+  return Math.min(a, b) * MAP_WIDTH * MAP_HEIGHT + Math.max(a, b);
+}
+
+function roadEdges(roads: MapGrid['roads']): ReadonlySet<number> {
+  const cached = ROAD_EDGES.get(roads);
+  if (cached !== undefined) return cached;
+  const edges = new Set<number>();
+  for (const road of roads) for (let index = 1; index < road.tiles.length; index += 1) {
+    const previous = road.tiles[index - 1];
+    const current = road.tiles[index];
+    if (previous !== undefined && current !== undefined) edges.add(roadEdge(previous, current));
+  }
+  ROAD_EDGES.set(roads, edges);
+  return edges;
+}
+
+/** A road reaches an adjacent ford only when an actual road path crosses it. */
 export function roadMask(map: MapGrid, x: number, y: number): number {
   const connect = (nx: number, ny: number): number => {
     if (nx < 0 || ny < 0 || nx >= MAP_WIDTH || ny >= MAP_HEIGHT) return 0;
     const terrain = terrainAt(map, nx, ny);
-    return terrain === TERRAIN.road || terrain === TERRAIN.bridge ? 1 : 0;
+    if (terrain === TERRAIN.road || terrain === TERRAIN.bridge) return 1;
+    const current = y * MAP_WIDTH + x;
+    const neighbour = ny * MAP_WIDTH + nx;
+    return terrain === TERRAIN.ford && roadEdges(map.roads).has(roadEdge(current, neighbour)) ? 1 : 0;
   };
 
   return connect(x, y - 1) | (connect(x + 1, y) << 1) | (connect(x, y + 1) << 2) | (connect(x - 1, y) << 3);
