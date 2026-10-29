@@ -170,19 +170,15 @@ export function connectivityProblems(map: MapGrid): readonly string[] {
 /** Every substantial river is connected, with enough fords and an optional lake. */
 export function riverProblems(map: MapGrid): readonly string[] {
   const problems: string[] = [];
+  const crossingLabels = labelCrossings(map);
 
   if (map.rivers.length === 0) problems.push('the theatre has no river at all');
 
   for (const [index, river] of map.rivers.entries()) {
     const fords = river.tiles.filter((tile) => terrainOf(map, tile) === TERRAIN.ford);
-    // Several adjacent ford tiles are one wide crossing, not multiple choices.
-    let crossings = 0;
-    let previousCrossing = false;
-    for (const tile of river.tiles) {
-      const current = terrainOf(map, tile) === TERRAIN.ford || terrainOf(map, tile) === TERRAIN.bridge;
-      if (current && !previousCrossing) crossings += 1;
-      previousCrossing = current;
-    }
+    // A wide crossing is one connected component, including ford or bridge
+    // tiles beside the recorded river path; revisiting it cannot make another.
+    const crossings = new Set(river.tiles.map((tile) => crossingLabels[tile]).filter((label) => label !== undefined && label >= 0)).size;
     // The current generator treats a course of 100 or more tiles as substantial.
     // Short, bypassable streams need not offer multiple crossing points.
     if (river.tiles.length >= 100 && crossings < 2) problems.push(`river ${index} has fewer than two distinct crossings`);
@@ -196,7 +192,7 @@ export function riverProblems(map: MapGrid): readonly string[] {
       }
     }
 
-    const crossable = fords.filter((tile) => isStraightFord(map, tile)).length;
+    const crossable = new Set(fords.filter((tile) => isStraightFord(map, tile))).size;
     if (river.tiles.length >= 100 && crossable < MIN_FORDS_PER_RIVER) {
       problems.push(
         `river ${index} has ${crossable} fords a Squad can cross, fewer than the ` +
@@ -229,6 +225,33 @@ export function riverProblems(map: MapGrid): readonly string[] {
   }
 
   return problems;
+}
+
+/** Label four-connected ford/bridge tiles independently of the river's path. */
+function labelCrossings(map: MapGrid): Int32Array {
+  const labels = new Int32Array(TILE_COUNT).fill(-1);
+  const queue = new Int32Array(TILE_COUNT);
+  let label = 0;
+  const isCrossing = (tile: number): boolean => map.terrain[tile] === TERRAIN.ford || map.terrain[tile] === TERRAIN.bridge;
+  for (let start = 0; start < TILE_COUNT; start += 1) {
+    if (labels[start] !== -1 || !isCrossing(start)) continue;
+    let head = 0, tail = 0;
+    labels[start] = label;
+    queue[tail++] = start;
+    while (head < tail) {
+      const tile = queue[head++]!;
+      const x = tileX(tile), y = tileY(tile);
+      const neighbours = [x > 0 ? tile - 1 : -1, x < MAP_WIDTH - 1 ? tile + 1 : -1,
+        y > 0 ? tile - MAP_WIDTH : -1, y < MAP_HEIGHT - 1 ? tile + MAP_WIDTH : -1];
+      for (const next of neighbours) {
+        if (next < 0 || labels[next] !== -1 || !isCrossing(next)) continue;
+        labels[next] = label;
+        queue[tail++] = next;
+      }
+    }
+    label += 1;
+  }
+  return labels;
 }
 
 /** Every resource appears, and the two halves of the theatre hold the same amount of each. */
