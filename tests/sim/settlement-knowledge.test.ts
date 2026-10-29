@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { build, move, type Command } from '../../src/sim/command.ts';
 import { createEconomy, UNOWNED } from '../../src/sim/economy.ts';
-import { createFogs } from '../../src/sim/fog.ts';
+import { createFogs, refreshVision, type Eye } from '../../src/sim/fog.ts';
 import { createMatch, type Match } from '../../src/sim/match.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
 import { startCalendar } from '../../src/sim/season.ts';
 import { createSiege, observeSiege, siegeMatchRules, type SiegeWorld } from '../../src/sim/siege.ts';
 import { refreshSiegeFog } from '../../src/sim/siege-fog.ts';
-import { settlementAppearances } from '../../src/sim/settlement-knowledge.ts';
+import { rememberSettlements, settlementAppearances } from '../../src/sim/settlement-knowledge.ts';
 import { buildingCode } from '../../src/content/index.ts';
 import { settlementLayout } from '../../src/content/settlement-layout.ts';
 import { testMap } from './economy-fixtures.ts';
@@ -38,6 +38,30 @@ function observe(match: Match<SiegeWorld, Command>) {
 }
 
 describe('physical settlement knowledge through Match commands (#74)', () => {
+  it('preserves complete memory at and beyond observer range limits', () => {
+    const world = stage();
+    const reference = createFogs().rome;
+    const filtered = createFogs().rome;
+    // The village occupies x/y 38..62. Include an eye exactly eight tiles
+    // from its east edge, one just beyond, a corner and a zero-radius eye.
+    const views: readonly (readonly Eye[])[] = [
+      [{ x: 70, y: 50, radius: 8 }],
+      [{ x: 71, y: 50, radius: 8 }],
+      [{ x: 68, y: 68, radius: 8 }],
+      [{ x: 62, y: 50, radius: 0 }],
+      [],
+      [{ x: 50, y: 50, radius: 8 }],
+    ];
+    for (const [tick, eyes] of views.entries()) {
+      if (tick === 2) world.economy.settlements[2]!.tier = 2;
+      refreshVision(reference, world.map, eyes);
+      refreshVision(filtered, world.map, eyes);
+      rememberSettlements(world, reference, tick);
+      rememberSettlements(world, filtered, tick, eyes);
+      expect(filtered.settlements).toEqual(reference.settlements);
+      expect(settlementAppearances(filtered)).toEqual(settlementAppearances(reference));
+    }
+  });
   it('sees the hall without inventing the hidden square and preserves its tradition on capture', () => {
     const world = stage();
     world.economy.settlements[2]!.origin = 1;
