@@ -55,6 +55,30 @@ it('a surviving camp gradually replaces a defeated defender', () => {
   expect(observeSiege(world, 'rome').enemies.some((enemy) => enemy.neutral === true)).toBe(true);
 });
 
+it('replenishes losses while counting a surviving raider against the camp cap', () => {
+  const map = { ...testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] }),
+    barbarianCamps: [{ x: 31, y: 20, variant: 0 }] };
+  const economy = createEconomy(map);
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs(), barbarianCamps: [{ hp: 60 }] };
+  createCampGuards(world);
+  const survivor = economy.squads.find((squad) => squad.barbarianCamp === 0)!;
+  survivor.strength = 9;
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  while (match.state.tick < 600) match.step();
+  // A group away from its camp remains part of its total force.
+  survivor.x = 38;
+  survivor.barbarianRaidTarget = 0;
+  survivor.barbarianRaidUntil = 900;
+  while (match.state.tick < 601) match.step();
+  const defenders = economy.squads.filter((squad) => squad.barbarianCamp === 0);
+  expect(defenders).toHaveLength(2);
+  expect(defenders.reduce((total, squad) => total + squad.strength, 0)).toBe(24);
+  while (match.state.tick < 1201) match.step();
+  expect(economy.squads.filter((squad) => squad.barbarianCamp === 0)
+    .reduce((total, squad) => total + squad.strength, 0)).toBe(24);
+});
+
 it('a destroyed camp does not replace its defeated surviving guard', () => {
   const world = createSiegeWorld(1);
   const camp = world.map.barbarianCamps![0]!;

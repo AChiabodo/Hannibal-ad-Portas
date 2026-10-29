@@ -28,7 +28,7 @@ export function createCampGuards(world: SiegeWorld): void {
   for (const campId of (world.map.barbarianCamps ?? []).keys()) spawnGuard(world, campId);
 }
 
-function spawnGuard(world: SiegeWorld, campId: number): void {
+function spawnGuard(world: SiegeWorld, campId: number, men = GUARD_MEN): void {
   const site = world.map.barbarianCamps?.[campId];
   if (site === undefined) return;
   const code = squadTypeCode('gaul');
@@ -36,7 +36,7 @@ function spawnGuard(world: SiegeWorld, campId: number): void {
   if (code === undefined || type === undefined) throw new Error('Barbarian guard needs an infantry type');
   for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
     const x = site.x + (dx ?? 0), y = site.y + (dy ?? 0);
-    const guard: Squad = { ...standingAt(x, y, GUARD_MEN, type.ammunition),
+    const guard: Squad = { ...standingAt(x, y, men, type.ammunition),
       id: world.economy.nextSquadId, owner: BARBARIAN_OWNER, type: code, capacity: GUARD_MEN,
       home: -1, morale: type.morale, unpaid: 0, barbarianCamp: campId };
     if (!canOccupy(world.map, guard, x, y) || occupiedGround(world.economy, squadGround(guard))) continue;
@@ -58,8 +58,13 @@ export function advanceCampGuards(world: SiegeWorld, tick: number): void {
   }
   if (tick > 0 && tick % REINFORCEMENT_TICKS === 0) {
     for (const [campId, camp] of (world.barbarianCamps ?? []).entries()) {
-      if (camp.hp <= 0 || world.economy.squads.some((squad) => squad.barbarianCamp === campId)) continue;
-      spawnGuard(world, campId);
+      if (camp.hp <= 0) continue;
+      // Raiders still count towards their home camp's shared limit, wherever
+      // they are. Replacement men appear at the camp rather than teleporting
+      // into an existing squad in the field.
+      const present = world.economy.squads.reduce((sum, squad) =>
+        squad.barbarianCamp === campId ? sum + squad.strength : sum, 0);
+      if (present < GUARD_MEN) spawnGuard(world, campId, GUARD_MEN - present);
     }
   }
   const routes = routeCacheFor(world.map);
