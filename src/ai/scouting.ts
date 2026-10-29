@@ -149,7 +149,12 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
       // to an edge; retain the patrol direction when distances are equal.
       const choices = [first, ...initial, ...reverse];
       if (Math.abs(position.x - opposite) <= vision * 3) {
-        choices.sort((a, b) => Math.abs(a - position.y) - Math.abs(b - position.y) || (northFirst ? a - b : b - a));
+        // A river detour can land the only patrol beyond its home latitude.
+        // Cover the missed band first before sweeping farther in that direction.
+        const between = (y: number) => lonePatrol && Math.abs(position.y - ownLatitude) > vision * 2 &&
+          y >= Math.min(position.y, ownLatitude) && y <= Math.max(position.y, ownLatitude);
+        choices.sort((a, b) => Number(between(b)) - Number(between(a)) ||
+          Math.abs(a - position.y) - Math.abs(b - position.y) || (northFirst ? a - b : b - a));
       }
       for (const y of choices) {
         if (terrain[y * width + x] === content.unseen) return { x, y };

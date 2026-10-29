@@ -18,6 +18,13 @@ it('discovers the southern Carthaginian start on seed 7 before the Imperator con
   expect(result.pass).toBe(true);
 }, 15000);
 
+it('keeps exploring the missed home-latitude band after a detour on seed 6', () => {
+  const result = diagnosePressure(6, 'carthage', 'imperator');
+  expect(result.contact).not.toBeNull();
+  expect(result.contact!.tick).toBeLessThanOrEqual(1200);
+  expect(result.pass).toBe(true);
+}, 15000);
+
 it('finds and contests the non-mirrored Roman latitude on seed 9 at Imperator', () => {
   const result = diagnosePressure(9, 'rome', 'imperator');
   expect(result.contact).not.toBeNull();
