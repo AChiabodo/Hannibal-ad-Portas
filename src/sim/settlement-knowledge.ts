@@ -5,7 +5,7 @@ import { fortificationHp } from '../content/fortifications.ts';
 import { containsTile, settlementGroundFeatures } from '../content/settlement-layout.ts';
 import type { ObservedSettlement, ObservedSettlementTile } from '../content/settlement-appearance.ts';
 import type { Settlement, Work } from './economy.ts';
-import type { Fog } from './fog.ts';
+import type { Eye, Fog } from './fog.ts';
 import { MAP_HEIGHT, MAP_WIDTH, tileIndex } from './map.ts';
 import { settlementSide, workGround, workOrdinal } from './settlement-space.ts';
 import type { Front, SiegeWorld } from './siege.ts';
@@ -28,10 +28,14 @@ const UNKNOWN_OWNER = -2;
 const FRAMES = new WeakMap<Settlement, { readonly signature: string; readonly cells: Int32Array }>();
 
 /** Called after current vision is refreshed. Every write is guarded by that cell's visibility. */
-export function rememberSettlements(world: SiegeWorld, fog: Fog, tick: number): void {
+export function rememberSettlements(world: SiegeWorld, fog: Fog, tick: number, eyes?: readonly Eye[]): void {
   if (!Number.isSafeInteger(tick) || tick < 0) throw new RangeError('a settlement sighting requires a non-negative integer tick');
   const memories = fog.settlements ??= [];
   for (const site of world.economy.settlements) {
+    // The visible mask is formed exclusively by these eyes. If none can reach
+    // even the bounding square, no cell can change in this settlement memory.
+    if (eyes !== undefined && !eyes.some((eye) => Math.abs(eye.x - site.x) <= HALF + eye.radius &&
+      Math.abs(eye.y - site.y) <= HALF + eye.radius)) continue;
     let memory = memories.find((entry) => entry.id === site.id);
     let frame: Int32Array | undefined;
     for (let cell = 0; cell < WIDTH * WIDTH; cell += 1) {
