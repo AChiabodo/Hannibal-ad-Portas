@@ -7,7 +7,7 @@ import type { Command } from '../../src/sim/command.ts';
 import { scriptedController } from '../../src/sim/controller.ts';
 import { runMatch } from '../../src/sim/driver.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
-import { createSiege, observeSiege, siegeMatchOutcome, siegeMatchRules, type SiegeVisible } from '../../src/sim/siege.ts';
+import { createSiege, observeSiege, siegeMatchOutcome, siegeMatchRules, siegeMatchRulesForDifficulty, type SiegeVisible } from '../../src/sim/siege.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
 import { createEconomy } from '../../src/sim/economy.ts';
 import { createFogs } from '../../src/sim/fog.ts';
@@ -25,7 +25,7 @@ function runOf(seed: number, ticks: number, name: DifficultyName = 'centurio'): 
 /** A Match's own Command log, replayed through scripted Controllers: it must reach the same hash. */
 function replayOf(seed: number, name: DifficultyName = 'centurio'): string {
   const run = runOf(seed, HEADLESS_TICKS, name);
-  return runMatch({ seed, ticks: HEADLESS_TICKS, rules: siegeMatchRules, observe: observeSiege,
+  return runMatch({ seed, ticks: HEADLESS_TICKS, rules: siegeMatchRulesForDifficulty(name), observe: observeSiege,
     outcome: siegeMatchOutcome,
     players: [{ faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
       { faction: 'carthage', controller: scriptedController<SiegeVisible>(run.log) }] }).hash;
