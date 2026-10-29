@@ -77,6 +77,11 @@ it('replenishes losses while counting a surviving raider against the camp cap', 
   while (match.state.tick < 1201) match.step();
   expect(economy.squads.filter((squad) => squad.barbarianCamp === 0)
     .reduce((total, squad) => total + squad.strength, 0)).toBe(24);
+  defenders[1]!.strength = 1;
+  world.barbarianCamps![0]!.hp = 0;
+  while (match.state.tick < 1801) match.step();
+  expect(economy.squads.filter((squad) => squad.barbarianCamp === 0)
+    .reduce((total, squad) => total + squad.strength, 0)).toBe(10);
 });
 
 it('a destroyed camp does not replace its defeated surviving guard', () => {
