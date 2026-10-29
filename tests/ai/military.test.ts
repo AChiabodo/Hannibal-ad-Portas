@@ -61,6 +61,8 @@ describe('the military Controller', () => {
     const visible: SiegeVisible = { ...base, enemies: [], squads: [defender], fronts: [front] };
     const decide = (view: SiegeVisible) => ai().decide({ faction: 'rome', tick: 1, visible: view });
     expect(decide(visible)).toContainEqual({ kind: 'garrison', faction: 'rome', squads: [defender.id], settlement: 0 });
+    expect(decide({ ...visible, squads: [{ ...defender, morale: 4 }] }))
+      .toContainEqual({ kind: 'garrison', faction: 'rome', squads: [defender.id], settlement: 0 });
     expect(decide({ ...visible, fronts: [{ ...front, siege: 'assault', besieger: null }] }))
       .toContainEqual({ kind: 'garrison', faction: 'rome', squads: [defender.id], settlement: 0 });
     expect(decide({ ...visible, fronts: [] }).some((command) => command.kind === 'garrison')).toBe(false);
@@ -77,6 +79,8 @@ describe('the military Controller', () => {
     const remote = { ...defender, x: 80, y: 80, inQuarters: false };
     expect(decide({ ...visible, squads: [remote] }))
       .toContainEqual({ kind: 'garrison', faction: 'rome', squads: [remote.id], settlement: 0 });
+    expect(decide({ ...visible, squads: [{ ...remote, morale: 4 }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
     expect(decide({ ...visible, squads: [{ ...remote, engaged: true }] })
       .some((command) => command.kind === 'garrison')).toBe(false);
     expect(decide({ ...visible, squads: [remote], enemies: [{ id: 99, type: 'gaul', x: 81, y: 80 }] })
