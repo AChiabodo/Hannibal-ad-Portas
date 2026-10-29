@@ -54,8 +54,19 @@ describe('the military Controller', () => {
       .some((command) => command.kind === 'garrison')).toBe(false);
     expect(decide({ ...visible, fronts: [{ ...front, structures: [] }] })
       .some((command) => command.kind === 'garrison')).toBe(false);
-    expect(decide({ ...visible, squads: [{ ...defender, x: 80, y: 80 }] })
+    const remote = { ...defender, x: 80, y: 80, inQuarters: false };
+    expect(decide({ ...visible, squads: [remote] }))
+      .toContainEqual({ kind: 'garrison', faction: 'rome', squads: [remote.id], settlement: 0 });
+    expect(decide({ ...visible, squads: [{ ...remote, engaged: true }] })
       .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [remote], enemies: [{ id: 99, type: 'gaul', x: 81, y: 80 }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [{ ...remote, refused: 'unreachable' }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [{ ...remote, goal: { x: 20, y: 20 } }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [remote], fronts: [front, { ...front, settlement: 1,
+      siege: 'assault', besieger: 'rome' }] }).some((command) => command.kind === 'garrison')).toBe(false);
   });
   it('clears only a known friendly gate blockage, without directing a squad onto unexplored ground', () => {
     const base = battlefield();

@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { createAi } from '../../src/ai/controller.ts';
 import { createArmyController, militaryRegistry, playAiMatch } from '../../src/cli/ai-match.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
-import type { Command } from '../../src/sim/command.ts';
+import { blockade, type Command } from '../../src/sim/command.ts';
+import { createMatch } from '../../src/sim/match.ts';
+import { MAP_HEIGHT, TERRAIN, tileIndex } from '../../src/sim/map.ts';
 import { scriptedController } from '../../src/sim/controller.ts';
 import { runMatch } from '../../src/sim/driver.ts';
 import { createEconomy } from '../../src/sim/economy.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
 import { startCalendar } from '../../src/sim/season.ts';
-import { createSiege, observeSiege, siegeMatchOutcome, siegeMatchRules, type SiegeVisible, type SiegeWorld } from '../../src/sim/siege.ts';
+import { createSiege, observeSiege, siegeMatchOutcome, siegeMatchRules, siegeMatchRulesForDifficulty, type SiegeVisible, type SiegeWorld } from '../../src/sim/siege.ts';
 import { plainMap } from '../sim/test-map.ts';
 import { createFogs } from '../../src/sim/fog.ts';
 
@@ -33,6 +35,36 @@ function scenario(hiddenX = 70): SiegeWorld {
 }
 
 describe('military decisions in a headless Match', () => {
+  it('does not repeat an unreachable recall after ordinary route validation refuses it', () => {
+    const world = theatre();
+    for (let y = 0; y < MAP_HEIGHT; y += 1) world.map.terrain[tileIndex(50, y)] = TERRAIN.river;
+    const defender = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 65, y: 40 });
+    const attacker = musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 29, y: 20 });
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    match.step([blockade('carthage', [attacker.id], 0)]);
+    const controller = createArmyController('centurio');
+    const first = controller.decide({ faction: 'rome', tick: match.state.tick, visible: observeSiege(world, 'rome') });
+    expect(first).toContainEqual({ kind: 'garrison', faction: 'rome', squads: [defender.id], settlement: 0 });
+    match.step(first);
+    const refused = observeSiege(world, 'rome');
+    expect(refused.squads.find((squad) => squad.id === defender.id)?.refused).toBe('unreachable');
+    const second = controller.decide({ faction: 'rome', tick: match.state.tick, visible: refused });
+    expect(second.some((command) => command.kind === 'garrison' && command.squads.includes(defender.id))).toBe(false);
+  });
+  it('recalls an unengaged scout to the walls of its blockaded Stronghold', () => {
+    const rome = createArmyController('tiro'), carthage = createArmyController('tiro');
+    let blockadeSeen = false, defenderOnWalls = false;
+    runMatch({ seed: 7, ticks: 2100, rules: siegeMatchRulesForDifficulty('tiro'), observe: observeSiege, outcome: siegeMatchOutcome,
+      players: [{ faction: 'rome', controller: rome }, { faction: 'carthage', controller: { decide(observation) {
+        const front = observation.visible.fronts.find((entry) => entry.settlement === 1);
+        if (front?.siege === 'blockade' && front.besieger === 'rome') blockadeSeen = true;
+        if (blockadeSeen && front !== undefined && front.garrison > 0 &&
+          observation.visible.squads.some((squad) => squad.garrison === 1)) defenderOnWalls = true;
+        return carthage.decide(observation);
+      } } }] });
+    expect(blockadeSeen).toBe(true);
+    expect(defenderOnWalls).toBe(true);
+  }, 30000);
   it('sends a ready defender to its own empty walls when an observed blockade begins', () => {
     const rome = createArmyController('centurio'), carthage = createArmyController('centurio');
     let blockadeSeen = false, defenderOnWalls = false;

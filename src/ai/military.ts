@@ -202,21 +202,29 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
       const assigned = new Set<number>();
       let withdrawing = false;
       let committed = false;
-      // A known hostile siege makes the owner's empty walls urgent: one
-      // suitable field squad already in the quarters can defend them without
-      // guessing where an unseen attacker stands. Keep issuing the same order
-      // while the ordinary admission journey completes.
+      // A known hostile siege makes the owner's empty walls urgent. Prefer a
+      // suitable squad already in the quarters, otherwise recall an unengaged
+      // field squad unless an offensive siege already needs it. The normal
+      // garrison command checks whether the observed destination is reachable.
+      // Reissue the order until its ordinary admission journey completes.
       for (const site of visible.settlements) {
         const front = visible.fronts?.find((entry) => entry.settlement === site.id);
         if (front === undefined || front.siege == null || front.besieger === faction ||
           front.garrison !== 0 || front.garrisonCapacity === undefined || (front.structures?.length ?? 0) === 0) continue;
-        const defender = squads.find((squad) => {
+        const local = (squad: Squad) => squad.inQuarters === true && distance(squad, site) <= (content.settlementRadius ?? 7);
+        const attacking = visible.fronts?.some((entry) => entry.besieger === faction && entry.siege != null) ?? false;
+        const eligible = squads.filter((squad) => {
           const type = types.get(squad.type);
-          return squad.inQuarters === true && distance(squad, site) <= (content.settlementRadius ?? 7) &&
-            squad.passage?.phase !== 'leaving' && !squad.engaged && !spent(squad, observation) &&
+          const admission = squad.passage?.settlement === site.id &&
+            (squad.passage.phase === 'approaching' || squad.passage.phase === 'entering');
+          return (local(squad) || (!attacking && (admission || !returningHome(squad, visible.settlements)) &&
+            !visible.enemies.some((enemy) => distance(squad, enemy) <= CONTACT_RADIUS))) &&
+            squad.refused == null && squad.passage?.phase !== 'leaving' && !squad.engaged && !spent(squad, observation) &&
             !assigned.has(squad.id) && squad.men + (front.garrisonMen ?? 0) <= front.garrisonCapacity! &&
             type !== undefined && type.arm !== 'cavalry' && type.figures !== 1;
         });
+        eligible.sort((a, b) => Number(local(b)) - Number(local(a)) || distance(a, site) - distance(b, site) || a.id - b.id);
+        const defender = eligible[0];
         if (defender === undefined) continue;
         assigned.add(defender.id);
         commands.push({ kind: 'garrison', faction, squads: [defender.id], settlement: site.id });
