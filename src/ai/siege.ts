@@ -150,7 +150,10 @@ export function createSiegeBehaviour(
       const reliefPower = relief.reduce((sum, enemy) => sum + observed(enemy), 0);
       const presence = recordedGarrison(visible.appearances?.find((site) => site.id === target.id));
       const garrison = front === undefined || front.garrisonKnown === false ? presence === false ? 0 : 1 : front.garrison;
-      const threat = garrison * content.garrisonEstimate + reliefPower;
+      // Carthage maintains an external Blockade: even a thinner ring starves
+      // the town, while a relieving field army can break it. Wall defenders
+      // price Rome's Assault, not an engine Carthage can never build.
+      const threat = (content.canAssault(faction) ? garrison * content.garrisonEstimate : 0) + reliefPower;
 
       const field = visible.squads.filter((squad) => !squad.routing && squad.garrison === null);
       const atWalls = (squad: SiegeSquad) => bodyPerimeterDistance(squad, place, content.settlementRadius ?? 0, types.get(squad.type)?.figures === 1 ? 1 : squad.capacity) <= content.siegeRadius ||
@@ -214,7 +217,7 @@ export function createSiegeBehaviour(
         }
         if (!content.canAssault(faction)) {
           return `Blockade settlement ${String(settlement)}: ${faction} has no ram and can never assault (ADR-0008); ` +
-            `cut supply and starve it out with ${against}.`;
+            `cut supply with ${against} in the field; wall defenders slow starvation rather than require an Assault.`;
         }
         return `Blockade settlement ${String(settlement)}: no ram at the walls and ` +
           `${String(visible.treasury)} denarii cannot pay ${String(content.ramCost)}; starve it instead with ${against}.`;

@@ -46,6 +46,15 @@ function decide(faction: 'rome' | 'carthage', visible: SiegeObservation,
 }
 
 describe('the siege Controller', () => {
+  it('blockades a stronger wall garrison with Carthage while still refusing an unmatched field relief', () => {
+    const visible = observation({ squads: [squad(1, 80, 80, { type: 'gaul', men: 24, capacity: 24, morale: 6 })],
+      fronts: [{ settlement: 1, breached: false, besieger: null, ram: null, garrison: 1 }] });
+    expect(decide('carthage', visible).commands)
+      .toEqual([{ kind: 'blockade', faction: 'carthage', squads: [1], settlement: 1 }]);
+    expect(decide('carthage', { ...visible, enemies: [{ type: 'hastati', x: 81, y: 80, appearance: { men: 120 } }] }).commands)
+      .toEqual([{ kind: 'withdraw', faction: 'carthage', squads: [1] }]);
+  });
+
   it('prices visible relief using its observed formation and assumes the roster size when appearance is absent', () => {
     const relief = { type: 'gaul', x: 82, y: 80 };
     const visible = observation({ squads: [squad(1, 80, 80, { men: 24, capacity: 24 })],
