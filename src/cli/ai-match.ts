@@ -20,7 +20,8 @@ import { runMatch, type MatchRun } from '../sim/driver.ts';
 import { RELIEF_RADIUS, RAM_COST, SIEGE_RADIUS, ASSAULT_TICKS, WALL_SHOCK, canAssault, observeSiege, siegeMatchOutcome, siegeMatchRulesForDifficulty,
   type SiegeVisible } from '../sim/siege.ts';
 import { FATIGUE_MAX } from '../sim/squad.ts';
-import { MAP_WIDTH, MAP_HEIGHT, TERRAIN } from '../sim/map.ts';
+import { MAP_WIDTH, MAP_HEIGHT, TERRAIN, type Terrain } from '../sim/map.ts';
+import { paceCost } from '../sim/route.ts';
 import { SQUAD_VISION, UNSEEN } from '../sim/fog.ts';
 import { ticksUntilSeason } from '../sim/season.ts';
 
@@ -39,6 +40,7 @@ const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax:
   mapWidth: MAP_WIDTH, impassableTerrain: [UNSEEN, TERRAIN.river, TERRAIN.lake],
   canContinueAssault, settlementRadius: 7 };
 const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river, additionalWater: [TERRAIN.lake],
+  terrainCost: (terrain: number, pace: number) => paceCost(terrain === UNSEEN ? TERRAIN.plain : terrain as Terrain, pace),
   vision: SQUAD_VISION, settlementRadius: 7, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
   scoutTypes: ['hastati', 'gaul', 'numidian-horse'] };
 // One garrison is worth the strongest Tier-1 Squad a Faction can raise, since an

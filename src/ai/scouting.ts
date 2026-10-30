@@ -29,6 +29,8 @@ export interface ScoutingContent {
   readonly unseen: number;
   readonly water: number;
   readonly additionalWater?: readonly number[];
+  /** Positive integer movement prices at a Squad's pace, including unknown ground. */
+  readonly terrainCost?: (terrain: number, pace: number) => number;
   readonly vision: number;
   readonly settlementRadius?: number;
   readonly ticksPerSecond: number;
@@ -114,11 +116,16 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     return gains;
   }
   /** Cover the opposite band systematically, deriving progress only from explored terrain. */
-  function explorationCourse(home: Site, patrol: number, terrain: Uint8Array, position: Site, lonePatrol: boolean): Site | undefined {
+  function explorationCourse(home: Site, patrol: number, terrain: Uint8Array, position: Site, lonePatrol: boolean, danger: readonly Site[]): Site | undefined {
     const margin = Math.max(vision, (content.settlementRadius ?? 0) + vision);
     const low = Math.min(margin, Math.floor(height / 2));
     const high = Math.max(low, height - 1 - margin);
-    const opposite = Math.max(vision, Math.min(width - 1 - vision, width - 1 - home.x));
+    let opposite = Math.max(vision, Math.min(width - 1 - vision, width - 1 - home.x));
+    // A recorded patrol on the sweep band makes the inner parallel lane a
+    // better starting line; vision still covers the original band.
+    if (Math.abs(position.x - opposite) <= vision * 3 && danger.some((contact) =>
+      Math.abs(contact.x - opposite) <= vision && Math.abs(contact.y - position.y) <= vision * 4))
+      opposite += home.x < width / 2 ? -vision : vision;
     const ownLatitude = Math.max(low, Math.min(high, home.y));
     // The leading patrol crosses towards the middle, then sweeps away from
     // home latitude. The second crosses at home latitude and covers the other end.
@@ -225,6 +232,34 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
       (terrain[tile] !== undefined && content.additionalWater?.includes(terrain[tile]!) === true) || obstacles[tile] === 1 ||
       danger.some((contact) => distance(contact, { x: tile % width, y: Math.floor(tile / width) }) <= vision + 1);
     const walkable = (tile: number) => !blocked(tile);
+    // Integer travel prices need a cost-ordered search. Buckets retain stable
+    // neighbour order for equal costs without a floating-point priority score.
+    function travelFrom(origin: number, permitted: (tile: number) => boolean, pace: number, reverse = false) {
+      const distances = new Int32Array(width * height).fill(-1);
+      const order: number[] = [];
+      const buckets: number[][] = [[origin]];
+      distances[origin] = 0;
+      for (let cost = 0; cost < buckets.length; cost += 1) {
+        for (const tile of buckets[cost] ?? []) {
+          if (distances[tile] !== cost) continue;
+          order.push(tile);
+          const x = tile % width;
+          for (let direction = 0; direction < 4; direction += 1) {
+            const next = direction === 0 ? (x > 0 ? tile - 1 : -1) :
+              direction === 1 ? (x + 1 < width ? tile + 1 : -1) :
+                direction === 2 ? (tile >= width ? tile - width : -1) :
+                  (tile + width < width * height ? tile + width : -1);
+            if (next < 0 || !permitted(next)) continue;
+            const price = content.terrainCost?.(terrain[reverse ? tile : next] ?? unseen, pace) ?? 1;
+            const total = cost + price;
+            if (distances[next] !== -1 && distances[next]! <= total) continue;
+            distances[next] = total;
+            (buckets[total] ??= []).push(next);
+          }
+        }
+      }
+      return { distances, order };
+    }
     let gains: Int32Array | null = null;
     function gain(tile: number): number {
       gains ??= unknownNear(terrain);
@@ -235,7 +270,8 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
     const reasons: string[] = [];
     const targets: Site[] = [];
     for (const [patrol, squad] of scouts.entries()) {
-      let course = found ? undefined : explorationCourse(visible.settlements[0] ?? squad, patrol, terrain, squad, scouts.length === 1);
+      const pace = types.get(squad.type)!.pace;
+      let course = found ? undefined : explorationCourse(visible.settlements[0] ?? squad, patrol, terrain, squad, scouts.length === 1, danger);
       // A lone scout must skirt a remembered patrol, rather than repeatedly
       // choosing an unreachable frontier behind it. Two scouts retain their
       // complementary courses so one detour cannot redirect both patrols.
@@ -270,24 +306,11 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
         // Unknown terrain is a possible continuation, never a movement goal.
         // Observed rivers bend this estimate around their known banks, avoiding
         // repeated trips between equally informative ends of the same bank.
-        const guidance = new Int32Array(width * height).fill(-1);
-        if (course !== undefined) {
-          const open = [index(course)];
-          guidance[open[0]!] = 0;
-          for (let cursor = 0; cursor < open.length; cursor += 1) {
-            const tile = open[cursor]!, x = tile % width;
-            for (const next of [x > 0 ? tile - 1 : -1, x + 1 < width ? tile + 1 : -1,
-              tile >= width ? tile - width : -1, tile + width < width * height ? tile + width : -1]) {
-              if (next < 0 || guidance[next] !== -1 || terrain[next] === water ||
-                (terrain[next] !== undefined && content.additionalWater?.includes(terrain[next]!) === true) || obstacles[next] === 1) continue;
-              guidance[next] = guidance[tile]! + 1;
-              open.push(next);
-            }
-          }
-        }
-        const distances = new Int32Array(width * height).fill(-1);
-        const queue = [index(squad)];
-        distances[queue[0]!] = 0;
+        const guidance = course === undefined ? new Int32Array(width * height).fill(-1) :
+          travelFrom(index(course), (tile) => terrain[tile] !== water &&
+            !(terrain[tile] !== undefined && content.additionalWater?.includes(terrain[tile]!) === true) &&
+            obstacles[tile] !== 1, pace, true).distances;
+        const { distances, order: queue } = travelFrom(index(squad), walkable, pace);
         let best = -Infinity;
         for (let cursor = 0; cursor < queue.length; cursor += 1) {
           const tile = queue[cursor]!;
@@ -310,20 +333,6 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
                 (10 + outward) / (travel + 10)) - (course === undefined ? 0 : travel + remaining) * 10000;
               if (score > best) { best = score; target = site; }
             }
-          }
-          // The four neighbours are stood here rather than in an array, in the
-          // order `neighbours` used to list them: left, right, up, down. A whole
-          // theatre is walked for each light Squad on every tick, and building and
-          // filtering an array per tile was a measurable part of what that cost
-          // (E3). The `-1` is the same "off the map" the filter used to drop.
-          for (let direction = 0; direction < 4; direction += 1) {
-            const next = direction === 0 ? (x > 0 ? tile - 1 : -1)
-              : direction === 1 ? (x + 1 < width ? tile + 1 : -1)
-                : direction === 2 ? (y > 0 ? tile - width : -1)
-                  : (y + 1 < height ? tile + width : -1);
-            if (next < 0 || distances[next] !== -1 || blocked(next)) continue;
-            distances[next] = travel + 1;
-            queue.push(next);
           }
         }
       }

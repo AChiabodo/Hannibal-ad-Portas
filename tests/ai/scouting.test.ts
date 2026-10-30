@@ -14,6 +14,30 @@ import { observeSiege, siegeMatchRules } from '../../src/sim/siege.ts';
 import type { SiegeVisible } from '../../src/sim/siege.ts';
 
 describe('the scouting Controller', () => {
+  it('uses the faster known road to the frontier instead of pricing every tile as equally slow', () => {
+    const world = siegeMatchRules.createWorld(7);
+    const home = world.economy.settlements[0]!;
+    musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: home.x, y: home.y });
+    const base = observeSiege(world, 'rome');
+    const terrain = new Uint8Array(MAP_WIDTH * MAP_HEIGHT).fill(UNSEEN);
+    for (let y = 0; y < 65; y += 1) for (let x = 0; x < 60; x += 1) terrain[y * MAP_WIDTH + x] = TERRAIN.plain;
+    for (let y = 20; y <= 40; y += 1) terrain[y * MAP_WIDTH + 20] = TERRAIN.road;
+    for (let x = 20; x < 60; x += 1) terrain[40 * MAP_WIDTH + x] = TERRAIN.road;
+    const visible: SiegeVisible = { ...base, appearances: [], contacts: [], enemies: [],
+      settlements: [{ ...base.settlements[0]!, x: 20, y: 20 }],
+      squads: [{ ...base.squads[0]!, x: 20, y: 20, inQuarters: false, goal: null }],
+      fog: { ...base.fog, terrain } };
+    const controller = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ,
+      registry: createBehaviourRegistry<SiegeVisible, Command>([
+        createScoutingBehaviour({ width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
+          vision: SQUAD_VISION, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES, scoutTypes: ['hastati'],
+          terrainCost: (ground) => ground === TERRAIN.road ? 1 : 4 }, DIFFICULTY.centurio),
+      ]) });
+    const move = controller.decide({ faction: 'rome', tick: 1, visible }).find((command) => command.kind === 'move');
+    expect(move?.kind).toBe('move');
+    if (move?.kind === 'move') expect(move.y).toBeGreaterThanOrEqual(38);
+  });
+
   it('plans around a known lake as it would around an equally impassable river', () => {
     const world = siegeMatchRules.createWorld(7);
     const home = world.economy.settlements[0]!;
@@ -134,10 +158,15 @@ describe('the scouting Controller', () => {
   it('does not assign routed, garrisoned, engaged or beaten Squads to scouting', () => {
     const world = siegeMatchRules.createWorld(7);
     const home = world.economy.settlements[0]!;
-    musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: home.x, y: home.y });
+    musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 120, x: home.x, y: home.y });
     const base = observeSiege(world, 'rome');
     for (const change of [{ routing: true }, { garrison: 0 }, { engaged: true }, { morale: 2 }, { men: 20 }]) {
-      const commands = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry: scoutingRegistry })
+      const commands = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ,
+        registry: createBehaviourRegistry<SiegeVisible, Command>([
+          createScoutingBehaviour({ width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
+            vision: SQUAD_VISION, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
+            scoutTypes: ['hastati', 'gaul', 'numidian-horse'] }),
+        ]) })
         .decide({ faction: 'rome', tick: 0, visible: { ...base, squads: [{ ...base.squads[0]!, ...change }] } });
       expect(commands.filter((command) => command.kind === 'move')).toEqual([]);
     }
