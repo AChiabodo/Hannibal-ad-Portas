@@ -124,7 +124,7 @@ A neutral place occupied by a group hostile to both Factions, which defends it a
 _UI_: Accampamento barbaro
 
 **Resource node**:
-A place on the map holding one resource — grain, timber, stone or iron — in a quantity the economy draws on each Season. Nodes stand on the terrain that suits them: timber in forests, stone and iron on hills, grain on farmland. The quantity is how much land a settlement can work, not a pile that runs out (ADR-0012).
+A place within a settlement's productive reach that adds capacity for grain, timber, stone or iron each Season, without depleting (ADR-0012). Nodes favour suitable local terrain, with other dry land available where needed.
 _UI_: Giacimento
 _Avoid_: Deposit, mine, patch, field
 
