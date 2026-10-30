@@ -987,6 +987,7 @@ function groundPath(from: number, to: number, forbidden: Uint8Array, salt: numbe
   const parent = new Int32Array(TILE_COUNT).fill(-2);
   const distance = new Int32Array(TILE_COUNT).fill(-1);
   const reuse = new Int32Array(TILE_COUNT);
+  const beside = new Int32Array(TILE_COUNT);
   const queue = new Int32Array(TILE_COUNT);
   parent[from] = -1;
   distance[from] = 0;
@@ -1010,16 +1011,23 @@ function groundPath(from: number, to: number, forbidden: Uint8Array, salt: numbe
       if (forbidden[next] === 1) continue;
       const nextDistance = (distance[tile] ?? 0) + 1;
       const nextReuse = (reuse[tile] ?? 0) + (existing?.[next] === 1 ? 1 : 0);
+      const parallel = existing !== undefined && existing[next] !== 1 &&
+        (nx > 0 && existing[next - 1] === 1 || nx + 1 < MAP_WIDTH && existing[next + 1] === 1 ||
+          ny > 0 && existing[next - MAP_WIDTH] === 1 || ny + 1 < MAP_HEIGHT && existing[next + MAP_WIDTH] === 1);
+      const nextBeside = (beside[tile] ?? 0) + (parallel ? 1 : 0);
       if (parent[next] !== -2) {
-        if (existing !== undefined && distance[next] === nextDistance && nextReuse > (reuse[next] ?? 0)) {
+        if (existing !== undefined && distance[next] === nextDistance && (nextBeside < (beside[next] ?? 0) ||
+          nextBeside === beside[next] && nextReuse > (reuse[next] ?? 0))) {
           parent[next] = tile;
           reuse[next] = nextReuse;
+          beside[next] = nextBeside;
         }
         continue;
       }
       parent[next] = tile;
       distance[next] = nextDistance;
       reuse[next] = nextReuse;
+      beside[next] = nextBeside;
       queue[tail] = next;
       tail += 1;
     }
