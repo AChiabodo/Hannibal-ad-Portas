@@ -201,6 +201,8 @@ export interface VisibleSettlement {
 export interface VisibleSquad {
   readonly passage?: {
     readonly settlement: number;
+    /** The owner's order, distinguishing wall duty from ordinary transit. */
+    readonly purpose?: 'garrison' | 'field';
     readonly phase: 'approaching' | 'waiting' | 'entering' | 'leaving';
     readonly remaining: number;
     readonly reason?: string;
@@ -543,6 +545,7 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
     id: squad.id,
     ...(squad.garrisonJourney === undefined ? {} : { passage: {
       settlement: squad.garrisonJourney.settlement,
+      purpose: 'garrison' as const,
       phase: (['approaching', 'waiting', 'entering', 'leaving'] as const)[squad.garrisonJourney.phase] ?? 'waiting',
       remaining: squad.garrisonJourney.remaining,
       ...(squad.garrisonJourney.reason === 1 ? { reason: 'access-busy' as const } :
@@ -550,6 +553,7 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
     } }),
     ...(squad.garrisonJourney !== undefined || squad.access === undefined || squad.access.settlement < 0 ? {} : { passage: {
       settlement: squad.access.settlement,
+      purpose: 'field' as const,
       phase: squad.access.active === 1 ? 'entering' as const : 'waiting' as const,
       remaining: 0,
       ...(squad.access.reason === 1 ? { reason: 'access-busy' as const } :

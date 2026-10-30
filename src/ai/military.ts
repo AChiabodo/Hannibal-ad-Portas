@@ -1,4 +1,5 @@
 import type { ObservedSettlement } from '../content/settlement-appearance.ts';
+import { turnPoint } from '../content/settlement-layout.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
 import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
@@ -207,6 +208,30 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
       const assigned = new Set<number>();
       let withdrawing = false;
       let committed = false;
+      // Wall duty answers a threat, not a permanent loss from the field army.
+      // Wait for recovery and for nearby sightings to age out before releasing
+      // defenders through a known exit; normal movement validates the journey.
+      for (const squad of visible.squads) {
+        const type = types.get(squad.type);
+        if (squad.garrison === null || squad.routing || squad.goal !== null || squad.refused != null ||
+          type === undefined || squad.morale < type.morale || atHalfStrength(squad)) continue;
+        const site = visible.settlements.find((entry) => entry.id === squad.garrison);
+        const front = visible.fronts?.find((entry) => entry.settlement === squad.garrison);
+        const appearance = visible.appearances?.find((entry) => entry.id === squad.garrison);
+        const width = content.mapWidth;
+        const terrain = visible.fog?.terrain;
+        const radius = content.settlementRadius ?? 7;
+        if (site === undefined || front === undefined || front.siege != null || appearance === undefined ||
+          width === undefined || terrain === undefined || [...visible.enemies, ...remembered].some((enemy) =>
+            distance(enemy, site) <= radius + DEFENCE_RADIUS)) continue;
+        const exit = turnPoint({ x: 0, y: radius + 2 }, appearance.gateSide);
+        const x = site.x + exit.x, y = site.y + exit.y;
+        if (x < 0 || y < 0 || x >= width || y >= terrain.length / width) continue;
+        const tile = terrain[y * width + x];
+        if (tile === undefined || content.impassableTerrain?.includes(tile)) continue;
+        commands.push({ kind: 'move', faction, squads: [squad.id], x, y });
+        reasons.push(`Release recovered Squad ${squad.id} from walls with no known nearby threat.`);
+      }
       // A known hostile siege makes the owner's empty walls urgent. Prefer a
       // suitable squad already in the quarters, otherwise recall an unengaged
       // field squad unless an offensive siege already needs it. The normal

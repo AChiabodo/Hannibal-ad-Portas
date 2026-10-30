@@ -40,7 +40,11 @@ export function requestGarrison(world: SiegeWorld, siteId: number, owner: number
     const inside = fullyInside(world.economy, site, squadGround(squad));
     const target = inside ? { x: squad.x, y: squad.y } : approachPoint(world, site, squad);
     if (target === undefined) { squad.refused = refusalCode('no-space'); continue; }
-    squad.garrisonJourney = { settlement: siteId, phase: inside ? 1 : 0, remaining: 0, ticket: 0, goalX: target.x, goalY: target.y, fromOutside: inside ? 0 : 1 };
+    // Wall duty continues an existing arrival through the same Gate. A new
+    // ticket would put its admission behind the field bodies already waiting
+    // for this Squad's active passage, making each wait for the other forever.
+    const ticket = squad.access?.settlement === siteId && squad.access.passage === 0 ? squad.access.ticket : 0;
+    squad.garrisonJourney = { settlement: siteId, phase: inside ? 1 : 0, remaining: 0, ticket, goalX: target.x, goalY: target.y, fromOutside: inside ? 0 : 1 };
     if (!inside) send(squad, target);
     else { squad.steps = []; squad.wait = 0; squad.refused = NO_REFUSAL; }
     if (squad.refused !== NO_REFUSAL) delete squad.garrisonJourney;

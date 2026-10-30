@@ -32,6 +32,29 @@ function battlefield(): SiegeVisible {
 }
 
 describe('the military Controller', () => {
+  it('keeps wall defenders sheltered while a siege, a known threat or recovery still needs them', () => {
+    const base = battlefield();
+    const defender = { ...base.squads[0]!, x: 20, y: 20, men: 24, capacity: 24, morale: 10,
+      garrison: 0, goal: null, inQuarters: true };
+    const front = { ...base.fronts.find((entry) => entry.settlement === 0)!,
+      siege: null, besieger: null, garrison: 1 };
+    const visible: SiegeVisible = { ...base, enemies: [], contacts: [], squads: [defender], fronts: [front],
+      fog: { ...base.fog, terrain: new Uint8Array(MAP_WIDTH * MAP_HEIGHT).fill(TERRAIN.plain) } };
+    const decide = (view: SiegeVisible, tick = 1) => createArmyController().decide({ faction: 'rome', tick, visible: view });
+    const release = { kind: 'move', faction: 'rome', squads: [defender.id], x: 29, y: 20 };
+    expect(decide(visible)).toContainEqual(release);
+    for (const view of [
+      { ...visible, fronts: [{ ...front, siege: 'blockade' as const, besieger: 'carthage' as const }] },
+      { ...visible, squads: [{ ...defender, morale: 9 }] },
+      { ...visible, enemies: [{ id: 99, type: 'gaul', x: 38, y: 20 }] },
+      { ...visible, contacts: [{ id: 99, kind: 'squad' as const, type: 'gaul', x: 38, y: 20, seen: 0 }] },
+      { ...visible, fog: { ...visible.fog, terrain: new Uint8Array(MAP_WIDTH * MAP_HEIGHT).fill(255) } },
+    ]) expect(decide(view)).not.toContainEqual(release);
+    const remembered: SiegeVisible = { ...visible,
+      contacts: [{ id: 99, kind: 'squad', type: 'gaul', x: 38, y: 20, seen: 0 }] };
+    expect(decide(remembered, 1200)).toContainEqual(release);
+  });
+
   it('attacks only a visible nearby camp when it has a sufficiently strong available force', () => {
     const base = battlefield();
     const squad = { ...base.squads[0]!, x: 24, y: 20, men: 120, capacity: 120, inQuarters: false };

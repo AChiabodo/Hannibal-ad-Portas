@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createAi } from '../../src/ai/controller.ts';
 import { createArmyController, militaryRegistry, playAiMatch } from '../../src/cli/ai-match.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
-import { blockade, type Command } from '../../src/sim/command.ts';
+import { blockade, garrison, type Command } from '../../src/sim/command.ts';
 import { createMatch } from '../../src/sim/match.ts';
 import { MAP_HEIGHT, TERRAIN, tileIndex } from '../../src/sim/map.ts';
 import { scriptedController } from '../../src/sim/controller.ts';
@@ -35,6 +35,23 @@ function scenario(hiddenX = 70): SiegeWorld {
 }
 
 describe('military decisions in a headless Match', () => {
+  it.each(['rome', 'carthage'] as const)('returns recovered %s wall defenders to field duty when no known threat remains', (faction) => {
+    const world = theatre();
+    const home = world.economy.settlements[faction === 'rome' ? 0 : 1]!;
+    const defender = musterSquad(world.economy, world.map, { faction,
+      squadType: faction === 'rome' ? 'hastati' : 'gaul', men: 24, x: home.x, y: home.y });
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    match.step([garrison(faction, [defender.id], home.id)]);
+    for (let i = 0; i < 100 && observeSiege(world, faction).squads[0]?.garrison === null; i += 1) match.step([]);
+    expect(observeSiege(world, faction).squads[0]?.garrison).toBe(home.id);
+    const controller = createArmyController('centurio');
+    for (let i = 0; i < 300; i += 1) {
+      match.step(controller.decide({ faction, tick: match.state.tick, visible: observeSiege(world, faction) }));
+      if (observeSiege(world, faction).squads[0]?.garrison === null) break;
+    }
+    expect(observeSiege(world, faction).squads[0]?.garrison).toBeNull();
+  });
+
   it('does not repeat an unreachable recall after ordinary route validation refuses it', () => {
     const world = theatre();
     for (let y = 0; y < MAP_HEIGHT; y += 1) world.map.terrain[tileIndex(50, y)] = TERRAIN.river;
@@ -65,20 +82,27 @@ describe('military decisions in a headless Match', () => {
     expect(blockadeSeen).toBe(true);
     expect(defenderOnWalls).toBe(true);
   }, 30000);
-  it('sends a ready defender to its own empty walls when an observed blockade begins', () => {
-    const rome = createArmyController('centurio'), carthage = createArmyController('centurio');
-    let blockadeSeen = false, defenderOnWalls = false;
-    runMatch({ seed: 7, ticks: 1800, rules: siegeMatchRules, observe: observeSiege, outcome: siegeMatchOutcome,
-      players: [{ faction: 'rome', controller: rome }, { faction: 'carthage', controller: { decide(observation) {
-        const front = observation.visible.fronts.find((entry) => entry.settlement === 1);
-        if (front?.siege === 'blockade' && front.besieger === 'rome') blockadeSeen = true;
-        if (blockadeSeen && front !== undefined && front.garrison > 0 &&
-          observation.visible.squads.some((squad) => squad.garrison === 1)) defenderOnWalls = true;
-        return carthage.decide(observation);
-      } } }] });
-    expect(blockadeSeen).toBe(true);
-    expect(defenderOnWalls).toBe(true);
-  }, 30000);
+  it.each(['rome', 'carthage'] as const)('sends a ready %s defender to its empty walls when an observed blockade begins', (faction) => {
+    // The condition under test is a known blockade, independent of whether a
+    // generated AI campaign happens to choose that path on its changing map.
+    const world = theatre();
+    const home = world.economy.settlements[faction === 'rome' ? 0 : 1]!;
+    const enemy = faction === 'rome' ? 'carthage' : 'rome';
+    const defender = musterSquad(world.economy, world.map, { faction,
+      squadType: faction === 'rome' ? 'hastati' : 'gaul', men: 24, x: home.x, y: home.y });
+    const attacker = musterSquad(world.economy, world.map, { faction: enemy,
+      squadType: enemy === 'rome' ? 'hastati' : 'gaul', men: 24, x: home.x + 10, y: home.y });
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    match.step([blockade(enemy, [attacker.id], home.id)]);
+    expect(observeSiege(world, faction).fronts.find((front) => front.settlement === home.id))
+      .toMatchObject({ siege: 'blockade', besieger: enemy, garrison: 0 });
+    const controller = createArmyController('centurio');
+    for (let i = 0; i < 150; i += 1) {
+      match.step(controller.decide({ faction, tick: match.state.tick, visible: observeSiege(world, faction) }));
+      if (observeSiege(world, faction).squads.find((squad) => squad.id === defender.id)?.garrison === home.id) break;
+    }
+    expect(observeSiege(world, faction).squads.find((squad) => squad.id === defender.id)).toMatchObject({ garrison: home.id });
+  });
   it('clears a stationary friendly body blocking an entering squad at its own gate', () => {
     const rome = createArmyController('centurio'), carthage = createArmyController('centurio');
     let blocked: { id: number; blocker: number; x: number; y: number } | undefined;

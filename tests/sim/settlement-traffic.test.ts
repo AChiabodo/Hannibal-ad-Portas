@@ -26,6 +26,31 @@ function stage() {
 }
 
 describe('physical access traffic (#74)', () => {
+  it('keeps passage precedence when a marching arrival is reassigned to wall duty (#76)', () => {
+    const { world, match } = stage();
+    const first = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 40, y: 22 });
+    const second = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 40, y: 28 });
+    match.step([move('rome', [first.id], 25, 22), move('rome', [second.id], 25, 28)]);
+    let entering = false;
+    for (let tick = 0; tick < 120; tick += 1) {
+      const a = observeSiege(world, 'rome').squads.find((squad) => squad.id === first.id)!;
+      if (a.passage?.phase === 'entering') { entering = true; break; }
+      match.step();
+    }
+    expect(entering).toBe(true);
+    match.step([garrison('rome', [first.id], 0)]);
+    for (let tick = 0; tick < 350; tick += 1) {
+      match.step();
+      const seen = observeSiege(world, 'rome').squads;
+      const a = seen.find((squad) => squad.id === first.id)!;
+      const b = seen.find((squad) => squad.id === second.id)!;
+      if (a.garrison === null) expect(intersects(ground(a), ground(b)), `body overlap at tick ${tick}`).toBe(false);
+    }
+    const seen = observeSiege(world, 'rome').squads;
+    expect(seen.find((squad) => squad.id === first.id)?.garrison).toBe(0);
+    expect(seen.find((squad) => squad.id === second.id)).toMatchObject({ x: 25, y: 28, goal: null });
+  });
+
   it('uses a real marching column through a Gate even for a small field Squad, then restores line', () => {
     const { world, match } = stage();
     const squad = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 40, y: 25 });

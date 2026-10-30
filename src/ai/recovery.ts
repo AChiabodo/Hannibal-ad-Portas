@@ -11,9 +11,12 @@ export function restingAtHome(squad: Site & { readonly morale: number; readonly 
 export function returningHome(squad: {
   readonly goal: Site | null;
   readonly inQuarters?: boolean;
-  readonly passage?: { readonly settlement: number; readonly phase: string };
+  readonly passage?: { readonly settlement: number; readonly phase: string; readonly purpose?: 'garrison' | 'field' };
 }, homes: readonly (Site & { readonly id?: number })[]): boolean {
-  if (squad.passage !== undefined && squad.passage.phase !== 'leaving' && squad.inQuarters !== true &&
+  // Wall admission is still under way after the body's centre reaches the
+  // quarters. A temporary end to the siege must not let Hold cancel assembly.
+  if (squad.passage !== undefined && squad.passage.phase !== 'leaving' &&
+    (squad.passage.purpose === 'garrison' || squad.inQuarters !== true) &&
     homes.some((home) => home.id === squad.passage!.settlement)) return true;
   return squad.goal !== null && homes.some((home) => distance(home, squad.goal!) === 0);
 }
