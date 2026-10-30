@@ -298,6 +298,7 @@ export function roadProblems(map: MapGrid): readonly string[] {
   for (const road of map.roads) {
     endpoints.add(road.from);
     endpoints.add(road.to);
+    if (new Set(road.tiles).size !== road.tiles.length) problems.push('a road revisits one of its own tiles');
 
     if (road.tiles[0] !== road.from) {
       problems.push(`a road starting at (${tileX(road.from)}, ${tileY(road.from)}) begins somewhere else`);

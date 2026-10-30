@@ -1157,6 +1157,7 @@ function nodeTiles(
  */
 function carveRoads(terrain: Uint8Array, rng: Rng, sites: readonly Site[], forbidden: Uint8Array): Road[] {
   const roads: Road[] = [];
+  const natural = terrain.slice();
   const existing = new Uint8Array(TILE_COUNT);
   const component = sites.map((_, index) => index);
   const join = (a: number, b: number): void => {
@@ -1188,7 +1189,33 @@ function carveRoads(terrain: Uint8Array, rng: Rng, sites: readonly Site[], forbi
     join(bestA, bestB);
   }
 
-  return roads;
+  return coalesceRoadCorners(roads, terrain, natural, existing);
+}
+
+/**
+ * Later roads can complete a redundant 2×2 square beside an earlier corner.
+ * Fold that earlier corner onto the existing dry road, without lengthening
+ * any journey, moving an endpoint or turning a dry bypass into a crossing.
+ */
+function coalesceRoadCorners(roads: Road[], terrain: Uint8Array, natural: Uint8Array, existing: Uint8Array): Road[] {
+  const endpoints = new Set(roads.flatMap((road) => [road.from, road.to]));
+  let joined = roads;
+  for (let tile = 0; tile < TILE_COUNT; tile += 1) {
+    if (existing[tile] !== 1 || endpoints.has(tile) || terrain[tile] !== TERRAIN.road) continue;
+    const x = tileX(tile), y = tileY(tile);
+    const neighbours = [x > 0 ? tile - 1 : -1, x + 1 < MAP_WIDTH ? tile + 1 : -1,
+      y > 0 ? tile - MAP_WIDTH : -1, y + 1 < MAP_HEIGHT ? tile + MAP_WIDTH : -1]
+      .filter((at) => at >= 0 && existing[at] === 1);
+    if (neighbours.length !== 2) continue;
+    const first = elementAt(neighbours, 0), second = elementAt(neighbours, 1);
+    if (tileX(first) === tileX(second) || tileY(first) === tileY(second)) continue;
+    const other = first + second - tile;
+    if (existing[other] !== 1 || terrain[other] !== TERRAIN.road) continue;
+    joined = joined.map((road) => ({ ...road, tiles: road.tiles.map((at) => at === tile ? other : at) }));
+    existing[tile] = 0;
+    terrain[tile] = elementAt(natural, tile);
+  }
+  return joined;
 }
 
 /**
