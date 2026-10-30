@@ -8,12 +8,37 @@ import { SQUAD_TYPES } from '../../src/content/squads.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
 import type { Command } from '../../src/sim/command.ts';
 import { SQUAD_VISION, UNSEEN } from '../../src/sim/fog.ts';
-import { MAP_WIDTH, MAP_HEIGHT, TERRAIN } from '../../src/sim/map.ts';
+import { MAP_WIDTH, MAP_HEIGHT, TERRAIN, type Terrain } from '../../src/sim/map.ts';
+import { paceCost } from '../../src/sim/route.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
 import { observeSiege, siegeMatchRules } from '../../src/sim/siege.ts';
 import type { SiegeVisible } from '../../src/sim/siege.ts';
 
 describe('the scouting Controller', () => {
+  it.each([TERRAIN.river, TERRAIN.lake])('continues exploring when a patrol detour points at known water (%i)', (water) => {
+    const world = siegeMatchRules.createWorld(7);
+    const home = world.economy.settlements[0]!;
+    musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: home.x, y: home.y });
+    const base = observeSiege(world, 'rome');
+    const terrain = new Uint8Array(MAP_WIDTH * MAP_HEIGHT).fill(TERRAIN.plain);
+    for (let y = 0; y < MAP_HEIGHT; y += 1) for (let x = 100; x < MAP_WIDTH; x += 1) terrain[y * MAP_WIDTH + x] = UNSEEN;
+    terrain[80 * MAP_WIDTH + 20] = water;
+    const visible: SiegeVisible = { ...base, appearances: [], enemies: [],
+      contacts: [{ id: 99, kind: 'squad', type: 'gaul', x: 80, y: 40, seen: 0 }],
+      settlements: [{ ...base.settlements[0]!, x: 20, y: 20 }],
+      squads: [{ ...base.squads[0]!, x: 20, y: 40, inQuarters: false, goal: null }], fog: { ...base.fog, terrain } };
+    const controller = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ,
+      registry: createBehaviourRegistry<SiegeVisible, Command>([
+        createScoutingBehaviour({ width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
+          additionalWater: [TERRAIN.lake], vision: 10, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
+          scoutTypes: ['hastati'], terrainCost: (ground, pace) => paceCost(ground === UNSEEN ? TERRAIN.plain : ground as Terrain, pace) }),
+      ]) });
+    const commands = controller.decide({ faction: 'rome', tick: 1, visible });
+    expect(commands.some((command) => command.kind === 'move')).toBe(true);
+    for (const command of commands) if (command.kind === 'move')
+      expect(terrain[command.y * MAP_WIDTH + command.x]).toBe(TERRAIN.plain);
+  });
+
   it('uses the faster known road to the frontier instead of pricing every tile as equally slow', () => {
     const world = siegeMatchRules.createWorld(7);
     const home = world.economy.settlements[0]!;

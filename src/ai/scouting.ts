@@ -280,7 +280,12 @@ export function createScoutingBehaviour(content: ScoutingContent, difficulty: Di
           Math.abs(contact.y - course!.y) <= vision * 4 && Math.abs(contact.y - squad.y) < vision * 4);
         if (threat !== undefined) {
           const y = Math.max(vision, Math.min(height - 1 - vision, threat.y + (squad.y >= threat.y ? 1 : -1) * vision * 4));
-          if (Math.abs(squad.y - threat.y) < vision * 4) course = { x: squad.x, y };
+          const tile = index({ x: squad.x, y });
+          // This is a guidance origin, not a movement goal: unknown ground is
+          // permitted, but known water or a structure cannot start its search.
+          if (Math.abs(squad.y - threat.y) < vision * 4 && terrain[tile] !== water &&
+            !(terrain[tile] !== undefined && content.additionalWater?.includes(terrain[tile]!) === true) &&
+            obstacles[tile] !== 1) course = { x: squad.x, y };
         }
       }
       const fits = new Int8Array(width * height).fill(-1);
