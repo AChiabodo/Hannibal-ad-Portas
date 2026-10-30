@@ -84,7 +84,7 @@ import {
   type Supplied,
 } from './economy.ts';
 import { factionCode, type Faction } from './faction.ts';
-import { eyeOf, SETTLEMENT_VISION, SQUAD_VISION, type Eye } from './fog.ts';
+import { eyeOf, settlementEyes, SQUAD_VISION, type Eye } from './fog.ts';
 import { generateMap, type MapGrid, type Site } from './map.ts';
 import { applyMovementCommands, goalOf, march, routeCacheFor } from './movement.ts';
 import { refusalOf, type RouteRefusal } from './route.ts';
@@ -489,8 +489,7 @@ export function eyesOfEconomy(world: EconomyWorld, faction: Faction): readonly E
   return [
     ...world.economy.settlements
       .filter((settlement) => settlement.owner === owner)
-      .flatMap((settlement) => [eyeOf(settlement, SETTLEMENT_VISION), ...[-6, 6].flatMap((dx) => [-6, 6].map((dy) =>
-        eyeOf({ x: settlement.x + dx, y: settlement.y + dy }, SETTLEMENT_VISION)))]),
+      .flatMap(settlementEyes),
     ...world.economy.squads
       .filter((squad) => squad.owner === owner)
       .map((squad) => eyeOf(squad, SQUAD_VISION)),

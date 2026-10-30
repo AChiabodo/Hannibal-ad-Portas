@@ -239,6 +239,12 @@ export function eyeOf(site: Site, radius: number): Eye {
   return { x: site.x, y: site.y, radius };
 }
 
+/** An owned settlement watches from its centre and the corners of its grounds. */
+export function settlementEyes(site: Site): readonly Eye[] {
+  return [eyeOf(site, SETTLEMENT_VISION), ...[-6, 6].flatMap((dx) => [-6, 6].map((dy) =>
+    eyeOf({ x: site.x + dx, y: site.y + dy }, SETTLEMENT_VISION)))];
+}
+
 /** The same disc for a visible enemy and for a tile of visible terrain. */
 export function eyeCovers(eye: Eye, site: Site): boolean {
   const dx = site.x - eye.x;

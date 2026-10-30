@@ -22,8 +22,7 @@
  * with the page's. One definition, two readers, which is the rule the whole
  * rendering layer follows.
  */
-import { SQUAD_VISION, eyeOf, type Eye } from '../sim/fog.ts';
-import { eyesOf } from '../sim/fog-match.ts';
+import { SQUAD_VISION, eyeOf, settlementEyes, type Eye } from '../sim/fog.ts';
 import type { EconomyWorld } from '../sim/economy-match.ts';
 import type { Faction } from '../sim/faction.ts';
 import { MAP_HEIGHT, MAP_WIDTH, isWalkable, terrainAt, type MapGrid, type Site } from '../sim/map.ts';
@@ -95,12 +94,13 @@ export function openingTiles(map: MapGrid, faction: Faction): readonly Site[] {
  *
  * The same list the page's own `vision` callback is handed on its first tick, so
  * the fog a browser test composes in Node and the fog the page draws are one
- * answer. It is `eyesOf` (B4's settlement eyes) plus one eye per mustered Squad,
+ * answer. It is `settlementEyes` plus one eye per mustered Squad,
  * which is exactly what `eyesOfEconomy` reports once the army is afield.
  */
 export function openingEyes(map: MapGrid, faction: Faction): readonly Eye[] {
+  const home = strongholdOf(map, faction);
   return [
-    ...eyesOf(map, faction),
+    ...(home === undefined ? [] : settlementEyes(home)),
     ...openingTiles(map, faction).map((site) => eyeOf(site, SQUAD_VISION)),
   ];
 }
