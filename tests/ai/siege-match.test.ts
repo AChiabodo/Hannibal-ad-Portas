@@ -3,7 +3,8 @@ import { armyRegistry, createArmyController, difficultyRegistry, playAiMatch, pl
 import { createAi } from '../../src/ai/controller.ts';
 import { DIFFICULTY, type DifficultyName } from '../../src/ai/difficulty.ts';
 import { HEADLESS_TICKS } from '../../src/sim/season.ts';
-import type { Command } from '../../src/sim/command.ts';
+import { assault, type Command } from '../../src/sim/command.ts';
+import { createMatch } from '../../src/sim/match.ts';
 import { scriptedController } from '../../src/sim/controller.ts';
 import { runMatch } from '../../src/sim/driver.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
@@ -32,25 +33,28 @@ function replayOf(seed: number, name: DifficultyName = 'centurio'): string {
 }
 
 describe('the shipped siege AI in a headless Match', () => {
-  it('does not abandon a paid assault when the ram location is out of sight on seed 12 (#76)', () => {
-    let tick = 0;
-    const samples: { tick: number; treasury: number; front: SiegeVisible['fronts'][number] | undefined }[] = [];
-    runMatch({ seed: 12, ticks: 595, rules: siegeMatchRulesForDifficulty('imperator'), outcome: siegeMatchOutcome,
-      observe(world, faction) {
-        const visible = observeSiege(world, faction);
-        if (faction === 'rome') {
-          if (tick === 591 || tick === 592) samples.push({ tick, treasury: visible.treasury,
-            front: visible.fronts.find((front) => front.settlement === 1) });
-          tick += 1;
-        }
-        return visible;
-      },
-      players: [{ faction: 'rome', controller: createArmyController('imperator') },
-        { faction: 'carthage', controller: createArmyController('imperator') }] });
-    expect(samples).toHaveLength(2);
-    for (const sample of samples) expect(sample).toMatchObject({ treasury: 5,
-      front: { siege: 'assault', besieger: 'rome', ram: null, ramKnown: false } });
-  }, 20000);
+  it('does not abandon a paid assault while observing a wall away from the hidden ram (#76)', () => {
+    const map = testMap({ strongholds: [{ x: 25, y: 25 }, { x: 75, y: 75 }] });
+    const economy = createEconomy(map);
+    const world = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+      siege: createSiege(map, economy), fog: createFogs() };
+    // The north wall is visible; the ram is built outside the western Gate.
+    const squad = musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x: 75, y: 65 });
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    match.step([]);
+    match.step([assault('rome', [squad.id], 1)]);
+    for (let i = 0; i < 10; i += 1) match.step([]);
+    const before = observeSiege(world, 'rome');
+    expect(before.treasury).toBe(5);
+    expect(before.fronts.find((front) => front.settlement === 1))
+      .toMatchObject({ siege: 'assault', besieger: 'rome', ram: null, ramKnown: false });
+    const ai = createArmyController('imperator');
+    const commands = ai.decide({ faction: 'rome', tick: match.state.tick, visible: before });
+    expect(commands).toContainEqual({ kind: 'assault', faction: 'rome', squads: [squad.id], settlement: 1 });
+    match.step(commands);
+    expect(observeSiege(world, 'rome').treasury).toBe(5);
+    expect(observeSiege(world, 'rome').fronts.find((front) => front.settlement === 1)?.siege).toBe('assault');
+  });
 
   it.each(['tiro', 'centurio', 'imperator'] as const)('completes a real Carthaginian Blockade at %s', (level) => {
     const setup = { seed: 13, ticks: HEADLESS_TICKS, rules: siegeMatchRules,

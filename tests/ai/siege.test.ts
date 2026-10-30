@@ -46,6 +46,26 @@ function decide(faction: 'rome' | 'carthage', visible: SiegeObservation,
 }
 
 describe('the siege Controller', () => {
+  it('keeps a Roman blockade viable when new treasury could buy an unsupported assault', () => {
+    const visible = observation({ treasury: 20, squads: [squad(1, 80, 80, { men: 24, capacity: 24 })],
+      fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'blockade', ram: null, garrison: 1 }] });
+    expect(decide('rome', visible).commands)
+      .toEqual([{ kind: 'blockade', faction: 'rome', squads: [1], settlement: 1 }]);
+    expect(decide('rome', { ...visible, squads: [...visible.squads, squad(2, 10, 10), squad(3, 10, 10)] }).commands)
+      .toEqual([{ kind: 'assault', faction: 'rome', squads: [1, 2, 3], settlement: 1 }]);
+  });
+
+  it('prices a Roman blockade separately from a paid assault whose ram is hidden', () => {
+    const visible = observation({ treasury: 0, squads: [squad(1, 80, 80, { men: 24, capacity: 24 })],
+      fronts: [{ settlement: 1, breached: false, besieger: null, ram: null, ramKnown: true, garrison: 1 }] });
+    expect(decide('rome', visible).commands)
+      .toEqual([{ kind: 'blockade', faction: 'rome', squads: [1], settlement: 1 }]);
+    const paid = { ...visible, fronts: visible.fronts.map((front) => ({ ...front,
+      siege: 'assault' as const, besieger: 'rome' as const, ramKnown: false })) };
+    expect(decide('rome', paid).commands)
+      .toEqual([{ kind: 'withdraw', faction: 'rome', squads: [1] }]);
+  });
+
   it('blockades a stronger wall garrison with Carthage while still refusing an unmatched field relief', () => {
     const visible = observation({ squads: [squad(1, 80, 80, { type: 'gaul', men: 24, capacity: 24, morale: 6 })],
       fronts: [{ settlement: 1, breached: false, besieger: null, ram: null, garrison: 1 }] });

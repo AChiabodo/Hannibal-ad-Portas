@@ -150,11 +150,6 @@ export function createSiegeBehaviour(
       const reliefPower = relief.reduce((sum, enemy) => sum + observed(enemy), 0);
       const presence = recordedGarrison(visible.appearances?.find((site) => site.id === target.id));
       const garrison = front === undefined || front.garrisonKnown === false ? presence === false ? 0 : 1 : front.garrison;
-      // Carthage maintains an external Blockade: even a thinner ring starves
-      // the town, while a relieving field army can break it. Wall defenders
-      // price Rome's Assault, not an engine Carthage can never build.
-      const threat = (content.canAssault(faction) ? garrison * content.garrisonEstimate : 0) + reliefPower;
-
       const field = visible.squads.filter((squad) => !squad.routing && squad.garrison === null);
       const atWalls = (squad: SiegeSquad) => bodyPerimeterDistance(squad, place, content.settlementRadius ?? 0, types.get(squad.type)?.figures === 1 ? 1 : squad.capacity) <= content.siegeRadius ||
         (squad.goal !== null && (squad.goal.x === place.x && squad.goal.y === place.y ||
@@ -167,6 +162,10 @@ export function createSiegeBehaviour(
       const committedPower = committed.filter((squad) => !spent(squad, observation))
         .reduce((sum, squad) => sum + power(squad), 0);
       const totalPower = committedPower + reserve.reduce((sum, squad) => sum + power(squad), 0);
+      // Even a thinner Blockade starves the town; field relief can break it.
+      // Wall defenders price the selected Assault, including a paid one whose
+      // ram is hidden, rather than the Faction's ability to build an engine.
+      const threat = (assaultPath() ? garrison * content.garrisonEstimate : 0) + reliefPower;
       const holds = (value: number) => value * 100 >= threat * margin;
       const besieging = committed.length > 0 || front?.besieger === faction;
 
@@ -198,8 +197,13 @@ export function createSiegeBehaviour(
       function assaultPath(): boolean {
         if (!content.canAssault(faction)) return false;
         if (knownBreach) return true;
-        return front?.ram != null || visible.treasury >= content.ramCost ||
-          (front?.ramKnown === false && front.besieger === faction && front.siege === 'assault');
+        if (front?.ram != null ||
+          (front?.ramKnown === false && front.besieger === faction && front.siege === 'assault')) return true;
+        if (visible.treasury < content.ramCost) return false;
+        // New money does not make an existing thin ring able to storm walls.
+        // Keep its Blockade until the available army can support the change.
+        return front?.besieger !== faction || front.siege !== 'blockade' ||
+          totalPower * 100 >= (garrison * content.garrisonEstimate + reliefPower) * margin;
       }
       /** The stated grounds for the path, with the numbers the decision read. */
       function grounds(assault: boolean, settlement: number, ours: number, theirs: number): string {
@@ -218,6 +222,10 @@ export function createSiegeBehaviour(
         if (!content.canAssault(faction)) {
           return `Blockade settlement ${String(settlement)}: ${faction} has no ram and can never assault (ADR-0008); ` +
             `cut supply with ${against} in the field; wall defenders slow starvation rather than require an Assault.`;
+        }
+        if (front?.besieger === faction && front.siege === 'blockade') {
+          return `Continue the Blockade of settlement ${String(settlement)}: preserve the ring with ${against} in the field; ` +
+            `the available army and treasury do not yet support changing to an Assault.`;
         }
         return `Blockade settlement ${String(settlement)}: no ram at the walls and ` +
           `${String(visible.treasury)} denarii cannot pay ${String(content.ramCost)}; starve it instead with ${against}.`;
