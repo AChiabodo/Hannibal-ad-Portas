@@ -1778,6 +1778,10 @@ export function createGame(options: GameOptions): Game {
     commandNotice = null;
     noteGuide({ kind: 'selection', what: whatIsSelected() });
     repaint();
+    // Navigator rows bring the selected place into the theatre left free by
+    // its newly opened panel. Otherwise a home and its recruits can disappear
+    // behind that panel even though the navigator says they are selected.
+    if (!fromException) hooks.centerSelection();
   }
 
   /**
