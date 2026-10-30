@@ -42,9 +42,9 @@ describe('one command plays a Match end to end, with no browser anywhere', () =>
     expect(ran.status).toBe(0);
     expect(ran.stderr).toBe('');
     const report = reportOf(ran);
-    // Permanent headquarters and the lone patrol's complete sweep now shape
-    // opening orders; layer clocks and replayed stdout remain unchanged.
-    expect(report.commands).toBe(568);
+    // Productive node placement and travel-priced patrols shape the opening;
+    // layer clocks and the independently reproduced Record remain unchanged.
+    expect(report.commands).toBe(562);
     expect(report.decisions).toHaveLength(608);
     expect(report.decisions?.slice(0, 3).map((entry) => [entry.faction, entry.layer, entry.tick])).toEqual([
       ['rome', 'strategic', 0], ['rome', 'operational', 0], ['rome', 'tactical', 0],

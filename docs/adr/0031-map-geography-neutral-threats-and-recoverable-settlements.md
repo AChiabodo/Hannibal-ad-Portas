@@ -1,6 +1,6 @@
 # The map joins geography, neutral threats and recoverable settlements
 
-Status: accepted design; implementation pending.
+Status: accepted; partially implemented. Current evidence and remaining work are recorded in `docs/map-rework-spec.md`.
 
 The procedural theatre will remain an organic, deterministic and fairly accessible Italian landscape, with one connected road network, variable water crossings and room for future larger maps. Neutral barbarian camps provide bounded, local risks to both factions, rather than becoming capturable settlements. This combines strategic variety with routes and opportunities players can understand, and leaves future trade and larger matches open without implementing them now.
 
