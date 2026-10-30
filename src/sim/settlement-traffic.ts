@@ -3,16 +3,12 @@ import { containsTile, intersects, type GroundRect } from '../content/settlement
 import { squadTypeOf } from '../content/squads.ts';
 import type { Economy, Squad } from './economy.ts';
 import { tileX, tileY, type MapGrid, type Terrain } from './map.ts';
-import { canOccupy, coreOf, occupiedGround, physicalAccesses, squadGround, type PhysicalAccess } from './settlement-space.ts';
+import { canOccupy, coreOf, nearAccess, occupiedGround, physicalAccesses, squadGround, type PhysicalAccess } from './settlement-space.ts';
 import { FIELD } from './squad.ts';
 import { NO_REFUSAL, paceCost } from './route.ts';
 
 function same(one: NonNullable<Squad['access']>, other: NonNullable<Squad['access']>): boolean {
   return one.settlement === other.settlement && one.passage === other.passage;
-}
-
-function near(rect: GroundRect, access: PhysicalAccess): boolean {
-  return intersects(rect, { x: access.rect.x - 10, y: access.rect.y - 10, width: access.rect.width + 20, height: access.rect.height + 20 });
 }
 
 function onRoute(squad: Squad, access: PhysicalAccess): boolean {
@@ -66,12 +62,15 @@ export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squ
       // Controller wait forever for a journey which has already arrived.
       const arrived = current.settlement >= 0 && current.yielding === 0 && squad.steps.length === 0 && squad.garrisonJourney === undefined;
       if (access === undefined || arrived || (squad.garrisonJourney?.phase !== 1 && current.yielding === 0 && !onRoute(squad, access) && !intersects(squadGround(squad), access.rect) &&
-        (!near(squadGround(squad), access) || squad.steps.length === 0))) delete squad.access;
+        (!nearAccess(squadGround(squad), access) || squad.steps.length === 0))) delete squad.access;
     }
     if (squad.access !== undefined || squad.garrison !== FIELD) continue;
     const admission = squad.garrisonJourney?.phase === 1 && squad.garrisonJourney.fromOutside === 1;
-    const access = accesses.find((at) => near(squadGround(squad), at) &&
-      (onRoute(squad, at) || (admission && at.settlement === squad.garrisonJourney?.settlement && at.passage === 0)));
+    const access = accesses.find((at) => nearAccess(squadGround(squad), at) &&
+      (onRoute(squad, at) || (admission && at.settlement === squad.garrisonJourney?.settlement && at.passage === 0) ||
+        squad.steps.length > 0 && economy.squads.some((other) => other.id !== squad.id && other.owner === squad.owner &&
+          other.access?.settlement === at.settlement && other.access.passage === at.passage &&
+          routeBodies(other).some((rect) => intersects(rect, squadGround(squad))))));
     if (access === undefined) continue;
     const ticket = squad.garrisonJourney?.ticket || (economy.nextAccessTicket ?? 1);
     economy.nextAccessTicket = Math.max(economy.nextAccessTicket ?? 1, ticket + 1);
@@ -147,7 +146,7 @@ export function trafficStep(economy: Economy, map: MapGrid, squad: Squad, x: num
     }
   }
   const changed = squadGround(squad, squad.x, squad.y, formation, facing);
-  const nearby = physicalAccesses(map, squad.owner).some((at) => near(rect, at));
+  const nearby = physicalAccesses(map, squad.owner).some((at) => nearAccess(rect, at));
   if (nearby && economy.squads.some((other) => other.id !== squad.id && other.garrison === FIELD &&
     (intersects(rect, squadGround(other)) || intersects(changed, squadGround(other))))) {
     if (access !== undefined) access.reason = 2;

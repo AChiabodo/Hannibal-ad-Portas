@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { garrison, hold, move, type Command } from '../../src/sim/command';
+import { attackMove, garrison, hold, move, type Command } from '../../src/sim/command';
 import { createMatch } from '../../src/sim/match';
 import { createFogs } from '../../src/sim/fog';
 import { createEconomy } from '../../src/sim/economy';
 import { startCalendar } from '../../src/sim/season';
-import { musterSquad } from '../../src/sim/movement';
+import { musterSquad, routeCacheFor } from '../../src/sim/movement';
 import { createSiege, observeSiege, siegeMatchRules, type SiegeWorld } from '../../src/sim/siege';
 import { testMap } from './economy-fixtures';
 import { formationFootprint } from '../../src/content/formation';
@@ -26,6 +26,106 @@ function stage() {
 }
 
 describe('physical access traffic (#74)', () => {
+  it('bounds route searches when a group clicks an intact enemy courtyard (#76)', () => {
+    const { world, match } = stage();
+    const first = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 120, x: 60, y: 75 });
+    const second = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 120, x: 60, y: 82 });
+    const cache = routeCacheFor(world.map);
+    const before = cache.searches;
+    match.step([move('rome', [first.id, second.id], 75, 75)]);
+    expect(cache.searches - before, 'at most a failed search and an accepted route per Squad').toBeLessThanOrEqual(4);
+    const goals = observeSiege(world, 'rome').squads.map((squad) => squad.goal);
+    expect(goals.every((goal) => goal !== null)).toBe(true);
+    for (let tick = 0; tick < 500; tick += 1) match.step();
+    const arrived = observeSiege(world, 'rome').squads;
+    expect(arrived.map(({ x, y }) => ({ x, y }))).toEqual(goals);
+    expect(arrived.every((squad) => squad.goal === null && squad.refused === null)).toBe(true);
+  });
+
+  it('keeps group arrivals unchanged while repeated orders cross the Gate (#76)', () => {
+    const { world, match } = stage();
+    const first = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 28, y: 25 });
+    const second = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 28, y: 27 });
+    const order = move('rome', [first.id, second.id], 33, 24);
+    match.step([order]);
+    const goals = observeSiege(world, 'rome').squads.map((squad) => squad.goal);
+    for (let tick = 0; tick < 180; tick += 1) {
+      match.step([order]);
+      const seen = observeSiege(world, 'rome').squads;
+      expect(seen.map((squad) => squad.goal ?? { x: squad.x, y: squad.y }), `arrivals at tick ${tick}`).toEqual(goals);
+    }
+    expect(observeSiege(world, 'rome').squads.every((squad) => squad.goal === null && squad.refused === null)).toBe(true);
+  });
+
+  it.each([false, true])('lets a moving peer yield without crossing the Gate itself, with repeated orders=%s (#76)', (repeated) => {
+    const { world, match } = stage();
+    const first = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 29, y: 24, facing: 'east' });
+    const second = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 30, y: 24, facing: 'west' });
+    const orders = [move('rome', [first.id], 33, 24), move('rome', [second.id], 29, 24)];
+    match.step(orders);
+    for (let tick = 0; tick < 180; tick += 1) {
+      match.step(repeated ? orders : []);
+      const seen = observeSiege(world, 'rome').squads;
+      expect(intersects(ground(seen[0]!), ground(seen[1]!)), `body overlap at tick ${tick}`).toBe(false);
+    }
+    expect(observeSiege(world, 'rome').squads[0]).toMatchObject({ x: 33, y: 24, goal: null, refused: null });
+    expect(observeSiege(world, 'rome').squads[1]).toMatchObject({ x: 29, y: 24, goal: null, refused: null });
+  });
+
+  it.each([move, attackMove])('lets a group of full cohorts claim the clicked capture square behind an open Gate (#76)', (order) => {
+    const { world, match } = stage();
+    world.siege.fronts[1]!.structures.find((structure) => structure.kind === 0)!.hp = 0;
+    const first = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 120, x: 60, y: 75 });
+    const second = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 120, x: 60, y: 82 });
+    match.step([order('rome', [first.id, second.id], 75, 75)]);
+    expect(observeSiege(world, 'rome').squads.find((squad) => squad.id === first.id)?.goal).toEqual({ x: 75, y: 75 });
+    for (let tick = 0; tick < 500; tick += 1) match.step();
+    expect(observeSiege(world, 'rome').settlements.some((site) => site.id === 1)).toBe(true);
+  });
+
+  it.each([move, attackMove])('finds a column route before turning onto a narrow Gate shoulder (#76)', (order) => {
+    const { world, match } = stage();
+    const squad = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 28, y: 25 });
+    match.step([order('rome', [squad.id], 33, 24)]);
+    for (let tick = 0; tick < 180; tick += 1) match.step();
+    expect(observeSiege(world, 'rome').squads[0]).toMatchObject({ x: 33, y: 24, goal: null, refused: null });
+  });
+
+  it.each([move, attackMove])('routes a group to the shoulder of its Gate in a pose the marching column can reach (#76)', (order) => {
+    const { world, match } = stage();
+    const first = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 28, y: 25 });
+    const second = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 28, y: 27 });
+    match.step([order('rome', [first.id, second.id], 33, 24)]);
+    const goals = observeSiege(world, 'rome').squads.map((squad) => squad.goal);
+    expect(goals.every((goal) => goal !== null)).toBe(true);
+    expect(new Set(goals.map((goal) => JSON.stringify(goal))).size).toBe(2);
+    for (let tick = 0; tick < 180; tick += 1) {
+      match.step();
+      const seen = observeSiege(world, 'rome').squads;
+      expect(intersects(ground(seen[0]!), ground(seen[1]!)), `body overlap at tick ${tick}`).toBe(false);
+    }
+    const arrived = observeSiege(world, 'rome').squads;
+    expect(arrived.map(({ x, y }) => ({ x, y }))).toEqual(goals);
+    expect(arrived.every((squad) => squad.goal === null && squad.refused === null)).toBe(true);
+  });
+
+  it('leaves the Gate usable when a small first arrival is followed by a full cohort (#76)', () => {
+    const { world, match } = stage();
+    const first = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 28, y: 25 });
+    const second = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 120, x: 25, y: 29 });
+    match.step([move('rome', [first.id, second.id], 33, 24)]);
+    const goals = observeSiege(world, 'rome').squads.map((squad) => squad.goal);
+    expect(goals.every((goal) => goal !== null)).toBe(true);
+    for (let tick = 0; tick < 350; tick += 1) {
+      match.step();
+      const seen = observeSiege(world, 'rome').squads;
+      expect(intersects(ground(seen[0]!), ground(seen[1]!)), `body overlap at tick ${tick}`).toBe(false);
+    }
+    const arrived = observeSiege(world, 'rome').squads;
+    expect(arrived.map(({ x, y }) => ({ x, y }))).toEqual(goals);
+    expect(arrived.every((squad) => squad.goal === null && squad.refused === null)).toBe(true);
+  });
+
   it('releases a completed field passage whose tail still touches the Gate (#76)', () => {
     const { world, match } = stage();
     const squad = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 25, y: 25 });

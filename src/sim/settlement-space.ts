@@ -29,6 +29,12 @@ export function bindSiegeSpace(map: MapGrid, siege: Siege): Siege {
 export function hasPhysicalSpace(map: MapGrid): boolean { return SPACES.has(map); }
 export interface PhysicalAccess { readonly settlement: number; readonly passage: number; readonly rect: GroundRect }
 
+/** The approach where field bodies must remain physically separate. */
+export function nearAccess(rect: GroundRect, access: PhysicalAccess): boolean {
+  return intersects(rect, { x: access.rect.x - 10, y: access.rect.y - 10,
+    width: access.rect.width + 20, height: access.rect.height + 20 });
+}
+
 /** Main Gate and destroyed Wall sections are separate physical lanes. */
 export function physicalAccesses(map: MapGrid, owner: number): readonly PhysicalAccess[] {
   const space = SPACES.get(map);
@@ -203,8 +209,7 @@ export function clearFieldBody(map: MapGrid, squad: Squad, x = squad.x, y = squa
   const space = SPACES.get(map);
   if (space === undefined) return true;
   const rect = squadGround(squad, x, y, formation, facing);
-  const near = physicalAccesses(map, squad.owner).some((access) => intersects(rect,
-    { x: access.rect.x - 10, y: access.rect.y - 10, width: access.rect.width + 20, height: access.rect.height + 20 }));
+  const near = physicalAccesses(map, squad.owner).some((access) => nearAccess(rect, access));
   return !near || !occupiedGround(space.economy, rect, squad.id);
 }
 

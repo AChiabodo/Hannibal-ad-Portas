@@ -62,6 +62,7 @@
  */
 import { squadTypeCode, squadTypeOf } from '../content/index.ts';
 import { formationShape } from '../content/formation.ts';
+import { intersects, type GroundRect } from '../content/settlement-layout.ts';
 import type { Command, Formation } from './command.ts';
 import type { Economy, Squad } from './economy.ts';
 import { factionCode, type Faction, type FactionCode } from './faction.ts';
@@ -84,7 +85,7 @@ import {
   type RouteCache,
   type PassageCheck,
 } from './route.ts';
-import { canOccupy, clearFieldBody, crossingPerimeter, hasPhysicalSpace, physicalSignature, refreshPhysicalSpace } from './settlement-space.ts';
+import { canOccupy, clearFieldBody, crossingPerimeter, hasPhysicalSpace, nearAccess, physicalAccesses, physicalSignature, refreshPhysicalSpace, squadGround } from './settlement-space.ts';
 import { requestDeparture } from './settlement-access.ts';
 import { prepareTraffic, trafficStep } from './settlement-traffic.ts';
 import {
@@ -274,31 +275,69 @@ function orderGroupTo(map: MapGrid, squads: readonly Squad[], to: Site, routes: 
   }
   const distance = (site: Site): number => (site.x - to.x) * (site.x - to.x) + (site.y - to.y) * (site.y - to.y);
   candidates.sort((a, b) => distance(a) - distance(b) || a.y - b.y || a.x - b.x);
-  const assigned: { readonly site: Site; readonly radius: number }[] = [];
+  const assigned: { readonly site: Site; readonly radius: number; readonly ground: readonly GroundRect[] }[] = [];
   for (const squad of [...squads].sort((a, b) => a.id - b.id)) {
     if (!connected.has(tileIndex(squad.x, squad.y))) {
       squad.refused = refusalCode('unreachable');
       continue;
     }
     const type = squadTypeOf(squad.type);
-    const shape = formationShape(type?.figures ?? squad.capacity, formationOf(squad.formation));
+    const shape = formationShape(type?.figures ?? squad.capacity, formationOf(squad.marchFormation ?? squad.formation));
     // One Tile per three files/ranks plus clearance. This is rule geometry,
     // independent of Figure pixels, and conservative for every arrival facing.
     const radius = Math.ceil(Math.max(shape.files, shape.ranks) / 6) + 1;
-    const site = candidates.find((candidate) =>
-      (!hasPhysicalSpace(map) || passageCheck(map, squad)(candidate.x, candidate.y)) && assigned.every((other) =>
-        Math.max(Math.abs(candidate.x - other.site.x), Math.abs(candidate.y - other.site.y)) >= radius + other.radius));
+    // Earlier arrivals remain occupied after their journey. Later routes must
+    // not depend on crossing those bodies, even if their endpoints are apart.
+    // A peer already standing on an earlier goal can leave before it is taken.
+    const accesses = physicalAccesses(map, squad.owner);
+    const reserved = assigned.filter((other) => other.ground.some((rect) => accesses.some((access) => nearAccess(rect, access))) &&
+      !other.ground.some((rect) => intersects(rect, squadGround(squad))))
+      .flatMap((other) => other.ground);
+    const canEnter = passageCheck(map, squad, false, reserved);
+    let reachable: ReadonlySet<number> | undefined;
+    const site = candidates.find((candidate) => {
+      if (hasPhysicalSpace(map) && !canEnter(candidate.x, candidate.y) || assigned.some((other) =>
+        Math.max(Math.abs(candidate.x - other.site.x), Math.abs(candidate.y - other.site.y)) < radius + other.radius)) return false;
+      if (reachable !== undefined) return reachable.has(tileIndex(candidate.x, candidate.y));
+      if (squadRoute(map, squad, candidate, routes, reserved).kind === 'route') return true;
+      // A closed courtyard can contain hundreds of legal but unreachable
+      // destinations. Flood its reachable component once instead of running
+      // a complete failed A* search for each alternative.
+      reachable = connectedTo(map, squad, canEnter);
+      return reachable.has(tileIndex(candidate.x, candidate.y));
+    });
     if (site === undefined) {
       squad.refused = refusalCode('no-space');
       continue;
     }
-    orderSquadTo(map, squad, site, routes);
-    assigned.push({ site, radius });
+    orderSquadTo(map, squad, site, routes, false, reserved);
+    assigned.push({ site, radius, ground: arrivalGround(map, squad, site) });
   }
 }
 
-/** Derived reachability, never state: the terrain is the only transit obstacle. */
-function connectedTo(map: MapGrid, site: Site): ReadonlySet<number> {
+/** Only statically legal resting poses can occupy an earlier assigned goal. */
+function arrivalGround(map: MapGrid, squad: Squad, site: Site): readonly GroundRect[] {
+  const wanted = squad.marchFormation ?? squad.formation;
+  return [0, 1, 2, 3].flatMap((facing) => {
+    const formation = !crossingPerimeter(map, squad, site.x, site.y, wanted, facing) &&
+      canOccupy(map, squad, site.x, site.y, wanted, facing) ? wanted : 1;
+    return canOccupy(map, squad, site.x, site.y, formation, facing)
+      ? [squadGround(squad, site.x, site.y, formation, facing)] : [];
+  });
+}
+
+/** Cache keys include temporary arrival reservations, never their call order. */
+function squadRoute(map: MapGrid, squad: Squad, to: Site, routes: RouteCache, reserved: readonly GroundRect[] = []) {
+  const physical = hasPhysicalSpace(map) || reserved.length > 0;
+  const wanted = accessColumn(squad) ? 1 : squad.marchFormation ?? squad.formation;
+  const context = physical ? `${physicalSignature(map)}:${squad.owner}:${squad.capacity}:${wanted}:${squad.facing}` : '';
+  const arrivals = reserved.length === 0 ? '' : `:arrivals:${reserved.map((rect) => `${rect.x},${rect.y},${rect.width},${rect.height}`).join(';')}`;
+  return routes.route({ x: squad.x, y: squad.y }, to, paceOf(squad),
+    physical ? passageCheck(map, squad, false, reserved) : undefined, context + arrivals);
+}
+
+/** Derived reachability, optionally constrained by the same footprints as route search. */
+function connectedTo(map: MapGrid, site: Site, canEnter?: PassageCheck): ReadonlySet<number> {
   const reached = new Set([tileIndex(site.x, site.y)]);
   const queue = [site];
   for (let at = 0; at < queue.length; at += 1) {
@@ -306,6 +345,7 @@ function connectedTo(map: MapGrid, site: Site): ReadonlySet<number> {
     for (const next of [{ x: current.x, y: current.y - 1 }, { x: current.x + 1, y: current.y },
       { x: current.x, y: current.y + 1 }, { x: current.x - 1, y: current.y }]) {
       if (!isTile(next.x, next.y) || !isWalkable(terrainAt(map, next.x, next.y))) continue;
+      if (canEnter !== undefined && !canEnter(next.x, next.y, current.x, current.y)) continue;
       const tile = tileIndex(next.x, next.y);
       if (reached.has(tile)) continue;
       reached.add(tile);
@@ -449,18 +489,18 @@ export function routeCacheFor(map: MapGrid): RouteCache {
  * come through here rather than growing a second way to move a block that would
  * forget what a refusal is.
  */
-export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: RouteCache, preserveJourney = false): void {
+export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: RouteCache, preserveJourney = false, reserved: readonly GroundRect[] = []): void {
   refreshPhysicalSpace(map);
   const destination = squad.steps.at(-1);
+  const intent = preserveJourney ? null : goalOf(squad);
 
-  if (destination !== undefined && destination === tileOf(to)) {
+  if ((destination !== undefined && destination === tileOf(to) || intent?.x === to.x && intent.y === to.y) &&
+    (reserved.length === 0 || squad.access?.yielding)) {
     squad.refused = NO_REFUSAL;
     return;
   }
 
-  const route = routes.route({ x: squad.x, y: squad.y }, to, paceOf(squad),
-    hasPhysicalSpace(map) ? passageCheck(map, squad) : undefined,
-    hasPhysicalSpace(map) ? `${physicalSignature(map)}:${squad.owner}:${squad.capacity}:${squad.marchFormation ?? squad.formation}:${squad.facing}` : '');
+  const route = squadRoute(map, squad, to, routes, reserved);
 
   if (route.kind === 'refused') {
     squad.refused = refusalCode(route.reason);
@@ -593,13 +633,17 @@ function useMarchFormation(squad: Squad, formation: number): void {
   squad.formation = formation;
 }
 
-function passageCheck(map: MapGrid, squad: Squad, avoidBodies = false): PassageCheck {
+function passageCheck(map: MapGrid, squad: Squad, avoidBodies = false, reserved: readonly GroundRect[] = []): PassageCheck {
   return (x, y, fromX, fromY) => {
     const faces = fromX === undefined || fromY === undefined ? [0, 1, 2, 3] :
       [y < fromY ? 0 : x > fromX ? 1 : y > fromY ? 2 : 3, squad.facing];
     const wanted = accessColumn(squad) ? 1 : squad.marchFormation ?? squad.formation;
     return faces.some((facing) => [wanted, 1].some((formation) =>
+      (formation === 1 || (!crossingPerimeter(map, squad, x, y, formation, facing) &&
+        (fromX === undefined || fromY === undefined || !crossingPerimeter(map, squad, fromX, fromY, formation, facing)))) &&
       canOccupy(map, squad, x, y, formation, facing) &&
+      reserved.every((rect) => !intersects(rect, squadGround(squad, x, y, formation, facing)) &&
+        (fromX === undefined || fromY === undefined || !intersects(rect, squadGround(squad, fromX, fromY, formation, facing)))) &&
       (!avoidBodies || clearFieldBody(map, squad, x, y, formation, facing)) &&
       (fromX === undefined || fromY === undefined || (canOccupy(map, squad, fromX, fromY, formation, facing) &&
         (!avoidBodies || clearFieldBody(map, squad, fromX, fromY, formation, facing))))));
@@ -613,7 +657,7 @@ function avoidFieldBodies(economy: Economy, map: MapGrid, squad: Squad): void {
   const bodies = economy.squads.filter((other) => other.id !== squad.id && other.garrison === FIELD)
     .map((other) => `${other.id}:${other.x}:${other.y}:${other.formation}:${other.facing}`).join(';');
   const route = routeCacheFor(map).route({ x: squad.x, y: squad.y }, { x: tileX(last), y: tileY(last) }, paceOf(squad),
-    passageCheck(map, squad, true), `${physicalSignature(map)}:${squad.owner}:${squad.capacity}:${squad.formation}:${squad.facing}:bodies:${bodies}`);
+    passageCheck(map, squad, true), `${physicalSignature(map)}:${squad.owner}:${squad.capacity}:${accessColumn(squad) ? 1 : squad.marchFormation ?? squad.formation}:${squad.facing}:bodies:${bodies}`);
   if (route.kind !== 'route') return;
   const first = squad.steps[0];
   squad.steps = [...route.steps];

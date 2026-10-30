@@ -64,7 +64,7 @@ export function advanceGarrisonJourneys(world: SiegeWorld, send: Send): void {
       continue;
     }
     if (journey.phase === 0) {
-      if (squad.steps.length > 0) continue;
+      if (squad.steps.length > 0 || squad.access?.yielding) continue;
       if (squad.x !== journey.goalX || squad.y !== journey.goalY) { fail(squad, 'unreachable'); continue; }
       journey.phase = 1;
     }
