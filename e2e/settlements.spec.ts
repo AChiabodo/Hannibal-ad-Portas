@@ -32,7 +32,7 @@ import type { ViewState } from '../src/render/boot';
 import type { SiteReport } from '../src/render/game';
 import { KNOWLEDGE, type Knowledge } from '../src/sim/fog';
 import { GATE_HP } from '../src/sim/siege';
-import { MAP_WIDTH, generateMap, type Site } from '../src/sim/map';
+import { MAP_WIDTH, generateMap } from '../src/sim/map';
 import { translate } from '../src/ui/strings';
 import type { Rect } from '../src/ui/hud';
 import {
@@ -102,6 +102,17 @@ async function clickAt(page: Page, x: number, y: number): Promise<void> {
   await page.mouse.click(box.x + x, box.y + y);
 }
 
+/** Painted ink of an observed structure, rather than the transparent grounds padding. */
+function structurePoint(site: SiteReport, kind: 'gate' | 'wall' = 'wall'): { readonly x: number; readonly y: number } {
+  const tile = site.appearance?.tiles.find((cell) => cell.structure?.kind === kind);
+  if (tile === undefined) throw new Error(`no observed ${kind} at settlement ${site.id}`);
+  const sprite = siteSprite(siteLook(site));
+  const left = (tile.cell % 25) * 16, top = Math.floor(tile.cell / 25) * 16;
+  for (let y = top + 4; y < top + 16; y += 1) for (let x = left + 4; x < left + 16; x += 1)
+    if (pixelAt(sprite, x, y)[3] !== 0) return { x: site.rect.x + x, y: site.rect.y + y };
+  throw new Error(`the observed ${kind} has no painted ink`);
+}
+
 /** Pans the camera so one stage point is in the middle of the viewport. */
 async function centreOn(page: Page, stage: { readonly x: number; readonly y: number }): Promise<ViewState> {
   const before = await describeView(page);
@@ -114,11 +125,6 @@ async function centreOn(page: Page, stage: { readonly x: number; readonly y: num
   );
 
   return describeView(page);
-}
-
-/** Looks out from a tile, which is what a tick does with a Faction's own eyes. */
-async function lookFrom(page: Page, site: Site): Promise<void> {
-  await page.evaluate((at) => window.__SPQR.view?.lookFrom(at.x, at.y), site);
 }
 
 /** One theatre pixel as the remembered veil leaves it: the compositor's own source-over blend. */
@@ -250,9 +256,9 @@ test.describe('a settlement drawn on the map', () => {
     });
     const rects = await hudRects(page);
 
-    // A corner of the drawing: two tiles from the tile the settlement stands on, so a
-    // pick that used the tile would miss it.
-    const corner = stageToScreen(view.camera, own.rect.x + 6, own.rect.y + 6);
+    // An observed wall, far from the central Tile: picking must follow its ink.
+    const painted = structurePoint(own);
+    const corner = stageToScreen(view.camera, painted.x, painted.y);
     expect(rects.some((rect) => covers(rect, corner.x, corner.y)), 'the corner is on the theatre').toBe(false);
 
     await clickAt(page, corner.x, corner.y);
@@ -273,7 +279,10 @@ test.describe('a settlement drawn on the map', () => {
   });
 
   test('remembers a settlement it has stopped watching, and says so in words', async ({ page }) => {
-    await openMatch(page, 'rome', RESOLUTIONS[0]);
+    await dismissFirstEntry(page);
+    await page.setViewportSize(RESOLUTIONS[0]);
+    await page.goto('/e2e/siege-fixture.html');
+    await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
     await showSquads(page, false);
 
     const enemy = MAP.strongholds[1];
@@ -287,18 +296,18 @@ test.describe('a settlement drawn on the map', () => {
     // Stronghold is not drawn at all.
     expect(enemyOf(await sites(page)), 'nothing unseen is on the map').toBeUndefined();
 
-    // A watch out at the enemy Stronghold, and then away again. What it saw is
-    // remembered, and memory is a settlement rather than its walls (ADR-0020). The watch
-    // is the page's debug lens and not one of the Faction's own eyes, so the drawing
-    // is asked about and the Observation's fronts are not: what a settlement looks like
-    // in view is the next test's business, and `tests/ui/sites.test.ts`'s is what a
-    // real eye puts on the map.
-    await lookFrom(page, enemy);
+    // The fixture's real army observes the architecture through the Match;
+    // moving a debug lens alone cannot create authoritative appearance records.
+    await advance(page, 1);
     const seen = enemyOf(await sites(page));
     expect(seen, 'the enemy Stronghold is on the map once it has been seen').toBeDefined();
     expect(seen?.memory).toBe('seen');
 
-    await lookFrom(page, home);
+    for (const squad of await squads(page)) {
+      await select(page, { kind: 'squad', id: squad.id });
+      expect(await page.evaluate(() => window.__SPQR.game?.perform('withdraw'))).toBe(true);
+    }
+    await advance(page, 300);
     const remembered = enemyOf(await sites(page));
     expect(remembered).toBeDefined();
     expect(remembered?.memory).toBe('remembered');
@@ -306,7 +315,7 @@ test.describe('a settlement drawn on the map', () => {
 
     // The drawing is the remembered one: the same settlement, drawn as stone, under the
     // same veil the ground around it is under.
-    await page.evaluate(() => window.__SPQR.view?.zoomTo(2));
+    await page.evaluate(() => window.__SPQR.view?.zoomTo(1));
     const view = await centreOn(page, {
       x: remembered!.rect.x + Math.floor(remembered!.rect.width / 2),
       y: remembered!.rect.y + Math.floor(remembered!.rect.height / 2),
@@ -314,14 +323,16 @@ test.describe('a settlement drawn on the map', () => {
     const compared = await expectDrawn(page, remembered!, view, 'remembered stronghold');
     expect(compared).toBeGreaterThan(15);
 
-    // And it is a different drawing from the one that was seen: memory is not a
-    // photograph of the last frame (no banner, no gate, no damage — in stone).
-    expect(siteSprite(siteLook(remembered!))).not.toEqual(siteSprite(siteLook({ ...remembered!, memory: 'seen' })));
+    // Recorded architecture retains the last observed phase, with every cell
+    // explicitly remembered; the fog comparison above verifies its dimming.
+    expect(remembered!.appearance?.memory).toBe('remembered');
+    expect(remembered!.appearance?.tiles.every((tile) => !tile.visible)).toBe(true);
 
     await capture(page, 'remembered-stronghold-rome', 'issue57');
 
     // Clicking it opens the settlement's panel, which says what kind of knowledge it is.
-    const wall = stageToScreen(view.camera, remembered!.rect.x + 6, remembered!.rect.y + 6);
+    const paintedWall = structurePoint(remembered!);
+    const wall = stageToScreen(view.camera, paintedWall.x, paintedWall.y);
     await clickAt(page, wall.x, wall.y);
     expect((await selection(page)).settlement).toBe(remembered!.id);
 
@@ -350,7 +361,9 @@ test.describe('a fortification under siege', () => {
     await advance(page, 1);
     const target = (await sites(page)).find((site) => site.kind === 'stronghold' && site.x === enemy.x);
     expect(target, 'the Stronghold is in the army’s sight').toBeDefined();
-    expect(target?.owner).toBe('carthage');
+    // The gate is visible from outside; the central owner's banner is not.
+    expect(target?.owner).toBeNull();
+    expect(target?.appearance?.tiles.some((tile) => tile.structure?.kind === 'gate')).toBe(true);
     expect(target?.front?.structures.every((structure) => structure.standing)).toBe(true);
 
     // The camera on the town, so what a Player would do is what the test does.
@@ -384,8 +397,9 @@ test.describe('a fortification under siege', () => {
     // An Assault, aimed at the structure a Player can see: the click lands on the
     // gatehouse in the drawing, and the order is to do it.
     expect(await page.evaluate(() => window.__SPQR.game?.perform('assault'))).toBe(true);
-    const aim = await centreOn(page, { x: target!.rect.x + target!.rect.width / 2, y: target!.rect.y + target!.rect.height / 2 });
-    const gate = stageToScreen(aim.camera, target!.rect.x + Math.floor(target!.rect.width / 2), target!.rect.y + target!.rect.height - 6);
+    const paintedGate = structurePoint(target!, 'gate');
+    const aim = await centreOn(page, paintedGate);
+    const gate = stageToScreen(aim.camera, paintedGate.x, paintedGate.y);
     await clickAt(page, gate.x, gate.y);
     expect(await page.evaluate(() => window.__SPQR.game?.targeting())).toBeNull();
 
@@ -411,9 +425,10 @@ test.describe('a fortification under siege', () => {
     // The drawing is the condition: the gate the rules have hurt is the gate drawn
     // damaged or broken, and a ram stands at it.
     const art = siteLook(hurt!);
-    expect(art.gate === 'damaged' || art.gate === 'breached').toBe(true);
-    expect(art.ram === 'building' || art.ram === 'built').toBe(true);
-    expect(art.gateSide).toBe('west');
+    expect(art.appearance?.tiles.some((tile) => tile.structure?.kind === 'gate' &&
+      (tile.structure.condition === 'damaged' || tile.structure.condition === 'breached'))).toBe(true);
+    expect(art.appearance?.tiles.some((tile) => tile.ram === 'building' || tile.ram === 'built')).toBe(true);
+    expect(art.appearance?.gateSide).toBe(3);
 
     await capture(page, 'siege-under-the-ram-rome', 'issue57');
 
@@ -438,7 +453,8 @@ test.describe('a fortification under siege', () => {
     }
 
     expect(broken, 'the gate breaks before the Match ends').toBeDefined();
-    expect(siteLook(broken!).gate).toBe('breached');
+    expect(siteLook(broken!).appearance?.tiles.some((tile) => tile.structure?.kind === 'gate' &&
+      tile.structure.condition === 'breached')).toBe(true);
 
     const brokenView = await describeView(page);
     const read = await expectDrawn(page, broken!, brokenView, 'a Stronghold with its gate broken');
@@ -466,9 +482,11 @@ test.describe('an armed action aimed at a structure', () => {
     const own = (await sites(page)).find((site) => site.kind === 'stronghold');
     if (own === undefined) throw new Error('Rome has no Stronghold on the map');
 
-    const view = await describeView(page);
+    await page.evaluate(() => window.__SPQR.view?.zoomTo(1));
+    const view = await centreOn(page, { x: own.rect.x + own.rect.width / 2, y: own.rect.y + own.rect.height / 2 });
     const rects = await hudRects(page);
-    const target = stageToScreen(view.camera, own.rect.x + 6, own.rect.y + 6);
+    const painted = structurePoint(own);
+    const target = stageToScreen(view.camera, painted.x, painted.y);
     expect(rects.some((rect) => covers(rect, target.x, target.y))).toBe(false);
 
     // A Garrison is offered for a walled settlement of one's own, and it needs a
@@ -486,9 +504,8 @@ test.describe('an armed action aimed at a structure', () => {
     expect(command?.kind).toBe('garrison');
     expect(command).toMatchObject({ settlement: own.id });
 
-    // And the tile the settlement stands on, rather than the wall a Player clicked,
-    // would have been a different answer had picking used it: the wall is two tiles
-    // from the centre, and the stage point says so.
+    // The painted wall is far from the settlement centre, so centre-only picking
+    // could not have accepted this target.
     const stage = screenToStage(view.camera, target.x, target.y);
     expect(Math.abs(stage.x - (own.rect.x + own.rect.width / 2)))
       .toBeGreaterThan(own.rect.width / 4);

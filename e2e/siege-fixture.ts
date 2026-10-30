@@ -21,6 +21,7 @@ import { musterSquad } from '../src/sim/movement.ts';
 import { applySiegeCommand, GATE_HP, RAM_HP, STRUCTURE, siegeMatchRules, type SiegeWorld } from '../src/sim/siege.ts';
 import { assault, blockade } from '../src/sim/command.ts';
 import { routeCacheFor } from '../src/sim/movement.ts';
+import { turnPoint } from '../src/content/settlement-layout.ts';
 import { failBoot, publishHooks, requireMount } from '../src/page.ts';
 
 const FACTION: Faction = 'rome';
@@ -72,7 +73,13 @@ function deploy(world: SiegeWorld): void {
   const enemy = world.map.strongholds[1];
   if (enemy === undefined) return;
 
-  const tiles = around(world.map, enemy, 3);
+  // The #74 Stronghold occupies ground: deploy outside its actual Gate, with
+  // separated bodies and a real view of the gatehouse, rather than at its centre.
+  const side = world.siege.fronts[1]!.structures.find((structure) => structure.kind === STRUCTURE.gate)!.side;
+  const tiles = [-4, 0, 4].map((offset) => {
+    const point = turnPoint({ x: offset, y: 10 }, side);
+    return { x: enemy.x + point.x, y: enemy.y + point.y };
+  });
   const types = ['hastati', 'principes', 'triarii'] as const;
 
   for (const [index, type] of types.entries()) {
