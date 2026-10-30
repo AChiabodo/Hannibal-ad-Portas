@@ -26,6 +26,20 @@ function stage() {
 }
 
 describe('physical access traffic (#74)', () => {
+  it('releases a completed field passage whose tail still touches the Gate (#76)', () => {
+    const { world, match } = stage();
+    const squad = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 25, y: 25 });
+    match.step([move('rome', [squad.id], 34, 25)]);
+    for (let tick = 0; tick < 180; tick += 1) match.step();
+    const arrived = observeSiege(world, 'rome').squads.find((current) => current.id === squad.id)!;
+    expect(arrived).toMatchObject({ x: 34, y: 25, goal: null });
+    expect(arrived.passage).toBeUndefined();
+    match.step([move('rome', [squad.id], 25, 25)]);
+    for (let tick = 0; tick < 180; tick += 1) match.step();
+    expect(observeSiege(world, 'rome').squads.find((current) => current.id === squad.id))
+      .toMatchObject({ x: 25, y: 25, goal: null });
+  });
+
   it('keeps passage precedence when a marching arrival is reassigned to wall duty (#76)', () => {
     const { world, match } = stage();
     const first = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 40, y: 22 });

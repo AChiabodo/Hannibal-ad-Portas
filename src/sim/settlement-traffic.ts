@@ -61,7 +61,11 @@ export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squ
     const current = squad.access;
     if (current !== undefined) {
       const access = accesses.find((at) => at.settlement === current.settlement && at.passage === current.passage);
-      if (access === undefined || (squad.garrisonJourney?.phase !== 1 && current.yielding === 0 && !onRoute(squad, access) && !intersects(squadGround(squad), access.rect) &&
+      // A completed field order is no longer an admission in progress, even
+      // when the column's tail touches the Gate. Keeping its ticket makes the
+      // Controller wait forever for a journey which has already arrived.
+      const arrived = current.settlement >= 0 && current.yielding === 0 && squad.steps.length === 0 && squad.garrisonJourney === undefined;
+      if (access === undefined || arrived || (squad.garrisonJourney?.phase !== 1 && current.yielding === 0 && !onRoute(squad, access) && !intersects(squadGround(squad), access.rect) &&
         (!near(squadGround(squad), access) || squad.steps.length === 0))) delete squad.access;
     }
     if (squad.access !== undefined || squad.garrison !== FIELD) continue;
