@@ -38,6 +38,24 @@ it.each(['rome', 'carthage'] as const)(
   },
 );
 
+it('approaches a camp from outside sight using a spotter and stops at ranged distance', () => {
+  const map = { ...testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] }),
+    barbarianCamps: [{ x: 60, y: 60, variant: 0 }] };
+  const economy = createEconomy(map);
+  const slinger = musterSquad(economy, map, { faction: 'carthage', squadType: 'balearic-slinger', men: 24, x: 53, y: 60 });
+  musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 60, y: 64 });
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs(), barbarianCamps: [{ hp: 60 }], campOrders: [] };
+  refreshSiegeFog(world, 0);
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([attackStructure('carthage', [slinger.id], { kind: 'camp', id: 0 })]);
+  expect(observeSiege(world, 'carthage').squads.find((squad) => squad.id === slinger.id)?.goal).toEqual({ x: 56, y: 60 });
+  for (let tick = 0; tick < 100; tick += 1) match.step();
+  expect(observeSiege(world, 'carthage').squads.find((squad) => squad.id === slinger.id))
+    .toMatchObject({ x: 56, y: 60, goal: null });
+  expect(observeSiege(world, 'carthage').barbarianCamps?.[0]?.condition).toBe('ruin');
+});
+
 it.each([false, true])('fires on a camp at ranged distance only with a clear line (blocked: %s)', (blocked) => {
   const map = { ...testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] }),
     barbarianCamps: [{ x: 60, y: 60, variant: 0 }] };

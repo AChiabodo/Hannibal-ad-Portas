@@ -92,6 +92,28 @@ it('fires at a work from a clear ranged position without advancing into melee ra
   expect(observeSiege(world, 'rome').settlements[0]!.works[0]!.hp).toBeLessThan(60);
 });
 
+it('approaches a visible work only as far as its ranged weapon requires', () => {
+  const map = testMap({ strongholds: [{ x: 50, y: 50 }, { x: 110, y: 110 }] });
+  const economy = createEconomy(map);
+  const settlement = economy.settlements[0]!;
+  settlement.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0 });
+  const rect = workGround(economy, settlement, 'farm', 0)!;
+  const attacker = musterSquad(economy, map, { faction: 'carthage', squadType: 'balearic-slinger', men: 24,
+    x: rect.x - 7, y: rect.y });
+  musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24, x: rect.x, y: rect.y + 5 });
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs() };
+  refreshSiegeFog(world, 0);
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([attackStructure('carthage', [attacker.id], { kind: 'work', settlement: 0, building: 'farm', ordinal: 0 })]);
+  expect(observeSiege(world, 'carthage').squads.find((squad) => squad.id === attacker.id)?.goal)
+    .toEqual({ x: rect.x - 4, y: rect.y });
+  for (let tick = 0; tick < 100; tick += 1) match.step();
+  expect(observeSiege(world, 'rome').settlements[0]!.works[0]!.hp).toBeLessThan(60);
+  expect(observeSiege(world, 'carthage').squads.find((squad) => squad.id === attacker.id))
+    .toMatchObject({ x: rect.x - 4, y: rect.y, goal: null });
+});
+
 it('approaches a visible work from a reachable side when its western approach is blocked', () => {
   const map = testMap({ strongholds: [{ x: 20, y: 20 }, { x: 110, y: 110 }] });
   const economy = createEconomy(map);

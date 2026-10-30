@@ -1,5 +1,5 @@
 import type { ObservedSettlement } from '../content/settlement-appearance.ts';
-import { turnPoint } from '../content/settlement-layout.ts';
+import { buildingLot, rectDistance, turnPoint, turnRect } from '../content/settlement-layout.ts';
 import type { Observation } from '../sim/observation.ts';
 import type { Season } from './calendar.ts';
 import { atHalfStrength, type Behaviour, type Candidate } from './registry.ts';
@@ -103,7 +103,8 @@ type MilitaryCommand = {
   readonly kind: 'attack'; readonly faction: Faction; readonly squads: readonly number[]; readonly target: number;
 } | {
   readonly kind: 'attackStructure'; readonly faction: Faction; readonly squads: readonly number[];
-  readonly target: { readonly kind: 'camp'; readonly id: number };
+  readonly target: { readonly kind: 'camp'; readonly id: number } |
+    { readonly kind: 'work'; readonly settlement: number; readonly building: string; readonly ordinal: number };
 } | {
   readonly kind: 'move'; readonly faction: Faction; readonly squads: readonly number[]; readonly x: number; readonly y: number;
 };
@@ -397,6 +398,35 @@ Behaviour<MilitaryObservation, MilitaryCommand> {
         commands.push({ kind: 'attackStructure', faction, squads: [attacker.id], target: { kind: 'camp', id: camp.id } });
         assigned.add(attacker.id);
         reasons.push(`Clear visible camp ${camp.id} threatening a nearby settlement.`);
+      }
+      // Raid only currently observed, completed exterior works of a known
+      // enemy owner. Tile appearances reveal condition, never enemy stocks.
+      for (const site of [...visible.appearances ?? []].sort((a, b) => a.id - b.id)) {
+        if (site.owner === null || site.owner === faction) continue;
+        const targeted = new Set<string>();
+        for (const tile of [...site.tiles].sort((a, b) => a.cell - b.cell)) {
+          const work = tile.work;
+          const lot = work === undefined ? undefined : buildingLot(work.building, work.ordinal);
+          if (!tile.visible || work === undefined || (work.stage !== 2 && work.stage !== 3) ||
+            lot?.exterior !== true) continue;
+          const key = `${work.building}:${work.ordinal}`;
+          if (targeted.has(key)) continue;
+          const local = turnRect(lot, site.gateSide);
+          const ground = { ...local, x: site.x + local.x, y: site.y + local.y };
+          const separation = (at: Site) => rectDistance({ ...at, width: 1, height: 1 }, ground);
+          const eligible = ready.filter((squad) => !assigned.has(squad.id) && !squad.engaged &&
+            !squad.inQuarters && !squad.inCamp && squad.refused == null && separation(squad) <= 6);
+          const threat = visible.enemies.filter((enemy) => separation(enemy) <= 8)
+            .reduce((sum, enemy) => sum + enemyPower(enemy), 0);
+          const attacker = eligible.sort((a, b) => separation(a) - separation(b) || a.id - b.id)
+            .find((squad) => approachPower(squad, ground) * PERCENT >= threat * margin);
+          if (attacker === undefined) continue;
+          targeted.add(key);
+          commands.push({ kind: 'attackStructure', faction, squads: [attacker.id],
+            target: { kind: 'work', settlement: site.id, building: work.building, ordinal: work.ordinal } });
+          assigned.add(attacker.id);
+          reasons.push(`Raid visible enemy ${work.building} ${work.ordinal} at settlement ${site.id}.`);
+        }
       }
       // A stationary field squad in its own quarters can occupy the landing
       // needed by another squad entering the gate. Move it aside using only

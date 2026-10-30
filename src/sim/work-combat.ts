@@ -61,8 +61,9 @@ function observed(world: SiegeWorld, owner: number, rect: GroundRect): boolean {
 /** Choose an accessible point around the actual work, not one fixed side. */
 export function approachAttackTarget(world: SiegeWorld, squad: import('./economy.ts').Squad, owner: number, rect: GroundRect): void {
   const candidates: { x: number; y: number }[] = [];
-  for (let y = rect.y - 2; y < rect.y + rect.height + 2; y += 1) {
-    for (let x = rect.x - 2; x < rect.x + rect.width + 2; x += 1) {
+  const reach = squadTypeOf(squad.type)?.arm === 'archers' ? 4 : 2;
+  for (let y = rect.y - reach; y < rect.y + rect.height + reach; y += 1) {
+    for (let x = rect.x - reach; x < rect.x + rect.width + reach; x += 1) {
       if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT || workAttackDistance(x, y, rect) === 0 ||
         !clearWorkLine(world, owner, x, y, rect)) continue;
       candidates.push({ x, y });

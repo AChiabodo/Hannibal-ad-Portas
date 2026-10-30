@@ -186,6 +186,13 @@ code fails the build.
 ```
 <!-- examples:end -->
 
+Attacks on Works and camps approach a reachable firing position: archers stop
+within four tiles, other arms within two, with a clear line to the target.
+The army Controller can raid currently visible, completed exterior enemy Works
+when an available Squad can face the observed nearby defenders. Remembered
+Works, unknown ownership, construction, ruins and active repairs do not authorize
+a raid; the Match validates every resulting `attackStructure` Command.
+
 ## Compatibility with earlier logs
 
 Before P2 a `recruit` had no `men` field. Such a log is **rejected explicitly**
