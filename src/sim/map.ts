@@ -103,6 +103,9 @@ export const RESOURCE = {
 /** One of the four resources a node can hold. */
 export type ResourceKind = (typeof RESOURCE)[keyof typeof RESOURCE];
 
+/** Chebyshev reach shared by node placement and settlement production. */
+export const LAND_RADIUS = 14;
+
 /** The four resources, in the order a report, a dump or a pass walks them. */
 export const RESOURCE_KINDS: readonly ResourceKind[] = [
   RESOURCE.grain,
@@ -1054,8 +1057,12 @@ function spreadFarmland(terrain: Uint8Array, rng: Rng, sites: readonly Site[]): 
  * Places the resource nodes, each half of the theatre given the same number of each
  * kind.
  *
- * Same number per kind per half is the whole of the balance: with equal counts
- * and a range narrower than the tolerance, no draw can put the halves further
+ * Counts and quantity ranges keep the halves comparable. Each Stronghold and
+ * its nearest neutral opportunity receive a workable node of every kind;
+ * remaining nodes serve other settlement land. Preferred terrain is used where
+ * available locally, with dry land as the fallback rather than an unusable
+ * forest or hill far outside every settlement's productive reach.
+ * With equal counts and a range narrower than the tolerance, no draw can put the halves further
  * apart than `RESOURCE_TOLERANCE_PERCENT`, however the amounts fall. The kinds
  * are placed in `RESOURCE_KINDS` order, so a seed's nodes are a function of
  * the seed and not of anything a caller passes in.
@@ -1076,9 +1083,14 @@ function placeResources(
     const nodeKind = NODES_BY_KIND[kind];
 
     for (const half of [0, 1] as const) {
-      const candidates = nodeTiles(terrain, nodeKind, halves, taken, half);
+      const home = elementAt(sites, half);
+      const neutral = sites.slice(2).filter((site) => halves[tileIndex(site.x, site.y)] === half);
+      const distance = (site: Site) => Math.max(Math.abs(site.x - home.x), Math.abs(site.y - home.y));
+      neutral.sort((a, b) => distance(a) - distance(b));
 
       for (let placed = 0; placed < nodeKind.perHalf; placed += 1) {
+        const served = placed === 0 ? [home] : placed === 1 ? neutral.slice(0, 1) : neutral;
+        const candidates = nodeTiles(terrain, nodeKind, halves, taken, half, served);
         const tile = draw(rng, candidates);
         const site = siteOf(tile);
         taken[tile] = 1;
@@ -1092,12 +1104,11 @@ function placeResources(
 }
 
 /**
- * Every tile one half of the theatre offers a resource node of a kind.
+ * Workable, unoccupied tiles in one half for the settlements being served.
  *
- * The terrains the kind prefers come first, and a half that cannot supply that
- * many of them makes up the rest from whatever dry land it has: the invariant
- * is that a half gets its nodes, and a half whose hills the rivers and the
- * farmland took is a half that should still be able to mine. A tile that
+ * Prefer the kind's natural terrain within productive reach; when none remains,
+ * use other dry land in that same reach. A settlement whose local hills the
+ * rivers and farmland took must still be able to mine. A tile that
  * already holds something is left out of the list rather than drawn and
  * rejected, so a node is never sited on top of a settlement or another node.
  */
@@ -1107,6 +1118,7 @@ function nodeTiles(
   halves: Uint8Array,
   taken: Uint8Array,
   half: Half,
+  served: readonly Site[],
 ): number[] {
   const preferred: number[] = [];
   const anywhere: number[] = [];
@@ -1117,6 +1129,7 @@ function nodeTiles(
       if (taken[index] === 1) continue;
       if (!isDryLand(terrain, index)) continue;
       if (halves[index] !== half) continue;
+      if (!served.some((site) => Math.max(Math.abs(site.x - x), Math.abs(site.y - y)) <= LAND_RADIUS)) continue;
 
       const here = elementAt(terrain, index);
       if (isTerrain(here) && nodeKind.terrain.includes(here)) preferred.push(index);
@@ -1124,7 +1137,7 @@ function nodeTiles(
     }
   }
 
-  return preferred.length >= nodeKind.perHalf ? preferred : [...preferred, ...anywhere];
+  return preferred.length > 0 ? preferred : anywhere;
 }
 
 /**

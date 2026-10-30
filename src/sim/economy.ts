@@ -77,7 +77,7 @@ import {
 } from '../content/index.ts';
 import type { Faction, FactionCode } from './faction.ts';
 import { factionCode } from './faction.ts';
-import { RESOURCE, RESOURCE_KINDS, MAP_HEIGHT, MAP_WIDTH, TERRAIN, terrainAt, type MapGrid, type Site } from './map.ts';
+import { LAND_RADIUS, RESOURCE, RESOURCE_KINDS, MAP_HEIGHT, MAP_WIDTH, TERRAIN, terrainAt, type MapGrid, type Site } from './map.ts';
 import type { BuildCommand, Command, RecruitCommand } from './command.ts';
 import type { Season } from './season.ts';
 import type { Block } from './squad.ts';
@@ -118,7 +118,7 @@ export const LAND_YIELD = 1;
 export const HARVEST_YIELD = 3;
 
 /** How far from a settlement its land reaches, in tiles: the ground within this is what it works. */
-export const LAND_RADIUS = 14;
+export { LAND_RADIUS } from './map.ts';
 
 /**
  * How much of each resource every settlement works without anyone having to find
