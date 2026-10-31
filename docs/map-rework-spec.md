@@ -2,17 +2,73 @@
 
 ## Stato di implementazione
 
+### Aggiornamento del 31 ottobre 2026
+
+Questa sezione aggiorna i resoconti storici sottostanti. L'issue #76 resta
+**OPEN** durante la verifica finale sul ramo `feat/map-rework`.
+
+- **Calibrato — Q82, opportunità effettive:** la capacità produttiva locale
+  è confrontata su 200 seed a popolazione 10, 22 e 40, in primavera e inverno,
+  senza differenze di resa a sviluppo uguale. Su 200 mappe, entrambe le fazioni
+  conquistano le due opportunità successive meno costose in **400/400** scene
+  Match, con barbari attivi, reclutamento e Farm reali: seconda conquista mediana
+  al tick 501 per entrambe, massimi 901/Roma e 701/Cartagine, prima del cambio
+  di stagione a 2100. Il campione sulle tre difficoltà supera **96/96** scene
+  entro il tick 601. Restano differenze organiche di costo, resa e pericolo:
+  opere danneggiate in 53/200 scene romane e 66/200 cartaginesi. Metodo,
+  distribuzioni e limiti sono nel [resoconto di calibrazione](reviews/issue-76-economy-calibration.md).
+  La misura riguarda produzione e due espansioni successive; non promette
+  identità per ogni insediamento o risultato di campagna.
+- **Implementato — incursioni IA sulle opere:** l'IA può assegnare un attacco
+  sostenibile a un'opera esterna nemica attualmente osservata. Proprietà ignota,
+  sola memoria, lavori incompleti, rovine e difesa superiore non autorizzano
+  l'attacco. Il confronto usa geometria completa e ruotata del lotto, forza e
+  minacce osservabili; entrambe le fazioni seguono gli stessi comandi. Il tiro
+  cerca una posizione raggiungibile entro la gittata effettiva anche quando
+  l'attaccante parte fuori portata.
+- **Implementato — ingombri e percorsi dinamici:** la formazione di gruppo
+  riserva arrivi legali e non distribuisce posizioni oltre un muro chiuso.
+  Il traffico d'accesso conserva precedenza e identità dell'ordine; un corpo
+  amico in marcia può liberare la corsia, mentre Hold non viene spostato.
+  Un passaggio laterale conserva l'orientamento che rende legale l'ingombro,
+  eliminando quattro stalli emersi nella calibrazione delle espansioni.
+- **Implementato — assalto sul lato raggiunto:** il danno va al muro realmente
+  raggiunto dai corpi assedianti, con contributo dei soli corpi a contatto.
+  Agli angoli si sceglie il lato con forza maggiore e spareggio deterministico;
+  resta il tetto globale del danno di scalata. Le prove Match coprono i quattro
+  lati e il concorso di corpi su un angolo.
+- **Verificato — dettagli e stagioni:** alberi, rocce e cespugli hanno tre
+  sagome distinte; in inverno caducifoglie e arbusti perdono il fogliame,
+  mentre i sempreverdi lo conservano, con neve sui dettagli. Cinque scene
+  Chromium attraversano il calendario reale per tutte le quattro stagioni:
+  paesaggio, bosco, colline, zona umida e ponte. Passano **5/5** controlli;
+  venti immagini prodotte fuori repository mostrano stagioni distinguibili,
+  acqua e rilievi leggibili e impalcato/strade conservati. PixelBuffer,
+  Observation e separazione fra presentazione e stato restano i meccanismi
+  esistenti.
+- **Verificato — flusso di riparazione:** per entrambe le fazioni il pannello
+  Gestione invia i comandi reali di riparazione dell'opera e del muro,
+  mostra l'avanzamento e ne osserva il completamento. Passano **2/2** prove
+  Chromium; quattro immagini documentano le azioni sui due tipi di struttura.
+- **Verifica complessiva in corso:** lint, typecheck e build passano. La nuova
+  matrice di espansione passa; le sei campagne storiche conservano conquista
+  cartaginese per blocco e replay identico, e tutti i dodici scenari CI
+  riproducono gli hash attesi. Pressione AI, suite non browser e accettazione
+  completa vengono rieseguite dopo le ultime correzioni. I risultati delle
+  revisioni precedenti rimangono storici finché sostituiti da questi gate.
+
 ### Aggiornamento del 30 ottobre 2026
 
 L'implementazione è autorizzata ed è in corso sul ramo `feat/map-rework`; l'issue #76 resta **OPEN**.
 
 - **Parziale — Q82, risorse effettivamente sfruttabili:** ogni Stronghold e l'insediamento neutrale più vicino nella sua metà ricevono un nodo per ciascuna risorsa. Tutti i 20 nodi sono entro il raggio produttivo di un insediamento: sui 1.000 seed verificati i nodi fuori portata passano da 15.246 a zero su 20.000. Terreno locale adatto preferito, altra terra asciutta come ripiego; quantità e formule economiche restano quelle esistenti. Nei casi di regressione 2, 4, 12, 14 e 587 la capacità locale permette di impiegare tutti i dieci lavoratori iniziali in ciascuna risorsa. Il raggio è condiviso fra generazione ed economia. Rimangono la calibrazione dell'equilibrio lungo percorsi effettivi, delle minacce, dell'espansione e delle economie cresciute.
-- **Verificato — scouting e pressione con la nuova generazione:** la pianificazione considera il costo del terreno e il passo della Squad; una pattuglia ricordata sulla fascia da esplorare può far preferire una corsia interna. Il punto di aggiramento non può iniziare su acqua nota o strutture. La matrice finale ha superato **60/60 casi**, con **60/60 replay coerenti**. Passano anche i 12 test del Controller di scouting e i casi espliciti di aggiramento su fiume/lago. Questo risultato riguarda pressione e scoperta, senza certificare la vittoria delle campagne complete.
-- **Verificato — guarnigioni e precedenza d'accesso:** l'ammissione alle mura conserva il ticket del passaggio già iniziato; un ingresso non viene annullato da un breve termine dell'assedio. I difensori recuperati tornano in campo quando non restano assedi o minacce vicine visibili/ricordate. L'Observation distingue l'intento del servizio alle mura dal transito ordinario. I test Match/Observation coprono entrambe le fazioni, assenza di sovrapposizioni, richiamo e sgombero di un corpo fermo; le condizioni dei test sono esplicite, indipendenti dalle scelte di una campagna generata.
-- **Verifiche Chromium autorizzate dall'utente il 30 ottobre:** smoke **3/3**, insediamenti **6/6**, navigazione desktop **4/4**. Entrambe le fazioni e le risoluzioni 1280×720/1920×1080; gli insediamenti sono confrontati anche agli zoom 1, 2, 4 e 8. Picking e bersagli usano inchiostro architettonico osservato, la scena d'assedio schiera fuori dalla porta reale, e la memoria nasce da osservazione e ritiro di unità. Il clic singolo continua a selezionare; doppio clic o F centrano. Accettazione completa, stagioni e densità del paesaggio richiedono ancora verifica specifica.
-- **Verifiche non browser:** passano le invarianti della mappa e della copertura produttiva su 1.000 seed (18 test mirati), typecheck, lint, guard e build. La suite completa su `4248a1a`, prima delle successive correzioni, ha registrato **1.699 passati e 15 falliti su 1.714**. La successiva verifica su nove file di regressione ha concluso con **109 passati e 12 falliti su 121** in circa 1.193 secondi; dopo la verifica indipendente del record e l'aggiornamento del conteggio, il file CLI passa **19/19**. I gate non sono tutti verdi.
-- **Golden verificati tramite comportamento e replay:** i 12 comandi CI sono stati registrati e riprodotti indipendentemente; tutti i record hanno riprodotto gli hash. Gli scenari guidati conservano vittoria romana per assalto al tick 301 e per blocco al tick 4200. Il caso IA seed 1/2101 tick produce `373228a31f84ce04`, riprodotto dal record; il caso breve mantiene 608 decisioni e produce 562 comandi. CI e esempio README sono aggiornati sulla base di questi risultati. Gli esiti attesi delle campagne lunghe e le soglie di pressione non sono stati allentati.
-- **Ancora aperto — strade e campagne:** la preferenza fra percorsi della stessa lunghezza riduce le caselle immediatamente parallele nel seed 7 da 32 a 30, ma il test richiede meno di 30 ed è ancora rosso. La verifica lunga termina al clock per seed 6/Centurio, 7/Tiro, 12/Imperator e 7/Imperator; seed 7/Centurio vince per blocco al tick 18900 invece di 4200; seed 13/Tiro è vinto da Roma invece di Cartagine. Il campione dell'ariete fuori visuale al tick 591 del seed 12 non riproduce più la precedente osservazione: va ricostruita una scena esplicita, preservando il contratto sulla conoscenza dell'ariete. Restano anche il torneo seed 13/Tiro al limite 7000, un timeout nell'attribuzione delle decisioni e uno nei replay CLI sotto carico. La matrice di pressione superata non chiude queste lacune. Un profilo a 5.000 tick attribuisce circa il 28% del tempo alla copia isolata delle Observation; tale isolamento resta obbligatorio.
+- **Verificato — scouting e pressione:** la pianificazione considera il costo del terreno e il passo della Squad; una pattuglia ricordata sulla fascia da esplorare può far preferire una corsia interna. Il punto di aggiramento non può iniziare su acqua nota o strutture. Sulla revisione `63d8afe` la matrice completa supera **60/60 casi**, con **60/60 replay coerenti**, senza allentare le soglie. Questo risultato riguarda pressione e scoperta, distintamente dalla vittoria delle campagne complete.
+- **Verificato — guarnigioni e precedenza d'accesso:** l'ammissione alle mura conserva il ticket del passaggio già iniziato; un ingresso non viene annullato da un breve termine dell'assedio. I difensori recuperati tornano in campo quando non restano assedi o minacce vicine visibili/ricordate. Un ordine di campo concluso rilascia il ticket anche se la coda della colonna tocca ancora la porta: il corpo resta presente e continua a impedire sovrapposizioni. I test Match/Observation coprono entrambe le fazioni, richiamo, rientro e precedenza; 60 controlli mirati su accessi, insediamenti e policy d'assedio passano.
+- **Verificato — assedi e campagne storiche:** il blocco valuta gli eserciti di soccorso sul campo; la guarnigione viene stimata per l'assalto. Roma conserva un blocco sostenibile finché esercito e tesoreria non permettono il passaggio all'assalto. Un ariete già pagato e fuori visuale non viene scambiato per assente. La scena Match esplicita dell'ariete nascosto passa e fallisce se si rimuove tale protezione. Tutti i sei campioni storici ora terminano con una conquista cartaginese per blocco e replay identico: seed 7/Centurio 6300, 6/Centurio 4200, 13/Tiro 6300, 7/Tiro 4200, 12/Imperator 4200 e 7/Imperator 6300. Il torneo conserva il seed 13 e il limite 7000. Un'integrazione separata verifica anche una conquista romana per assalto, senza dipendere dal vincitore di una campagna casuale.
+- **Verificato — parallele e connessione stradale:** dopo la tracciatura, un angolo ridondante di un quadrato 2×2 confluisce nell'altro angolo già stradale e asciutto. Sono preservati estremi, adiacenza e lunghezza dei percorsi, guadi e ponti; il terreno naturale viene ripristinato nella casella liberata. Nel seed 7 le caselle accanto alla rete scendono da 30 a **29** e il riuso sale a **126**, superando il test senza modificarne la soglia. Passano 19 test mirati, comprese le invarianti su 1.000 seed e l'assenza di ripetizioni nei singoli percorsi. Le alternative che favorivano deviazioni più lunghe sono state scartate perché regredivano il contatto nei seed 2/4.
+- **Golden verificati tramite comportamento e replay:** i 12 comandi CI sono stati registrati e riprodotti sulla mappa accorpata; tutti i record riproducono gli hash. Gli scenari guidati conservano vittoria romana per assalto al tick 301 e per blocco al tick 4200. Il caso IA seed 1/2101 produce `811935deaef354f9`; il caso breve mantiene 608 decisioni e 562 comandi, con hash `43a2b6d2b3f4c66e` riprodotto dal record. CI e esempio README seguono questi risultati, senza modifiche alle soglie di pressione o ai limiti delle campagne.
+- **Verifiche non browser:** la suite completa è in riesecuzione senza Chromium concorrente. Il precedente tentativo concorrente al rendering software è stato interrotto dopo timeout; non costituisce un gate superato. Passano typecheck completo (`tsc -b`), lint e guard sulle correzioni consolidate; la verifica finale resta da concludere.
+- **Chromium autorizzato dall'utente:** sulla revisione precedente passavano smoke 3/3, insediamenti 6/6 e navigazione desktop 4/4. L'accettazione diagnostica completa è stata interrotta dopo aver individuato ulteriori fixture obsolete: indici di una mappa a 96 colonne anziché 160, composizione del terreno senza dettagli, proprietà non ancora osservata e blocco cercato al centro della Stronghold. I relativi owner sono in correzione; è aggiunto un controllo che attraversa le quattro stagioni tramite il calendario reale. La nuova accettazione e la valutazione visiva di stagioni, densità, attraversamenti e riparazioni restano da completare. Clic singolo per selezionare, doppio clic o F per centrare rimangono il comportamento previsto.
 
 ### Stato documentato fino al 29 ottobre 2026
 
