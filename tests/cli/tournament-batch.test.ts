@@ -73,10 +73,11 @@ describe('a batch of AI-vs-AI Matches', () => {
 
   it('plays a real Match: one seed, to a victory, with the decisions it took to win it', async () => {
     // The expanded physical settlements change this retained seed's campaign:
-    // Carthage wins the blockade; this remains a real, bounded victory contract.
+    // Carthage wins the blockade at tick 6300 after completed Gate passages
+    // release their tickets. The seed and the 7000-tick bound are retained.
     const report = await runTournament(batch({ seeds: 1, firstSeed: 13, difficulty: 'tiro', ticks: 7000, workers: 1 }));
 
-    expect(report.matches[0]).toMatchObject({ seed: 13, outcome: 'victory', winner: 'carthage', ticks: 4200 });
+    expect(report.matches[0]).toMatchObject({ seed: 13, outcome: 'victory', winner: 'carthage', ticks: 6300 });
     expect(report.winRate).toEqual({ rome: 0, carthage: 1 });
     expect(report.outliers.lopsided).toEqual([]);
     expect(report.outliers.stalled).toEqual([]);

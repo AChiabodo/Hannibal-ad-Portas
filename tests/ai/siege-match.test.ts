@@ -100,7 +100,9 @@ describe('the shipped siege AI in a headless Match', () => {
 
   it('resolves the retained seed 7 stall with an actual Stronghold conquest', () => {
     const run = runOf(7, HEADLESS_TICKS, 'centurio');
-    expect(run.result).toEqual({ kind: 'victory', winner: 'carthage', tick: 4200,
+    // Productive resource placement and sustainable rings change the campaign;
+    // the retained seed's conquest and full Command replay were verified.
+    expect(run.result).toEqual({ kind: 'victory', winner: 'carthage', tick: 6300,
       reason: { kind: 'stronghold', stronghold: 0, path: 'blockade' } });
     const siege = run.decisions.filter((entry) => entry.selected.behaviour === 'siege');
     expect(siege.some((entry) => entry.selected.id === 'blockade')).toBe(true);
@@ -156,7 +158,7 @@ describe('the shipped siege AI in a headless Match', () => {
     { level: 'centurio', seed: 6, winner: 'carthage', path: 'blockade' },
     { level: 'tiro', seed: 13, winner: 'carthage', path: 'blockade' },
     { level: 'tiro', seed: 7, winner: 'carthage', path: 'blockade' },
-    { level: 'imperator', seed: 12, winner: 'rome', path: 'assault' },
+    { level: 'imperator', seed: 12, winner: 'carthage', path: 'blockade' },
     { level: 'imperator', seed: 7, winner: 'carthage', path: 'blockade' },
   ] as const;
 
