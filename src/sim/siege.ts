@@ -1109,7 +1109,7 @@ function assaultRound(
 
     // The walls are worked at whether the ram is up or not; the men are worked
     // at until it is, because a ram is what shields an assault.
-    chipWall(front, besiegers);
+    chipWall(world, front, besiegers);
     if (!rammed(front)) punish(world, besiegers, tick);
   }
 
@@ -1183,13 +1183,25 @@ function ramDefence(world: SiegeWorld, front: Front): number {
  * wall down ten times faster than a thousand, because only so many can stand at
  * it, and one man does not bring it down at a line's speed.
  */
-function chipWall(front: Front, besiegers: readonly Squad[]): void {
-  const wall = front.structures.find(
-    (structure) => structure.kind === STRUCTURE.wall && structure.hp > 0 && structure.repairTicks === undefined,
-  );
-  if (wall === undefined) return;
+function chipWall(world: SiegeWorld, front: Front, besiegers: readonly Squad[]): void {
+  const site = world.economy.settlements[front.settlement];
+  if (site === undefined) return;
+  const core = coreOf(world.economy, site);
+  const targets = front.structures.flatMap((structure) => {
+    if (structure.kind !== STRUCTURE.wall || structure.hp <= 0 || structure.repairTicks !== undefined) return [];
+    const edge = structure.side === 0 ? { ...core, height: 1 }
+      : structure.side === 1 ? { ...core, x: core.x + core.width - 1, width: 1 }
+        : structure.side === 2 ? { ...core, y: core.y + core.height - 1, height: 1 }
+          : { ...core, width: 1 };
+    const attackers = besiegers.filter((squad) => rectDistance(edge, squadGround(squad)) <= SIEGE_RADIUS);
+    return attackers.length === 0 ? [] : [{ structure, attackers, force: forceOf(attackers) }];
+  });
+  // At a corner one body may touch two sides. Concentrate on the side the
+  // army can actually work, without borrowing force from a distant perimeter.
+  const target = targets.sort((a, b) => b.force - a.force || a.structure.side - b.structure.side)[0];
+  if (target === undefined) return;
 
-  damageFortification(wall, escaladeDamage(besiegers));
+  damageFortification(target.structure, escaladeDamage(target.attackers));
 }
 
 /** What a body of men works off a wall in one round: its share of a full line's, capped at it. */

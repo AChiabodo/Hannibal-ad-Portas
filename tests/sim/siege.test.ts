@@ -36,6 +36,44 @@ import {
   type SiegeWorld,
 } from '../../src/sim/siege';
 import { testMap } from './economy-fixtures';
+
+it('concentrates a west-side army on its wall instead of a corner reached by only one body', () => {
+  const map = testMap({ strongholds: [{ x: 20, y: 20 }, { x: 70, y: 70 }] });
+  const economy = createEconomy(map);
+  const army = [-4, 0, 4].map((offset) => musterSquad(economy, map,
+    { faction: 'rome', squadType: 'hastati', men: 120, x: 60, y: 70 + offset }));
+  economy.treasuries[0] = 0;
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs() };
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([assault('rome', army.map((squad) => squad.id), 1)]);
+  for (let tick = 1; tick < ASSAULT_TICKS; tick += 1) match.step();
+  const walls = observeSiege(world, 'carthage').fronts.find((front) => front.settlement === 1)!.structures
+    .filter((structure) => structure.kind === 'wall');
+  expect(walls.find((wall) => wall.side === 'west')!.hp).toBe(WALL_HP - ESCALADE_DAMAGE);
+  expect(walls.filter((wall) => wall.side !== 'west').map((wall) => wall.hp)).toEqual([WALL_HP, WALL_HP, WALL_HP]);
+});
+
+it.each([
+  { side: 'north', x: 70, y: 62, facing: 'south' },
+  { side: 'east', x: 78, y: 70, facing: 'west' },
+  { side: 'south', x: 70, y: 78, facing: 'north' },
+  { side: 'west', x: 62, y: 70, facing: 'east' },
+] as const)('damages the $side wall where the besieging body actually stands', ({ side, x, y, facing }) => {
+  const map = testMap({ strongholds: [{ x: 20, y: 20 }, { x: 70, y: 70 }] });
+  const economy = createEconomy(map);
+  const squad = musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x, y, facing });
+  economy.treasuries[0] = 0;
+  const world: SiegeWorld = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+    siege: createSiege(map, economy), fog: createFogs() };
+  const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+  match.step([assault('rome', [squad.id], 1)]);
+  for (let tick = 1; tick < ASSAULT_TICKS; tick += 1) match.step();
+  const walls = observeSiege(world, 'carthage').fronts.find((front) => front.settlement === 1)!.structures
+    .filter((structure) => structure.kind === 'wall');
+  expect(walls.find((wall) => wall.side === side)!.hp).toBe(WALL_HP - 1);
+  expect(walls.filter((wall) => wall.side !== side).map((wall) => wall.hp)).toEqual([WALL_HP, WALL_HP, WALL_HP]);
+});
 import { territoryAt, territoryOf } from '../../src/sim/territory';
 
 /** The two Strongholds every stage stands on, far apart as a generated map's are. */

@@ -193,6 +193,11 @@ when an available Squad can face the observed nearby defenders. Remembered
 Works, unknown ownership, construction, ruins and active repairs do not authorize
 a raid; the Match validates every resulting `attackStructure` Command.
 
+An Assault works a wall reached by its actual bodies. When several sides are
+reachable, it concentrates on the side supported by the greatest force, with
+the side code breaking ties. Only bodies in reach of that wall contribute to
+its damage; the existing shared escalade cap still applies.
+
 ## Compatibility with earlier logs
 
 Before P2 a `recruit` had no `men` field. Such a log is **rejected explicitly**
