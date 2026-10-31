@@ -1,5 +1,5 @@
 /**
- * The army the page opens with, and what it can therefore see (ticket C2).
+ * The legacy drawing/input fixture�s army and its opening vision (ticket C2).
  *
  * A Player needs something to command, and C2 is not the ticket that lets them
  * raise a Squad by hand. So the page **musters** an army at its Stronghold: real
@@ -27,6 +27,9 @@ import type { EconomyWorld } from '../sim/economy-match.ts';
 import type { Faction } from '../sim/faction.ts';
 import { MAP_HEIGHT, MAP_WIDTH, isWalkable, terrainAt, type MapGrid, type Site } from '../sim/map.ts';
 import { musterSquad } from '../sim/movement.ts';
+import { formationFootprint } from '../content/formation.ts';
+import { intersects, settlementLayout } from '../content/settlement-layout.ts';
+import { FACINGS } from '../sim/squad.ts';
 
 /**
  * The army the page musters at its Stronghold, in order.
@@ -40,46 +43,53 @@ import { musterSquad } from '../sim/movement.ts';
 export const OPENING_ARMY: readonly string[] = ['hastati', 'hastati', 'principes', 'principes', 'triarii'];
 
 /** How far from the Stronghold the opening army may look for a free tile. */
-const MUSTER_REACH = { across: 9, down: 7 } as const;
+const MUSTER_REACH = { across: 20, down: 24 } as const;
 
 /**
  * How many tiles apart two Squads of the opening army must stand.
  *
- * A block of a hundred and twenty men is fifty-four pixels wide — three and a
- * bit tiles — so two Squads on neighbouring tiles are drawn as one shapeless
- * mass, and neither can be clicked without picking the other. Four tiles apart
- * leaves each block its own ground, which is what makes the opening army five
- * things a Player can pick rather than one thing they cannot.
+ * Reserve every facing of a full body: it must be able to turn for an ordinary
+ * Move without hitting another formation, the estate or the map boundary.
  */
-const MUSTER_GAP = 4;
+const poses = FACINGS.map((facing) => formationFootprint(120, 'line', facing));
+const left = Math.min(...poses.map((pose) => pose.x)), top = Math.min(...poses.map((pose) => pose.y));
+const MUSTER_FOOTPRINT = { x: left, y: top,
+  width: Math.max(...poses.map((pose) => pose.x + pose.width)) - left,
+  height: Math.max(...poses.map((pose) => pose.y + pose.height)) - top };
+const MUSTER_GAP = Math.max(MUSTER_FOOTPRINT.width, MUSTER_FOOTPRINT.height);
 
 /**
- * Where the opening army stands: free, walkable ground below the Faction's
- * Stronghold, a block's width apart from each other.
- *
- * Deterministic, so the page and a test put the army in the same place on every
- * machine — and below the Stronghold rather than around it, because that is the
- * ground a Roman army would have camped on and the ground a Player's eye falls
- * on when the page opens.
- *
- * A tile is taken only if it is `MUSTER_GAP` tiles from every tile already
- * taken, so the five blocks stand on ground of their own. The row is walked left
- * to right and then downwards, which puts a consular army's line in front and
- * its reserve behind it.
+ * Free field outside reserved estates, with dry ground for every facing of a
+ * full body. Lower rows are tried left to right, followed by upper rows when
+ * the map boundary or water leaves too little room below the Stronghold.
  */
 export function openingTiles(map: MapGrid, faction: Faction): readonly Site[] {
   const origin = strongholdOf(map, faction);
   if (origin === undefined) return [];
 
   const tiles: Site[] = [];
+  const footprint = MUSTER_FOOTPRINT;
+  const grounds = [...map.strongholds, ...map.settlements].map((site) => {
+    const rect = settlementLayout('stronghold').grounds;
+    return { ...rect, x: site.x + rect.x, y: site.y + rect.y };
+  });
+  // Prefer the lower field, then use the upper field when the map edge leaves
+  // no room below. Every Figure must stand clear of the reserved estate.
+  const rows = Array.from({ length: MUSTER_REACH.down }, (_unused, index) => index + 1);
 
-  for (let down = 1; down <= MUSTER_REACH.down && tiles.length < OPENING_ARMY.length; down += 1) {
+  for (const down of [...rows, ...rows.map((row) => -row)]) {
+    if (tiles.length >= OPENING_ARMY.length) break;
     for (let across = -MUSTER_REACH.across; across <= MUSTER_REACH.across && tiles.length < OPENING_ARMY.length; across += 1) {
       const x = origin.x + across;
       const y = origin.y + down;
       if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) continue;
       if (!isWalkable(terrainAt(map, x, y))) continue;
-      if (map.settlements.some((settlement) => settlement.x === x && settlement.y === y)) continue;
+      const body = { ...footprint, x: x + footprint.x, y: y + footprint.y };
+      if (grounds.some((ground) => intersects(body, ground))) continue;
+      let clear = true;
+      for (let row = body.y; row < body.y + body.height; row += 1) for (let col = body.x; col < body.x + body.width; col += 1)
+        if (col < 0 || row < 0 || col >= MAP_WIDTH || row >= MAP_HEIGHT || !isWalkable(terrainAt(map, col, row))) clear = false;
+      if (!clear) continue;
       if (tiles.some((tile) => Math.max(Math.abs(tile.x - x), Math.abs(tile.y - y)) < MUSTER_GAP)) continue;
 
       tiles.push({ x, y });
@@ -109,7 +119,7 @@ export function openingEyes(map: MapGrid, faction: Faction): readonly Eye[] {
  * Stands the opening army up in a world, through the same door a scenario uses.
  *
  * A tile the map does not offer is simply not filled: a theatre with no free
- * ground below its Stronghold is a map no army can muster on, and a page that
+ * field ground near its Stronghold is a map no army can muster on, and a page that
  * threw instead would be a page a seed could break.
  */
 export function musterOpeningArmy(world: EconomyWorld, faction: Faction): void {
