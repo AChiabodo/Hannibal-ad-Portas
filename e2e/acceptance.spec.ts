@@ -131,13 +131,12 @@ async function boxSelect(page: Page, boxes: readonly { rect: { x: number; y: num
   await page.mouse.up();
 }
 
-/** The first river tile near the army, which is what a refused move is aimed at. */
+/** The closest river tile, which is what a refused move is aimed at. */
 function riverNear(x: number, y: number): { x: number; y: number } | null {
   let best: { x: number; y: number; distance: number } | null = null;
   for (let ty = 0; ty < MAP_HEIGHT; ty += 1) for (let tx = 0; tx < MAP_WIDTH; tx += 1) {
     if (MAP.terrain[ty * MAP_WIDTH + tx] !== TERRAIN.river) continue;
     const distance = Math.max(Math.abs(tx - x), Math.abs(ty - y));
-    if (distance > 60) continue;
     if (best === null || distance < best.distance) best = { x: tx, y: ty, distance };
   }
 
@@ -248,7 +247,7 @@ test.describe('long lists, long text and critical conditions', () => {
         const { bootRenderer } = await import(bootPath);
         const { siegeMatchRules } = await import(siegePath);
         const { musterSquad } = await import(movePath);
-        const { isWalkable, terrainAt } = await import(mapPath);
+        const { isWalkable, terrainAt, MAP_WIDTH, MAP_HEIGHT } = await import(mapPath);
         const { buildingCode } = await import(buildingPath);
         const types = side === 'rome'
           ? ['hastati', 'principes', 'triarii']
@@ -264,7 +263,7 @@ test.describe('long lists, long text and critical conditions', () => {
             for (let across = -radius; across <= radius && made < 48; across += 1) {
               const x = home.x + across;
               const y = home.y + radius;
-              if (x < 2 || y < 2 || x >= 94 || y >= 94) continue;
+              if (x < 2 || y < 2 || x >= MAP_WIDTH - 2 || y >= MAP_HEIGHT - 2) continue;
               if (!isWalkable(terrainAt(world.map, x, y))) continue;
               if (world.economy.settlements.some((settlement: { x: number; y: number }) => settlement.x === x && settlement.y === y)) continue;
               if (world.economy.squads.some((squad: { x: number; y: number }) => squad.x === x && squad.y === y)) continue;

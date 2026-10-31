@@ -188,7 +188,7 @@ function tilesAround(origin: Site, within: number): readonly Site[] {
 }
 
 /** The nearest river tile: deep water, which is the one refusal a click can produce on purpose. */
-function riverNear(origin: Site, within = 24): Site | null {
+function riverNear(origin: Site, within = Math.max(MAP_WIDTH, MAP_HEIGHT)): Site | null {
   let best: Site | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
 
@@ -475,7 +475,7 @@ test.describe('the theatre’s annotations', () => {
       expect(await page.evaluate(({ x, y }) => window.__SPQR.game?.orderAt('move', x, y), { x: candidate.at.x, y: candidate.at.y })).toBe(true);
       await advance(page, 1);
       const now = (await squads(page)).filter((squad) => pickedIds.has(squad.id));
-      if (now.some((squad) => squad.goal !== null)) {
+      if (now.length > 0 && now.every((squad) => squad.goal !== null)) {
         bound = candidate;
         break;
       }
@@ -486,11 +486,9 @@ test.describe('the theatre’s annotations', () => {
     // March there and back until the men are tired. Arrival is not the point: a
     // Squad that stands still pays a point of Fatigue back every tick, so the
     // order is renewed whenever the route runs out. The budget is ticks, not
-    // wall time: eighty was enough alone and not enough when the whole matrix ran
-    // beside it, because an order issued on one tick only starts moving on the
-    // next. The assertion below is unchanged — fifteen points of Fatigue, reached
-    // by the rules — and the extra runway keeps the scene about the rules rather
-    // than about how busy the machine was (#64).
+    // wall time. The real Gate FIFO now keeps the second Squad rested while it
+    // waits: the seed-58 replay reaches the common fatigue condition at tick251.
+    // Allow both journeys to finish before requiring fifteen points of Fatigue.
     const home = {
       tile: { x: report.x, y: report.y },
       at: (() => {
@@ -502,10 +500,10 @@ test.describe('the theatre’s annotations', () => {
     const spots = [bound, home];
     let spot = 0;
     let marching: readonly { readonly id: number; readonly fatigue: number; readonly goal: unknown }[] = [];
-    for (let tick = 0; tick < 160; tick += 1) {
+    for (let tick = 0; tick < 320; tick += 1) {
       marching = (await squads(page)).filter((squad) => pickedIds.has(squad.id));
       if (marching.length > 0 && marching.every((squad) => squad.fatigue >= 15)) break;
-      if (marching.every((squad) => squad.goal === null)) {
+      if (marching.some((squad) => squad.goal === null)) {
         spot = (spot + 1) % spots.length;
         const next = spots[spot]!;
         await page.evaluate(({ x, y }) => window.__SPQR.game?.orderAt('move', x, y), { x: next.at.x, y: next.at.y });
@@ -668,7 +666,7 @@ test.describe('the theatre’s annotations', () => {
         return away >= 5 && states[tile.y * MAP_WIDTH + tile.x] === KNOWLEDGE.remembered;
       })
       .map((tile) => ({ tile, at: tileScreen(view, tile) }))
-      .filter(({ at }) => at.x > 8 && at.y > 8 && at.x < view.width - 8 && at.y < view.height - 8);
+      .filter(({ at }) => !hidden(rects, at) && at.x > 8 && at.y > 8 && at.x < view.width - 8 && at.y < view.height - 8);
     expect(remembered.length, 'the ground behind the march is remembered').toBeGreaterThan(0);
 
     let back: { tile: Site; at: { readonly x: number; readonly y: number } } | null = null;

@@ -5,7 +5,7 @@
 ### Aggiornamento del 31 ottobre 2026
 
 Questa sezione aggiorna i resoconti storici sottostanti. L'issue #76 resta
-**OPEN** durante la verifica finale sul ramo `feat/map-rework`.
+**OPEN** in attesa della revisione indipendente finale sul ramo `feat/map-rework`.
 
 - **Calibrato — Q82, opportunità effettive:** la capacità produttiva locale
   è confrontata su 200 seed a popolazione 10, 22 e 40, in primavera e inverno,
@@ -50,12 +50,36 @@ Questa sezione aggiorna i resoconti storici sottostanti. L'issue #76 resta
   Gestione invia i comandi reali di riparazione dell'opera e del muro,
   mostra l'avanzamento e ne osserva il completamento. Passano **2/2** prove
   Chromium; quattro immagini documentano le azioni sui due tipi di struttura.
-- **Verifica complessiva in corso:** lint, typecheck e build passano. La nuova
+- **Verifiche complessive:** lint, typecheck e build passano. La nuova
   matrice di espansione passa; le sei campagne storiche conservano conquista
   cartaginese per blocco e replay identico, e tutti i dodici scenari CI
-  riproducono gli hash attesi. Pressione AI, suite non browser e accettazione
-  completa vengono rieseguite dopo le ultime correzioni. I risultati delle
-  revisioni precedenti rimangono storici finché sostituiti da questi gate.
+  riproducono gli hash attesi. La matrice completa di pressione AI supera
+  **60/60** casi e **60/60** replay identici, senza cambiare soglie.
+  La suite non browser supera **1.768/1.768 test in 162 file**. I dodici replay
+  CLI sono casi distinti con lo stesso limite di cinque secondi per caso,
+  evitando di cumulare dodici simulazioni sotto un unico timeout.
+  I risultati delle revisioni precedenti rimangono storici finché sostituiti
+  da questi gate.
+- **Chromium, esecuzione completa e correzioni mirate:** la matrice completa
+  registra **177/181** casi superati in 18,2 minuti. I quattro fallimenti
+  riguardano fixture: terreno atteso senza dettagli del seed/fauna, armata di
+  disegno fuori dalla camera iniziale, danno già avvenuto prima del riferimento
+  di pressione, ingaggio transitorio fra campioni distanti dieci tick.
+  Dopo le correzioni passano i file di avvio/camera (**9** casi), pressione
+  (**8**), disegno delle squadre (**1**) e percorso di pratica (**4**).
+  Quest'ultimo viene infine rieseguito interamente con **4/4** verdi: il
+  campionamento fine dopo il contatto rileva ingaggi ai tick **897/898** a
+  1280/1920, mantenendo il limite di 2000 tick e 120 secondi. Tutti i 181 casi
+  hanno quindi una verifica verde fra esecuzione completa e successive
+  riesecuzioni degli owner; non è stata ripetuta l'intera matrice dopo queste
+  sole correzioni alle fixture. Nessuna modifica alle regole della simulazione
+  è intervenuta fra i due passaggi. Log in `%TEMP%/spqr76-final-accept.log`,
+  `%TEMP%/spqr76-fixture-owners.log` e `%TEMP%/spqr76-journey-final.log`.
+- **Revisione finale:** le revisioni precedenti hanno guidato le correzioni;
+  gli ultimi commit richiedono ancora la revisione indipendente sui due assi
+  Standards e Spec. Il servizio dei subagent ha raggiunto il limite d'uso e
+  non ha completato questa ultima richiesta. Non dichiarare chiusa l'issue
+  sulla sola base dei gate automatici.
 
 ### Aggiornamento del 30 ottobre 2026
 

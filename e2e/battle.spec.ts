@@ -28,9 +28,11 @@ import type { SiteReport } from '../src/render/game';
 import { stageToScreen } from '../src/render/camera';
 import { DEFAULT_SEED } from '../src/render/view';
 import { generateMap } from '../src/sim/map';
-import { ASSAULT_TICKS, ESCALADE_DAMAGE, WALL_SECTIONS } from '../src/sim/siege';
+import { ASSAULT_TICKS, ESCALADE_DAMAGE } from '../src/sim/siege';
 import { translate } from '../src/ui/strings';
-import { advance, applied, describeView, hud, select, selection, sites, squads } from './hooks';
+import { turnPoint } from '../src/content/settlement-layout';
+import { tilePixel } from '../src/render/terrain';
+import { advance, applied, describeView, hud, hudLayout, select, selection, sites, squads } from './hooks';
 
 /** The theatre the fixture's Match opens on, so its Strongholds are known here. */
 const MAP = generateMap(DEFAULT_SEED);
@@ -41,8 +43,9 @@ const TARGET = MAP.strongholds[1];
 /** Pans the camera so one stage point is in the middle of the viewport. */
 async function centreOn(page: Page, stage: { readonly x: number; readonly y: number }): Promise<ViewState> {
   const before = await describeView(page);
-  const wantedX = Math.round(stage.x - before.width / (2 * before.camera.zoom));
-  const wantedY = Math.round(stage.y - before.height / (2 * before.camera.zoom));
+  const area = (await hudLayout(page)).theatre ?? { x: 0, y: 0, width: before.width, height: before.height };
+  const wantedX = Math.round(stage.x - (area.x + area.width / 2) / before.camera.zoom);
+  const wantedY = Math.round(stage.y - (area.y + area.height / 2) / before.camera.zoom);
   await page.evaluate(
     ({ dx, dy }) => window.__SPQR.view?.panBy(dx, dy),
     { dx: wantedX - before.camera.x, dy: wantedY - before.camera.y },
@@ -68,9 +71,9 @@ async function theWalls(page: Page) {
  * A gate is left out on purpose: the ram is the engine that breaks it, and what
  * this measures is the *men's* work at the walls under it.
  */
-function wallHp(site: SiteReport | undefined): number {
+function wallHp(site: SiteReport | undefined, sides: ReadonlySet<string>): number {
   return (site?.front?.structures ?? [])
-    .filter((structure) => structure.kind !== 'gate')
+    .filter((structure) => structure.kind === 'wall' && sides.has(structure.side))
     .reduce((total, structure) => total + structure.hp, 0);
 }
 
@@ -94,8 +97,8 @@ test('works a wall at a body’s rate on the real page, and says what each Repar
   await page.evaluate(() => window.__SPQR.view?.zoomTo(2));
   const target = await theWalls(page);
   const view = await centreOn(page, {
-    x: target.rect.x + Math.floor(target.rect.width / 2),
-    y: target.rect.y + Math.floor(target.rect.height / 2),
+    x: army.reduce((sum, squad) => sum + squad.rect.x + squad.rect.width / 2, 0) / army.length,
+    y: army.reduce((sum, squad) => sum + squad.rect.y + squad.rect.height / 2, 0) / army.length,
   });
   const corners = (await squads(page)).map((squad) => ({
     left: stageToScreen(view.camera, squad.rect.x, squad.rect.y),
@@ -120,11 +123,10 @@ test('works a wall at a body’s rate on the real page, and says what each Repar
   // An Assault, aimed at the town in the drawing: the click lands on the
   // gatehouse a Player can see, not on the one tile the rules name it by.
   expect(await page.evaluate(() => window.__SPQR.game?.perform('assault'))).toBe(true);
-  const gate = stageToScreen(
-    view.camera,
-    target.rect.x + Math.floor(target.rect.width / 2),
-    target.rect.y + target.rect.height - 6,
-  );
+  const side = target.front!.structures.find((structure) => structure.kind === 'gate')!.side;
+  const offset = turnPoint({ x: 0, y: 7 }, ['north', 'east', 'south', 'west'].indexOf(side));
+  const gateTile = tilePixel(target.x + offset.x, target.y + offset.y);
+  const gate = stageToScreen(view.camera, gateTile.x, gateTile.y);
   expect(await page.evaluate(({ x, y }) => window.__SPQR.game?.targetAt(x, y), gate)).toBe(true);
   expect(await page.evaluate(() => window.__SPQR.game?.targeting())).toBeNull();
 
@@ -132,16 +134,16 @@ test('works a wall at a body’s rate on the real page, and says what each Repar
   // any other Command.
   await advance(page, 1);
   expect((await applied(page)).some((entry) => entry.command.kind === 'assault')).toBe(true);
-  expect(
-    target.front?.structures.filter((structure) => structure.kind === 'wall'),
-  ).toHaveLength(WALL_SECTIONS);
+  const seenWalls = target.front!.structures.filter((structure) => structure.kind === 'wall');
+  expect(seenWalls.length, 'the army sees the wall it is attacking').toBeGreaterThan(0);
+  const sides = new Set(seenWalls.map((wall) => wall.side));
 
   // Five assault rounds and no more: the walls may lose a body's worth of hit
   // points a round however many bodies are under them.
-  const before = wallHp(await theWalls(page));
+  const before = wallHp(await theWalls(page), sides);
   const rounds = 5;
   await advance(page, ASSAULT_TICKS * rounds);
-  const done = before - wallHp(await theWalls(page));
+  const done = before - wallHp(await theWalls(page), sides);
 
   expect(done, 'the men at the wall are actually working it').toBeGreaterThan(0);
   // A round of slack, because five rounds need not fall on a round boundary.

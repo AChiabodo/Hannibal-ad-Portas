@@ -30,7 +30,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { capture } from './evidence';
 import { stageToScreen } from '../src/render/camera';
-import { TERRAIN } from '../src/sim/map';
+import { MAP_WIDTH, TERRAIN } from '../src/sim/map';
 import { HUD_BACKGROUND } from '../src/ui/hud';
 import { translate } from '../src/ui/strings';
 import type { GuidePanel } from '../src/ui/guide';
@@ -44,6 +44,7 @@ import {
   hud,
   hudLayout,
   hudRects,
+  hudRows,
   press,
   samples,
   selection,
@@ -211,9 +212,13 @@ test('the four acts are performed through the pointed-at interface, and their re
   expect((await applied(page)).some(({ command }) => command.kind === 'recruit')).toBe(true);
   const report = raised[0]!;
 
-  // 3. Selecting it: a click on the soldiers, not a hook.
+  // 3. Selecting it through the navigator row the guide also points out.
+  // The selected settlement's detail panel can cover the new muster position.
+  const recruitRow = (await hudRows(page)).find((row) => row.selection.kind === 'squad' && row.selection.id === report.id);
+  expect(recruitRow).toBeDefined();
+  await press(page, recruitRow!.rect);
+  await page.keyboard.press('f');
   camera = (await describeView(page)).camera;
-  await clickCanvas(page, centreOf(report.rect, camera));
   expect((await selection(page)).squads).toEqual([report.id]);
   expect((await guide(page))?.stage, 'selecting the Squad completes that line').toBe('move');
 
@@ -230,8 +235,8 @@ test('the four acts are performed through the pointed-at interface, and their re
   const snapshot = await state(page);
   const tiles = snapshot.visible.fog.terrain;
   const ground = [...tiles.entries()]
-    .map(([index, terrain]) => ({ index, terrain, x: index % 96, y: Math.floor(index / 96) }))
-    .filter(({ terrain, x, y }) => terrain !== 255 && terrain !== TERRAIN.river &&
+    .map(([index, terrain]) => ({ index, terrain, x: index % MAP_WIDTH, y: Math.floor(index / MAP_WIDTH) }))
+    .filter(({ terrain, x, y }) => terrain !== 255 && terrain !== TERRAIN.river && terrain !== TERRAIN.lake &&
       Math.max(Math.abs(x - report.x), Math.abs(y - report.y)) === 3 &&
       !snapshot.visible.settlements.some((site) => site.x === x && site.y === y));
   expect(ground.length, 'there is known ground beside the Squad').toBeGreaterThan(0);

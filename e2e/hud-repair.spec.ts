@@ -93,7 +93,8 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 108
     const getHash = () => page.evaluate(() => window.__SPQR.game!.hash());
     const pausedHash = await getHash();
     expect((await getLayout()).text.map((line) => line.text)).toContain('IN PAUSA');
-    await page.evaluate(() => window.__SPQR.game!.select({ kind: 'squad', id: 1 }));
+    // Settlement details overflow; the current Squad summary fits.
+    await page.evaluate(() => window.__SPQR.game!.select({ kind: 'settlement', id: 0 }));
     const initial = await getLayout();
     expect(initial.detailScroll.max).toBeGreaterThan(0);
     const priority = initial.priority;
@@ -112,7 +113,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 108
     await page.evaluate(() => window.__SPQR.game!.scrollHud('detail', -999));
     expect((await getLayout()).detailScroll.offset).toBe(0);
     await page.mouse.click(box.x + initial.detail.x + 4, box.y + initial.detail.y + 2);
-    expect(await page.evaluate(() => window.__SPQR.game!.selection().squads)).toEqual([1]);
+    expect(await page.evaluate(() => window.__SPQR.game!.selection().settlement)).toBe(0);
     expect(await getHash()).toBe(pausedHash);
     await capture(page, `live-paused-${viewport.width}`, 'issue52');
     const pause = initial.buttons.find((button) => button.action === 'pause')!;

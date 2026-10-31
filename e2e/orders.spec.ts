@@ -26,14 +26,19 @@
  */
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
-import { MAP_WIDTH, generateMap, isWalkable, terrainAt } from '../src/sim/map';
+import { MAP_WIDTH, isWalkable, terrainAt } from '../src/sim/map';
+import { siegeMatchRules } from '../src/sim/siege';
+import { musterOpeningArmy } from '../src/render/opening';
+import { canOccupy, clearFieldBody } from '../src/sim/settlement-space';
 import { tilePixel } from '../src/render/terrain';
 import { DEFAULT_SEED } from '../src/render/view';
 import type { SquadReport } from '../src/render/game';
 import { advance, applied, bootGame, describeView, groupOf, hud, hudRects, selection, squads } from './hooks';
 
 /** The theatre the page opens on: the map its Squads stand on. */
-const MAP = generateMap(DEFAULT_SEED);
+const scene = siegeMatchRules.createWorld(DEFAULT_SEED);
+musterOpeningArmy(scene, 'rome');
+const MAP = scene.map;
 
 /** A point in theatre pixels, which is what a Squad's rectangle is in. */
 interface Point {
@@ -63,6 +68,17 @@ function onPage(origin: Point, at: Point): Point {
 /** Boots the page with the real-time loop stopped, so a test decides when the Match steps. */
 async function boot(page: Page): Promise<void> {
   await bootGame(page, { paused: true });
+  // The physical fixture now stands outside the estate. Pan to the field before
+  // exercising map gestures; the boot spec separately protects the home view.
+  await page.evaluate(() => {
+    const game = window.__SPQR.game!;
+    const army = game.squads();
+    const home = game.state().visible.settlements[0]!;
+    const field = army.find((squad) => squad.x > home.x) ?? army[0]!;
+    game.select({ kind: 'squad', id: field.id });
+    game.centerSelection();
+    game.select(null);
+  });
 }
 
 /**
@@ -123,18 +139,20 @@ async function clickableSquad(page: Page): Promise<{ readonly squad: SquadReport
   throw new Error('no Squad is visible outside the interface, so nothing can be clicked');
 }
 
-/** A walkable tile a few tiles east of a Squad, which is where an order will send it. */
+/** Free field ground west of the opening line, away from the occupied fort. */
 function targetNear(squad: SquadReport): Point {
+  const body = scene.economy.squads.find((body) => body.id === squad.id)!;
   for (let across = 3; across < 12; across += 1) {
-    const x = squad.x + across;
+    const x = squad.x - across;
     const y = squad.y;
-    if (x >= MAP_WIDTH) break;
+    if (x < 0 || x >= MAP_WIDTH) break;
     if (!isWalkable(terrainAt(MAP, x, y))) continue;
+    if (!canOccupy(MAP, body, x, y) || !clearFieldBody(MAP, body, x, y)) continue;
 
     return tilePixel(x, y);
   }
 
-  throw new Error(`no walkable tile east of (${String(squad.x)}, ${String(squad.y)})`);
+  throw new Error(`no free field tile west of (${String(squad.x)}, ${String(squad.y)})`);
 }
 
 test('picks a Squad with a click, and the interface says so', async ({ page }) => {
@@ -198,13 +216,13 @@ test('picks several Squads by dragging a box over them', async ({ page }) => {
 test('moves a Squad with a right click, and the men march', async ({ page }) => {
   await boot(page);
   const { squad, at } = await clickableSquad(page);
-  const target = targetNear(squad);
-  const view = await describeView(page);
   const origin = await canvasOrigin(page);
   const squadClick = onPage(origin, at);
-  const orderClick = onPage(origin, toScreen(view.camera, target));
 
   await page.mouse.click(squadClick.x, squadClick.y);
+  expect((await selection(page)).squads).toEqual([squad.id]);
+  await page.keyboard.press('f');
+  const orderClick = onPage(origin, toScreen((await describeView(page)).camera, targetNear(squad)));
   await page.mouse.click(orderClick.x, orderClick.y, { button: 'right' });
   await step(page, 1);
 
@@ -223,13 +241,13 @@ test('moves a Squad with a right click, and the men march', async ({ page }) => 
 test('issues an Attack-move with the keyboard and the mouse, and a Hold with the keyboard', async ({ page }) => {
   await boot(page);
   const { squad, at } = await clickableSquad(page);
-  const target = targetNear(squad);
-  const view = await describeView(page);
   const origin = await canvasOrigin(page);
   const squadClick = onPage(origin, at);
-  const orderClick = onPage(origin, toScreen(view.camera, target));
 
   await page.mouse.click(squadClick.x, squadClick.y);
+  expect((await selection(page)).squads).toEqual([squad.id]);
+  await page.keyboard.press('f');
+  const orderClick = onPage(origin, toScreen((await describeView(page)).camera, targetNear(squad)));
   await page.keyboard.press('a');
   await page.mouse.click(orderClick.x, orderClick.y);
   await step(page, 1);
@@ -249,12 +267,13 @@ test('issues an Attack-move with the keyboard and the mouse, and a Hold with the
 test('attack-moves on a shift + right click, without arming anything', async ({ page }) => {
   await boot(page);
   const { squad, at } = await clickableSquad(page);
-  const view = await describeView(page);
   const origin = await canvasOrigin(page);
   const squadClick = onPage(origin, at);
-  const orderClick = onPage(origin, toScreen(view.camera, targetNear(squad)));
 
   await page.mouse.click(squadClick.x, squadClick.y);
+  expect((await selection(page)).squads).toEqual([squad.id]);
+  await page.keyboard.press('f');
+  const orderClick = onPage(origin, toScreen((await describeView(page)).camera, targetNear(squad)));
   await page.keyboard.down('Shift');
   await page.mouse.click(orderClick.x, orderClick.y, { button: 'right' });
   await page.keyboard.up('Shift');

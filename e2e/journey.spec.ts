@@ -5,6 +5,30 @@ import { entryMenu } from '../src/ui/entry-menu';
 import { press } from './hooks';
 import { stageToScreen } from '../src/render/camera';
 import { tilePixel } from '../src/render/terrain';
+/** Pan the public camera until the known target is clear of the lesson panel. */
+async function revealTile(page: Page, tile: { readonly x: number; readonly y: number }) {
+  return page.evaluate((tile) => {
+    const game = window.__SPQR.game!, view = window.__SPQR.view!;
+    const opening = view.describe();
+    const covered = (x: number, y: number) => game.hudRects().some((rect) =>
+      x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height);
+    for (const zoom of [...new Set([opening.camera.zoom, 1, 2, 4, 8])]) {
+      view.zoomTo(zoom);
+      const size = view.describe();
+      const spots = [{ x: size.width * 0.8, y: size.height * 0.4 },
+        { x: size.width * 0.8, y: size.height * 0.55 }, { x: size.width * 0.5, y: size.height * 0.5 }];
+      for (const spot of spots) {
+        if (covered(spot.x, spot.y)) continue;
+        const before = view.describe().camera;
+        view.panBy(tile.x - spot.x / zoom - before.x, tile.y - spot.y / zoom - before.y);
+        const camera = view.describe().camera;
+        const at = { x: (tile.x - camera.x) * camera.zoom, y: (tile.y - camera.y) * camera.zoom };
+        if (at.x > 0 && at.y > 0 && at.x < size.width && at.y < size.height && !covered(at.x, at.y)) return at;
+      }
+    }
+    throw new Error('the observed target cannot be exposed beside the tutorial panel');
+  }, tile);
+}
 
 async function recruitTwo(page: Page): Promise<void> {
   const row = await page.evaluate(() => window.__SPQR.game!.hudLayout().rows.find((r) => r.selection.kind === 'settlement')!.rect);
@@ -113,6 +137,9 @@ for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]
   });
 
   test(`final practice meets the normal AI through pointer orders at ${size.width}`, async ({ page }) => {
+    // The 160×160 theatre costs more CPU under software WebGL. Keep the same
+    // 2,000 simulated-tick encounter bound, with room to compute it.
+    test.setTimeout(120_000);
     await page.setViewportSize(size);
     await page.goto('/');
     await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'menu');
@@ -121,26 +148,66 @@ for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]
     await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'practice');
     await page.keyboard.press('Space');
     await recruitTwo(page);
-    const rows = await page.evaluate(() => window.__SPQR.game!.hudLayout().rows.filter((r) => r.selection.kind === 'squad').map((r) => r.rect));
-    await press(page, rows[0]!);
-    await page.keyboard.down('Shift');
-    await press(page, rows[1]!);
-    await page.keyboard.up('Shift');
-    const minimap = await page.evaluate(() => window.__SPQR.game!.hudLayout().minimap);
-    await page.mouse.click(minimap.x + 90 * 2, minimap.y + 91 * 2);
+    const row = await page.evaluate(() => window.__SPQR.game!.hudLayout().rows.find((r) => r.selection.kind === 'squad')!.rect);
+    await press(page, row);
+    await page.evaluate(() => window.__SPQR.view!.zoomTo(1));
+    await page.keyboard.press('f');
     const camera = await page.evaluate(() => window.__SPQR.view!.describe().camera);
-    const tile = tilePixel(88, 89);
-    const target = stageToScreen(camera, tile.x, tile.y);
-    await page.keyboard.down('Shift');
-    await page.mouse.click(target.x, target.y, { button: 'right' });
-    await page.keyboard.up('Shift');
+    const army = await page.evaluate(() => window.__SPQR.game!.squads());
+    const origin = (await page.locator('#app canvas').boundingBox())!;
+    const corners = army.map((squad) => ({ from: stageToScreen(camera, squad.rect.x, squad.rect.y),
+      to: stageToScreen(camera, squad.rect.x + squad.rect.width, squad.rect.y + squad.rect.height) }));
+    await page.mouse.move(origin.x + Math.min(...corners.map((corner) => corner.from.x)) - 4,
+      origin.y + Math.min(...corners.map((corner) => corner.from.y)) - 4);
+    await page.mouse.down();
+    await page.mouse.move(origin.x + Math.max(...corners.map((corner) => corner.to.x)) + 4,
+      origin.y + Math.max(...corners.map((corner) => corner.to.y)) + 4, { steps: 5 });
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.__SPQR.game!.selection().squads.length)).toBe(2);
+    // Defend against the ordinary AI, pursuing only its current sightings. The
+    // larger theatre no longer places the old fixed destination on its route.
     let engaged = false;
+    let attacked = false;
+    const policy: unknown[] = [];
     for (let index = 0; index < 200 && !engaged; index += 1) {
-      engaged = await page.evaluate(() => {
-        window.__SPQR.game!.advance(10);
-        return window.__SPQR.game!.state().visible.squads.some((s) => s.engaged);
-      });
+      let expectedTarget: number | null = null;
+      const enemy = await page.evaluate(() => window.__SPQR.game!.state().visible.enemies.find((enemy) => enemy.neutral !== true));
+      if (enemy !== undefined) {
+        const layout = await page.evaluate(() => window.__SPQR.game!.hudLayout());
+        const attack = layout.commands.find((entry) => entry.order.id === 'attack');
+        if (attack?.order.enabled) {
+          await press(page, attack.rect);
+          const at = await revealTile(page, tilePixel(enemy.x, enemy.y));
+          await page.mouse.click(origin.x + at.x, origin.y + at.y);
+          expectedTarget = enemy.id;
+        }
+      }
+      const watchCombat: boolean = enemy !== undefined || attacked;
+      const shown: { readonly engaged: boolean; readonly engagedAt: number | null; readonly attacked: boolean;
+        readonly tick: number; readonly own: readonly unknown[]; readonly command: unknown } = await page.evaluate((watchCombat) => {
+        const game = window.__SPQR.game!;
+        let engagedAt: number | null = null;
+        // A short skirmish can begin and end between two ten-tick samples.
+        // Once an opponent is sighted, observe every tick while keeping the
+        // order cadence and bound. Before contact, avoid ten costly repaints.
+        const stride = watchCombat ? 1 : 10;
+        for (let tick = 0; tick < 10; tick += stride) {
+          game.advance(stride);
+          if (game.squads().some((squad) => squad.engaged)) engagedAt ??= game.tick();
+        }
+        return { engaged: engagedAt !== null, engagedAt,
+          attacked: game.applied().some((entry) => entry.command.faction === 'rome' && entry.command.kind === 'attack'),
+          tick: game.tick(), own: game.state().visible.squads,
+          command: game.applied().filter((entry) => entry.command.faction === 'rome').at(-1)?.command };
+      }, watchCombat);
+      if (expectedTarget !== null) expect(shown.command).toMatchObject({ kind: 'attack', target: expectedTarget });
+      policy.push({ enemy, ...shown });
+      engaged = shown.engaged;
+      attacked ||= shown.attacked;
+      if (engaged) console.log(JSON.stringify({ practice: size.width, engagedAt: shown.engagedAt }));
     }
+    if (!engaged) await test.info().attach('practice-policy', { body: JSON.stringify(policy), contentType: 'application/json' });
+    expect(attacked).toBe(true);
     expect(engaged).toBe(true);
     await capture(page, `final-encounter-${size.width}`, 'issue70');
     const exit = await page.evaluate(() => window.__SPQR.game!.hudLayout().guideButtons.find((b) => b.action === 'tutorialExit')!.rect);

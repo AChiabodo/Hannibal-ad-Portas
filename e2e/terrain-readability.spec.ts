@@ -27,16 +27,18 @@
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
 import { capture } from './evidence';
-import { pixelAt, type PixelBuffer, type Rgba } from '../src/art/pixel-buffer';
+import { blit, pixelAt, type PixelBuffer, type Rgba } from '../src/art/pixel-buffer';
 import { TERRAIN_TILE } from '../src/art/terrain';
 import { stageToScreen } from '../src/render/camera';
 import { REMEMBERED } from '../src/render/fog';
 import { THEATRE_MARGIN, renderTerrain, tileAt } from '../src/render/terrain';
-import { KNOWLEDGE, type Knowledge } from '../src/sim/fog';
-import { MAP_HEIGHT, MAP_WIDTH, generateMap, type MapGrid, type Site } from '../src/sim/map';
+import { inspectionView, KNOWLEDGE, type Knowledge } from '../src/sim/fog';
+import { visibleWildlife, wildlifeOf, wildlifeSprite } from '../src/render/wildlife';
+import { MAP_HEIGHT, MAP_WIDTH, TERRAIN, generateMap, type MapGrid, type Site } from '../src/sim/map';
+import { SEASONS, SEASON_TICKS, type Season } from '../src/sim/season';
 import type { ViewState } from '../src/render/boot';
 import type { Rect } from '../src/ui/hud';
-import { advance, covers, describeView, dismissFirstEntry, hudRects, knowledge, press, samples, select, squads } from './hooks';
+import { advance, covers, describeView, dismissFirstEntry, hudRects, knowledge, press, samples, select, squads, state } from './hooks';
 
 /** The seed every scene is played on: the fixtures' own, so a reader can reproduce it. */
 const SEED = 7;
@@ -72,7 +74,67 @@ const LOOK_EDGE = 8;
 
 /** The theatre, generated once: what the ground on screen has to be. */
 const MAP: MapGrid = generateMap(SEED);
-const THEATRE: PixelBuffer = renderTerrain(MAP);
+const THEATRE: PixelBuffer = renderTerrain(MAP, 'spring', SEED);
+function livingTheatre(season: Season, tick: number, map = MAP, seed = SEED): PixelBuffer {
+  const frame = renderTerrain(map, season, seed);
+  for (const animal of visibleWildlife(wildlifeOf(map, seed), inspectionView(map), tick))
+    blit(frame, wildlifeSprite(animal.kind), animal.pixelX, animal.pixelY);
+  return frame;
+}
+const crossingMap = generateMap(1);
+const firstBridge = crossingMap.terrain.indexOf(TERRAIN.bridge);
+for (const scene of [
+  { seed: 7, name: 'landscape', map: MAP, at: { x: 80, y: 80 } },
+  { seed: 7, name: 'woodland', map: MAP, at: { x: 150, y: 65 } },
+  { seed: 7, name: 'hills', map: MAP, at: { x: 105, y: 68 } },
+  { seed: 7, name: 'wetland', map: MAP, at: { x: 52, y: 134 } },
+  { seed: 1, name: 'crossing', map: crossingMap, at: { x: firstBridge % MAP_WIDTH, y: Math.floor(firstBridge / MAP_WIDTH) } },
+]) test(`draws every Season reached by the real calendar, retaining terrain and road geometry: ${scene.name} (#76)`, async ({ page }) => {
+  expect(firstBridge, 'the crossing scene includes a generated Bridge').toBeGreaterThanOrEqual(0);
+  await page.goto('/e2e/hud-fixture.html');
+  await page.evaluate(async (seed) => {
+    const bootPath = '/src/render/boot.ts';
+    const siegePath = '/src/sim/siege.ts';
+    const economyPath = '/src/sim/economy-match.ts';
+    const controllerPath = '/src/sim/controller.ts';
+    const { bootRenderer } = await import(bootPath);
+    const { createSiegeWorld } = await import(siegePath);
+    const { economyMatchRules } = await import(economyPath);
+    const { idleController } = await import(controllerPath);
+    const view = await bootRenderer(document.getElementById('app')!, { seed, sessionControls: false,
+      opponent: idleController(), rules: { createWorld: createSiegeWorld, step: economyMatchRules.step } });
+    view.pause();
+    window.__SPQR = { boot: { booted: true, render: view.probe }, game: view, view, atelier: null };
+  }, scene.seed);
+  await showSquads(page, false);
+  await page.evaluate(() => { window.__SPQR.view!.inspect(true); window.__SPQR.view!.zoomTo(1); });
+  await centreOn(page, { x: scene.at.x * 16 + 8, y: scene.at.y * 16 + 8 });
+  let snapshot = await state(page);
+  const openingTick = snapshot.tick;
+  expect(openingTick).toBeLessThan(SEASON_TICKS);
+  let bridgePixels: readonly Rgba[] | undefined;
+  for (const [index, season] of SEASONS.entries()) {
+    if (index > 0) await advance(page, index * SEASON_TICKS - snapshot.tick);
+    snapshot = await state(page);
+    expect(snapshot.visible.season).toBe(season);
+    expect(snapshot.tick).toBe(index === 0 ? openingTick : index * SEASON_TICKS);
+    const view = await describeView(page);
+    const points = groundPoints(view, await knowledge(page), await hudRects(page));
+    expect(points.length, `${season}: known ground samples`).toBeGreaterThan(100);
+    const drawn = await samples(page, 'view', points.map((entry) => entry.point));
+    const expected = livingTheatre(season, snapshot.tick, scene.map, scene.seed);
+    const wrong = points.filter((entry, at) => drawn[at]!.some((channel, component) =>
+      channel !== pixelAt(expected, entry.stage[0], entry.stage[1])[component]));
+    expect(wrong.length, `${season}: terrain, details, roads and wildlife`).toBe(0);
+    if (scene.name === 'crossing') {
+      const deck = [-4, 0, 4].map((offset) => stageToScreen(view.camera, scene.at.x * 16 + 8 + offset, scene.at.y * 16 + 8));
+      const current = await samples(page, 'view', deck.map((point) => [point.x, point.y] as const));
+      if (bridgePixels !== undefined) expect(current, 'the Bridge deck survives the seasonal repaint').toEqual(bridgePixels);
+      bridgePixels = current;
+    }
+    await capture(page, `${scene.name}-calendar-${season}`, 'issue76');
+  }
+});
 
 /** The luminance of a colour: what the eye reads as "how bright", and what a contrast is measured in. */
 function luminance(colour: readonly number[]): number {
@@ -111,13 +173,14 @@ function expectedAt(
   states: readonly Knowledge[],
   x: number,
   y: number,
+  living: PixelBuffer = THEATRE,
 ): { readonly colour: readonly number[]; readonly tolerance: number } | null {
   const at = tileAt(x, y);
   const state = states[at.y * MAP_WIDTH + at.x];
   if (state === undefined) return null;
 
   const colour = pixelAt(THEATRE, x, y);
-  if (state === KNOWLEDGE.visible) return { colour, tolerance: 0 };
+  if (state === KNOWLEDGE.visible) return { colour: pixelAt(living, x, y), tolerance: 0 };
   if (state === KNOWLEDGE.remembered) return { colour: veiled(colour), tolerance: 2 };
   // Unexplored ground is the fog and nothing else: it says nothing about terrain, so
   // it is not a reading of the quietened art and is skipped rather than compared.
@@ -234,6 +297,8 @@ test.describe('the quietened terrain on screen', () => {
         await showSquads(page, false);
         await lookFrom(page, first);
         await lookFrom(page, then);
+        const current = await state(page);
+        const living = livingTheatre(current.visible.season, current.tick);
 
         for (const zoom of ZOOMS) {
           await page.evaluate((level) => window.__SPQR.view?.zoomTo(level), zoom);
@@ -258,7 +323,7 @@ test.describe('the quietened terrain on screen', () => {
           let seen = 0;
           let remembered = 0;
           for (const [index, entry] of kept.entries()) {
-            const wanted = expectedAt(states, entry.stage[0], entry.stage[1]);
+            const wanted = expectedAt(states, entry.stage[0], entry.stage[1], living);
             const got = drawn[index];
             if (wanted === null || got === undefined) continue;
 

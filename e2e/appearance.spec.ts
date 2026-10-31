@@ -149,7 +149,7 @@ for (const faction of ['rome', 'carthage'] as const) for (const [width, height] 
       await page.goto(`/e2e/siege-fixture.html?view=${faction}&stage=${stage}`);
       await expect(page.locator('body')).toHaveAttribute('data-spqr-booted', 'true');
       await advance(page, 1);
-      const target = (await sites(page)).find((site) => site.kind === 'stronghold' && site.owner === 'carthage')!;
+      const target = (await sites(page)).find((site) => site.kind === 'stronghold' && site.id === 1)!;
       expect(target, `${stage}: the viewed Faction may know this front`).toBeDefined();
       await select(page, { kind: 'settlement', id: target.id });
       await page.evaluate(() => window.__SPQR.game!.centerSelection());

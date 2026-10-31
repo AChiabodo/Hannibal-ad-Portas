@@ -511,3 +511,67 @@ test.describe('an armed action aimed at a structure', () => {
       .toBeGreaterThan(own.rect.width / 4);
   });
 });
+
+
+for (const faction of FACTIONS) test(`repairs a damaged Work and wall through the management panel: ${faction} (#76)`, async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await dismissFirstEntry(page);
+  await page.goto('/e2e/hud-fixture.html');
+  await page.evaluate(async (faction) => {
+    const bootPath = '/src/render/boot.ts';
+    const siegePath = '/src/sim/siege.ts';
+    const buildingsPath = '/src/content/buildings.ts';
+    const controllerPath = '/src/sim/controller.ts';
+    const { bootRenderer } = await import(bootPath);
+    const { siegeMatchRules } = await import(siegePath);
+    const { buildingCode } = await import(buildingsPath);
+    const { idleController } = await import(controllerPath);
+    const view = await bootRenderer(document.getElementById('app')!, { seed: 7, faction,
+      opponent: idleController(), rules: { ...siegeMatchRules, createWorld(seed: number) {
+        const world = siegeMatchRules.createWorld(seed);
+        const owner = faction === 'rome' ? 0 : 1;
+        const home = world.economy.settlements[owner]!;
+        home.stocks.fill(30);
+        home.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0, hp: 40 });
+        const wall = world.siege.fronts[owner]!.structures.find((item: { kind: number; side: number }) => item.kind === 1 && item.side === 0)!;
+        wall.hp = 40;
+        return world;
+      } } });
+    view.pause();
+    window.__SPQR = { boot: { booted: true, render: view.probe }, game: view, view, atelier: null };
+  }, faction);
+  const owner = faction === 'rome' ? 0 : 1;
+  await select(page, { kind: 'settlement', id: owner });
+  const management = (await hudLayout(page)).buttons.find((button) => button.action === 'settlement:management')!;
+  await clickAt(page, management.rect.x + 4, management.rect.y + 4);
+  async function activate(action: string) {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const layout = await hudLayout(page);
+      const button = layout.buttons.find((button) => button.action === action);
+      if (button !== undefined) {
+        expect(button.enabled).toBe(true);
+        await clickAt(page, button.rect.x + 4, button.rect.y + 4);
+        await advance(page, 1);
+        return;
+      }
+      const next = layout.buttons.find((button) => button.action === 'detailNext');
+      if (next === undefined || !next.enabled) break;
+      await clickAt(page, next.rect.x + 4, next.rect.y + 4);
+    }
+    throw new Error(`No management action ${action}`);
+  }
+  await activate('repairWork:farm:0');
+  expect((await applied(page)).at(-1)?.command).toMatchObject({ kind: 'repairWork', faction, settlement: owner });
+  await capture(page, `work-repair-${faction}`, 'issue76');
+  await activate('repairFortification:wall:north');
+  expect((await applied(page)).at(-1)?.command).toMatchObject({ kind: 'repairFortification', faction, settlement: owner });
+  await capture(page, `wall-repair-${faction}`, 'issue76');
+  await advance(page, 200);
+  const shown = await page.evaluate((owner) => {
+    const visible = window.__SPQR.game!.state().visible;
+    return { farm: visible.settlements.find((site) => site.id === owner)!.works.find((work) => work.building === 'farm'),
+      wall: visible.fronts.find((front) => front.settlement === owner)!.structures.find((item) => item.kind === 'wall' && item.side === 'north') };
+  }, owner);
+  expect(shown.farm).toMatchObject({ hp: 60, repairing: false });
+  expect(shown.wall).toMatchObject({ hp: 60, repairing: false });
+});

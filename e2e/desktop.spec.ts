@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { capture } from './evidence';
 import type { HudAction } from '../src/ui/hud';
+import { MAP_WIDTH, TERRAIN } from '../src/sim/map';
 
 async function ready(page: Page, faction = 'rome') {
   await page.goto(`/?play=1&seed=7&faction=${faction}&difficulty=centurio`);
@@ -180,23 +181,24 @@ for (const faction of ['rome', 'carthage'] as const) {
     expect(await page.evaluate(() => window.__SPQR.game!.selection())).toEqual(selection);
     expect(await page.evaluate(() => window.__SPQR.game!.applied().map(({ command }) => command.kind))).toEqual(['recruit']);
     await page.evaluate(() => window.__SPQR.game!.cancelTargeting());
-    const known = await page.evaluate(() => {
+    const known = await page.evaluate(({ width, water }) => {
       const game = window.__SPQR.game!;
       const snapshot = game.state();
       const squad = snapshot.visible.squads[0]!;
       const index = snapshot.visible.fog.terrain.findIndex((terrain, at) => {
-        const dx = at % 96 - squad.x;
-        const dy = Math.floor(at / 96) - squad.y;
-        return terrain !== 255 && terrain !== 4 && dx * dx + dy * dy >= 49 && dx * dx + dy * dy <= 64;
+        const dx = at % width - squad.x;
+        const dy = Math.floor(at / width) - squad.y;
+        return terrain !== 255 && !water.some((code) => code === terrain) && dx * dx + dy * dy >= 49 && dx * dx + dy * dy <= 64;
       });
-      game.submit({ kind: 'move', faction: snapshot.faction, squads: [squad.id], x: index % 96, y: Math.floor(index / 96) });
+      if (index < 0) throw new Error('the known watch has no walkable frontier');
+      game.submit({ kind: 'move', faction: snapshot.faction, squads: [squad.id], x: index % width, y: Math.floor(index / width) });
       game.advance(300);
       game.submit({ kind: 'move', faction: snapshot.faction, squads: [squad.id], x: squad.x, y: squad.y });
       game.advance(300);
       game.select({ kind: 'squad', id: squad.id });
       game.centerSelection();
       return game.knowledge();
-    });
+    }, { width: MAP_WIDTH, water: [TERRAIN.river, TERRAIN.lake] });
     expect(known).toContain(0);
     expect(known).toContain(1);
     expect(known).toContain(2);

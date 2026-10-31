@@ -22,7 +22,7 @@
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
 import { capture } from './evidence';
-import { advance, applied, press, select, selection, squads } from './hooks';
+import { advance, applied, dismissFirstEntry, press, select, selection, squads } from './hooks';
 import type { HudModel } from '../src/ui/hud';
 import type { Command } from '../src/sim/command';
 import { translate } from '../src/ui/strings';
@@ -73,12 +73,18 @@ async function origin(page: Page): Promise<Point> {
 
 /** The rectangle of one contextual action, as the panel drew it. */
 async function commandRect(page: Page, id: string): Promise<Rect> {
-  const rect = await page.evaluate((wanted) => window.__SPQR.game!.hudLayout().commands
-    .find((command) => command.order.id === wanted)?.rect ?? null, id);
-
-  if (rect === null) throw new Error(`the panel offers no "${id}"`);
-
-  return rect;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const layout = await page.evaluate(() => window.__SPQR.game!.hudLayout());
+    const command = layout.commands.find((command) => command.order.id === id);
+    if (command !== undefined) return command.rect;
+    const model = await hud(page);
+    const index = model.commands.findIndex((command) => command.id === id);
+    const action = index < layout.commandScroll.offset ? 'commandsPrevious' : 'commandsNext';
+    const button = layout.buttons.find((button) => button.action === action);
+    if (button === undefined || !button.enabled) break;
+    await press(page, button.rect);
+  }
+  throw new Error(`the panel offers no "${id}"`);
 }
 
 async function pressCommand(page: Page, id: string): Promise<void> {
@@ -275,6 +281,7 @@ test('an enemy in sight is attacked by its own explicit action', async ({ page }
   const enemies = await page.evaluate(() => window.__SPQR.game!.state().visible.enemies);
   expect(enemies.length).toBeGreaterThan(0);
   const enemy = enemies[0]!;
+  await page.keyboard.press('f');
   expect((await hud(page)).commands.find((order) => order.id === 'attack')?.enabled).toBe(true);
 
   await pressCommand(page, 'attack');
@@ -285,7 +292,7 @@ test('an enemy in sight is attacked by its own explicit action', async ({ page }
   expect(await lastCommand(page)).toMatchObject({ kind: 'attack', squads: [nearest], target: enemy.id });
 });
 
-test('a mixed selection shows its reach, garrisons who can, and keeps a way back to the group', async ({ page }) => {
+test('a mixed selection explains garrison travel and keeps a way back to the group', async ({ page }) => {
   await bootScene(page, 'rome');
   const home = await homeSettlement(page);
   const [nearest, next] = await squadsNear(page, home.x, home.y);
@@ -295,7 +302,7 @@ test('a mixed selection shows its reach, garrisons who can, and keeps a way back
   expect((await selection(page)).squads).toEqual([nearest, next]);
   expect(model.group?.squads).toBe(2);
   expect(model.detail?.lines.map((line) => line.label)).toContain('Composizione');
-  expect(model.commands.find((order) => order.id === 'garrison')?.note).toMatch(/su 2 a portata/);
+  expect(model.commands.find((order) => order.id === 'garrison')?.note).toBe(translate('garrison.travel'));
 
   await pressCommand(page, 'garrison');
   await press(page, await rowRect(page, { kind: 'settlement', id: home.id }));
@@ -303,9 +310,9 @@ test('a mixed selection shows its reach, garrisons who can, and keeps a way back
   expect(await lastCommand(page)).toMatchObject({ kind: 'garrison', settlement: home.id });
 
   const garrisoned = await page.evaluate(() => window.__SPQR.game!.state().visible.squads.map((squad) => squad.garrison));
-  // The rule decides who is in reach: the Squad beside the walls is inside, the
-  // one four tiles out is not, and the panel does not pretend otherwise.
-  expect(garrisoned.filter((id) => id !== null)).toHaveLength(1);
+  // Admission now requires a real Gate journey and checks capacity on arrival;
+  // neither full field body becomes sheltered in one tick.
+  expect(garrisoned.filter((id) => id !== null)).toHaveLength(0);
 
   // Settle the selection back on the two Squads so the group panel is open.
   await page.evaluate((id) => window.__SPQR.game!.select({ kind: 'squad', id }), nearest!);
@@ -357,7 +364,13 @@ test('construction and recruitment are content-backed pages that submit real Com
 
 test('recruitment quotes and buys a real size and count for both Factions, by pointer and keyboard', async ({ page }) => {
   for (const faction of ['rome', 'carthage'] as const) {
-    await bootScene(page, faction);
+    // The ordinary opening has free assembly ground. The drawing fixture's
+    // full armies deliberately occupy it and can leave purchases queued.
+    await page.setViewportSize(VIEWPORT);
+    await dismissFirstEntry(page);
+    await page.goto(`/?play=1&seed=7&faction=${faction}&difficulty=centurio`);
+    await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'match');
+    await page.evaluate(() => window.__SPQR.game!.pause());
     const home = await homeSettlement(page);
     const before = await page.evaluate(() => window.__SPQR.game!.state().visible.squads.length);
     const firstLine = faction === 'rome' ? 'hastati' : 'libyan-spear';

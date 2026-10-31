@@ -24,14 +24,15 @@ import { UNEXPLORED, renderFog } from '../src/render/fog';
 import { renderTerrain, tilePixel } from '../src/render/terrain';
 import { openingEyes } from '../src/render/opening';
 import { DEFAULT_SEED, VIEWED_FACTION } from '../src/render/view';
-import { covers, describeView, hudRects, samples } from './hooks';
+import { visibleWildlife, wildlifeOf, wildlifeSprite } from '../src/render/wildlife';
+import { covers, describeView, hudRects, samples, state } from './hooks';
 
 /** The theatre the page is showing, and the Stronghold its player starts in. */
 const MAP: MapGrid = generateMap(DEFAULT_SEED);
 const STRONGHOLD: Site = MAP.strongholds[0];
 
 /** The theatre, rendered once: the fog is drawn over this, and the frame is what comes out. */
-const THEATRE: PixelBuffer = renderTerrain(MAP);
+const THEATRE: PixelBuffer = renderTerrain(MAP, 'spring', DEFAULT_SEED);
 
 /** A tile of the theatre this Faction cannot see: where the map has to stay hidden. */
 const FAR: Site = { x: STRONGHOLD.x < MAP_WIDTH / 2 ? 80 : 12, y: STRONGHOLD.y };
@@ -40,8 +41,10 @@ const FAR: Site = { x: STRONGHOLD.x < MAP_WIDTH / 2 ? 80 : 12, y: STRONGHOLD.y }
 const ELSEWHERE: Site = { x: FAR.x < MAP_WIDTH / 2 ? FAR.x + 40 : FAR.x - 40, y: FAR.y };
 
 /** The image the page draws for a Faction that knows that much: the theatre under its fog. */
-function fogged(fog: FogView): PixelBuffer {
-  const frame = renderTerrain(MAP);
+function fogged(fog: FogView, tick: number): PixelBuffer {
+  const frame = renderTerrain(MAP, 'spring', DEFAULT_SEED);
+  for (const animal of visibleWildlife(wildlifeOf(MAP, DEFAULT_SEED), fog, tick))
+    blit(frame, wildlifeSprite(animal.kind), animal.pixelX, animal.pixelY);
   blit(frame, renderFog(fog), 0, 0);
 
   return frame;
@@ -101,7 +104,8 @@ function same(got: Rgba | undefined, wanted: Rgba, tolerance: number): boolean {
  * frame is the theatre, the fog and the HUD over both, and a panel is
  * deliberately not the map. The rectangles come from the page's own layout.
  */
-async function expectDrawn(page: Page, image: PixelBuffer, context: string, tolerance = 0): Promise<void> {
+async function expectDrawn(page: Page, fog: FogView, context: string, tolerance = 0): Promise<void> {
+  const image = fogged(fog, (await state(page)).tick);
   const view = await describeView(page);
   const rects = await hudRects(page);
   const points: [number, number][] = [];
@@ -166,6 +170,7 @@ async function boot(page: Page): Promise<ViewState> {
   // The army C2 musters is hidden for these comparisons: the ticket under test
   // is the fog, and a Squad standing in it is a second thing on the frame.
   await page.evaluate(() => {
+    window.__SPQR.game?.pause();
     window.__SPQR.game?.showSquads(false);
     window.__SPQR.game?.showSettlements(false);
   });
@@ -185,7 +190,7 @@ test('opens with the fog its Stronghold can see, and hides the rest of the theat
   });
 
   // What the page drew is the theatre under the fog the Stronghold's vision makes.
-  await expectDrawn(page, fogged(watching()), 'the theatre under the opening fog');
+  await expectDrawn(page, watching(), 'the theatre under the opening fog');
 
   // A tile in view is the terrain, exactly; a tile out of it is the cover, exactly.
   expect((await pixelOfTile(page, STRONGHOLD)).slice(0, 3)).toEqual(groundAt(STRONGHOLD).slice(0, 3));
@@ -200,7 +205,7 @@ test('reveals nothing of the map underneath an unexplored tile, at another zoom 
   await page.evaluate(() => window.__SPQR.view?.zoomTo(1));
   expect((await describeView(page)).camera.zoom).toBe(1);
 
-  await expectDrawn(page, fogged(watching()), 'the opening fog at 1x');
+  await expectDrawn(page, watching(), 'the opening fog at 1x');
   expect(await pixelOfTile(page, FAR)).toEqual(UNEXPLORED);
 });
 
@@ -227,7 +232,7 @@ test('walks one tile through the three states of the fog as the watch moves', as
   expect(remembered[1]).toBeLessThan(ground[1]);
 
   // And the whole frame is the fog that gesture describes, composed in Node.
-  await expectDrawn(page, fogged(watching(FAR, ELSEWHERE)), 'the fog after the watch moved on', 1);
+  await expectDrawn(page, watching(FAR, ELSEWHERE), 'the fog after the watch moved on', 1);
 });
 
 test('reveals the whole theatre in the inspection mode, which is not a Player', async ({ page }) => {
@@ -237,7 +242,7 @@ test('reveals the whole theatre in the inspection mode, which is not a Player', 
   expect((await describeView(page)).inspection).toBe(true);
 
   // The whole map, exactly: the frame is the theatre under the omniscient view.
-  await expectDrawn(page, fogged(inspectionView(MAP)), 'the inspection mode');
+  await expectDrawn(page, inspectionView(MAP), 'the inspection mode');
   expect(await pixelOfTile(page, FAR)).toEqual(groundAt(FAR));
 
   // The inspection is a state of the renderer and not a mind: there is no
@@ -248,7 +253,7 @@ test('reveals the whole theatre in the inspection mode, which is not a Player', 
 
   await page.evaluate(() => window.__SPQR.view?.inspect(false));
   expect((await describeView(page)).inspection).toBe(false);
-  await expectDrawn(page, fogged(watching()), 'the fog again after the inspection');
+  await expectDrawn(page, watching(), 'the fog again after the inspection');
 });
 
 test('refuses a look that is not a whole tile of the theatre, and keeps the fog it had', async ({ page }) => {
@@ -265,7 +270,7 @@ test('refuses a look that is not a whole tile of the theatre, and keeps the fog 
   const after = await describeView(page);
   expect(after.watch).toBe(null);
   expect(after.inspection).toBe(false);
-  await expectDrawn(page, fogged(watching()), 'the fog after three refused looks');
+  await expectDrawn(page, watching(), 'the fog after three refused looks');
 });
 
 test('pans and zooms under fog without rebuilding either image', async ({ page }) => {
@@ -291,5 +296,5 @@ test('pans and zooms under fog without rebuilding either image', async ({ page }
   // The fog is not rebuilt per frame and not per camera move: the watch never
   // moved, and the frame is still the one the Stronghold's vision makes.
   expect((await describeView(page)).watch).toBe(null);
-  await expectDrawn(page, fogged(watching()), 'the fog after two hundred camera moves');
+  await expectDrawn(page, watching(), 'the fog after two hundred camera moves');
 });
