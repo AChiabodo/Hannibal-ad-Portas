@@ -232,7 +232,7 @@ function decorateLand(buffer: PixelBuffer, map: MapGrid, season: Season, seed: n
       if (terrain !== TERRAIN.plain && terrain !== TERRAIN.forest && terrain !== TERRAIN.hill) continue;
       let hash = Math.imul(x + seed, 0x85ebca6b) ^ Math.imul(y + seed, 0x27d4eb2d);
       hash = (Math.imul(hash ^ (hash >>> 15), 0x2545f491) ^ (hash >>> 13)) >>> 0;
-      if (hash % 8 !== 0) continue;
+      if (hash % (terrain === TERRAIN.forest ? 4 : 8) !== 0) continue;
       const at = tilePixel(x, y);
       const px = at.x + 2 + ((hash >>> 4) % 10);
       const py = at.y + 3 + ((hash >>> 9) % 9);
