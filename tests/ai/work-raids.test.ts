@@ -37,7 +37,8 @@ it.each(['rome', 'carthage'] as const)('the %s Controller raids a visible enemy 
     .toContainEqual({ kind: 'attackStructure', faction, squads: [attacker.id], target: workTarget });
   const defended = { ...opposite, squads: opposite.squads.map((squad) => ({ ...squad, x: rect.x - 6 })),
     enemies: [{ id: 99, type: faction === 'rome' ? 'gaul' : 'hastati',
-    x: rect.x + rect.width + 7, y: rect.y, appearance: { men: 120 } }] };
+    x: rect.x + rect.width + 7, y: rect.y,
+    appearance: { men: 120, capacity: 120, figures: 120, formation: 'line' as const, facing: 'west' as const } }] };
   expect(createArmyController('imperator').decide({ faction, tick: 0, visible: defended })
     .some((command) => command.kind === 'attackStructure' && command.target.kind === 'work')).toBe(false);
   for (const changed of [
