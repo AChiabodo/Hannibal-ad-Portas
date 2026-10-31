@@ -530,8 +530,12 @@ export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: Route
     const facing = facingOfStep(tileIndex(squad.x, squad.y), firstStep);
     const pose = passagePose(map, squad, tileX(firstStep), tileY(firstStep), facing);
     if (pose === undefined) { squad.refused = refusalCode('unreachable'); return; }
-    const { formation } = pose;
-    if (clearFieldBody(map, squad, squad.x, squad.y, formation, facing)) useMarchFormation(squad, formation);
+    // A legal sidestep can deliberately retain its facing. Applying only its
+    // formation and then facing the route would invalidate that same step.
+    if (clearFieldBody(map, squad, squad.x, squad.y, pose.formation, pose.facing)) {
+      useMarchFormation(squad, pose.formation);
+      squad.facing = pose.facing;
+    }
   }
 
   squad.steps = [...route.steps];
@@ -540,9 +544,9 @@ export function orderSquadTo(map: MapGrid, squad: Squad, to: Site, routes: Route
   // is told to march is told to come out of it (C5). A refused order above
   // changed nothing, so it did not take the Squad out of anything either.
   squad.garrison = FIELD;
-  if (firstStep === undefined || (canOccupy(map, squad, squad.x, squad.y, squad.formation,
+  if (!hasPhysicalSpace(map) && (firstStep === undefined || (canOccupy(map, squad, squad.x, squad.y, squad.formation,
     facingOfStep(tileIndex(squad.x, squad.y), firstStep)) && clearFieldBody(map, squad, squad.x, squad.y, squad.formation,
-    facingOfStep(tileIndex(squad.x, squad.y), firstStep)))) faceTheWay(squad);
+    facingOfStep(tileIndex(squad.x, squad.y), firstStep))))) faceTheWay(squad);
 
   // Only a route entering a different tile re-prices the step.
   if (payingFor === undefined || payingFor !== firstStep) squad.wait = costAhead(map, squad);

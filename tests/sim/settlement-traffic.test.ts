@@ -10,6 +10,7 @@ import { testMap } from './economy-fixtures';
 import { formationFootprint } from '../../src/content/formation';
 import { intersects } from '../../src/content/settlement-layout';
 import type { VisibleSquad } from '../../src/sim/economy-match';
+import { TERRAIN, tileIndex } from '../../src/sim/map';
 
 function ground(squad: VisibleSquad) {
   const rect = formationFootprint(squad.capacity, squad.formation, squad.facing);
@@ -26,6 +27,17 @@ function stage() {
 }
 
 describe('physical access traffic (#74)', () => {
+  it.each(['rome', 'carthage'] as const)('lets %s sidestep water without replacing the legal retained facing (#76)', (faction) => {
+    const { world, match } = stage();
+    world.map.terrain[tileIndex(49, 51)] = TERRAIN.river;
+    const squad = musterSquad(world.economy, world.map,
+      { faction, squadType: faction === 'rome' ? 'hastati' : 'gaul', men: 24, x: 50, y: 50, facing: 'south' });
+    match.step([move(faction, [squad.id], 49, 50)]);
+    expect(observeSiege(world, faction).squads[0]?.facing).toBe('south');
+    for (let tick = 1; tick < 4; tick += 1) match.step();
+    expect(observeSiege(world, faction).squads[0]).toMatchObject({ x: 49, y: 50, goal: null, refused: null });
+  });
+
   it('bounds route searches when a group clicks an intact enemy courtyard (#76)', () => {
     const { world, match } = stage();
     const first = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 120, x: 60, y: 75 });
