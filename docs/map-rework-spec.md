@@ -2,6 +2,24 @@
 
 ## Stato di implementazione
 
+### Verifica di chiusura del 1 novembre 2026
+
+L'issue #76 resta aperta durante la verifica finale autorizzata dall'utente.
+La revisione indipendente della specifica non ha individuato lacune funzionali.
+La revisione degli standard ha rilevato un difetto rispetto ad ADR-0026: gli
+attacchi a opere e campi applicavano danno fisso per Squad, premiando la
+frammentazione e ignorando le perdite.
+
+La correzione usa Force effettiva, moltiplicatori del tipo e arrotondamento
+cumulativo per bersaglio nello stesso scambio. Conserva quattro HP per 24 Force
+di fanteria, contributo dimezzato della cavalleria, minimo di un HP per bersaglio
+e attribuzione ordinata del colpo finale. I test Match/Observation coprono
+120 contro cinque gruppi da 24, 48 contro due da 24, superstiti, piccoli gruppi,
+specialisti e bersagli distinti. Anche le incursioni neutrali aggregano i gruppi
+parziali, mantenendo quattro HP sulle opere e tre sulle fortificazioni per un
+gruppo completo da 24 uomini. Passano 70 test mirati su otto file.
+Sono in riesecuzione i controlli completi dopo questa correzione.
+
 ### Aggiornamento del 31 ottobre 2026
 
 Questa sezione aggiorna i resoconti storici sottostanti. L'issue #76 resta

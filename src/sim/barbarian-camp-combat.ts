@@ -10,6 +10,7 @@ import { orderedSquads } from './movement.ts';
 import type { SiegeWorld } from './siege.ts';
 import { NO_REFUSAL, refusalCode } from './route.ts';
 import { FIELD, isRouting } from './squad.ts';
+import { createStructureExchange } from './structure-exchange.ts';
 import { approachAttackTarget, clearWorkLine, workAttackDistance } from './work-combat.ts';
 
 export interface BarbarianCampState { hp: number }
@@ -61,6 +62,7 @@ export function orderCampAttacks(world: SiegeWorld, commands: readonly Command[]
 
 /** Resolve blows in order; the final blow awards one faction exactly once. */
 export function advanceCampAttacks(world: SiegeWorld, tick: number): void {
+  const blow = createStructureExchange();
   const orders = world.campOrders ?? [];
   const kept: CampAttackOrder[] = [];
   const eyes = { rome: eyesOfEconomy(world, 'rome'), carthage: eyesOfEconomy(world, 'carthage') };
@@ -86,7 +88,7 @@ export function advanceCampAttacks(world: SiegeWorld, tick: number): void {
     const rect = { x: site.x, y: site.y, width: 1, height: 1 };
     if (workAttackDistance(squad.x, squad.y, rect) > reach ||
       !clearWorkLine(world, order.owner, squad.x, squad.y, rect) || tick % EXCHANGE_TICKS !== 0) continue;
-    camp.hp = Math.max(0, camp.hp - (type?.arm === 'cavalry' ? 2 : 4));
+    camp.hp = Math.max(0, camp.hp - blow(camp, squad));
     if (camp.hp === 0) world.economy.treasuries[order.owner] = (world.economy.treasuries[order.owner] ?? 0) + CAMP_REWARD;
   }
   world.campOrders = kept.filter((order) => {

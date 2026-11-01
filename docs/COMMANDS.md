@@ -193,6 +193,15 @@ when an available Squad can face the observed nearby defenders. Remembered
 Works, unknown ownership, construction, ruins and active repairs do not authorize
 a raid; the Match validates every resulting `attackStructure` Command.
 
+Structure damage counts surviving men and troop impact. A foot body with
+24 Force deals four HP per exchange; cavalry contributes half its Force.
+Contributions accumulate per target before rounding, with a one-HP minimum
+for positive total Force, so splitting the same body into more Squads cannot
+multiply its damage. Attack order still decides who delivers a camp's final
+blow and receives its single reward.
+Neutral raiders use the same aggregation for Works and fortifications, preserving
+their full 24-man body's calibration of four and three HP respectively.
+
 An Assault works a wall reached by its actual bodies. When several sides are
 reachable, it concentrates on the side supported by the greatest force, with
 the side code breaking ties. Only bodies in reach of that wall contribute to

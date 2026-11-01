@@ -14,6 +14,7 @@ import { NO_REFUSAL, refusalCode } from './route.ts';
 import { blockedTile, workGround, workOrdinal } from './settlement-space.ts';
 import type { SiegeWorld } from './siege.ts';
 import { FIELD, isRouting } from './squad.ts';
+import { createStructureExchange } from './structure-exchange.ts';
 
 export interface WorkAttackOrder { readonly squad: number; readonly owner: number; readonly settlement: number; readonly work: number }
 
@@ -119,6 +120,7 @@ export function orderWorkAttacks(world: SiegeWorld, commands: readonly Command[]
 }
 
 export function advanceWorkAttacks(world: SiegeWorld, tick: number): void {
+  const blow = createStructureExchange();
   world.workOrders = (world.workOrders ?? []).filter((order) => {
     const site = world.economy.settlements[order.settlement];
     const work = site?.works[order.work];
@@ -142,7 +144,7 @@ export function advanceWorkAttacks(world: SiegeWorld, tick: number): void {
     const type = squadTypeOf(squad.type);
     const reach = type?.arm === 'archers' ? 4 : 2;
     if (workAttackDistance(squad.x, squad.y, rect) > reach || !clearWorkLine(world, order.owner, squad.x, squad.y, rect)) return true;
-    damageWork(work, type?.arm === 'cavalry' ? 2 : 4);
+    damageWork(work, blow(work, squad));
     if ((work.hp ?? WORK_MAX_HP) > 0) return true;
     squad.steps = [];
     squad.wait = 0;

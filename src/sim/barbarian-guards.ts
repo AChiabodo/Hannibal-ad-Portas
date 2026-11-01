@@ -11,6 +11,7 @@ import type { Squad } from './economy.ts';
 import { clearWorkLine, damageWork, workAttackDistance } from './work-combat.ts';
 import { damageFortification, defendAgainstBarbarian, siegePosition, STRUCTURE, type SiegeWorld } from './siege.ts';
 import { insideCore, outsideCore, perimeterDistance } from './settlement-siege-geometry.ts';
+import { createStructureExchange } from './structure-exchange.ts';
 
 /** Not a player Faction and never a valid Command issuer. */
 export const BARBARIAN_OWNER = 2;
@@ -48,6 +49,8 @@ function spawnGuard(world: SiegeWorld, campId: number, men = GUARD_MEN): void {
 
 /** Defend the surrounding ground; surviving orphans wander without raiding. */
 export function advanceCampGuards(world: SiegeWorld, tick: number): void {
+  const workBlow = createStructureExchange();
+  const wallBlow = createStructureExchange(3);
   for (const front of world.siege.fronts) {
     if (front.barbarianAssault !== 1) continue;
     const site = world.economy.settlements[front.settlement];
@@ -143,7 +146,7 @@ export function advanceCampGuards(world: SiegeWorld, tick: number): void {
       if (targetWork !== undefined) {
         const { work, rect } = targetWork;
         if (workAttackDistance(guard.x, guard.y, rect) <= 2 && clearWorkLine(world, guard.owner, guard.x, guard.y, rect)) {
-          damageWork(work, 4);
+          damageWork(work, workBlow(work, guard));
         } else {
           const x = guard.x < rect.x ? rect.x - 2 : guard.x >= rect.x + rect.width ? rect.x + rect.width + 1 : guard.x;
           const y = guard.y < rect.y ? rect.y - 2 : guard.y >= rect.y + rect.height ? rect.y + rect.height + 1 : guard.y;
@@ -161,7 +164,7 @@ export function advanceCampGuards(world: SiegeWorld, tick: number): void {
             front.structures.find((structure) => structure.kind === STRUCTURE.wall && structure.side === side);
           if (piece !== undefined) {
             front.barbarianAssault = 1;
-            damageFortification(piece, 3);
+            damageFortification(piece, wallBlow(piece, guard));
             defendAgainstBarbarian(world, settlement.id, guard, tick);
           }
         } else {
