@@ -91,8 +91,9 @@ it('keeps the minimum blow independent for each Work in the same exchange', () =
 it.each([['rome', 'work'], ['rome', 'wall'], ['carthage', 'work'], ['carthage', 'wall']] as const)(
   'preserves neutral raid Force against %s %s after reinforcement', (faction, kind) => {
   function damage(kind: 'work' | 'wall', survivors: readonly number[]): number {
+    const camp = faction === 'rome' ? { x: 58, y: 40 } : { x: 128, y: 110 };
     const map = { ...testMap({ strongholds: [{ x: 40, y: 40 }, { x: 110, y: 110 }] }),
-      barbarianCamps: [{ x: 75, y: 60, variant: 0 }] };
+      barbarianCamps: [{ ...camp, variant: 0 }] };
     const economy = createEconomy(map);
     const site = economy.settlements[faction === 'rome' ? 0 : 1]!;
     site.population = 0;
