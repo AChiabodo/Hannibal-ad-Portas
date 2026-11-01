@@ -182,7 +182,10 @@ invariati casi, asserzioni, timeout, soglie di prestazione e hash CLI. L'esecuzi
 del sequencer ufficiale Vitest sui 163 file conferma 41+41+41+40 file, senza
 omissioni o sovrapposizioni. Passano anche i 24 test dei profili e della scelta
 dei gate browser; lo YAML è valido. Standards e Spec non rilevano nuove
-violazioni o riduzioni del gate. La validazione sul runner ospitato è in corso.
+violazioni o riduzioni del gate. I quattro check `verify` della
+[PR #77](https://github.com/AChiabodo/Hannibal-ad-Portas/pull/77/checks)
+registrano l'esito della validazione sul runner ospitato e devono tutti passare
+prima del merge.
 
 ## Esito per asse
 
