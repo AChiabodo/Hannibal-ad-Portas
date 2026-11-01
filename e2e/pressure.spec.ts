@@ -5,26 +5,27 @@ import { capture } from './evidence';
 import { dismissFirstEntry, hudLayout, press, state, describeView, hudRects } from './hooks';
 import { PRESSURE_LIMITS } from '../src/cli/pressure';
 import type { SiegeVisible } from '../src/sim/siege';
-import type { Faction } from '../src/sim/faction';
+import { factionCode, type Faction } from '../src/sim/faction';
 import { stageToScreen } from '../src/render/camera';
 import { tilePixel } from '../src/render/terrain';
 import { SEASON_TICKS } from '../src/sim/season';
 import { formationFootprint } from '../src/content/formation';
 import { intersects, rectDistance, settlementLayout } from '../src/content/settlement-layout';
 import { SQUAD_TYPES } from '../src/content/squads';
+import { MINIMAP_PLATE_WIDTH, minimapPointOf } from '../src/ui/minimap';
 
 async function button(page: Page, action: string) {
   const drawn = (await hudLayout(page)).buttons.find((entry) => entry.action === action);
   expect(drawn, action).toBeDefined();
   await press(page, drawn!.rect);
 }
-async function pace(page: Page) {
+async function pace(page: Page, speed: 1 | 3 = 3) {
   await page.keyboard.press('Escape');
   await press(page, await page.evaluate(() => window.__SPQR.game!.matchLayout().buttons.find((entry) => entry.action === 'settings')!.rect));
-  await press(page, await page.evaluate(() => window.__SPQR.game!.matchLayout().buttons.find((entry) => entry.action === 'speed3')!.rect));
+  await press(page, await page.evaluate((speed) => window.__SPQR.game!.matchLayout().buttons.find((entry) => entry.action === `speed${speed}`)!.rect, speed));
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
-  expect((await state(page)).speed).toBe(3);
+  expect((await state(page)).speed).toBe(speed);
 }
 async function pause(page: Page, paused: boolean) {
   if ((await state(page)).paused !== paused) await page.keyboard.press('Space');
@@ -155,6 +156,7 @@ for (const faction of ['rome', 'carthage'] as const) {
     expect((await state(page)).seed).toBe(1);
     const started = Date.now();
     let earlierContact: Awaited<ReturnType<typeof contact>> | null = null;
+    let firstNotice: Awaited<ReturnType<typeof state>>['notices'][number] | undefined;
     const homeRow = (await hudLayout(page)).rows.find((entry) => entry.selection.kind === 'settlement')!;
     await press(page, homeRow.rect);
     await button(page, 'settlement:balance');
@@ -168,7 +170,15 @@ for (const faction of ['rome', 'carthage'] as const) {
       await pace(page);
       await pause(page, false);
       await expect.poll(async () => (await state(page)).applied.some((entry) => entry.command.kind === 'build')).toBe(true);
-      earlierContact = await contact(page, `journey-${faction}-${width}`);
+      // The notice survives a brief sighting. Waiting for a second sighting
+      // before recruiting can delay the response until the scout withdraws.
+      await expect.poll(async () => (await state(page)).notices.some((notice) =>
+        notice.kind === 'contact' && notice.label === 'Nemico avvistato'),
+      { timeout: 120_000, intervals: [250] }).toBe(true);
+      await pause(page, true);
+      firstNotice = (await state(page)).notices.find((notice) =>
+        notice.kind === 'contact' && notice.label === 'Nemico avvistato');
+      expect(firstNotice?.target).toBeTruthy();
       await press(page, (await hudLayout(page)).rows.find((entry) => entry.selection.kind === 'settlement')!.rect);
     }
     await press(page, (await hudLayout(page)).tabs.find((entry) => entry.tab === 'recruitment')!.rect);
@@ -185,37 +195,67 @@ for (const faction of ['rome', 'carthage'] as const) {
     await expect.poll(async () => (await state(page)).visible.squads.length).toBe(faction === 'rome' ? 1 : 2);
     await pause(page, true);
     if (faction === 'rome') {
-      // Intercept with the first defender before showing the scout a superior
-      // field army. Two co-located cohorts correctly make it withdraw, and a
-      // fleeting contact need not cross a combat-exchange tick.
+      // Pursue the first report at normal speed, updating the order from
+      // current sightings or their remembered position, as a Player can.
+      await pace(page, 1);
       const first = (await hudLayout(page)).rows.find((entry) => entry.selection.kind === 'squad')!;
       await press(page, first.rect);
-      await page.keyboard.press('f');
-      await contact(page, `interception-${faction}-${width}`);
-      const enemy = (await state(page)).visible.enemies.find((entry) => entry.neutral !== true);
-      expect(enemy, 'the observed besieger is available to intercept').toBeDefined();
       const beforeInterception = await state(page);
-      const order = (await hudLayout(page)).commands.find((entry) => entry.order.id === 'attack')!;
-      expect(order.order.enabled).toBe(true);
-      await press(page, order.rect);
-      const view = await describeView(page), tile = tilePixel(enemy!.x, enemy!.y);
-      const at = stageToScreen(view.camera, tile.x, tile.y);
       const origin = (await page.locator('#app canvas').boundingBox())!;
-      expect((await hudRects(page)).some((rect) => at.x >= rect.x && at.x < rect.x + rect.width &&
-        at.y >= rect.y && at.y < rect.y + rect.height), 'the target is clear of the HUD').toBe(false);
-      await page.mouse.click(origin.x + at.x, origin.y + at.y);
-      await pause(page, false);
-      await expect.poll(async () => (await state(page)).applied.some((entry) =>
-        entry.command.faction === faction && entry.command.kind === 'attack')).toBe(true);
+      let lastOrder = -1;
+      let losses = false;
+      let appliedAttack = false;
+      let lastSeen = { x: firstNotice!.target!.x, y: firstNotice!.target!.y };
+      const enemyMen = new Map<number, number>();
       await expect.poll(async () => {
         const shown = await state(page);
-        return shown.visible.squads.some((squad) => squad.men <
+        appliedAttack ||= shown.applied.some((entry) => entry.command.faction === faction && entry.command.kind === 'attack');
+        const observed = shown.visible.enemies.find((entry) => entry.neutral !== true);
+        // Retain every observed position, including frames between new orders.
+        if (observed) lastSeen = { x: observed.x, y: observed.y };
+        for (const enemy of shown.visible.enemies) if (enemy.neutral !== true && enemy.appearance && !enemyMen.has(enemy.id)) {
+          enemyMen.set(enemy.id, enemy.appearance.men);
+        }
+        losses = shown.visible.squads.some((squad) => squad.men <
           (beforeInterception.visible.squads.find((before) => before.id === squad.id)?.men ?? squad.men)) ||
-          shown.visible.enemies.some((squad) => squad.id === enemy!.id && squad.appearance &&
-            squad.appearance.men < (enemy!.appearance?.men ?? squad.appearance.men));
-      }, { timeout: 60_000, intervals: [250] }).toBe(true);
+          shown.visible.enemies.some((enemy) => enemy.neutral !== true && enemy.appearance &&
+            enemy.appearance.men < enemyMen.get(enemy.id)!) ||
+          shown.corpses.some((corpse) => corpse.owner === factionCode('carthage') &&
+            corpse.born > beforeInterception.tick && Math.abs(corpse.x - lastSeen.x) + Math.abs(corpse.y - lastSeen.y) <= 4);
+        if (losses || shown.tick >= SEASON_TICKS) return true;
+        if (shown.tick - lastOrder < 5) return false;
+        await pause(page, true);
+        const current = await state(page);
+        const live = current.visible.enemies.find((entry) => entry.neutral !== true);
+        if (live && earlierContact === null) earlierContact = await contact(page, `interception-${faction}-${width}`);
+        const remembered = current.visible.contacts.find((entry) => entry.kind === 'squad' &&
+          entry.id === firstNotice!.target!.id);
+        const target = live ?? remembered ?? lastSeen;
+        lastSeen = { x: target.x, y: target.y };
+        const minimap = (await hudLayout(page)).minimap, point = minimapPointOf(target.x, target.y);
+        const scale = minimap.width / MINIMAP_PLATE_WIDTH;
+        await page.mouse.click(origin.x + minimap.x + (point.x + 0.5) * scale,
+          origin.y + minimap.y + (point.y + 0.5) * scale);
+        if (live) {
+          const order = (await hudLayout(page)).commands.find((entry) => entry.order.id === 'attack')!;
+          expect(order.order.enabled).toBe(true);
+          await press(page, order.rect);
+        } else await page.keyboard.press('a');
+        const view = await describeView(page), tile = tilePixel(target.x, target.y);
+        const at = stageToScreen(view.camera, tile.x, tile.y);
+        expect((await hudRects(page)).some((rect) => at.x >= rect.x && at.x < rect.x + rect.width &&
+          at.y >= rect.y && at.y < rect.y + rect.height), 'the target is clear of the HUD').toBe(false);
+        await page.mouse.click(origin.x + at.x, origin.y + at.y);
+        lastOrder = current.tick;
+        await pause(page, false);
+        return false;
+      }, { timeout: 120_000, intervals: [100] }).toBe(true);
       await pause(page, true);
       expect((await state(page)).tick, 'the interception causes losses before seasonal attrition').toBeLessThan(SEASON_TICKS);
+      expect(losses, 'the pursuit causes new losses to a participant').toBe(true);
+      expect(appliedAttack, 'the Match applies the human Attack during the pursuit').toBe(true);
+      expect(earlierContact, 'the pursuit includes a rendered opposing army').not.toBeNull();
+      await pace(page);
       await press(page, (await hudLayout(page)).rows.find((entry) => entry.selection.kind === 'settlement')!.rect);
       await press(page, (await hudLayout(page)).tabs.find((entry) => entry.tab === 'recruitment')!.rect);
       await buyRecruits(24);
@@ -332,7 +372,8 @@ for (const faction of ['rome', 'carthage'] as const) {
     expect(await page.evaluate(() => window.__SPQR.game!.groupOf(1)))
       .toEqual(army.filter((squad) => restored.visible.squads.some((survivor) => survivor.id === squad.id)).map((squad) => squad.id));
     const evidence = { seed: 1, faction, speed: 3, sizes: army.map((squad) => squad.capacity),
-      policy: faction === 'rome' ? 'intercept-first-then-reinforce-and-pursue-observed' : 'early-recruit-and-pursue-observed',
+      interceptionSpeed: faction === 'rome' ? 1 : 3,
+      policy: faction === 'rome' ? 'react-to-notice-at-normal-speed-then-reinforce' : 'early-recruit-and-pursue-observed',
       contactTick: seen.tick, conflictTick: conflict.tick, activeSeconds: conflict.tick / 10, wallSeconds: (Date.now() - started) / 1000,
       survivors: conflict.visible.squads.map((squad) => ({ id: squad.id, men: squad.men, capacity: squad.capacity })),
       enemySurvivors: conflict.visible.enemies, corpses: conflict.corpses, advanceCalls: 0 };
