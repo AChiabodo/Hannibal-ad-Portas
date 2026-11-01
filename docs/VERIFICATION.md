@@ -145,7 +145,7 @@ starts a second identical run.
 
 | CI job | When | What it proves |
 | --- | --- | --- |
-| `verify` | always | Lint, types, build, unit tests, and the recorded CLI hashes (determinism) |
+| `verify` (four shards) | always | Lint, types, build, all unit tests partitioned across four runners, and the recorded CLI hashes (determinism) |
 | `guards` | always | The seven fences, including "no committed image, font or audio file" |
 | `plan` | always | Which browser gates this event takes, with the fail-safe above |
 | `browser-smoke` | unless the plan says `false` | Boot, one ordinary Command, frame and console health |
@@ -157,7 +157,12 @@ browser jobs — the same fail-safe direction as an unreadable diff. If a develo
 pull request has no browser jobs, its checks section shows the fast jobs only;
 the plan's log states why.
 
-Branch protection should match the policy: require `verify`, `guards` and `plan`
+Each `verify` shard uses one Vitest worker. Every test file belongs to exactly
+one of the four shards; no tests or time limits are removed. Separate hosted
+runners prevent long simulations from competing with the strict route and
+simulation time budgets. Local profiles retain their existing worker cap.
+
+Branch protection should match the policy: require all four `verify` checks, `guards` and `plan`
 on `develop`, and add `browser-smoke` and `browser-acceptance` as required checks
 on `main`. A required browser check that a develop pull request skips would
 otherwise show as a missing check instead of a deliberate decision.

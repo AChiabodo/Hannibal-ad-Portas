@@ -169,6 +169,21 @@ sono conservati separatamente in
 SHA-256. Il precedente avviso Vite sul chunk oltre 500 kB rimane un avviso di
 build, senza errori o regressioni funzionali aperte.
 
+## CI della PR #77
+
+La prima CI pubblicata, run `41332348676`, supera 1.781 casi su 1.787:
+cinque timeout nelle simulazioni AI e il controllo di movimento a 1.358 ms
+contro il limite di 1.000 ms. Non falliscono asserzioni sugli esiti di gioco.
+La suite locale completa sopra riportata rimane verde.
+
+Per verificare l'ipotesi di contesa CPU sul runner ospitato, il job `verify`
+partiziona tutti i file in quattro shard, ciascuno con un solo worker. Restano
+invariati casi, asserzioni, timeout, soglie di prestazione e hash CLI. L'esecuzione
+del sequencer ufficiale Vitest sui 163 file conferma 41+41+41+40 file, senza
+omissioni o sovrapposizioni. Passano anche i 24 test dei profili e della scelta
+dei gate browser; lo YAML è valido. Standards e Spec non rilevano nuove
+violazioni o riduzioni del gate. La validazione sul runner ospitato è in corso.
+
 ## Esito per asse
 
 - Standards: una violazione iniziale risolta; **zero violazioni vincolanti
