@@ -138,6 +138,7 @@ for (const faction of ['rome', 'carthage'] as const) {
     const width = faction === 'rome' ? 1280 : 1920;
     await page.setViewportSize({ width, height: width === 1280 ? 720 : 1080 });
     await page.goto('/');
+    await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
     await page.keyboard.press('Enter');
     await expect(page.locator('body')).toHaveAttribute('data-spqr-screen', 'setup');
     if (faction === 'carthage') await page.keyboard.press('ArrowRight');
