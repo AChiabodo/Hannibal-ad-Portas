@@ -31,9 +31,14 @@ async function pause(page: Page, paused: boolean) {
   expect((await state(page)).paused).toBe(paused);
 }
 async function contact(page: Page, name: string) {
-  await expect.poll(async () => (await state(page)).visible.enemies.filter((enemy) => enemy.neutral !== true).length,
-    { timeout: 120_000, intervals: [250] }).toBeGreaterThan(0);
-  await pause(page, true);
+  await expect.poll(async () => {
+    if (!(await state(page)).visible.enemies.some((enemy) => enemy.neutral !== true)) return false;
+    await pause(page, true);
+    if ((await state(page)).visible.enemies.some((enemy) => enemy.neutral !== true)) return true;
+    // A brief sighting can end between reading the frame and handling Space.
+    await pause(page, false);
+    return false;
+  }, { timeout: 120_000, intervals: [250] }).toBe(true);
   const observed = await state(page);
   const enemy = observed.visible.enemies.find((enemy) => enemy.neutral !== true);
   expect(enemy, 'the opposing army is currently sighted').toBeDefined();
@@ -157,36 +162,66 @@ for (const faction of ['rome', 'carthage'] as const) {
     await press(page, (await hudLayout(page)).commands.find((entry) => entry.order.id === 'build:farm')!.rect);
     await button(page, 'purchase:build:farm');
     if (faction === 'rome') {
-      // React to an actual siege: an early superior human army correctly scares
-      // off the scouting party. No enemy orders or resources are fabricated.
+      // React to the first observed contact with one defender, before an
+      // oversized field army can make the scouting party withdraw.
       await pace(page);
       await pause(page, false);
       await expect.poll(async () => (await state(page)).applied.some((entry) => entry.command.kind === 'build')).toBe(true);
       earlierContact = await contact(page, `journey-${faction}-${width}`);
-      let previous = (await state(page)).visible;
-      await pause(page, false);
-      await expect.poll(async () => {
-        const current = (await state(page)).visible;
-        const effect = pressure(previous, current, faction);
-        previous = current;
-        return effect;
-      }, { timeout: 120_000, intervals: [250] }).not.toBeNull();
-      await pause(page, true);
       await press(page, (await hudLayout(page)).rows.find((entry) => entry.selection.kind === 'settlement')!.rect);
     }
     await press(page, (await hudLayout(page)).tabs.find((entry) => entry.tab === 'recruitment')!.rect);
     const type = faction === 'rome' ? 'hastati' : 'gaul';
-    for (const men of (faction === 'rome' ? [24, 24] : [24, 48])) {
+    async function buyRecruits(men: number) {
       const card = (await hudLayout(page)).commands.find((entry) => entry.order.id === `recruit:${type}:${men}`)!;
       expect(card.order.enabled).toBe(true);
       await press(page, card.rect);
       await button(page, `purchase:recruit:${type}:${men}`);
-
     }
+    for (const men of (faction === 'rome' ? [24] : [24, 48])) await buyRecruits(men);
     await pace(page);
     await pause(page, false);
-    await expect.poll(async () => (await state(page)).visible.squads.length).toBe(2);
+    await expect.poll(async () => (await state(page)).visible.squads.length).toBe(faction === 'rome' ? 1 : 2);
     await pause(page, true);
+    if (faction === 'rome') {
+      // Intercept with the first defender before showing the scout a superior
+      // field army. Two co-located cohorts correctly make it withdraw, and a
+      // fleeting contact need not cross a combat-exchange tick.
+      const first = (await hudLayout(page)).rows.find((entry) => entry.selection.kind === 'squad')!;
+      await press(page, first.rect);
+      await page.keyboard.press('f');
+      await contact(page, `interception-${faction}-${width}`);
+      const enemy = (await state(page)).visible.enemies.find((entry) => entry.neutral !== true);
+      expect(enemy, 'the observed besieger is available to intercept').toBeDefined();
+      const beforeInterception = await state(page);
+      const order = (await hudLayout(page)).commands.find((entry) => entry.order.id === 'attack')!;
+      expect(order.order.enabled).toBe(true);
+      await press(page, order.rect);
+      const view = await describeView(page), tile = tilePixel(enemy!.x, enemy!.y);
+      const at = stageToScreen(view.camera, tile.x, tile.y);
+      const origin = (await page.locator('#app canvas').boundingBox())!;
+      expect((await hudRects(page)).some((rect) => at.x >= rect.x && at.x < rect.x + rect.width &&
+        at.y >= rect.y && at.y < rect.y + rect.height), 'the target is clear of the HUD').toBe(false);
+      await page.mouse.click(origin.x + at.x, origin.y + at.y);
+      await pause(page, false);
+      await expect.poll(async () => (await state(page)).applied.some((entry) =>
+        entry.command.faction === faction && entry.command.kind === 'attack')).toBe(true);
+      await expect.poll(async () => {
+        const shown = await state(page);
+        return shown.visible.squads.some((squad) => squad.men <
+          (beforeInterception.visible.squads.find((before) => before.id === squad.id)?.men ?? squad.men)) ||
+          shown.visible.enemies.some((squad) => squad.id === enemy!.id && squad.appearance &&
+            squad.appearance.men < (enemy!.appearance?.men ?? squad.appearance.men));
+      }, { timeout: 60_000, intervals: [250] }).toBe(true);
+      await pause(page, true);
+      expect((await state(page)).tick, 'the interception causes losses before seasonal attrition').toBeLessThan(SEASON_TICKS);
+      await press(page, (await hudLayout(page)).rows.find((entry) => entry.selection.kind === 'settlement')!.rect);
+      await press(page, (await hudLayout(page)).tabs.find((entry) => entry.tab === 'recruitment')!.rect);
+      await buyRecruits(24);
+      await pause(page, false);
+      await expect.poll(async () => (await state(page)).visible.squads.length).toBe(2);
+      await pause(page, true);
+    }
     const raised = await state(page);
     const army = raised.visible.squads;
     expect(raised.applied.map((entry) => entry.command.kind)).toContain('recruit');
@@ -296,7 +331,7 @@ for (const faction of ['rome', 'carthage'] as const) {
     expect(await page.evaluate(() => window.__SPQR.game!.groupOf(1)))
       .toEqual(army.filter((squad) => restored.visible.squads.some((survivor) => survivor.id === squad.id)).map((squad) => squad.id));
     const evidence = { seed: 1, faction, speed: 3, sizes: army.map((squad) => squad.capacity),
-      policy: faction === 'rome' ? 'two-defenders-and-pursue-observed' : 'early-recruit-and-pursue-observed',
+      policy: faction === 'rome' ? 'intercept-first-then-reinforce-and-pursue-observed' : 'early-recruit-and-pursue-observed',
       contactTick: seen.tick, conflictTick: conflict.tick, activeSeconds: conflict.tick / 10, wallSeconds: (Date.now() - started) / 1000,
       survivors: conflict.visible.squads.map((squad) => ({ id: squad.id, men: squad.men, capacity: squad.capacity })),
       enemySurvivors: conflict.visible.enemies, corpses: conflict.corpses, advanceCalls: 0 };
