@@ -53,7 +53,9 @@ interface Settlement {
   readonly stocks: Resources;
   readonly land: Resources;
   readonly pending?: readonly { readonly kind: 'build' | 'recruit'; readonly building?: string | null; readonly squadType?: string | null }[];
-  readonly works: readonly { readonly building: string; readonly standing: boolean; readonly remaining: number }[];
+  readonly works: readonly { readonly building: string; readonly standing: boolean; readonly remaining: number;
+    readonly ordinal?: number; readonly hp?: number; readonly maxHp?: number; readonly repairing?: boolean;
+    readonly repairWaiting?: 'workers' | 'resources' | 'siege' }[];
 }
 
 /** Only owned economic facts, plus the fronts the Faction can already observe. */
@@ -64,7 +66,9 @@ export interface EconomyObservation {
   readonly settlements: readonly Settlement[];
   readonly squads: readonly { readonly payroll: number; readonly unpaid: number; readonly type: string }[];
   readonly enemies?: readonly { readonly type: string }[];
-  readonly fronts?: readonly { readonly settlement: number; readonly siege: SiegePath | null; readonly besieger: Faction | null }[];
+  readonly fronts?: readonly { readonly settlement: number; readonly siege: SiegePath | null; readonly besieger: Faction | null;
+    readonly structures?: readonly { readonly kind: 'wall' | 'gate'; readonly side: 'north' | 'east' | 'south' | 'west';
+      readonly hp: number; readonly maxHp?: number; readonly repairing?: boolean }[] }[];
 }
 
 type EconomyCommand = {
@@ -72,10 +76,18 @@ type EconomyCommand = {
 } | {
   readonly kind: 'recruit'; readonly faction: Faction; readonly settlement: number;
   readonly squadType: string; readonly men: number; readonly count: number;
+} | {
+  readonly kind: 'repairFortification'; readonly faction: Faction; readonly settlement: number;
+  readonly structure: 'wall' | 'gate'; readonly side: 'north' | 'east' | 'south' | 'west';
+} | {
+  readonly kind: 'repairWork'; readonly faction: Faction; readonly settlement: number;
+  readonly building: string; readonly ordinal: number;
 };
 
 /** Content is supplied at composition; the AI has no path to simulation modules. */
 export function createEconomyBehaviour(content: {
+  readonly fortificationRepairStone?: (maxHp: number, hp: number) => number;
+  readonly workRepairCost?: (building: Building, hp: number) => Resources;
   readonly recruitmentPreference?: (observation: Observation<EconomyObservation>, type: string) => {
     readonly utility: number; readonly reason: string;
   };
@@ -116,6 +128,7 @@ export function createEconomyBehaviour(content: {
       for (const work of settlement.works) {
         const building = buildings.get(work.building);
         if (building === undefined || building.labour > available) continue;
+        if (work.standing && (work.hp === 0 || work.repairing)) continue;
         available -= building.labour;
         // Payroll is charged at the next Season boundary. A staffed market
         // finishing before then can fund that bill; it need not be standing
@@ -139,6 +152,33 @@ export function createEconomyBehaviour(content: {
       const candidates: Candidate<EconomyCommand>[] = [];
       const funds = budget(observation);
       for (const settlement of observation.visible.settlements) {
+        const front = observation.visible.fronts?.find((candidate) => candidate.settlement === settlement.id);
+        if (front?.siege === null && content.workRepairCost !== undefined) {
+          for (const work of settlement.works) {
+            const building = buildings.get(work.building);
+            if (building === undefined || work.hp === undefined || work.maxHp === undefined || work.hp >= work.maxHp ||
+              work.repairing || work.repairWaiting === 'resources' || work.ordinal === undefined) continue;
+            const cost = content.workRepairCost(building, work.hp);
+            if (Object.keys(cost).some((key) => cost[key as keyof Resources] > settlement.stocks[key as keyof Resources])) continue;
+            candidates.push({ id: `repair-work-${settlement.id}-${work.building}-${work.ordinal}`,
+              utility: work.hp === 0 ? 180 : 60 + Math.floor(80 * (work.maxHp - work.hp) / work.maxHp),
+              reason: `Repair the observed ${work.building} with local resources.`,
+              commands: [{ kind: 'repairWork', faction: observation.faction, settlement: settlement.id,
+                building: work.building, ordinal: work.ordinal }] });
+          }
+        }
+        if (front?.siege === null && content.fortificationRepairStone !== undefined) {
+          for (const structure of front.structures ?? []) {
+            const maximum = structure.maxHp;
+            if (maximum === undefined || structure.hp >= maximum || structure.repairing ||
+              settlement.stocks.stone < content.fortificationRepairStone(maximum, structure.hp)) continue;
+            candidates.push({ id: `repair-${settlement.id}-${structure.kind}-${structure.side}`,
+              utility: structure.hp === 0 ? 220 : 90 + Math.floor(100 * (maximum - structure.hp) / maximum),
+              reason: `Repair the observed ${structure.kind} at ${structure.side} with local stone.`,
+              commands: [{ kind: 'repairFortification', faction: observation.faction, settlement: settlement.id,
+                structure: structure.kind, side: structure.side }] });
+          }
+        }
         const food = Math.max(1, Math.floor(settlement.population / content.grainPerHead));
         let grainCapacityNeeded = grainFloor(food);
         if (!observation.visible.squads.some((squad) => squad.unpaid > 0)) {

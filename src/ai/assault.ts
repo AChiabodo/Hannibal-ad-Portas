@@ -13,6 +13,9 @@ export interface AssaultObservation {
     readonly settlement: number;
     readonly breached?: boolean;
     readonly garrison?: number;
+    readonly garrisonMen?: number;
+    readonly garrisonCapacity?: number;
+    readonly structures?: readonly unknown[];
     readonly garrisonKnown?: boolean;
     readonly besieger: Faction | null;
     readonly siege?: 'assault' | 'blockade' | null;

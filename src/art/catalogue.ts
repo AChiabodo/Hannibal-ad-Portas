@@ -173,7 +173,7 @@ const TERRAIN_HEIGHT = (1 + TERRAIN_ROWS + 1) * TERRAIN_CELL;
 const NODES_HEIGHT = NODE_TILE + 3;
 
 /** One cell of the separation section: a terrain patch, plus the air that keeps two rows apart. */
-const SEPARATION_CELL = SEPARATION_SIZE + 3;
+const SEPARATION_CELL = SEPARATION_SIZE + 1;
 
 /** The captions' own line, over the two rows of patches. */
 const SEPARATION_CAPTION_HEIGHT = LINE_HEIGHT + 3;

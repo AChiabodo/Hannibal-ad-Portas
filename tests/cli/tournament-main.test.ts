@@ -23,6 +23,7 @@ import type { TournamentReport } from '../../src/cli/tournament';
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const TOURNAMENT = fileURLToPath(new URL('../../src/cli/tournament-main.ts', import.meta.url));
 const MATCH = fileURLToPath(new URL('../../src/cli/main.ts', import.meta.url));
+const REPLAY = fileURLToPath(new URL('../../src/cli/replay-main.ts', import.meta.url));
 
 interface Ran {
   readonly status: number | null;
@@ -62,6 +63,19 @@ function workspace(): string {
 }
 
 describe('the tournament command', () => {
+  it('retrieves and replays a tournament Match with the same difficulty', () => {
+    const batch = reportOf(run('--seeds', '1', '--first-seed', '2', '--ticks', '20', '--difficulty', 'imperator', '--workers', '1'));
+    const record = join(workspace(), 'tournament-match.json');
+    const retrieved = match('--rules', 'ai', '--seed', '2', '--ticks', '20', '--difficulty', 'imperator',
+      '--expect-hash', batch.matches[0]!.hash, '--record', record);
+    expect(retrieved.stderr).toBe('');
+    expect(retrieved.status).toBe(0);
+    expect(JSON.parse(readFileSync(record, 'utf8'))).toMatchObject({ difficulty: 'imperator' });
+    const replayed = ran(REPLAY, record);
+    expect(replayed.stderr).toBe('');
+    expect(replayed.status).toBe(0);
+    expect(JSON.parse(replayed.stdout)).toMatchObject({ verdict: 'reproduced', hash: batch.matches[0]!.hash });
+  }, 60000);
   it('plays a batch of Matches on distinct seeds and prints one report of it', () => {
     const ran = run('--seeds', '3', '--first-seed', '11', '--ticks', '40', '--workers', '2');
 

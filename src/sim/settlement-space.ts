@@ -5,12 +5,13 @@ import { buildingLot, containsTile, intersects, settlementLayout, turnPoint, tur
   type GroundPoint, type GroundRect } from '../content/settlement-layout.ts';
 import type { Economy, Settlement, Squad, Work } from './economy.ts';
 import { facingOf, formationOf, FIELD } from './squad.ts';
-import { MAP_HEIGHT, MAP_WIDTH, TERRAIN, tileIndex, type MapGrid } from './map.ts';
+import { isWalkable, MAP_HEIGHT, MAP_WIDTH, TERRAIN, tileIndex, type MapGrid } from './map.ts';
 import type { Siege } from './siege.ts';
 
 interface PhysicalSpace { readonly economy: Economy; siege?: Siege; signature: string; readonly blocked: Map<number, Uint8Array> }
 const SPACES = new WeakMap<MapGrid, PhysicalSpace>();
 const MAPS = new WeakMap<Economy, MapGrid>();
+const BRIDGE_ACCESSES = new WeakMap<MapGrid, readonly PhysicalAccess[]>();
 
 /** Derived navigation indices are owned by this Match, never authoritative state. */
 export function bindEconomySpace(map: MapGrid, economy: Economy): Economy {
@@ -28,11 +29,17 @@ export function bindSiegeSpace(map: MapGrid, siege: Siege): Siege {
 export function hasPhysicalSpace(map: MapGrid): boolean { return SPACES.has(map); }
 export interface PhysicalAccess { readonly settlement: number; readonly passage: number; readonly rect: GroundRect }
 
+/** The approach where field bodies must remain physically separate. */
+export function nearAccess(rect: GroundRect, access: PhysicalAccess): boolean {
+  return intersects(rect, { x: access.rect.x - 10, y: access.rect.y - 10,
+    width: access.rect.width + 20, height: access.rect.height + 20 });
+}
+
 /** Main Gate and destroyed Wall sections are separate physical lanes. */
 export function physicalAccesses(map: MapGrid, owner: number): readonly PhysicalAccess[] {
   const space = SPACES.get(map);
   if (space === undefined) return [];
-  const result: PhysicalAccess[] = [];
+  const result: PhysicalAccess[] = [...bridgeAccesses(map)];
   for (const site of space.economy.settlements.slice(0, 2)) {
     const front = space.siege?.fronts[site.id];
     const gate = front?.structures.find((structure) => structure.kind === 0);
@@ -45,6 +52,37 @@ export function physicalAccesses(map: MapGrid, owner: number): readonly Physical
       result.push({ settlement: site.id, passage: wall.side + 1, rect: rectAt(wall.side, wall.side === gate.side ? -4 : 0) });
   }
   return result;
+}
+
+/** Bridge groups are static map geography, cached outside authoritative state. */
+function bridgeAccesses(map: MapGrid): readonly PhysicalAccess[] {
+  const cached = BRIDGE_ACCESSES.get(map);
+  if (cached !== undefined) return cached;
+  const seen = new Uint8Array(MAP_WIDTH * MAP_HEIGHT);
+  const accesses: PhysicalAccess[] = [];
+  for (let tile = 0; tile < map.terrain.length; tile += 1) {
+    if (map.terrain[tile] !== TERRAIN.bridge || seen[tile] === 1) continue;
+    const queue = [tile];
+    seen[tile] = 1;
+    let minX = MAP_WIDTH, minY = MAP_HEIGHT, maxX = 0, maxY = 0;
+    for (let at = 0; at < queue.length; at += 1) {
+      const index = queue[at] as number;
+      const x = index % MAP_WIDTH;
+      const y = Math.floor(index / MAP_WIDTH);
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+        if (nx === undefined || ny === undefined || nx < 0 || ny < 0 || nx >= MAP_WIDTH || ny >= MAP_HEIGHT) continue;
+        const neighbour = tileIndex(nx, ny);
+        if (seen[neighbour] === 1 || map.terrain[neighbour] !== TERRAIN.bridge) continue;
+        seen[neighbour] = 1;
+        queue.push(neighbour);
+      }
+    }
+    accesses.push({ settlement: -1, passage: tile + 1, rect: { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 } });
+  }
+  BRIDGE_ACCESSES.set(map, accesses);
+  return accesses;
 }
 export function physicalSignature(map: MapGrid): string { return SPACES.get(map)?.signature ?? ''; }
 
@@ -65,10 +103,10 @@ export function invalidateSpace(economy: Economy): void {
 export function blockedTile(map: MapGrid, owner: number, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) return true;
   const space = SPACES.get(map);
-  if (space === undefined) return map.terrain[tileIndex(x, y)] === TERRAIN.river;
+  if (space === undefined) return !isWalkable(map.terrain[tileIndex(x, y)] ?? TERRAIN.river);
   let grid = space.blocked.get(owner);
   if (grid === undefined) {
-    grid = Uint8Array.from(map.terrain, (terrain) => terrain === TERRAIN.river ? 1 : 0);
+    grid = Uint8Array.from(map.terrain, (terrain) => isWalkable(terrain) ? 0 : 1);
     for (const site of space.economy.settlements) {
       paintObstacle(grid, siteRect(space.economy, site, settlementLayout(site.id < 2 ? 'stronghold' : 'settlement').landmark));
       for (const work of site.works) {
@@ -171,8 +209,7 @@ export function clearFieldBody(map: MapGrid, squad: Squad, x = squad.x, y = squa
   const space = SPACES.get(map);
   if (space === undefined) return true;
   const rect = squadGround(squad, x, y, formation, facing);
-  const near = physicalAccesses(map, squad.owner).some((access) => intersects(rect,
-    { x: access.rect.x - 10, y: access.rect.y - 10, width: access.rect.width + 20, height: access.rect.height + 20 }));
+  const near = physicalAccesses(map, squad.owner).some((access) => nearAccess(rect, access));
   return !near || !occupiedGround(space.economy, rect, squad.id);
 }
 

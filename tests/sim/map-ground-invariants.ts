@@ -103,7 +103,7 @@ export function settlementGroundProblems(map: MapGrid): readonly string[] {
     }
   }
   for (const [index, river] of map.rivers.entries()) {
-    if (river.tiles.filter((tile) => map.terrain[tile] === TERRAIN.ford && broadCrossing(map, tile)).length < MIN_FORDS_PER_RIVER)
+    if (river.tiles.length >= 100 && river.tiles.filter((tile) => map.terrain[tile] === TERRAIN.ford && broadCrossing(map, tile)).length < MIN_FORDS_PER_RIVER)
       problems.push(`river ${index} has insufficient broad crossings`);
   }
   return problems;

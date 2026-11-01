@@ -151,6 +151,10 @@ test('picks a Squad and moves it with a real pointer gesture, and the Match appl
   await press(page, purchase.rect);
   await advance(page, 1);
 
+  // Opening the settlement panel reserves part of the theatre. A single row
+  // click selects without moving the camera; F is the ordinary centring action.
+  await page.keyboard.press('f');
+
   const { squad, at } = await clickableSquad(page);
   const origin = await canvasOrigin(page);
 

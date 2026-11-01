@@ -24,6 +24,15 @@ import { bootGame, describeView, hudRects, samples, squads } from './hooks';
 /** Boots the page with the clock stopped, so one tick is one picture. */
 async function boot(page: Page): Promise<void> {
   await bootGame(page, { paused: true });
+  await page.evaluate(() => {
+    const game = window.__SPQR.game!;
+    const home = game.state().visible.settlements[0]!;
+    const army = game.squads();
+    const field = army.find((squad) => squad.x > home.x) ?? army[0]!;
+    game.select({ kind: 'squad', id: field.id });
+    game.centerSelection();
+    game.select(null);
+  });
 }
 
 /** The page's own tick, which is what a frame is chosen from. */

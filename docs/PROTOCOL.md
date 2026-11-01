@@ -175,6 +175,7 @@ outside it. What is not here, the Faction cannot know.
 | `enemies`     | Enemy field Squads **in your sight right now**: `id`, `type`, `x`, `y`, and `appearance` (`men`, `capacity`, `figures`, `formation`, `facing`). Appearance exists only in current sight; it is never retained in `contacts`. No enemy morale, fatigue, ammunition, stocks or goal is exposed (ADR-0029). |
 | `fronts`      | The Sieges you can read (see below).                                                   |
 | `appearances` | Observed settlement portions and their last seen architecture, Works and conditions. |
+| `barbarianCamps` | Discovered barbarian camps and their last observed standing or ruined condition; hidden changes remain unknown. |
 <!-- observation:end -->
 
 Each entry of `settlements`:
@@ -191,6 +192,11 @@ Each entry of `settlements`:
 | `works`      | Its buildings in the order it raised them: `{ building, remaining, standing }`, where `remaining` is the ticks of work left. |
 | `pending`    | Unpaid requests awaiting space or resources, including their cost and cancellation id. |
 <!-- settlement:end -->
+
+When active repairs compete for workers, an owned settlement also exposes
+`repairWorkforce` (`staffed` and `needed` people) and each Work exposes its
+current `staffed` decision. These fields describe the owner's present allocation;
+they do not expose another Faction's economy or predict future changes.
 
 Each entry of `squads`:
 
@@ -472,6 +478,10 @@ Owned settlements may include `pending`: unpaid build/recruit requests with stab
 remains in `works`; an occupied lot prevents a pending construction from starting.
 For a recruitment batch, `count` and `cost` describe its unpaid remainder:
 each complete Squad starts and is paid separately as muster space becomes free.
+
+`attackStructure` names owned squads and a visible target `{ "kind": "camp", "id": N }`;
+`barbarianCamps` in the observation contains only currently seen or last-remembered
+appearances, including their last observed standing or ruined condition.
 
 `appearances` records only observed portions of each settlement. Its `tiles` use
 row-major cells within 25 by 25 grounds centred on the settlement. Each cell has

@@ -9,7 +9,7 @@ import { TICK_HZ } from '../sim/clock.ts';
 import { runMatch } from '../sim/driver.ts';
 import { replay } from '../sim/replay.ts';
 import { createNoticeBook } from '../ui/conditions.ts';
-import { observeSiege, siegeMatchOutcome, siegeMatchRules, type SiegeVisible } from '../sim/siege.ts';
+import { observeSiege, siegeMatchOutcome, siegeMatchRulesForDifficulty, type SiegeVisible } from '../sim/siege.ts';
 
 /** Declared before sampling: no seed is replaced after observing an outcome. */
 export const PRESSURE_SEEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
@@ -33,27 +33,30 @@ export function diagnosePressure(seed: number, faction: Faction, difficulty: Dif
   const limits = PRESSURE_LIMITS[difficulty];
   const ticks = limits.pressure * 60 * TICK_HZ;
   const ai = createArmyController(difficulty);
-  const run = runMatch({ seed, ticks, rules: siegeMatchRules, observe: observeSiege,
+  const rules = siegeMatchRulesForDifficulty(difficulty);
+  const run = runMatch({ seed, ticks, rules, observe: observeSiege,
     outcome: siegeMatchOutcome, players: [
       { faction, controller: { decide(observation) {
         const visible = observation.visible;
-        const notice = notices.read(visible, observation.tick).find((entry) => entry.kind === 'contact');
+        const notice = notices.read(visible, observation.tick).find((entry) => entry.kind === 'contact' &&
+          visible.enemies.some((enemy) => enemy.id === entry.target?.id && enemy.neutral !== true));
         if (contactNotice === null && notice?.target != null) {
           contactNotice = { tick: notice.raised, x: notice.target.x, y: notice.target.y };
         }
-        const spotted = visible.enemies[0];
+        const spotted = visible.enemies.find((enemy) => enemy.neutral !== true);
         if (contact === null && spotted !== undefined) contact = { tick: observation.tick, ...spotted };
         for (const front of visible.fronts) {
           if (!visible.settlements.some((site) => site.id === front.settlement)) continue;
           const before = last?.fronts.find((entry) => entry.settlement === front.settlement);
           // An issued siege order alone is insufficient: the walls must actually lose health.
-          if (pressure === null && before !== undefined && front.structures.some((wall, index) =>
+          if (pressure === null && before !== undefined && front.besieger === enemy && front.structures.some((wall, index) =>
             wall.hp < before.structures[index]!.hp)) {
             pressure = { tick: observation.tick, settlement: front.settlement, effect: 'wall-damage' };
           }
           // Presence at the walls makes this actual contention, not just a submitted Order.
           if (pressure === null && front.siege === 'blockade' && front.besieger === enemy &&
             visible.enemies.some((squad) => {
+              if (squad.neutral === true) return false;
               const site = visible.settlements.find((site) => site.id === front.settlement)!;
               const plan = settlementLayout('stronghold').core;
               const core = { ...plan, x: site.x + plan.x, y: site.y + plan.y };
@@ -75,7 +78,7 @@ export function diagnosePressure(seed: number, faction: Faction, difficulty: Dif
         return ai.decide(observation);
       } } },
     ] });
-  const replayed = replay({ seed, ticks: run.result.tick, rules: siegeMatchRules,
+  const replayed = replay({ seed, ticks: run.result.tick, rules,
     log: run.log, everyTicks: Math.max(1, run.result.tick) });
   const replayHash = replayed.checkpoints.at(-1)!.hash;
   const seen = contact as { tick: number; id: number; x: number; y: number } | null;

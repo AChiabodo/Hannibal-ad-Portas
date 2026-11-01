@@ -50,7 +50,7 @@ try {
     process.stdout.write(formatReport(agentReportOf(run)));
     if (parsed.options.log !== null) writeFileSync(parsed.options.log, formatCommandLog(run.log));
 
-    if (parsed.options.record !== null) writeRecord(parsed.options.record, recordOf(run, AGENT_RULES));
+    if (parsed.options.record !== null) writeRecord(parsed.options.record, recordOf(run, AGENT_RULES, parsed.options.difficulty));
 
     requireExpectedHash(run, parsed.options);
   }

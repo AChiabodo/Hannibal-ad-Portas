@@ -605,6 +605,7 @@ export function enemyWithin(economy: Economy, squad: Squad, radius: number): Squ
  * its own country, and a tile past the boundary is a tile past it.
  */
 export function inSupply(economy: Economy, squad: Squad): boolean {
+  if (squad.owner !== 0 && squad.owner !== 1) return true;
   return holdsTerritory(territoryOf(economy), squad.owner, squad);
 }
 

@@ -1124,6 +1124,27 @@ describe('the first-entry guide panel', () => {
 
 
 describe('settlement management (#74)', () => {
+  it('offers repair and cancellation for a damaged owned work', () => {
+    const front: VisibleFront = { settlement: 0, structures: [], breached: false, siege: null, besieger: null, ram: null, hold: 0, garrison: 0 };
+    const settlement = { ...VISIBLE.settlements[0]!, works: [{ building: 'farm', ordinal: 0, hp: 20, maxHp: 60, remaining: 0, standing: true, repairing: false }] };
+    const visible = { ...VISIBLE, settlements: [settlement], fog: inspectionView(generateMap(7)), contacts: [], enemies: [], fronts: [front] };
+    const model = hudModel(visible, STRONGHOLDS, { kind: 'settlement', id: 0 });
+    expect(model.detail?.management?.some((item) => item.actions.some((action) => action.action === 'repairWork:farm:0'))).toBe(true);
+    const repairing = { ...visible, settlements: [{ ...settlement, works: [{ ...settlement.works[0]!, repairing: true, repairRemaining: 10 }] }] };
+    const progress = hudModel(repairing, STRONGHOLDS, { kind: 'settlement', id: 0 });
+    expect(progress.detail?.management?.some((item) => item.actions.some((action) => action.action === 'cancelWorkRepair:farm:0'))).toBe(true);
+  });
+  it('offers repair and cancellation controls for damaged fortifications', () => {
+    const front: VisibleFront = { settlement: 0, structures: [{ kind: 'wall', side: 'north', hp: 20, maxHp: 60, standing: true, repairing: false }],
+      breached: false, siege: null, besieger: null, ram: null, hold: 0, garrison: 0 };
+    const visible = { ...VISIBLE, fog: inspectionView(generateMap(7)), contacts: [], enemies: [], fronts: [front] };
+    const model = hudModel(visible, STRONGHOLDS, { kind: 'settlement', id: 0 }, [], { desktop: true, uiScale: 1, settlementPage: 'management' });
+    const entry = model.detail?.management?.find((item) => item.actions.some((action) => action.action === 'repairFortification:wall:north'));
+    expect(entry?.text).toContain('20/60');
+    const repairing = { ...visible, fronts: [{ ...front, structures: [{ ...front.structures[0]!, repairing: true, repairRemaining: 30 }] }] };
+    const progress = hudModel(repairing, STRONGHOLDS, { kind: 'settlement', id: 0 });
+    expect(progress.detail?.management?.some((item) => item.actions.some((action) => action.action === 'cancelFortificationRepair:wall:north'))).toBe(true);
+  });
   it('lists survivors on the walls and cancellable pending purchases through public HUD controls', () => {
     const settlement = { ...VISIBLE.settlements[0]!, tier: 2, pending: [{ id: 7, kind: 'recruit' as const, building: '', squadType: 'hastati', men: 60, count: 1, reason: 'space' as const, cost: { grain: 10, timber: 0, stone: 0, iron: 5 } }] };
     const visible = { ...VISIBLE, settlements: [settlement], squads: [{ ...VISIBLE.squads[0]!, men: 40, garrison: 0 }] };

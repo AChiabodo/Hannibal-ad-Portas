@@ -51,16 +51,21 @@ import { type Container } from 'pixi.js';
 import { createPixelBuffer, pixelAt, type Rgba } from '../art/pixel-buffer.ts';
 import {
   attack,
+  attackStructure,
   attackMove,
   assault,
   blockade,
   build,
   cancelPending,
+  cancelFortificationRepair,
+  cancelWorkRepair,
   formation,
   garrison,
   hold,
   move,
   recruit,
+  repairFortification,
+  repairWork,
   withdraw,
   type Command,
   type Formation,
@@ -76,7 +81,7 @@ import { factionCode, type Faction } from '../sim/faction.ts';
 import { MAP_HEIGHT, MAP_WIDTH } from '../sim/map.ts';
 import { type Speed } from '../sim/pacing.ts';
 import { corpsesOf, type Corpse } from '../sim/residue.ts';
-import { MATCH_TICKS } from '../sim/season.ts';
+import { MATCH_TICKS, type Season } from '../sim/season.ts';
 import { visibleCorpses } from './corpses.ts';
 import type { LoggedCommand } from '../sim/replay.ts';
 import { requireTickCount } from '../sim/ticks.ts';
@@ -108,6 +113,7 @@ import {
   controlGroupViews,
   enemyAt,
   enemyTargets,
+  visibleWorkTargets,
   garrisonReach,
   settlementAt,
   neutralMoveDestination,
@@ -137,6 +143,7 @@ import { CONSTRUCTION_CATEGORIES, type ConstructionCategory } from '../ui/constr
 import { forecastLine } from '../ui/forecast.ts';
 import type { OrderMarkKind } from '../art/markers.ts';
 import { createHudLayer, type HudLayer } from './hud.ts';
+import { createBarbarianCampLayer } from './barbarian-camp-layer.ts';
 import { screenToStage, type Camera } from './camera.ts';
 import { textureOf } from './stage.ts';
 import { SETTLEMENT_LAYER, createSettlementLayer, type SettlementLayer } from './settlement-layer.ts';
@@ -146,6 +153,8 @@ import { siteSprite } from '../art/settlements.ts';
 import { siteLook } from './settlements.ts';
 import { blockPlacement, blockSize, squadBlock, squadFrameKey, visualShape } from './squads.ts';
 import { tileAt, tilePixel } from './terrain.ts';
+import { wildlifeOf } from './wildlife.ts';
+import { createWildlifeLayer } from './wildlife-layer.ts';
 import { VIEWED_FACTION } from './view.ts';
 import type { PixelPoint, Stage } from './stage.ts';
 import { PANEL_LAYOUTS, type PanelLayout, DEFAULT_UI_PREFERENCES, fittedUiScale, loadUiPreferences, saveUiPreferences, type UiPreferences } from '../ui/preferences.ts';
@@ -168,6 +177,8 @@ const FRAME_BUDGET_MS = 250;
 type OrderPoint =
   | { readonly kind: 'ground'; readonly x: number; readonly y: number }
   | { readonly kind: 'enemy'; readonly squad: number }
+  | { readonly kind: 'camp'; readonly camp: number }
+  | { readonly kind: 'work'; readonly settlement: number; readonly building: string; readonly ordinal: number }
   | { readonly kind: 'settlement'; readonly settlement: number };
 
 /** A Squad, as the page reports it: what the Observation says, and where it is drawn. */
@@ -494,6 +505,8 @@ export interface Game {
 
 /** What a game needs to exist: a stage, a seed, the viewport, the camera and the fog. */
 export interface GameOptions {
+  /** Update the purely visual ground when the observed season changes. */
+  readonly season?: (season: Season) => void;
   readonly relayout?: (preferences: UiPreferences) => void;
   readonly centerOn?: (x: number, y: number) => void;
   readonly faction?: Faction;
@@ -563,7 +576,9 @@ export function createGame(options: GameOptions): Game {
 
   const layer: HudLayer = createHudLayer(options.stage);
   const ground: SettlementLayer = createSettlementLayer(options.world);
+  const barbarianCamps = createBarbarianCampLayer(options.world);
   const field: SquadLayer = createSquadLayer(options.world);
+  const wildlife = createWildlifeLayer(options.world, wildlifeOf(match.state.world.map, options.seed));
   const pickInk = new Map<number, { key: string; buffer: ReturnType<typeof squadBlock> }>();
 
   /** Every settlement on the theatre, by id: the map's own list, and what the minimap walks. */
@@ -881,6 +896,7 @@ export function createGame(options: GameOptions): Game {
     },
     showSettlements: (visible) => {
       ground.setVisible(visible === true);
+      barbarianCamps.setVisible(visible === true);
       repainted();
     },
     sites: () => siteReports(),
@@ -1360,6 +1376,8 @@ export function createGame(options: GameOptions): Game {
   function repaint(): void {
     const known = readSites();
     const observation = visible();
+    options.season?.(observation.season);
+    wildlife.update(options.fog(), match.state.tick);
     // The journal first: a notice raised on this tick is part of the frame the
     // Player is about to see, and reading it twice in one tick is harmless.
     notices = noticeBook.read(observation, match.state.tick);
@@ -1377,6 +1395,7 @@ export function createGame(options: GameOptions): Game {
     dead = readCorpses();
     layer.panels(model, options.size);
     ground.update({ sites: known, selected: human.selection.settlement });
+    barbarianCamps.update(observation.barbarianCamps ?? []);
     field.update({
       squads: visible().squads,
       enemies: observation.enemies,
@@ -1672,6 +1691,27 @@ export function createGame(options: GameOptions): Game {
     }
     else if (action === 'tutorialRetry') options.tutorialAction?.('retry');
     else if (action === 'tutorialExit') options.tutorialAction?.('exit');
+    else if (action.startsWith('repairWork:') || action.startsWith('cancelWorkRepair:')) {
+      const settlement = human.selection.settlement;
+      const [kind, building, ordinalText] = action.split(':');
+      const ordinal = Number(ordinalText);
+      const work = visible().settlements.find((site) => site.id === settlement)?.works
+        .find((item) => item.building === building && item.ordinal === ordinal);
+      if (settlement !== null && work !== undefined) human.submit(kind === 'repairWork'
+        ? repairWork(faction, settlement, work.building, ordinal)
+        : cancelWorkRepair(faction, settlement, work.building, ordinal));
+      repaint();
+    }
+    else if (action.startsWith('repairFortification:') || action.startsWith('cancelFortificationRepair:')) {
+      const settlement = human.selection.settlement;
+      const [kind, structureKind, side] = action.split(':');
+      const structure = visible().fronts.find((front) => front.settlement === settlement)?.structures
+        .find((piece) => piece.kind === structureKind && piece.side === side);
+      if (settlement !== null && structure !== undefined) human.submit(kind === 'repairFortification'
+        ? repairFortification(faction, settlement, structure.kind, structure.side)
+        : cancelFortificationRepair(faction, settlement, structure.kind, structure.side));
+      repaint();
+    }
     else if (action.startsWith('cancelPending:')) {
       const settlement = human.selection.settlement;
       if (settlement !== null) human.submit(cancelPending(faction, settlement, Number(action.slice(14))));
@@ -1794,7 +1834,13 @@ export function createGame(options: GameOptions): Game {
     }
     if (offer.target === 'enemy') {
       const enemy = enemyAt(enemyTargets(visible()), tile.x, tile.y);
-      return enemy === null ? false : submitOrder(offer, { kind: 'enemy', squad: enemy.id });
+      if (enemy !== null) return submitOrder(offer, { kind: 'enemy', squad: enemy.id });
+      const camp = visible().barbarianCamps?.find((site) => site.memory === 'seen' && site.condition === 'standing' &&
+        tile.x >= site.x && tile.x < site.x + 2 && tile.y >= site.y && tile.y < site.y + 2);
+      if (camp !== undefined) return submitOrder(offer, { kind: 'camp', camp: camp.id });
+      const work = visibleWorkTargets(visible()).find((candidate) => candidate.x === tile.x && candidate.y === tile.y);
+      return work === undefined ? false : submitOrder(offer, { kind: 'work', settlement: work.settlement,
+        building: work.building, ordinal: work.ordinal });
     }
     if (offer.target === 'settlement') {
       // The structure a Player can see is the target, by the rectangle it is drawn
@@ -1885,7 +1931,10 @@ export function createGame(options: GameOptions): Game {
       case 'attackMove':
         return point?.kind === 'ground' ? attackMove(faction, squads, point.x, point.y) : null;
       case 'attack':
-        return point?.kind === 'enemy' ? attack(faction, squads, point.squad) : null;
+        return point?.kind === 'enemy' ? attack(faction, squads, point.squad) :
+          point?.kind === 'camp' ? attackStructure(faction, squads, { kind: 'camp', id: point.camp }) :
+            point?.kind === 'work' ? attackStructure(faction, squads, { kind: 'work', settlement: point.settlement,
+              building: point.building, ordinal: point.ordinal }) : null;
       case 'hold':
         return hold(faction, squads);
       case 'withdraw':

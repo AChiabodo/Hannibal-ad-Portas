@@ -196,16 +196,17 @@ export function createSquadLayer(parent: Container): SquadLayer {
     },
 
     update(field) {
-      const formations: { squad: SquadDrawing & { x: number; y: number }; own?: VisibleSquad; faction: 'rome' | 'carthage' }[] =
+      const formations: { squad: SquadDrawing & { x: number; y: number }; own?: VisibleSquad; faction: 'rome' | 'carthage'; neutral?: boolean }[] =
         field.squads.filter((squad) => squad.garrison === null).map((squad) => ({ squad, own: squad, faction: field.faction }));
       for (const enemy of field.enemies ?? []) {
         if (!enemy.appearance) continue;
         formations.push({ squad: { id: enemy.id, type: enemy.type, x: enemy.x, y: enemy.y,
-          ...enemy.appearance, goal: null }, faction: field.faction === 'rome' ? 'carthage' : 'rome' });
+          ...enemy.appearance, goal: null }, faction: enemy.neutral ? 'carthage' : field.faction === 'rome' ? 'carthage' : 'rome',
+          neutral: enemy.neutral });
       }
       const afield = new Set(formations.map(({ squad }) => squad.id));
 
-      for (const { squad, own, faction } of formations) {
+      for (const { squad, own, faction, neutral } of formations) {
         const selected = own !== undefined && field.selected.includes(squad.id);
         const key = squadFrameKey(squad, { tick: field.tick, faction, selected });
         const drawn = squads.get(squad.id);
@@ -233,7 +234,7 @@ export function createSquadLayer(parent: Container): SquadLayer {
           drawn.sprite.zIndex = squad.y;
         }
 
-        standard(standards, standardSprites, standardTextures, squad, faction, placement.standard);
+        if (!neutral) standard(standards, standardSprites, standardTextures, squad, faction, placement.standard);
         if (own) annotate(annotations, {
           plates, plateTextures, pins, pinTextures, facings, facingTextures, destinationTextures, marks,
         }, own, selected, placement, field.orderMarks?.[squad.id] ?? 'move');

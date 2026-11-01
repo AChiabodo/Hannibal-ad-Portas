@@ -61,6 +61,32 @@ function recordedMatch(): { readonly path: string; readonly report: MatchReport 
 }
 
 describe('the replay command', () => {
+  for (const difficulty of ['tiro', 'imperator'] as const) {
+    it(`records and replays an AI Match with ${difficulty} raid rules`, () => {
+      const path = join(workspace(), `ai-${difficulty}.json`);
+      const played = run(MATCH, '--rules', 'ai', '--seed', '1', '--ticks', '20', '--difficulty', difficulty, '--record', path);
+      expect(played.stderr).toBe('');
+      expect(played.status).toBe(0);
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ difficulty });
+      const replayed = run(REPLAY, path);
+      expect(replayed.stderr).toBe('');
+      expect(replayed.status).toBe(0);
+      expect(reportOf(replayed).verdict).toBe('reproduced');
+    }, 60_000);
+  }
+
+  it('records and replays the chosen difficulty when an external agent plays', () => {
+    const path = join(workspace(), 'agent-imperator.json');
+    const played = run(AGENT, '--agent', RECRUITER, '--seed', '1', '--opponent', 'idle',
+      '--difficulty', 'imperator', '--ticks', '20', '--record', path);
+    expect(played.stderr).toBe('');
+    expect(played.status).toBe(0);
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ difficulty: 'imperator' });
+    const replayed = run(REPLAY, path);
+    expect(replayed.stderr).toBe('');
+    expect(replayed.status).toBe(0);
+    expect(reportOf(replayed).verdict).toBe('reproduced');
+  }, 60_000);
   it('replays a recorded Match and reports that it reproduced', () => {
     const { path, report } = recordedMatch();
     const ran = run(REPLAY, path);

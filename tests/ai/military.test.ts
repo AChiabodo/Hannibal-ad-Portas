@@ -11,6 +11,7 @@ import type { Command } from '../../src/sim/command.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
 import { FATIGUE_MAX } from '../../src/sim/squad.ts';
 import { observeSiege, siegeMatchRules, type SiegeVisible } from '../../src/sim/siege.ts';
+import { MAP_HEIGHT, MAP_WIDTH, TERRAIN } from '../../src/sim/map.ts';
 
 function ai() {
   return createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ, registry: militaryRegistry });
@@ -31,6 +32,141 @@ function battlefield(): SiegeVisible {
 }
 
 describe('the military Controller', () => {
+  it('keeps wall defenders sheltered while a siege, a known threat or recovery still needs them', () => {
+    const base = battlefield();
+    const defender = { ...base.squads[0]!, x: 20, y: 20, men: 24, capacity: 24, morale: 10,
+      garrison: 0, goal: null, inQuarters: true };
+    const front = { ...base.fronts.find((entry) => entry.settlement === 0)!,
+      siege: null, besieger: null, garrison: 1 };
+    const visible: SiegeVisible = { ...base, enemies: [], contacts: [], squads: [defender], fronts: [front],
+      fog: { ...base.fog, terrain: new Uint8Array(MAP_WIDTH * MAP_HEIGHT).fill(TERRAIN.plain) } };
+    const decide = (view: SiegeVisible, tick = 1) => createArmyController().decide({ faction: 'rome', tick, visible: view });
+    const release = { kind: 'move', faction: 'rome', squads: [defender.id], x: 29, y: 20 };
+    expect(decide(visible)).toContainEqual(release);
+    for (const view of [
+      { ...visible, fronts: [{ ...front, siege: 'blockade' as const, besieger: 'carthage' as const }] },
+      { ...visible, squads: [{ ...defender, morale: 9 }] },
+      { ...visible, enemies: [{ id: 99, type: 'gaul', x: 38, y: 20 }] },
+      { ...visible, contacts: [{ id: 99, kind: 'squad' as const, type: 'gaul', x: 38, y: 20, seen: 0 }] },
+      { ...visible, fog: { ...visible.fog, terrain: new Uint8Array(MAP_WIDTH * MAP_HEIGHT).fill(255) } },
+    ]) expect(decide(view)).not.toContainEqual(release);
+    const remembered: SiegeVisible = { ...visible,
+      contacts: [{ id: 99, kind: 'squad', type: 'gaul', x: 38, y: 20, seen: 0 }] };
+    expect(decide(remembered, 1200)).toContainEqual(release);
+  });
+
+  it('attacks only a visible nearby camp when it has a sufficiently strong available force', () => {
+    const base = battlefield();
+    const squad = { ...base.squads[0]!, x: 24, y: 20, men: 120, capacity: 120, inQuarters: false };
+    const camp = { id: 0, x: 28, y: 20, variant: 0, condition: 'standing' as const, memory: 'seen' as const };
+    const visible: SiegeVisible = { ...base, enemies: [], squads: [squad], barbarianCamps: [camp] };
+    const decide = (view: SiegeVisible) => ai().decide({ faction: 'rome', tick: 1, visible: view });
+    expect(decide(visible)).toContainEqual({ kind: 'attackStructure', faction: 'rome', squads: [squad.id], target: { kind: 'camp', id: 0 } });
+    const controller = ai();
+    controller.decide({ faction: 'rome', tick: 1, visible });
+    expect(controller.decide({ faction: 'rome', tick: 2, visible: { ...visible,
+      barbarianCamps: [{ ...camp, memory: 'remembered' }] } }).some((command) => command.kind === 'attackStructure')).toBe(false);
+    for (const camps of [[], [{ ...camp, memory: 'remembered' as const }], [{ ...camp, condition: 'ruin' as const }],
+      [{ ...camp, x: 100, y: 100 }]]) {
+      expect(decide({ ...visible, barbarianCamps: camps }).some((command) => command.kind === 'attackStructure')).toBe(false);
+    }
+    expect(decide({ ...visible, squads: [{ ...squad, men: 24, capacity: 24 }] })
+      .some((command) => command.kind === 'attackStructure')).toBe(false);
+    expect(decide({ ...visible, enemies: [{ id: 99, type: 'gaul', neutral: true, x: 28, y: 21 }] })
+      .some((command) => command.kind === 'attackStructure')).toBe(false);
+  });
+  it('assigns eligible home infantry to empty walls only when its own observed front is besieged', () => {
+    const base = battlefield();
+    const defender = { ...base.squads[0]!, x: 20, y: 20, men: 24, capacity: 24, inQuarters: true };
+    const front = { ...base.fronts.find((entry) => entry.settlement === 0)!,
+      settlement: 0, breached: false, besieger: 'carthage' as const, siege: 'blockade' as const,
+      ram: null, garrison: 0, garrisonMen: 0, garrisonCapacity: 60, hold: 0 };
+    const visible: SiegeVisible = { ...base, enemies: [], squads: [defender], fronts: [front] };
+    const decide = (view: SiegeVisible) => ai().decide({ faction: 'rome', tick: 1, visible: view });
+    expect(decide(visible)).toContainEqual({ kind: 'garrison', faction: 'rome', squads: [defender.id], settlement: 0 });
+    expect(decide({ ...visible, fronts: [{ ...front, siege: 'assault', besieger: null }] }))
+      .toContainEqual({ kind: 'garrison', faction: 'rome', squads: [defender.id], settlement: 0 });
+    expect(decide({ ...visible, fronts: [] }).some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, fronts: [{ ...front, garrisonCapacity: 10 }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [{ ...defender, type: 'numidian-horse' }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [{ ...defender, type: 'elephant' }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, fronts: [{ ...front, settlement: 1 }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, fronts: [{ ...front, structures: [] }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    const remote = { ...defender, x: 80, y: 80, inQuarters: false };
+    expect(decide({ ...visible, squads: [remote] }))
+      .toContainEqual({ kind: 'garrison', faction: 'rome', squads: [remote.id], settlement: 0 });
+    expect(decide({ ...visible, squads: [{ ...remote, engaged: true }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [remote], enemies: [{ id: 99, type: 'gaul', x: 81, y: 80 }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [{ ...remote, refused: 'unreachable' }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [{ ...remote, goal: { x: 20, y: 20 } }] })
+      .some((command) => command.kind === 'garrison')).toBe(false);
+    expect(decide({ ...visible, squads: [remote], fronts: [front, { ...front, settlement: 1,
+      siege: 'assault', besieger: 'rome' }] }).some((command) => command.kind === 'garrison')).toBe(false);
+  });
+  it('clears only a known friendly gate blockage, without directing a squad onto unexplored ground', () => {
+    const base = battlefield();
+    const terrain = new Uint8Array(MAP_WIDTH * MAP_HEIGHT).fill(TERRAIN.plain);
+    const waiting = { ...base.squads[0]!, x: 26, y: 20, inQuarters: false,
+      passage: { settlement: 0, phase: 'entering' as const, remaining: 0, reason: 'exit-blocked' as const } };
+    const blocker = { ...base.squads[1]!, x: 25, y: 18, inQuarters: true, goal: null };
+    const visible: SiegeVisible = { ...base, enemies: [], squads: [waiting, blocker], fog: { ...base.fog, terrain } };
+    const decide = (view: SiegeVisible) => ai().decide({ faction: 'rome', tick: 1, visible: view });
+    const clearing = decide(visible).find((command) => command.kind === 'move' && command.squads.includes(blocker.id));
+    expect(clearing).toBeDefined();
+    if (clearing?.kind !== 'move') return;
+    const unseen = terrain.slice();
+    unseen[clearing.y * MAP_WIDTH + clearing.x] = 255;
+    expect(decide({ ...visible, fog: { ...visible.fog, terrain: unseen } })
+      .some((command) => command.kind === 'move' && command.squads.includes(blocker.id))).toBe(false);
+    expect(decide({ ...visible, squads: [{ ...waiting, passage: undefined }, blocker] })
+      .some((command) => command.kind === 'move' && command.squads.includes(blocker.id))).toBe(false);
+  });
+  it('prices a visible small formation using its public appearance and keeps a conservative estimate when hidden', () => {
+    const base = battlefield();
+    const troops = base.squads.map((squad) => ({ ...squad, men: 24, capacity: 24 }));
+    const enemy = { id: 10, type: 'hastati', x: 25, y: 20,
+      appearance: { men: 24, capacity: 24, figures: 24, formation: 'line' as const, facing: 'west' as const } };
+    const visible: SiegeVisible = { ...base, squads: troops, enemies: [enemy] };
+    const decide = (view: SiegeVisible) => ai().decide({ faction: 'rome', tick: 1, visible: view });
+    expect(decide(visible).some((command) => command.kind === 'attack' && command.target === 10)).toBe(true);
+    expect(decide({ ...visible, enemies: [{ id: enemy.id, type: enemy.type, x: enemy.x, y: enemy.y }] })
+      .some((command) => command.kind === 'attack')).toBe(false);
+    const remembered: SiegeVisible = { ...visible, enemies: [],
+      contacts: [{ id: enemy.id, kind: 'squad', type: enemy.type, x: enemy.x, y: enemy.y, seen: 0 }] };
+    expect(decide(remembered).some((command) => command.kind === 'attack' || command.kind === 'move')).toBe(false);
+  });
+  it('evades an unengaged neutral threat locally on known ground and falls back to recovery when necessary', () => {
+    const base = battlefield();
+    const terrain = new Uint8Array(MAP_WIDTH * MAP_HEIGHT).fill(TERRAIN.plain);
+    const scout = { ...base.squads[0]!, x: 80, y: 80, men: 24, capacity: 24, fatigue: 20, goal: null };
+    const visible: SiegeVisible = { ...base, fog: { ...base.fog, terrain }, squads: [scout],
+      enemies: [{ id: 99, type: 'gaul', neutral: true, x: 83, y: 80 }] };
+    const decide = (view: SiegeVisible) => ai().decide({ faction: 'rome', tick: 1, visible: view });
+    const move = decide(visible).find((command) => command.kind === 'move');
+    expect(move).toBeDefined();
+    if (move?.kind !== 'move') return;
+    expect(Math.max(Math.abs(move.x - 83), Math.abs(move.y - 80))).toBeGreaterThan(3);
+    expect(terrain[move.y * MAP_WIDTH + move.x]).toBe(TERRAIN.plain);
+    expect(decide({ ...visible, squads: [{ ...scout, goal: { x: move.x, y: move.y } }] })
+      .some((command) => command.kind === 'withdraw')).toBe(false);
+    const blocked = new Uint8Array(terrain.length).fill(255);
+    expect(decide({ ...visible, fog: { ...visible.fog, terrain: blocked } }))
+      .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [scout.id] });
+    expect(decide({ ...visible, squads: [{ ...scout, engaged: true }] }))
+      .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [scout.id] });
+    expect(decide({ ...visible, squads: [{ ...scout, refused: 'unreachable' }] }))
+      .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [scout.id] });
+    expect(decide({ ...visible, squads: [{ ...scout, men: 10 }] }))
+      .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [scout.id] });
+  });
   it('funds a defensive approach with the power the line retains after marching', () => {
     const base = battlefield();
     for (const count of [2, 3]) {

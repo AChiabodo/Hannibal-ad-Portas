@@ -49,7 +49,8 @@ try {
     process.stdout.write(formatReport(reportOf(run)));
 
     if (parsed.options.record !== null) {
-      writeRecord(parsed.options.record, recordOf(run, parsed.options.rules));
+      writeRecord(parsed.options.record, recordOf(run, parsed.options.rules,
+        parsed.options.rules === 'ai' ? parsed.options.difficulty : undefined));
     }
 
     requireExpectedHash(run, parsed.options);

@@ -55,7 +55,18 @@ export function refreshSiegeFog(world: SiegeWorld, tick: number): void {
   for (const faction of FACTIONS) {
     const owner = factionCode(faction);
     const fog = world.fog[faction];
-    refreshVision(fog, world.map, eyesOfEconomy(world, faction));
+    const eyes = eyesOfEconomy(world, faction);
+    refreshVision(fog, world.map, eyes);
+    for (const [id, camp] of (world.map.barbarianCamps ?? []).entries()) {
+      if (fog.visible[camp.y * MAP_WIDTH + camp.x] !== 1) continue;
+      const camps = fog.barbarianCamps ??= [];
+      const known = camps.find((entry) => entry.id === id);
+      const condition = (world.barbarianCamps?.[id]?.hp ?? 1) > 0 ? 0 : 1;
+      if (known === undefined) {
+        camps.push({ id, ...camp, condition });
+        camps.sort((a, b) => a.id - b.id);
+      } else known.condition = condition;
+    }
     const sightings: EnemyInSight[] = world.economy.squads
       .filter((squad) => squad.owner !== owner && squad.garrison === FIELD)
       .map((squad) => ({ id: squad.id, kind: contactCode({ kind: 'squad', type: squad.type }),
@@ -75,7 +86,7 @@ export function refreshSiegeFog(world: SiegeWorld, tick: number): void {
       return now === undefined || now.x !== contact.x || now.y !== contact.y;
     }).map((contact) => contact.id));
     observeContacts(fog, sightings, tick);
-    rememberSettlements(world, fog, tick);
+    rememberSettlements(world, fog, tick, eyes);
   }
 }
 

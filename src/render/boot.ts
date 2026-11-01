@@ -188,7 +188,7 @@ export interface BrowserViewOptions extends Partial<BrowserMatchOptions> {
 export async function bootRenderer(mount: HTMLElement, options: BrowserViewOptions = {}): Promise<GameView> {
   const config: MatchConfiguration = { seed: options.seed ?? DEFAULT_SEED, faction: options.faction ?? 'rome', difficulty: options.difficulty ?? 'centurio' };
   const map = generateMap(config.seed);
-  const theatre = renderTerrain(map);
+  const theatre = renderTerrain(map, 'spring', config.seed);
   const desktop = options.sessionControls !== false;
   const dimensions = () => desktop
     ? { width: Math.max(window.innerWidth, 640), height: Math.max(window.innerHeight, 360) }
@@ -210,6 +210,7 @@ export async function bootRenderer(mount: HTMLElement, options: BrowserViewOptio
   const ground = stage.spriteOf(theatre);
   ground.zIndex = 0;
   world.addChild(ground);
+  let groundSeason: import('../sim/season.ts').Season = 'spring';
 
   // The fog the page draws, and the sprite it is drawn with. The sprite starts
   // with no texture: the first `paintFog` is what gives it one, so there is no
@@ -263,6 +264,13 @@ export async function bootRenderer(mount: HTMLElement, options: BrowserViewOptio
   const size = { width: stage.width, height: stage.height };
   const game = createGame({
     stage,
+    season: (next) => {
+      if (next === groundSeason) return;
+      const previous = ground.texture;
+      ground.texture = textureOf(renderTerrain(map, next, config.seed));
+      groundSeason = next;
+      previous.destroy(true);
+    },
     relayout,
     centerOn,
     ...config,

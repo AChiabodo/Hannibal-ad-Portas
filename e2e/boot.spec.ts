@@ -12,8 +12,9 @@ import { siteSprite } from '../src/art/settlements';
 import { siteLook } from '../src/render/settlements';
 import { squadBlock } from '../src/render/squads';
 import { openingEyes } from '../src/render/opening';
+import { visibleWildlife, wildlifeOf, wildlifeSprite } from '../src/render/wildlife';
 import { screenToStage, stageToScreen } from '../src/render/camera';
-import { covers, describeView, hudRects, samples, sites, squads } from './hooks';
+import { covers, describeView, hudRects, samples, sites, squads, state } from './hooks';
 
 /**
  * The theatre on screen (ticket B3).
@@ -27,7 +28,7 @@ import { covers, describeView, hudRects, samples, sites, squads } from './hooks'
  *
  * What that buys is the map's own acceptance criteria: a map that renders
  * completely (every sampled point matches, including the corners of the theatre),
- * pans and zooms across all 96×96 tiles, and stays exactly in step with the
+ * pans and zooms across the whole theatre, and stays exactly in step with the
  * generator at every zoom level.
  *
  * B4 put the fog over the map (see `fog.spec.ts` for the fog itself), so the
@@ -47,13 +48,15 @@ const GRID = generateMap(DEFAULT_SEED);
 const THEATRE: PixelBuffer = foggedByThePlayer();
 
 /** The theatre rendered, with the fog the page opens with drawn over it. */
-function foggedByThePlayer(): PixelBuffer {
+function foggedByThePlayer(tick = 0): PixelBuffer {
   const fog = createFog();
   // The eyes the page opens with: the Stronghold's watch, and the opening
   // army's own (C2 — a Squad has eyes, and the fog follows the men).
   refreshVision(fog, GRID, openingEyes(GRID, VIEWED_FACTION));
 
-  const frame = renderTerrain(GRID);
+  const frame = renderTerrain(GRID, 'spring', DEFAULT_SEED);
+  for (const animal of visibleWildlife(wildlifeOf(GRID, DEFAULT_SEED), viewOf(fog), tick))
+    blit(frame, wildlifeSprite(animal.kind), animal.pixelX, animal.pixelY);
   blit(frame, renderFog(viewOf(fog)), 0, 0);
 
   return frame;
@@ -102,6 +105,7 @@ function visiblePoints(view: ViewState): { points: [number, number][]; expected:
  * deliberately not the map.
  */
 async function expectTheatrePixels(page: Page, view: ViewState, context: string): Promise<void> {
+  const theatre = foggedByThePlayer((await state(page)).tick);
   const rects = await hudRects(page);
   const { points, expected } = visiblePoints(view);
   const kept: { point: [number, number]; stage: [number, number] }[] = [];
@@ -123,7 +127,7 @@ async function expectTheatrePixels(page: Page, view: ViewState, context: string)
     const entry = kept[index];
     if (entry === undefined) continue;
 
-    const wanted = pixelAt(THEATRE, entry.stage[0], entry.stage[1]);
+    const wanted = pixelAt(theatre, entry.stage[0], entry.stage[1]);
     const got = drawn[index];
     if (got === undefined || got[0] !== wanted[0] || got[1] !== wanted[1] || got[2] !== wanted[2]) wrong += 1;
   }
@@ -144,6 +148,7 @@ async function boot(page: Page): Promise<SpqrDebugHooks['boot'] & { readonly boo
   // compared is the theatre and the fog the generators produced and not the men
   // standing on it or the towns drawn over it.
   await page.evaluate(() => {
+    window.__SPQR.game?.pause();
     window.__SPQR.game?.showSquads(false);
     window.__SPQR.game?.showSettlements(false);
   });
@@ -270,7 +275,7 @@ test('pans in whole stage pixels and lands on them exactly', async ({ page }) =>
   await expectTheatrePixels(page, view, 'after panning');
 });
 
-test('reaches every corner of a full 96×96 map, and stays exact there', async ({ page }) => {
+test('reaches every corner of the full map, and stays exact there', async ({ page }) => {
   await boot(page);
 
   // The whole theatre, at the zoom that shows the most of it, walked corner to

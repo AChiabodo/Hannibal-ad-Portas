@@ -2,6 +2,7 @@ import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
 import { capture } from './evidence';
 import { KNOWLEDGE } from '../src/sim/fog';
+import { MAP_WIDTH, TERRAIN } from '../src/sim/map';
 import { setupLayout } from '../src/ui/match-menu';
 import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
 
@@ -172,25 +173,25 @@ for (const faction of ['rome', 'carthage'] as const) {
       expect(commanded.visible.squads).toHaveLength(1);
       expect(commanded.applied.every(({ command }) => command.faction === faction)).toBe(true);
       await capture(page, `${faction}-${String(width)}-construction`, 'issue64');
-      const scouted = await page.evaluate(() => {
+      const scouted = await page.evaluate(({ width, water }) => {
         const game = window.__SPQR.game!;
         const snapshot = game.state();
         const squad = snapshot.visible.squads[0]!;
         // Scout to known walkable ground at the edge of the settlement's watch,
         // then return. Memory is produced by actual movement, never a reveal hook.
         const index = snapshot.visible.fog.terrain.findIndex((terrain, at) => {
-          const dx = at % 96 - squad.x;
-          const dy = Math.floor(at / 96) - squad.y;
-          return terrain !== 255 && terrain !== 4 && dx * dx + dy * dy >= 49 && dx * dx + dy * dy <= 64;
+          const dx = at % width - squad.x;
+          const dy = Math.floor(at / width) - squad.y;
+          return terrain !== 255 && !water.some((code) => code === terrain) && dx * dx + dy * dy >= 49 && dx * dx + dy * dy <= 64;
         });
         if (index < 0) throw new Error('the known watch has no walkable frontier');
-        game.submit({ kind: 'move', faction: snapshot.faction, squads: [squad.id], x: index % 96, y: Math.floor(index / 96) });
+        game.submit({ kind: 'move', faction: snapshot.faction, squads: [squad.id], x: index % width, y: Math.floor(index / width) });
         game.advance(300);
         game.submit({ kind: 'move', faction: snapshot.faction, squads: [squad.id], x: squad.x, y: squad.y });
         game.advance(300);
         game.select({ kind: 'squad', id: squad.id });
         return game.state();
-      });
+      }, { width: MAP_WIDTH, water: [TERRAIN.river, TERRAIN.lake] });
       expect(scouted.knowledge).toContain(KNOWLEDGE.remembered);
       expect(scouted.knowledge).toContain(KNOWLEDGE.visible);
       expect(scouted.knowledge).toContain(KNOWLEDGE.unexplored);

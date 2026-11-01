@@ -2,6 +2,7 @@
 export interface ObservedWork {
   readonly building: string;
   readonly ordinal: number;
+  /** 0/1 construction, 2 intact, 3 damaged, 4 ruin, 5 repair. */
   readonly stage: number;
   readonly origin: 'rome' | 'carthage';
 }

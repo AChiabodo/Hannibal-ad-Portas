@@ -153,9 +153,13 @@ describe('an unopposed economy across three Years', () => {
           return ai.decide(observation);
         } } }],
     });
-    expect(history[0]!.squads.map((squad) => squad.id)).toEqual([1, 2, 3]);
+    const initial = history[0]!.squads;
+    expect(initial).toHaveLength(3);
+    expect(initial.every((squad) => squad.type === 'elephant')).toBe(true);
+    const ids = initial.map((squad) => squad.id);
+    expect(new Set(ids).size).toBe(3);
     expect(history.some((visible) => visible.squads.some((squad) => squad.unpaid >= 2))).toBe(true);
-    const deserted = [1, 2, 3].filter((id) => !history.at(-1)!.squads.some((squad) => squad.id === id));
+    const deserted = ids.filter((id) => !history.at(-1)!.squads.some((squad) => squad.id === id));
     expect(deserted.length).toBeGreaterThan(0);
     expect(ai.readLog().filter((entry) => entry.layer === 'strategic')
       .some((entry) => entry.candidates.some((candidate) => candidate.plan?.posture === 'recovery'))).toBe(true);

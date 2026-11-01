@@ -1,0 +1,289 @@
+# Specifica — Mappa viva, incursioni e riparazioni
+
+## Stato di implementazione
+
+### Implementazione completata e verificata — 1 novembre 2026
+
+L'implementazione della #76 è completata sul ramo `feat/map-rework`.
+La verifica finale autorizzata dall'utente è conclusa senza gate falliti.
+La revisione indipendente della specifica non ha individuato lacune funzionali.
+La revisione degli standard ha rilevato un difetto rispetto ad ADR-0026: gli
+attacchi a opere e campi applicavano danno fisso per Squad, premiando la
+frammentazione e ignorando le perdite.
+
+La correzione usa Force effettiva, moltiplicatori del tipo e arrotondamento
+cumulativo per bersaglio nello stesso scambio. Conserva quattro HP per 24 Force
+di fanteria, contributo dimezzato della cavalleria, minimo di un HP per bersaglio
+e attribuzione ordinata del colpo finale. I test Match/Observation coprono
+120 contro cinque gruppi da 24, 48 contro due da 24, superstiti, piccoli gruppi,
+specialisti e bersagli distinti. Anche le incursioni neutrali aggregano i gruppi
+parziali, mantenendo quattro HP sulle opere e tre sulle fortificazioni per un
+gruppo completo da 24 uomini. Passano 70 test mirati su otto file.
+Entrambi i revisori hanno ricontrollato la correzione: nessuna violazione
+vincolante aperta per Standards e nessun finding azionabile per Spec. Le due
+osservazioni di manutenzione non bloccanti e i limiti della revisione sono nel
+[resoconto finale](reviews/issue-76-final-review-2026-11-01.md).
+Passano lint, guard, typecheck e build. La suite non browser completa supera
+**1.787/1.787 test in 163 file**, con il benchmark dei cento Match ancora
+entro il limite originale di cinque secondi; il runner usa tre worker per
+evitare contesa con le simulazioni lunghe. Sono verdi la pressione AI
+**60/60**, con replay identico, le **400+96** espansioni, i **12** scenari CI
+con hash attesi e replay effettivi identici e le **sei** campagne storiche
+con vittoria cartaginese per blocco e replay identico.
+L'accettazione Chromium completa supera **181/181 casi in 17,9 minuti**
+su `cda7c5b`, dopo **3/3** ripetizioni del percorso romano con due worker.
+Nel passaggio completo Roma registra due morti avversari al tick 1.045 e
+conclude il percorso al tick 1.238. La fixture del percorso romano
+reagisce al primo avviso, conserva l'ultima posizione osservata a ogni campione
+e usa controlli ordinari a 1x durante l'intercettazione, poi ripristina 3x.
+Richiede perdite nuove rispetto al riferimento, Attack applicato, avversario
+disegnato e tick inferiore a 2.100; non accetta attrito stagionale come scontro.
+Sono verificati anche attesa del boot, riparazioni di entrambe le fazioni,
+pressione a tutte le difficoltà, attraversamenti e calendario stagionale.
+Nessuna regressione funzionale o richiesta della specifica resta aperta.
+Le sezioni del 29–31 ottobre sotto riportate sono storiche; gli esiti sopra
+e il resoconto finale le sostituiscono per lo stato di completamento.
+
+### Aggiornamento del 31 ottobre 2026
+
+Resoconto storico, sostituito dallo stato del 1 novembre sopra riportato.
+Al 31 ottobre l'issue #76 restava **OPEN** in attesa della revisione
+indipendente finale sul ramo `feat/map-rework`.
+
+- **Calibrato — Q82, opportunità effettive:** la capacità produttiva locale
+  è confrontata su 200 seed a popolazione 10, 22 e 40, in primavera e inverno,
+  senza differenze di resa a sviluppo uguale. Su 200 mappe, entrambe le fazioni
+  conquistano le due opportunità successive meno costose in **400/400** scene
+  Match, con barbari attivi, reclutamento e Farm reali: seconda conquista mediana
+  al tick 501 per entrambe, massimi 901/Roma e 701/Cartagine, prima del cambio
+  di stagione a 2100. Il campione sulle tre difficoltà supera **96/96** scene
+  entro il tick 601. Restano differenze organiche di costo, resa e pericolo:
+  opere danneggiate in 53/200 scene romane e 66/200 cartaginesi. Metodo,
+  distribuzioni e limiti sono nel [resoconto di calibrazione](reviews/issue-76-economy-calibration.md).
+  La misura riguarda produzione e due espansioni successive; non promette
+  identità per ogni insediamento o risultato di campagna.
+- **Implementato — incursioni IA sulle opere:** l'IA può assegnare un attacco
+  sostenibile a un'opera esterna nemica attualmente osservata. Proprietà ignota,
+  sola memoria, lavori incompleti, rovine e difesa superiore non autorizzano
+  l'attacco. Il confronto usa geometria completa e ruotata del lotto, forza e
+  minacce osservabili; entrambe le fazioni seguono gli stessi comandi. Il tiro
+  cerca una posizione raggiungibile entro la gittata effettiva anche quando
+  l'attaccante parte fuori portata.
+- **Implementato — ingombri e percorsi dinamici:** la formazione di gruppo
+  riserva arrivi legali e non distribuisce posizioni oltre un muro chiuso.
+  Il traffico d'accesso conserva precedenza e identità dell'ordine; un corpo
+  amico in marcia può liberare la corsia, mentre Hold non viene spostato.
+  Un passaggio laterale conserva l'orientamento che rende legale l'ingombro,
+  eliminando quattro stalli emersi nella calibrazione delle espansioni.
+- **Implementato — assalto sul lato raggiunto:** il danno va al muro realmente
+  raggiunto dai corpi assedianti, con contributo dei soli corpi a contatto.
+  Agli angoli si sceglie il lato con forza maggiore e spareggio deterministico;
+  resta il tetto globale del danno di scalata. Le prove Match coprono i quattro
+  lati e il concorso di corpi su un angolo.
+- **Verificato — dettagli e stagioni:** alberi, rocce e cespugli hanno tre
+  sagome distinte; in inverno caducifoglie e arbusti perdono il fogliame,
+  mentre i sempreverdi lo conservano, con neve sui dettagli. Cinque scene
+  Chromium attraversano il calendario reale per tutte le quattro stagioni:
+  paesaggio, bosco, colline, zona umida e ponte. Passano **5/5** controlli;
+  venti immagini prodotte fuori repository mostrano stagioni distinguibili,
+  acqua e rilievi leggibili e impalcato/strade conservati. PixelBuffer,
+  Observation e separazione fra presentazione e stato restano i meccanismi
+  esistenti.
+- **Verificato — flusso di riparazione:** per entrambe le fazioni il pannello
+  Gestione invia i comandi reali di riparazione dell'opera e del muro,
+  mostra l'avanzamento e ne osserva il completamento. Passano **2/2** prove
+  Chromium; quattro immagini documentano le azioni sui due tipi di struttura.
+- **Verifiche complessive:** lint, typecheck e build passano. La nuova
+  matrice di espansione passa; le sei campagne storiche conservano conquista
+  cartaginese per blocco e replay identico, e tutti i dodici scenari CI
+  riproducono gli hash attesi. La matrice completa di pressione AI supera
+  **60/60** casi e **60/60** replay identici, senza cambiare soglie.
+  La suite non browser supera **1.768/1.768 test in 162 file**. I dodici replay
+  CLI sono casi distinti con lo stesso limite di cinque secondi per caso,
+  evitando di cumulare dodici simulazioni sotto un unico timeout.
+  I risultati delle revisioni precedenti rimangono storici finché sostituiti
+  da questi gate.
+- **Chromium, esecuzione completa e correzioni mirate:** la matrice completa
+  registra **177/181** casi superati in 18,2 minuti. I quattro fallimenti
+  riguardano fixture: terreno atteso senza dettagli del seed/fauna, armata di
+  disegno fuori dalla camera iniziale, danno già avvenuto prima del riferimento
+  di pressione, ingaggio transitorio fra campioni distanti dieci tick.
+  Dopo le correzioni passano i file di avvio/camera (**9** casi), pressione
+  (**8**), disegno delle squadre (**1**) e percorso di pratica (**4**).
+  Quest'ultimo viene infine rieseguito interamente con **4/4** verdi: il
+  campionamento fine dopo il contatto rileva ingaggi ai tick **897/898** a
+  1280/1920, mantenendo il limite di 2000 tick e 120 secondi. Tutti i 181 casi
+  hanno quindi una verifica verde fra esecuzione completa e successive
+  riesecuzioni degli owner; non è stata ripetuta l'intera matrice dopo queste
+  sole correzioni alle fixture. Nessuna modifica alle regole della simulazione
+  è intervenuta fra i due passaggi. Log in `%TEMP%/spqr76-final-accept.log`,
+  `%TEMP%/spqr76-fixture-owners.log` e `%TEMP%/spqr76-journey-final.log`.
+- **Revisione finale:** le revisioni precedenti hanno guidato le correzioni;
+  gli ultimi commit richiedono ancora la revisione indipendente sui due assi
+  Standards e Spec. Il servizio dei subagent ha raggiunto il limite d'uso e
+  non ha completato questa ultima richiesta. Non dichiarare chiusa l'issue
+  sulla sola base dei gate automatici.
+
+### Aggiornamento del 30 ottobre 2026
+
+L'implementazione è autorizzata ed è in corso sul ramo `feat/map-rework`; l'issue #76 resta **OPEN**.
+
+- **Parziale — Q82, risorse effettivamente sfruttabili:** ogni Stronghold e l'insediamento neutrale più vicino nella sua metà ricevono un nodo per ciascuna risorsa. Tutti i 20 nodi sono entro il raggio produttivo di un insediamento: sui 1.000 seed verificati i nodi fuori portata passano da 15.246 a zero su 20.000. Terreno locale adatto preferito, altra terra asciutta come ripiego; quantità e formule economiche restano quelle esistenti. Nei casi di regressione 2, 4, 12, 14 e 587 la capacità locale permette di impiegare tutti i dieci lavoratori iniziali in ciascuna risorsa. Il raggio è condiviso fra generazione ed economia. Rimangono la calibrazione dell'equilibrio lungo percorsi effettivi, delle minacce, dell'espansione e delle economie cresciute.
+- **Verificato — scouting e pressione:** la pianificazione considera il costo del terreno e il passo della Squad; una pattuglia ricordata sulla fascia da esplorare può far preferire una corsia interna. Il punto di aggiramento non può iniziare su acqua nota o strutture. Sulla revisione `63d8afe` la matrice completa supera **60/60 casi**, con **60/60 replay coerenti**, senza allentare le soglie. Questo risultato riguarda pressione e scoperta, distintamente dalla vittoria delle campagne complete.
+- **Verificato — guarnigioni e precedenza d'accesso:** l'ammissione alle mura conserva il ticket del passaggio già iniziato; un ingresso non viene annullato da un breve termine dell'assedio. I difensori recuperati tornano in campo quando non restano assedi o minacce vicine visibili/ricordate. Un ordine di campo concluso rilascia il ticket anche se la coda della colonna tocca ancora la porta: il corpo resta presente e continua a impedire sovrapposizioni. I test Match/Observation coprono entrambe le fazioni, richiamo, rientro e precedenza; 60 controlli mirati su accessi, insediamenti e policy d'assedio passano.
+- **Verificato — assedi e campagne storiche:** il blocco valuta gli eserciti di soccorso sul campo; la guarnigione viene stimata per l'assalto. Roma conserva un blocco sostenibile finché esercito e tesoreria non permettono il passaggio all'assalto. Un ariete già pagato e fuori visuale non viene scambiato per assente. La scena Match esplicita dell'ariete nascosto passa e fallisce se si rimuove tale protezione. Tutti i sei campioni storici ora terminano con una conquista cartaginese per blocco e replay identico: seed 7/Centurio 6300, 6/Centurio 4200, 13/Tiro 6300, 7/Tiro 4200, 12/Imperator 4200 e 7/Imperator 6300. Il torneo conserva il seed 13 e il limite 7000. Un'integrazione separata verifica anche una conquista romana per assalto, senza dipendere dal vincitore di una campagna casuale.
+- **Verificato — parallele e connessione stradale:** dopo la tracciatura, un angolo ridondante di un quadrato 2×2 confluisce nell'altro angolo già stradale e asciutto. Sono preservati estremi, adiacenza e lunghezza dei percorsi, guadi e ponti; il terreno naturale viene ripristinato nella casella liberata. Nel seed 7 le caselle accanto alla rete scendono da 30 a **29** e il riuso sale a **126**, superando il test senza modificarne la soglia. Passano 19 test mirati, comprese le invarianti su 1.000 seed e l'assenza di ripetizioni nei singoli percorsi. Le alternative che favorivano deviazioni più lunghe sono state scartate perché regredivano il contatto nei seed 2/4.
+- **Golden verificati tramite comportamento e replay:** i 12 comandi CI sono stati registrati e riprodotti sulla mappa accorpata; tutti i record riproducono gli hash. Gli scenari guidati conservano vittoria romana per assalto al tick 301 e per blocco al tick 4200. Il caso IA seed 1/2101 produce `811935deaef354f9`; il caso breve mantiene 608 decisioni e 562 comandi, con hash `43a2b6d2b3f4c66e` riprodotto dal record. CI e esempio README seguono questi risultati, senza modifiche alle soglie di pressione o ai limiti delle campagne.
+- **Verifiche non browser:** la suite completa è in riesecuzione senza Chromium concorrente. Il precedente tentativo concorrente al rendering software è stato interrotto dopo timeout; non costituisce un gate superato. Passano typecheck completo (`tsc -b`), lint e guard sulle correzioni consolidate; la verifica finale resta da concludere.
+- **Chromium autorizzato dall'utente:** sulla revisione precedente passavano smoke 3/3, insediamenti 6/6 e navigazione desktop 4/4. L'accettazione diagnostica completa è stata interrotta dopo aver individuato ulteriori fixture obsolete: indici di una mappa a 96 colonne anziché 160, composizione del terreno senza dettagli, proprietà non ancora osservata e blocco cercato al centro della Stronghold. I relativi owner sono in correzione; è aggiunto un controllo che attraversa le quattro stagioni tramite il calendario reale. La nuova accettazione e la valutazione visiva di stagioni, densità, attraversamenti e riparazioni restano da completare. Clic singolo per selezionare, doppio clic o F per centrare rimangono il comportamento previsto.
+
+### Stato documentato fino al 29 ottobre 2026
+
+- **Parziale — presentazione stagionale:** il terreno naturale varia con la stagione osservata, senza modificare la mappa della simulazione; strade e marcatori vengono disegnati dopo la colorazione. Verificati i generatori PixelBuffer, il typecheck e 536 test non browser su arte, renderer, input e interfaccia. Restano da valutare varietà, leggibilità, neve sui dettagli e accettazione visiva; nessuna delle richieste stagionali complessive è ancora dichiarata completata.
+- **Parziale — dettagli del paesaggio:** il terreno nella partita include piccoli elementi procedurali riproducibili dal seed, erba, cespugli e varianti di alberi e rocce con tonalità e dettagli stagionali; strade e marcatori restano disegnati sopra. Ulteriore arricchimento e verifica visiva sono ancora necessari.
+- **Completato — Q19 e Q135, animali decorativi e visibilità:** le presenze sono esclusivamente di presentazione, non interagiscono con la simulazione e appaiono solo sui terreni attualmente visibili; non permangono nella nebbia ricordata. I test pubblici verificano riproducibilità, assenza di mutazioni della mappa e transizione fra inesplorato, visibile e ricordato. La verifica visiva Chromium non è stata autorizzata né eseguita.
+- **Completato — Q51/Q100:** lepri, cinghiali e uccelli di palude procedurali hanno piccoli movimenti e collocazioni coerenti con pianure, boschi e zone umide. I test pubblici verificano gli habitat e il movimento; leggibilità e densità restano da valutare visivamente, senza test Chromium non autorizzati.
+- **Completato — Q111, Q131 e Q132, visibilità degli attacchi alle opere:** gli ordini richiedono un bersaglio visibile e si interrompono se la visuale viene persa; la squadra arresta il percorso senza rivelare lo stato nascosto. Una riparazione visibile interrompe l’attacco e produce un messaggio specifico. Test Match/Observation coprono entrambi i casi.
+- **Completato — Q30, attraversamenti dei fiumi:** i corsi principali offrono almeno due gruppi distinti di guadi o ponti; la verifica su 1.000 seed non conta caselle adiacenti come passaggi separati e il riepilogo CLI conta una sola volta le caselle di guado ripetute e ammette corsi brevi aggirabili con meno attraversamenti. L’invariante ora conta le componenti fisiche, senza duplicare guadi ripercorsi; la generazione aggiunge guadi ai rami significativi delle confluenze. Le due modifiche integrate passano le invarianti su 1.000 seed e i casi sintetici per guadi ripercorsi.
+- **Completato — Q65, bottino conteso:** nei test con attacchi simultanei di entrambe le fazioni, il bottino viene assegnato una sola volta alla fazione che infligge il colpo decisivo, indipendentemente dall’ordine degli attaccanti.
+- **Completato — Q34 e Q141, rinforzi barbari:** un campo attivo rimpiazza periodicamente anche le perdite parziali, facendo comparire i rinforzi presso il campo; il limite complessivo tiene conto dei superstiti anche quando sono in incursione. Un campo distrutto non riceve rinforzi. Test Match verificano perdite parziali, tetto e distruzione.
+- **Completato — Q57 e Q61, cantieri sotto assedio:** un cantiere incompleto non può essere danneggiato, diventa attaccabile dopo il completamento anche se il blocco continua e non si possono avviare nuove riparazioni durante l’assedio. Il caso è verificato con comandi e Observation.
+- **Completato — Q63 e Q70, conquista durante riparazioni:** edifici e fortificazioni conservano i danni; i lavori avviati dal precedente proprietario sono annullati senza rimborso e il conquistatore può avviarne di nuovi. Test Match/Observation verificano entrambi i casi.
+- **Completato — Q67 e Q68, breccia occupata e capacità:** la breccia resta percorribile e segnala l’attesa finché è occupata, poi si richiude; case e magazzini conservano capacità anche in rovina e durante la riparazione, verificati attraverso il cambio di stagione.
+- **Completato — Q103, Q104 e Q110, riparazioni ferme:** un lavoro pagato resta invulnerabile anche senza lavoratori e sospende la produzione; l’annullamento non rimborsa e rende nuovamente attaccabile l’opera. Test Match/Observation e produzione stagionale verificano i casi.
+- **Completato — Q137–Q139, assegnazione lavoratori:** le opere produttive hanno precedenza; costruzioni e riparazioni competono secondo l’ordine scelto e un’opera riparata rientra nell’allocazione ordinaria. I test Match/Observation coprono entrambi gli ordini.
+- **Completato — Q107, determinismo e impostazioni del replay:** i record conservano la difficoltà delle incursioni e i replay ricostruiscono la stessa configurazione; test CLI coprono partite IA, agenti e recupero da torneo. Stesso seed e impostazioni sono verificati anche confrontando l'hash di simulazione e replay dopo 650 tick; non è richiesta compatibilità con i record precedenti. I replay degli assedi ai livelli Tiro e Imperator sono stati verificati con le stesse impostazioni della partita e producono hash identici.
+- **Parziale — insediamenti e apertura:** la generazione prevede 6–8 insediamenti minori e collega ciascuna Stronghold a un'opportunità vicina. Il villaggio aggiuntivo dei totali dispari viene assegnato a un lato determinato dal seed, anziché sempre a Roma; la rete riutilizza strade già tracciate quando i percorsi hanno pari lunghezza; il contratto sui percorsi del terreno passa su 1.000 seed; restano da verificare ingombri dinamici, accessibilità effettiva rispetto a risorse e minacce, densità e ritmo di gioco.
+- **Lacuna — Q82, parità effettiva delle risorse:** un'indagine su 1.000 seed con la capacità economica effettiva ha rilevato 769 coppie seed/risorsa con nodi inizialmente sfruttabili da una sola Stronghold. In 1.262 coppie nessun insediamento ha un nodo del tipo entro il raggio produttivo; le capacità base e del terreno restano comunque disponibili. Il terreno stesso può produrre forti differenze iniziali: per esempio, nel seed 587 la capacità legno è 232 per Roma e 2 per Cartagine. I percorsi esaminati non includevano ostacoli dinamici. Un prototipo isolato ha ridotto i nodi fuori raggio da 15.246 a 2.968 su 20.000, ma ha modificato la rete stradale e portato a due contatti fuori soglia sui 20 casi Imperator esaminati: non è stato integrato. Nel seed 2 la diversa rete stradale elimina un guado utile; nel seed 4 una pattuglia perde morale e rientra. Le varianti sperimentali sui guadi o sul riassegnamento della pattuglia non hanno risolto entrambi i casi senza ulteriori rischi. Servono una correzione e criteri di equilibrio calibrati, non basta il bilanciamento delle quantità di nodi per metà mappa.
+- **Parziale — accampamenti:** sono generati siti bilanciati con tre varianti procedurali, resi tramite Observation e memoria della nebbia. Sono presenti difensori neutrali, rinforzi, incursioni periodiche locali e danni alle opere, nonché attacco al campo visibile, distruzione, bottino unico, memoria della rovina e feedback per perdita della visuale. I superstiti vagano con direzioni deterministiche oltre il campo distrutto, senza nuove incursioni; sono presenti anche assalti alle fortificazioni con difesa della guarnigione e avvisi per minacce e danni visibili; l’IA può attaccare prudentemente un campo visto vicino a un insediamento proprio, e i test Match verificano il bottino per entrambe le fazioni; i test coprono anche assalti barbari e blocchi di fazione simultanei; il tiro contro i campi rispetta gittata, linea libera e posizione raggiungibile; resta da verificare il bilanciamento complessivo.
+- **Parziale — acque e attraversamenti:** la generazione produce laghi aggirabili, paludi rallentanti, sorgenti/foci interne e collegamenti occasionali fra fiumi e laghi; i singoli corsi non ripercorrono più le proprie caselle e sono eliminate anche le anse rettangolari cieche più lunghe, preservando le confluenze e la raggiungibilità verificate su 1.000 seed. I raccordi grafici raggiungono i guadi effettivamente attraversati dalle strade; i ponti sono percorribili al costo della strada e mostrano un impalcato procedurale orientato alle strade adiacenti; una prima gestione del traffico usa colonna, code e precedenza stimata; il traffico riprende dopo l’allontanamento dei combattenti, la distruzione e la fuga automatica di una squadra; ulteriori test Match verificano code opposte e ripresa dopo scontro, rotta o distruzione; restano da verificare altri casi di congestione, geometria e resa visiva.
+- **Parziale — danni e riparazioni:** comandi, stato osservabile, avanzamento e attesa di passaggi occupati sono introdotti e verificati su Match/Observation; sono presenti controlli HUD, prime decisioni IA, priorità dei lavori e coda condivisa delle richieste non pagate per costruzioni e riparazioni; le richieste bloccate da un assedio mostrano la causa corretta e riprendono dopo la sua fine. Le opere completate hanno resistenza e riparazione, con sospensione della produzione e protezione delle capacità; l'attacco può selezionare opere nemiche visibili e Observation conserva l'ultima condizione osservata. L'approccio cerca un lato raggiungibile e le previsioni economiche tengono conto dei lavori concorrenti; restano da verificare ulteriori casi limite dei percorsi; il flusso dell'interfaccia non è stato verificato in Chromium e le richieste complessive non sono ancora completate.
+
+**Regressioni aperte:** la suite non browser completa sulla revisione c36de48 ha registrato 1.691 test superati e 12 falliti su 1.703; quattro file interessati, fra cui scenari lunghi di assedio terminati al limite della partita, due verifiche CLI e una decisione militare legata al seed. Restano casi di pressione e assedio IA, un golden CLI, il golden CI dell’hash IA seed 1 e timeout negli scenari lunghi. Un precedente test di replay usava una difficoltà diversa dalla partita. La configurazione del replay è stata corretta e due casi mirati ora confrontano hash identici; un’ottimizzazione della memoria della nebbia ha fatto passare entrambi gli scenari lenti in verifiche isolate; il richiamo dei difensori aveva ripristinato l’esito e il replay attesi nel seed 7/Tiro su una revisione precedente; una bisezione successiva attribuisce il nuovo stallo alla correzione dell’ariete fuori visuale, il blocco che portava alla vittoria storica era stato deciso perché l’IA scambiava l’ariete nascosto per assente, mentre la condotta attuale conserva l’assalto e successivamente ripiega dopo perdite osservate; l’esito storico non dimostra da solo un difetto della correzione; il seed 12/Imperator rimane da verificare sull’integrazione: una correzione distingue l’ariete fuori visuale da quello assente, evitando l’abbandono prematuro dell’assalto; gli altri esiti IA rimangono da verificare. L’IA può assegnare una squadra idonea alla guarnigione di mura proprie sotto assedio osservato, liberare un’uscita bloccata da una squadra amica, disimpegnarsi localmente da minacce neutrali e stimare le forze visibili in base agli uomini osservati, mantenendo una stima prudente quando i dati non sono disponibili; una ricerca più ordinata delle bande inesplorate e l’aggiramento delle minacce per un esploratore isolato e la copertura delle fasce vicine da parte di una pattuglia isolata portano la matrice di pressione a 60 casi su 60 superati, con replay coerente in tutti i 60 sulla revisione c5b89da più le due modifiche allo scouting; il seed 7 con Roma a Centurio arriva al contatto al tick 726. Un tentativo di assegnare fanteria esausta locale è stato annullato: nel seed 12 causava uno stallo fino al limite della partita, mentre un rilascio successivo della guarnigione cambiava il risultato del seed 7. Il comando CI a 2.101 tick attende d2173b02de353a67 e produceva d5da406c5000ada8 prima dell’ultima correzione dello scouting. Non aggiornare i golden prima di verificare il comportamento e il replay.
+
+## Problem Statement
+
+Dopo il rework degli insediamenti, la mappa ha bisogno di maggiore qualità e varietà: strade doppie o mal raccordate, paesaggi poco ricchi e spazi non adeguati agli insediamenti riducono leggibilità e interesse strategico. Il giocatore deve poter esplorare un'Italia plausibile, espandersi e affrontare ostacoli e minacce senza partire sistematicamente svantaggiato.
+
+## Solution
+
+Riprogettare generazione, terreno e presentazione procedurale in coerenza con gli insediamenti, introducendo acque, paludi, ponti, animali decorativi, accampamenti barbari e incursioni; estendere il combattimento a opere economiche e la riparazione alle opere e alle fortificazioni. Preservare determinismo, visibilità e controllo paritario delle fazioni. Calibrare una dimensione per il gioco attuale, preparando dimensioni maggiori come evoluzione futura.
+
+## User Stories
+
+1. Come giocatore, voglio paesaggi italiani plausibili, così da riconoscere l'ambientazione.
+2. Come giocatore, voglio mappe organiche e diverse per seed, così da esplorare partite distinte.
+3. Come giocatore, voglio opportunità iniziali comparabili, così da non essere sistematicamente svantaggiato.
+4. Come giocatore, voglio un insediamento minore relativamente vicino alla mia Stronghold, così da avere una scelta di espansione iniziale.
+5. Come giocatore, voglio che tale insediamento resti neutrale e conquistabile da entrambe le fazioni, così che la sua posizione non ne predetermini il proprietario.
+6. Come giocatore, voglio più insediamenti minori rispetto ai 4–6 attuali, senza affollamento, così da avere più scelte.
+7. Come giocatore, voglio che uno o due insediamenti possano naturalmente risultare contesi, senza posizioni centrali imposte, così da incontrare l'avversario in contesti vari.
+8. Come giocatore, voglio insediamenti diversi per posizione, terreno e risorse, così da ponderare l'espansione.
+9. Come giocatore, voglio accesso comparabile alle quattro risorse, considerando percorsi e minacce, così che la parità sia pratica e non solo numerica.
+10. Come giocatore, voglio una dimensione calibrata sui tempi di marcia e incontro, così da avere spazio di manovra senza attese eccessive.
+11. Come progettista, voglio evitare nuovi vincoli inutili a dimensioni maggiori e più giocatori futuri, così da poter estendere il gioco.
+12. Come giocatore, voglio una rete stradale unica e coerente, così da orientarmi e collegare gli insediamenti.
+13. Come giocatore, voglio strade raccordate a porte e passaggi, così da evitare sovrapposizioni con mura ed edifici.
+14. Come giocatore, voglio incroci leggibili e poche strade parallele superflue, così che la rete sembri naturale.
+15. Come giocatore, voglio diramazioni verso aree produttive senza obbligo di una strada per ogni nodo, così da evitare reti artificiali.
+16. Come giocatore, voglio percorsi alternativi quando utili, così da scegliere come aggirare ostacoli.
+17. Come progettista, voglio una rete utilizzabile dal commercio futuro, senza introdurre ora un sistema di commercio.
+18. Come giocatore, voglio fiumi riconoscibili e non troppo corti o ravvicinati, così da avere un paesaggio credibile.
+19. Come giocatore, voglio corsi d'acqua che possano iniziare o terminare all'interno della mappa, così da ottenere forme varie.
+20. Come giocatore, voglio laghi aggirabili e non attraversabili, così da affrontare scelte di percorso.
+21. Come giocatore, voglio fiumi che possano alimentare o uscire dai laghi, così da vedere reti idrografiche plausibili.
+22. Come giocatore, voglio che i luoghi importanti restino raggiungibili via terra, così da non trovare obiettivi isolati.
+23. Come giocatore, voglio guadi proporzionati all'importanza del corso d'acqua, così che un ostacolo importante non abbia un solo passaggio obbligato.
+24. Come giocatore, voglio ponti e guadi riconoscibili, così da scegliere tra attraversamento rapido e guado disordinante.
+25. Come giocatore, voglio ponti permanenti la cui forma corrisponde allo spazio percorribile, così da comprendere le strettoie.
+26. Come giocatore, voglio colonne, precedenza e combattimento coerenti sui ponti, così che il traffico resti gestibile.
+27. Come giocatore, voglio paludi attraversabili che rallentano, così da valutare percorsi alternativi.
+28. Come giocatore, voglio vegetazione, rocce e dettagli coerenti ma vari, così da vedere paesaggi più ricchi.
+29. Come giocatore, voglio variazioni stagionali leggibili, così che il paesaggio rifletta il tempo di gioco.
+30. Come giocatore, voglio che la neve non nasconda strade e oggetti importanti, così da conservare la leggibilità.
+31. Come giocatore, voglio animali decorativi associati all'ambiente e animati con discrezione, così che il paesaggio sembri vivo.
+32. Come giocatore, voglio animali senza collisioni o informazioni nascoste, così da non confonderli con minacce.
+33. Come giocatore, voglio accampamenti barbari piccoli e distinguibili, così da riconoscere una minaccia autonoma.
+34. Come giocatore, voglio difensori e incursioni limitate intorno all'accampamento, così da affrontare rischi territoriali.
+35. Come giocatore, voglio più tempo tra le incursioni ai livelli più bassi, così che la pressione segua la difficoltà scelta.
+36. Come giocatore, voglio che la stessa frequenza di difficoltà valga per entrambe le fazioni, così che i barbari siano neutrali.
+37. Come giocatore, voglio rinforzi graduali entro un tetto comune a difensori e incursori, così che la minaccia sia limitata.
+38. Come giocatore, voglio attaccare direttamente l'accampamento anche se sopravvivono difensori, così da eliminare la fonte dei rinforzi.
+39. Come giocatore, voglio denari in tesoreria alla distruzione dell'accampamento, così da ricevere una ricompensa immediata.
+40. Come giocatore, voglio una traccia non bloccante dell'accampamento distrutto, così da riconoscere il luogo liberato.
+41. Come giocatore, voglio che i superstiti senza accampamento vaghino finché sconfitti, così da poterli ancora incontrare.
+42. Come giocatore, voglio che i superstiti non organizzino più incursioni né ricevano rinforzi, così che la distruzione sia definitiva.
+43. Come giocatore, voglio vedere e ricordare gli accampamenti secondo la nebbia di guerra, così da esplorare senza informazioni nascoste.
+44. Come giocatore, voglio avvisi utili e non ripetuti per gli attacchi barbari, così da reagire.
+45. Come giocatore, voglio che i barbari attacchino truppe e strutture senza conquistare insediamenti, così da affrontare incursioni distinte da una fazione giocabile.
+46. Come giocatore, voglio ordinare attacchi a opere nemiche visibili e raggiungibili, così da interrompere la produzione con incursioni mirate.
+47. Come giocatore, voglio che le strutture centrali permanenti restino indistruttibili, così che il centro della conquista continui a esistere.
+48. Come giocatore, voglio che un'opera danneggiata funzioni fino a zero resistenza, così da comprendere quando va fuori uso.
+49. Come giocatore, voglio vedere le rovine e ripararle nello spazio originario, così da ripristinare un insediamento colpito.
+50. Come giocatore, voglio conservare capacità di abitazioni e magazzini anche in rovina o riparazione, così da non perdere persone o scorte.
+51. Come giocatore, voglio conservare il Tier raggiunto se Villa o Foro sono in rovina, così da evitare una regressione improvvisa.
+52. Come giocatore, voglio ordinare riparazioni meno costose delle nuove costruzioni, così da poter recuperare dai danni.
+53. Come giocatore, voglio riparazioni con lavoratori, tempi, priorità e feedback leggibili, così da gestire risorse e scelte.
+54. Come giocatore, voglio sospendere la produzione di un edificio in riparazione, così che la sua protezione abbia un costo.
+55. Come giocatore, voglio riparare mura e porte fuori dall'assedio, così da recuperare le difese.
+56. Come giocatore, voglio che una riparazione iniziata prima dell'assedio continui, così che il lavoro non venga annullato.
+57. Come giocatore, voglio che un varco occupato rimanga aperto fino a sgombero, così che le truppe non siano sovrapposte alle mura.
+58. Come giocatore, voglio che danni e rovine persistano dopo una conquista, così che lo scontro abbia conseguenze.
+59. Come giocatore, voglio un'IA capace di considerare incursioni, riparazioni e percorsi usando solo informazioni osservate, così da affrontare un avversario competente.
+60. Come giocatore, voglio che lo stesso seed e le stesse impostazioni riproducano mappa e partita nella stessa versione, così da poter ripetere gli eventi.
+
+## Implementation Decisions
+
+### Ambito e generazione
+
+- Una sola dimensione giocabile calibrata ora: **160×160 caselle**. Progettare senza nuovi vincoli inutili per dimensioni maggiori, partite più lunghe o più giocatori futuri. Nessun obbligo di implementare quelle modalità ora; selezione di altre dimensioni fuori ambito.
+- Conservare generazione da seed, mappa organica non speculare e parità effettiva di opportunità, risorse e pericoli. Garantire almeno un insediamento minore relativamente vicino a ogni Stronghold, ancora neutrale e contendibile. Puntare a più di 4–6 insediamenti senza affollamento; favorire uno o due naturalmente contesi, senza vincolo rigido di posizione centrale. Diversità di localizzazione e contesto probabilistica, non categorie speciali predeterminate.
+- Accesso alle quattro risorse comparabile considerando percorso reale, ostacoli e minacce, non soltanto distanza o quantità. Il valore economico deve riflettere le regole effettive: non introdurre bonus di adiacenza non concordati. Dimensione, intervalli, tempi di marcia, densità e parametri vanno calibrati insieme su partite, seed e difficoltà.
+- Rete unica connessa per tutte le strade funzionali, collegando porte/passaggi reali di Stronghold e insediamenti e raccordando aree produttive e luoghi significativi; nessun obbligo di diramazione per ogni nodo. Evitare doppioni, parallele inutili, sovrapposizioni con opere/mura e raccordi inesatti anche durante crescita. Consentire alternative giustificate dalla geografia, senza imporre ridondanza universale. Distinguere eventuali tracce decorative dalle strade che velocizzano. Preparare percorsi tra insediamenti per commercio futuro senza definire o implementare commercio.
+- Paesaggi italiani plausibili e varie combinazioni per seed, privilegiando giocabilità. Pochi fiumi riconoscibili ed estesi, evitare segmenti troppo corti e fiumi troppo vicini; corsi minori collegati possibili. Consentire origini e sbocchi interni, laghi indipendenti o con affluenti/emissari. Laghi non attraversabili, aggirabili via terra. Paludi attraversabili, con rallentamento come unico nuovo effetto di regole. Assicurare raggiungibilità terrestre di Stronghold, insediamenti e luoghi strategici.
+- Guadi in numero adeguato alla funzione del fiume: più possibilità per barriere significative; corsi brevi aggirabili possono averne uno o nessuno. Guadi causano disordine. Ponti e guadi servono la rete; ponti soprattutto sui collegamenti principali quando appropriato, senza aggiunte artificiali. Un ponte conserva il vantaggio di strada e non causa disordine; permanente, non costruibile né distruttibile in questa versione.
+- Ponti con geometria visibile coerente con quella percorribile; colonna dove stretti, precedenza a chi impegna per primo, spareggio deterministico per simultaneità, attesa e gestione opposti senza attraversamenti illeciti. Verificare uscita libera prima di entrare; nemici possono combattere sul ponte, senza attraversarsi. Nessun blocco permanente dopo ritirata, morte o congestione. Dettagli di larghezza e spareggio delegati alla calibrazione.
+
+### Presentazione e stagioni
+
+- Conservare PixelBuffer/PixiJS, prospettiva, stile procedurale e leggibilità degli insediamenti; varietà contestuale di erba, alberi, cespugli, rocce, strade e dettagli. Nessuna collisione individuale per vegetazione, rocce o animali decorativi: prevalgono i normali effetti del tipo di terreno.
+- Primavera/estate verdi, autunno più secco, inverno con neve e vegetazione adatta; sempreverdi possibili, neve anche su dettagli purché non nasconda strade e oggetti importanti. Cambiano aspetto e non forma, posizione, percorso o risorse. Nessuna nuova meccanica meteorologica; preservare gli effetti economici stagionali esistenti. Terreno esplorato mostra la stagione attuale anche se ricordato, senza aggiornare informazioni nascoste su edifici, accampamenti o danni.
+- Animali decorativi, specie e frequenza coerenti con ambiente e Italia dell'epoca; alcuni animati/mobili con moderazione. Niente caccia, risorse, combattimento, collisioni o informazioni tattiche; visibili solo in zone attualmente osservate. Scelta specie e densità da calibrare. Dettagli estetici riproducibili per seed, separati da Match e hash.
+
+### Accampamenti barbari
+
+- Luoghi neutrali distinti e nettamente più piccoli degli insediamenti minori e Stronghold; grafica procedurale riconoscibile con 2–3 varianti estetiche. Numero e posizioni iniziali variabili, comparabili tra fazioni e non troppo vicini alle Stronghold per un attacco immediato; non nascono nuovi accampamenti in partita. Gli insediamenti minori rimangono conquistabili e distinti.
+- Gruppi ostili a entrambe le fazioni difendono il campo e compiono incursioni intermittenti relativamente vicine. Truppe che minacciano direttamente hanno priorità; possono colpire truppe, opere raggiungibili, mura e porte senza conquistare insediamenti o costituire una fazione giocabile. Le guarnigioni devono poter difendere contro questi attacchi usando ed estendendo coerentemente le capacità effettive di assedio, senza ipotizzare un comportamento già esistente.
+- Forza finita comune a difensori e incursori, rinforzi graduali entro il tetto finché il campo esiste. Incursioni più frequenti con maggiore difficoltà, applicate a entrambe le fazioni; nessuna variazione di mappa, bottino, risorse, salute, danno o tetto di forza dovuta alla difficoltà. Parametri di frequenza, forza, distanza e tempi da calibrare.
+- L'accampamento ha resistenza propria ed è attaccabile anche se vi sono barbari vivi; a zero è eliminato permanentemente, non conquistato. La fazione che infligge il colpo finale riceve una sola volta denari direttamente in tesoreria; quantità configurabile e bilanciabile. Una traccia visiva non blocca movimento. I superstiti non ricevono rinforzi e non compiono nuove incursioni: vagano per la mappa fino a essere sconfitti, si difendono se attaccati e non devono scomparire automaticamente. Comportamenti accessori non decisi vanno calibrati senza attribuire loro nuove aggressioni.
+- Osservazione e nebbia: campo noto ricordato come ultima posizione e stato osservati, nessun aggiornamento nascosto su distruzione, unità o danni. Avvisi localizzabili per minacce viste o attacchi subiti, aggregati per non ripetersi a ogni colpo, senza divulgare dati non osservati.
+
+### Danni, assedio e riparazioni
+
+- Questa decisione rivede ADR-0030: le opere economiche completate sono bersagli individuali di barbari e fazioni; il centro permanente di Stronghold e insediamenti resta indistruttibile. Un'opera in costruzione non può essere danneggiata fino al completamento, poi diventa attaccabile anche sotto assedio. Le opere raggiungibili fuori dalle mura sono vulnerabili; quelle interne richiedono accesso o tiro validi senza attraversare muri, porte e brecce illegittimamente.
+- Ordini espliciti di attacco per giocatore e IA; barbari selezionano autonomamente. Fanteria può colpire opere e campo, cavalleria con efficacia inferiore; armi a distanza possono colpire bersagli visibili entro gittata e posizione di tiro valida. Fortificazioni conservano regole di assedio e ruoli distinti delle armi. Attacco richiede visibilità corrente; cessa se il bersaglio esce dalla vista o diventa invulnerabile, con motivo comunicato, senza tracking di stato nascosto.
+- Opere con resistenza positiva funzionano normalmente; a zero diventano rovina fuori uso nello stesso spazio e ostacolano come prima. Produzione e benefici operativi cessano a zero e durante riparazione; lavoratori ordinari vengono liberati per l'allocazione. Eccezioni: case e magazzini mantengono tutta la capacità anche in rovina e riparazione, senza perdita di scorte o persone; Villa/Foro preservano Tier e sblocchi raggiunti, mentre benefici produttivi seguono la regola generale. Stato danni, rovine, attività e attese leggibili in mappa e pannello.
+- Il proprietario ordina riparazione di opere, mura e porte; costo e durata proporzionati al danno e nettamente inferiori alla costruzione nuova. Lavoratori e pagamento usano il più possibile il modello e la coda di costruzione esistenti; opere già produttive hanno priorità, poi nuove costruzioni e riparazioni competono nell'ordine di avvio scelto dal giocatore. Riparazioni multiple seguono la logica della costruzione; se mancano lavoratori il lavoro attivo si ferma e la ragione è visibile. Una volta completato l'edificio rientra nell'allocazione ordinaria senza priorità automatica.
+- Nessuna nuova riparazione può iniziare durante assalto o blocco. Quelle iniziate prima proseguono anche sotto assedio e sono invulnerabili anche quando ferme per mancanza di lavoratori; la produzione è sospesa per tutta la riparazione. Ripristino completo della resistenza solo al termine, non graduale. Annullamento volontario o conquista annulla il lavoro, senza rimborso, lasciando la resistenza pre-riparazione; i danni e le rovine persistono alla conquista e il nuovo proprietario può ordinare riparazioni. Quando una breccia riparata è occupata, attesa segnalata, apertura mantenuta e invulnerabilità conservata finché è possibile richiudere senza sovrapposizioni; solo allora la struttura ripristinata torna attaccabile.
+- L'attacco barbaro a un'opera esterna non è di per sé un assedio; l'assalto barbaro inizia attaccando mura o porta e termina alla sconfitta o ritirata/interruzione dell'attacco. Stabilire una regola deterministica che eviti oscillazioni durante brevi pause, senza concedere conquista o blocco ai barbari. Gli assalti barbari usano le regole compatibili di muro/porta, non attraversano fortificazioni integre e devono consentire difesa della guarnigione.
+- L'IA usa soltanto Observation e conoscenza legittima, valutando minacce barbare, attacco o evitamento, riparazioni, ponti, guadi e nuove strutture. No accesso al mondo nascosto. Applicare stesse regole e comandi a giocatore e IA.
+- La stessa versione, seed e impostazioni devono riprodurre mappa e simulazione. Non è richiesta compatibilità con replay o salvataggi precedenti al rework; non introdurre una promessa di compatibilità retroattiva.
+
+## Testing Decisions
+
+- Test significativi sul comportamento osservabile pubblico, non repliche dell'implementazione; coprire esiti, determinismo, casi limite e regressioni.
+- Interfacce confermate dall'utente: Command → Match → Observation per regole, attacchi, riparazioni, assedio, barbari, IA e fog; generazione della mappa e invarianti su molti seed; generatori PixelBuffer e geometria condivisa per rappresentazione e attraversamenti. Usare i test di invarianti su 1000 seed, contratti Match/Controller/Observation, geometrie e generatori procedurali come precedenti. Testare entrambe le fazioni, difficoltà, code, ricostruzione e riproduzione deterministica.
+- Validare connessione stradale e accessi, acqua, raggiungibilità, equilibrio, densità e variabilità su un campione ampio; controllare anche assenza di sovrapposizioni tra terreno, strade, strutture e loro ingombri. La naturalezza grafica, il ritmo e l'affollamento richiedono valutazione distinta dalle proprietà automatiche.
+- Testare attacchi sotto fog, conoscenza ricordata, ricompense contese, limiti e superstiti, riparazioni prima/durante assedio, carenza lavoratori, annullamento, conquista, breccia occupata, eccezioni di capacità e Tier, attacchi a lavori incompleti, traffico e scontri su ponti. Verificare che l'aspetto stagionale non alteri stato o hash e non riveli informazioni nascoste.
+- Eseguire i controlli non browser appropriati. Chromium, headed o headless, profili npm, Playwright e CI browser richiedono una richiesta esplicita dell'utente per la singola esecuzione; la presente specifica non la costituisce. Evidenza visiva e browser non autorizzata va dichiarata non eseguita.
+
+## Out of Scope
+
+- Modalità multigiocatore o selezione effettiva di mappe più grandi; commercio, carovane o regole commerciali; ponti costruibili/distruttibili o navigazione; nuove meccaniche climatiche; caccia e utilizzo economico degli animali; rigenerazione di accampamenti o fondazione di insediamenti sulle loro rovine.
+- Compatibilità con salvataggi e replay precedenti; imposizione di un preciso centro conteso o di categorie di insediamenti determinate; arte esterna o cambio di stile.
+
+## Further Notes
+
+- Queste sono decisioni di progetto, non prova che il comportamento sia già implementato. Il rework degli insediamenti è stato consegnato localmente; l'issue #74 risulta ancora aperta. Le modifiche ad assedio, opere e difficoltà aggiornano intenzionalmente le decisioni precedenti.
+- Delegati alla calibrazione: dimensione, quantità e distribuzioni, distanze, frequenza e forza delle incursioni, raggio di attività, tempi e costi delle riparazioni, valore del bottino, resistenze e danni, soglia di permanenza dell'assalto, specie, dettagli artistici e spareggio deterministico dei ponti. Non inventare nuove meccaniche per colmare questi parametri.
+- La riparazione ferma resta invulnerabile per scelta esplicita, anche senza lavoratori; la produzione sospesa è la mitigazione concordata. In caso di conflitto fra questa scelta e ottimizzazioni future, non modificarla senza una nuova decisione.

@@ -84,12 +84,13 @@ import {
   type Supplied,
 } from './economy.ts';
 import { factionCode, type Faction } from './faction.ts';
-import { eyeOf, SETTLEMENT_VISION, SQUAD_VISION, type Eye } from './fog.ts';
+import { eyeOf, settlementEyes, SQUAD_VISION, type Eye } from './fog.ts';
 import { generateMap, type MapGrid, type Site } from './map.ts';
 import { applyMovementCommands, goalOf, march, routeCacheFor } from './movement.ts';
 import { refusalOf, type RouteRefusal } from './route.ts';
 import { pendingOrderCost } from './pending-orders.ts';
 import { workOrdinal } from './settlement-space.ts';
+import { WORK_MAX_HP } from '../content/buildings.ts';
 import { fadeResidue, recordCasualties } from './residue.ts';
 import { facingOf, FIELD, formationOf, isRouting, type Facing } from './squad.ts';
 import {
@@ -136,6 +137,13 @@ export type VisibleStocks = ResourceAmounts;
 
 /** What a Faction sees of one work: what it is building, and how far along it is. */
 export interface VisibleWork {
+  /** Actual staffing when repairs participate in the settlement's allocation. */
+  readonly staffed?: boolean;
+  readonly hp?: number;
+  readonly maxHp?: number;
+  readonly repairing?: boolean;
+  readonly repairRemaining?: number;
+  readonly repairWaiting?: 'workers' | 'resources' | 'siege';
   readonly ordinal?: number;
   readonly origin?: Faction;
   /** The building's id, so a Controller can name it in a Build Command. */
@@ -161,6 +169,8 @@ export interface VisiblePendingOrder {
 }
 
 export interface VisibleSettlement {
+  /** Labour used and requested by active repairs, when they compete with Works. */
+  readonly repairWorkforce?: { readonly staffed: number; readonly needed: number };
   readonly pending?: readonly VisiblePendingOrder[];
   /** Its id, as a Build or Recruit Command names it. */
   readonly id: number;
@@ -191,6 +201,8 @@ export interface VisibleSettlement {
 export interface VisibleSquad {
   readonly passage?: {
     readonly settlement: number;
+    /** The owner's order, distinguishing wall duty from ordinary transit. */
+    readonly purpose?: 'garrison' | 'field';
     readonly phase: 'approaching' | 'waiting' | 'entering' | 'leaving';
     readonly remaining: number;
     readonly reason?: string;
@@ -393,13 +405,14 @@ export function stepEconomyWorld(
   tick: number,
   commands: readonly Command[],
   supplied: Supplied = ALWAYS_SUPPLIED,
+  economyCommandsApplied = false,
 ): readonly SeasonChange[] {
   // The Commands first, in the order they arrived: the economy's own (build and
   // recruit), the movement's (move, attackMove, hold, formation) and combat's
   // (attack, withdraw), each ignoring the kinds the others own. Then the ground
   // the Squads cover, then the round of contact they fight, and then the works
   // and the calendar, which do not depend on where anybody is.
-  for (const command of commands) applyEconomyCommand(world.economy, command);
+  if (!economyCommandsApplied) for (const command of commands) applyEconomyCommand(world.economy, command);
   applyMovementCommands(world.economy, world.map, commands, routeCacheFor(world.map));
   applyCombatCommands(world.economy, world.map, commands, routeCacheFor(world.map));
   march(world.economy, world.map);
@@ -476,8 +489,7 @@ export function eyesOfEconomy(world: EconomyWorld, faction: Faction): readonly E
   return [
     ...world.economy.settlements
       .filter((settlement) => settlement.owner === owner)
-      .flatMap((settlement) => [eyeOf(settlement, SETTLEMENT_VISION), ...[-6, 6].flatMap((dx) => [-6, 6].map((dy) =>
-        eyeOf({ x: settlement.x + dx, y: settlement.y + dy }, SETTLEMENT_VISION)))]),
+      .flatMap(settlementEyes),
     ...world.economy.squads
       .filter((squad) => squad.owner === owner)
       .map((squad) => eyeOf(squad, SQUAD_VISION)),
@@ -496,11 +508,22 @@ function visibleSettlement(map: MapGrid, settlement: Settlement, economy: Econom
     population: settlement.population,
     stocks: namedStock(settlement.stocks),
     land: namedStock(allocation.land),
-    works: settlement.works.map((work) => ({
+    ...(settlement.repairOrders === undefined ? {} : { repairWorkforce: {
+      needed: settlement.repairOrders.length * 2, staffed: (allocation.repairs?.length ?? 0) * 2,
+    } }),
+    works: settlement.works.map((work, index) => ({
       ordinal: workOrdinal(settlement, work),
       origin: (work.origin ?? settlement.origin ?? settlement.owner) === 1 ? 'carthage' : 'rome',
       building: buildingOf(work.building)?.id ?? 'unknown',
       remaining: work.remaining,
+      ...(work.remaining === 0 ? { hp: work.hp ?? WORK_MAX_HP, maxHp: WORK_MAX_HP } : {}),
+      repairing: work.repairTicks !== undefined,
+      ...(settlement.repairOrders === undefined ? {} : {
+        staffed: (allocation.works[index] ?? 0) >= (buildingOf(work.building)?.labour ?? 0),
+      }),
+      ...(work.repairTicks === undefined ? {} : { repairRemaining: work.repairTicks }),
+      ...(work.repairRequest === undefined ? {} : { repairWaiting: 'resources' as const }),
+      ...(work.repairTicks === undefined || allocation.repairs?.includes(work.repairOrder ?? 0) ? {} : { repairWaiting: 'workers' as const }),
       standing: work.remaining === 0,
     })),
     pending: (economy.pending ?? []).filter((order) => order.settlement === settlement.id).map((order) => ({
@@ -521,13 +544,15 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
     id: squad.id,
     ...(squad.garrisonJourney === undefined ? {} : { passage: {
       settlement: squad.garrisonJourney.settlement,
+      purpose: 'garrison' as const,
       phase: (['approaching', 'waiting', 'entering', 'leaving'] as const)[squad.garrisonJourney.phase] ?? 'waiting',
       remaining: squad.garrisonJourney.remaining,
       ...(squad.garrisonJourney.reason === 1 ? { reason: 'access-busy' as const } :
         squad.garrisonJourney.reason === 2 ? { reason: 'exit-blocked' as const } : {}),
     } }),
-    ...(squad.garrisonJourney !== undefined || squad.access === undefined ? {} : { passage: {
+    ...(squad.garrisonJourney !== undefined || squad.access === undefined || squad.access.settlement < 0 ? {} : { passage: {
       settlement: squad.access.settlement,
+      purpose: 'field' as const,
       phase: squad.access.active === 1 ? 'entering' as const : 'waiting' as const,
       remaining: 0,
       ...(squad.access.reason === 1 ? { reason: 'access-busy' as const } :

@@ -31,6 +31,7 @@
  */
 import { FACTIONS, isFaction, type Faction } from './faction.ts';
 import type { Formation } from '../content/formation.ts';
+import type { Facing } from './squad.ts';
 
 /** The field every Command carries: the Faction that issued it. */
 const FACTION_FIELD = 'faction';
@@ -112,6 +113,14 @@ export interface AttackCommand extends CommandBase {
   readonly target: number;
 }
 
+/** An explicit attack on an observed camp or completed economic work. */
+export interface AttackStructureCommand extends CommandBase {
+  readonly kind: 'attackStructure';
+  readonly squads: readonly number[];
+  readonly target: { readonly kind: 'camp'; readonly id: number } |
+    { readonly kind: 'work'; readonly settlement: number; readonly building: string; readonly ordinal: number };
+}
+
 /** Hold position: stand, face the enemy, and do not pursue. */
 export interface HoldCommand extends CommandBase {
   readonly kind: 'hold';
@@ -163,6 +172,22 @@ export interface CancelPendingCommand extends CommandBase {
   readonly kind: 'cancelPending';
   readonly settlement: number;
   readonly order: number;
+}
+
+/** Order or cancel repair of one owned fortification. */
+export interface FortificationRepairCommand extends CommandBase {
+  readonly kind: 'repairFortification' | 'cancelFortificationRepair';
+  readonly settlement: number;
+  readonly structure: 'wall' | 'gate';
+  readonly side: Facing;
+}
+
+/** Order or cancel repair of one owned completed work. */
+export interface WorkRepairCommand extends CommandBase {
+  readonly kind: 'repairWork' | 'cancelWorkRepair';
+  readonly settlement: number;
+  readonly building: string;
+  readonly ordinal: number;
 }
 
 /** Take a settlement by force: the fast, expensive path of a Siege, and Rome's alone (ADR-0008). */
@@ -217,6 +242,7 @@ export type Command =
   | MoveCommand
   | AttackMoveCommand
   | AttackCommand
+  | AttackStructureCommand
   | HoldCommand
   | GarrisonCommand
   | WithdrawCommand
@@ -226,7 +252,9 @@ export type Command =
   | BlockadeCommand
   | FormationCommand
   | GroupCommand
-  | CancelPendingCommand;
+  | CancelPendingCommand
+  | FortificationRepairCommand
+  | WorkRepairCommand;
 
 /** The `kind` of any Command in the vocabulary. */
 export type CommandKind = Command['kind'];
@@ -253,6 +281,11 @@ export const COMMAND_KINDS: readonly CommandKind[] = [
   'formation',
   'group',
   'cancelPending',
+  'repairFortification',
+  'cancelFortificationRepair',
+  'attackStructure',
+  'repairWork',
+  'cancelWorkRepair',
 ];
 
 /** Every formation a Squad can hold: frontage and depth, in the order `docs/COMMANDS.md` lists them. */
@@ -289,6 +322,12 @@ export function attack(
   target: number,
 ): AttackCommand {
   return readAttack({ kind: 'attack', faction, squads, target }, ROOT);
+}
+
+/** Build an explicit structure attack. */
+export function attackStructure(faction: Faction, squads: readonly number[],
+  target: AttackStructureCommand['target']): AttackStructureCommand {
+  return readAttackStructure({ kind: 'attackStructure', faction, squads, target }, ROOT);
 }
 
 /** Builds a Hold Command. @throws CommandValidationError when it names no Squad. */
@@ -397,6 +436,7 @@ const READERS: {
   move: readMove,
   attackMove: readAttackMove,
   attack: readAttack,
+  attackStructure: readAttackStructure,
   hold: readHold,
   garrison: readGarrison,
   withdraw: readWithdraw,
@@ -407,7 +447,44 @@ const READERS: {
   formation: readFormation,
   group: readGroup,
   cancelPending: readCancelPending,
+  repairFortification: (value, path) => readFortificationRepair('repairFortification', value, path),
+  cancelFortificationRepair: (value, path) => readFortificationRepair('cancelFortificationRepair', value, path),
+  repairWork: (value, path) => readWorkRepair('repairWork', value, path),
+  cancelWorkRepair: (value, path) => readWorkRepair('cancelWorkRepair', value, path),
 };
+
+function readWorkRepair(kind: WorkRepairCommand['kind'], value: Candidate, path: string): WorkRepairCommand {
+  requireFields(value, path, kind, ['kind', FACTION_FIELD, 'settlement', 'building', 'ordinal']);
+  return { kind, faction: requireFaction(value.faction, `${path}.faction`),
+    settlement: requireId(value.settlement, `${path}.settlement`, 'settlement'),
+    building: requireContentId(value.building, `${path}.building`, 'building'),
+    ordinal: requireId(value.ordinal, `${path}.ordinal`, 'ordinal') };
+}
+
+export function repairWork(faction: Faction, settlement: number, building: string, ordinal: number): WorkRepairCommand {
+  return readWorkRepair('repairWork', { kind: 'repairWork', faction, settlement, building, ordinal }, ROOT);
+}
+
+export function cancelWorkRepair(faction: Faction, settlement: number, building: string, ordinal: number): WorkRepairCommand {
+  return readWorkRepair('cancelWorkRepair', { kind: 'cancelWorkRepair', faction, settlement, building, ordinal }, ROOT);
+}
+
+function readFortificationRepair(kind: FortificationRepairCommand['kind'], value: Candidate, path: string): FortificationRepairCommand {
+  requireFields(value, path, kind, ['kind', FACTION_FIELD, 'settlement', 'structure', 'side']);
+  if (value.structure !== 'wall' && value.structure !== 'gate') throw new CommandValidationError(`${path}.structure`, 'must be wall or gate');
+  if (value.side !== 'north' && value.side !== 'east' && value.side !== 'south' && value.side !== 'west')
+    throw new CommandValidationError(`${path}.side`, 'must be a cardinal direction');
+  return { kind, faction: requireFaction(value.faction, `${path}.faction`),
+    settlement: requireId(value.settlement, `${path}.settlement`, 'settlement'), structure: value.structure, side: value.side };
+}
+
+export function repairFortification(faction: Faction, settlement: number, structure: 'wall' | 'gate', side: Facing): FortificationRepairCommand {
+  return readFortificationRepair('repairFortification', { kind: 'repairFortification', faction, settlement, structure, side }, ROOT);
+}
+
+export function cancelFortificationRepair(faction: Faction, settlement: number, structure: 'wall' | 'gate', side: Facing): FortificationRepairCommand {
+  return readFortificationRepair('cancelFortificationRepair', { kind: 'cancelFortificationRepair', faction, settlement, structure, side }, ROOT);
+}
 
 /** The fields a march carries: a Move and an Attack-move differ only in their name. */
 interface March {
@@ -454,6 +531,24 @@ function readAttack(value: Candidate, path: string): AttackCommand {
     squads: requireSquads(value.squads, `${path}.squads`),
     target: requireId(value.target, `${path}.target`, 'Squad'),
   };
+}
+
+function readAttackStructure(value: Candidate, path: string): AttackStructureCommand {
+  requireFields(value, path, 'attackStructure', ['kind', FACTION_FIELD, 'squads', 'target']);
+  const target = requireRecord(value.target, `${path}.target`);
+  if (target.kind === 'work') {
+    requireFields(target, `${path}.target`, 'attackStructure', ['kind', 'settlement', 'building', 'ordinal']);
+    return { kind: 'attackStructure', faction: requireFaction(value.faction, `${path}.faction`),
+      squads: requireSquads(value.squads, `${path}.squads`),
+      target: { kind: 'work', settlement: requireId(target.settlement, `${path}.target.settlement`, 'settlement'),
+        building: requireContentId(target.building, `${path}.target.building`, 'building'),
+        ordinal: requireId(target.ordinal, `${path}.target.ordinal`, 'ordinal') } };
+  }
+  requireFields(target, `${path}.target`, 'attackStructure', ['kind', 'id']);
+  if (target.kind !== 'camp') throw new CommandValidationError(`${path}.target.kind`, 'must be camp or work');
+  return { kind: 'attackStructure', faction: requireFaction(value.faction, `${path}.faction`),
+    squads: requireSquads(value.squads, `${path}.squads`),
+    target: { kind: 'camp', id: requireId(target.id, `${path}.target.id`, 'camp') } };
 }
 
 function readHold(value: Candidate, path: string): HoldCommand {

@@ -96,7 +96,8 @@ test('boots with the interface over the theatre, and says it in Italian', async 
 
   // The page raises one Squad through the same seam a Player will use (C2 gives
   // the Player a way to raise one by hand), so the Squad panel is live.
-  expect(model.rows.map((row) => row.selection)).toContainEqual({ kind: 'squad', id: 1 });
+  const first = (await squads(page))[0]!;
+  expect(model.rows.map((row) => row.selection)).toContainEqual({ kind: 'squad', id: first.id });
   expect(model.rows.find((row) => row.selection.kind === 'squad')?.label).toBe('Astati');
 
   expect(pageErrors).toEqual([]);
@@ -105,12 +106,13 @@ test('boots with the interface over the theatre, and says it in Italian', async 
 test('shows a Squad its morale and its Payroll when it is selected', async ({ page }) => {
   await boot(page);
   await advance(page, 1);
-  await select(page, { kind: 'squad', id: 1 });
+  const first = (await squads(page))[0]!;
+  await select(page, { kind: 'squad', id: first.id });
 
   const model = await hud(page);
   const words = (model.detail?.lines ?? []).map(line);
 
-  expect(model.detail?.title).toBe('Reparto 1');
+  expect(model.detail?.title).toBe(`Reparto ${first.id}`);
   expect(words).toContain(`${translate('ui.type')} Astati`);
   expect(words).toContain(`${translate('ui.men')} 120/120`);
   expect(words).toContain(`${translate('ui.capacity')} 120`);
@@ -134,7 +136,7 @@ test('selects the row a Player clicks', async ({ page }) => {
 
   // A click on the row the page drew picks that Squad (C2's selection is the
   // Player's: a set of Squads, and the panel over one of them).
-  expect((await selection(page)).squads).toEqual([1]);
+  expect((await selection(page)).squads).toEqual([squad.selection.id]);
 
   // And a click on bare theatre clears it again rather than selecting whatever
   // happens to be underneath the pointer. The point is chosen against the Squads

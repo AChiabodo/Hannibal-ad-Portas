@@ -168,6 +168,8 @@ export interface FogView {
  * type per Match, and it is the one the Observation carries.
  */
 export interface Fog extends FogView {
+  /** Last observed camp appearances, never refreshed from hidden territory. */
+  barbarianCamps?: { readonly id: number; readonly x: number; readonly y: number; readonly variant: number; condition: number }[];
   /** Private authoritative numeric snapshots; public appearance DTOs decode these. */
   settlements?: SettlementMemory[];
   readonly terrain: Uint8Array;
@@ -235,6 +237,12 @@ export function createFogs(): Readonly<Record<Faction, Fog>> {
 /** The eye something standing on the map sees from, at the radius it sees to. */
 export function eyeOf(site: Site, radius: number): Eye {
   return { x: site.x, y: site.y, radius };
+}
+
+/** An owned settlement watches from its centre and the corners of its grounds. */
+export function settlementEyes(site: Site): readonly Eye[] {
+  return [eyeOf(site, SETTLEMENT_VISION), ...[-6, 6].flatMap((dx) => [-6, 6].map((dy) =>
+    eyeOf({ x: site.x + dx, y: site.y + dy }, SETTLEMENT_VISION)))];
 }
 
 /** The same disc for a visible enemy and for a tile of visible terrain. */

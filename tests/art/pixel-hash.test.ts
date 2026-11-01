@@ -46,7 +46,7 @@ import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 // All other catalogue artefacts retain their accepted hashes.
 // The saved panel selector changes only the Options and result specimens.
 // The centered pause/result menu replaces the flat options drawer.
-const PLATE_HASH = '1c5406d516e711f4';
+const PLATE_HASH = '749236996aa2c779';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'ui:carthage-column': 'ab1340faad9c09ab',

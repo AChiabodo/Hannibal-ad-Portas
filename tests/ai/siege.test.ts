@@ -46,6 +46,44 @@ function decide(faction: 'rome' | 'carthage', visible: SiegeObservation,
 }
 
 describe('the siege Controller', () => {
+  it('keeps a Roman blockade viable when new treasury could buy an unsupported assault', () => {
+    const visible = observation({ treasury: 20, squads: [squad(1, 80, 80, { men: 24, capacity: 24 })],
+      fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'blockade', ram: null, garrison: 1 }] });
+    expect(decide('rome', visible).commands)
+      .toEqual([{ kind: 'blockade', faction: 'rome', squads: [1], settlement: 1 }]);
+    expect(decide('rome', { ...visible, squads: [...visible.squads, squad(2, 10, 10), squad(3, 10, 10)] }).commands)
+      .toEqual([{ kind: 'assault', faction: 'rome', squads: [1, 2, 3], settlement: 1 }]);
+  });
+
+  it('prices a Roman blockade separately from a paid assault whose ram is hidden', () => {
+    const visible = observation({ treasury: 0, squads: [squad(1, 80, 80, { men: 24, capacity: 24 })],
+      fronts: [{ settlement: 1, breached: false, besieger: null, ram: null, ramKnown: true, garrison: 1 }] });
+    expect(decide('rome', visible).commands)
+      .toEqual([{ kind: 'blockade', faction: 'rome', squads: [1], settlement: 1 }]);
+    const paid = { ...visible, fronts: visible.fronts.map((front) => ({ ...front,
+      siege: 'assault' as const, besieger: 'rome' as const, ramKnown: false })) };
+    expect(decide('rome', paid).commands)
+      .toEqual([{ kind: 'withdraw', faction: 'rome', squads: [1] }]);
+  });
+
+  it('blockades a stronger wall garrison with Carthage while still refusing an unmatched field relief', () => {
+    const visible = observation({ squads: [squad(1, 80, 80, { type: 'gaul', men: 24, capacity: 24, morale: 6 })],
+      fronts: [{ settlement: 1, breached: false, besieger: null, ram: null, garrison: 1 }] });
+    expect(decide('carthage', visible).commands)
+      .toEqual([{ kind: 'blockade', faction: 'carthage', squads: [1], settlement: 1 }]);
+    expect(decide('carthage', { ...visible, enemies: [{ type: 'hastati', x: 81, y: 80, appearance: { men: 120 } }] }).commands)
+      .toEqual([{ kind: 'withdraw', faction: 'carthage', squads: [1] }]);
+  });
+
+  it('prices visible relief using its observed formation and assumes the roster size when appearance is absent', () => {
+    const relief = { type: 'gaul', x: 82, y: 80 };
+    const visible = observation({ squads: [squad(1, 80, 80, { men: 24, capacity: 24 })],
+      enemies: [{ ...relief, appearance: { men: 24 } }],
+      fronts: [{ settlement: 1, breached: false, besieger: null, ram: null, garrison: 0 }] });
+    expect(decide('rome', visible).commands.some((command) => command.kind === 'assault')).toBe(true);
+    expect(decide('rome', { ...visible, enemies: [relief] }).commands)
+      .toContainEqual({ kind: 'withdraw', faction: 'rome', squads: [1] });
+  });
   it('does not emit an empty withdrawal for a front whose Squads are already returning', () => {
     const { commands } = decide('rome', observation({ squads: [],
       fronts: [{ settlement: 1, breached: false, besieger: 'rome', ram: null, garrison: 1 }],
@@ -194,4 +232,17 @@ it('continues an assault through a remembered breach when the ram is hidden and 
     appearances: [{ id: 1, kind: 'stronghold', x: 80, y: 80, gateSide: 3, memory: 'seen', owner: null,
       tiles: [{ cell: 305, seen: 10, visible: false, structure: { kind: 'gate', side: 3, condition: 'breached' } }] }] });
   expect(decide('rome', visible, 'centurio', 11).commands).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
+});
+
+it('keeps an active assault when its ram is outside sight, but blockades when its absence is visible', () => {
+  const visible = observation({ treasury: 0, squads: [squad(1, 80, 80)],
+    fronts: [{ settlement: 1, breached: false, besieger: 'rome', siege: 'assault',
+      ram: null, ramKnown: false, garrison: 0 }] });
+  expect(decide('rome', visible).commands).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
+  const seen = { ...visible, fronts: visible.fronts.map(front => ({ ...front, ramKnown: true })) };
+  expect(decide('rome', seen).commands).toEqual([{ kind: 'blockade', faction: 'rome', squads: [1], settlement: 1 }]);
+  const paid = { ...seen, fronts: seen.fronts.map(front => ({ ...front, ram: { built: false } })) };
+  expect(decide('rome', paid).commands).toEqual([{ kind: 'assault', faction: 'rome', squads: [1], settlement: 1 }]);
+  const uncommitted = { ...visible, fronts: visible.fronts.map(front => ({ ...front, siege: null, besieger: null })) };
+  expect(decide('rome', uncommitted).commands).toEqual([{ kind: 'blockade', faction: 'rome', squads: [1], settlement: 1 }]);
 });

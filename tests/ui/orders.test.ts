@@ -25,6 +25,7 @@ import {
   settlementOrders,
   settlementTargets,
   squadOrders,
+  visibleWorkTargets,
 } from '../../src/ui/orders.ts';
 import { translate } from '../../src/ui/strings.ts';
 
@@ -67,6 +68,17 @@ const HASTATI: VisibleSquad = {
 };
 
 const PRINCIPES: VisibleSquad = { ...HASTATI, id: 2, type: 'principes', x: 11, y: 9, men: 120, figures: 120, morale: 9 };
+
+it('offers only currently visible, attackable enemy works as targets', () => {
+  const seen = visible({ appearances: [{ id: 1, kind: 'stronghold', x: 40, y: 40, gateSide: 0, memory: 'seen', owner: 'carthage',
+    tiles: [
+      { cell: 312, seen: 10, visible: true, work: { building: 'farm', ordinal: 0, stage: 2, origin: 'carthage' } },
+      { cell: 313, seen: 10, visible: false, work: { building: 'farm', ordinal: 1, stage: 2, origin: 'carthage' } },
+      { cell: 314, seen: 10, visible: true, work: { building: 'farm', ordinal: 2, stage: 5, origin: 'carthage' } },
+    ] }] });
+  expect(visibleWorkTargets(seen)).toEqual([{ settlement: 1, building: 'farm', ordinal: 0, x: 40, y: 40 }]);
+  expect(squadOrders(seen, 'rome', [HASTATI]).find((order) => order.kind === 'attack')?.enabled).toBe(true);
+});
 
 /** A front whose wall sections are all standing. */
 function front(settlement: number, structures = 2): VisibleFront {

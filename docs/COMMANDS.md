@@ -52,7 +52,7 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 
 ## What every Command carries
 
-- **`kind`** — one of the thirteen Commands in the table below. Nothing else is a
+- **`kind`** — one of the fifteen Commands in the table below. Nothing else is a
   Command.
 - **`faction`** — `"rome"` or `"carthage"`: the Faction that issued the Command. It
   is part of the Command because a log has to be readable without the Players
@@ -84,6 +84,11 @@ world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
 | `formation`   | `faction`, `squads`, `formation`          | Set the shape the Squads hold: `line` for frontage, `column` for depth (PLAN §4).                       |
 | `group`       | `faction`, `group`, `squads`              | Bind Squads to a numbered control group, or clear it with an empty list.                                |
 | `cancelPending` | `faction`, `settlement`, `order` | Cancel an owned unpaid construction or recruitment request by its observed order ID. |
+| `repairFortification` | `faction`, `settlement`, `structure`, `side` | Start a paid repair of one owned wall or gate outside a Siege. |
+| `cancelFortificationRepair` | `faction`, `settlement`, `structure`, `side` | Cancel a paid fortification repair without a refund. |
+| `attackStructure` | `faction`, `squads`, `target` | Attack a currently visible barbarian camp or completed economic Work. A Work target names its settlement, building and ordinal. |
+| `repairWork` | `faction`, `settlement`, `building`, `ordinal` | Repair a damaged owned Work outside a Siege. |
+| `cancelWorkRepair` | `faction`, `settlement`, `building`, `ordinal` | Cancel an owned Work repair without refund. |
 <!-- vocabulary:end -->
 
 ### Ground arrival allocation (#68)
@@ -94,6 +99,9 @@ Command's list order. The first reachable Squad claims the click; subsequent
 Squads take the nearest available walkable Tile within twelve Tiles on each
 axis. Squared distance to the click orders candidates, then y, then x. Each
 candidate must be on the click's connected landmass and reachable from the Squad.
+At physical approaches, later routes account for the resting footprints of
+earlier arrivals, so a completed journey cannot seal a peer's remaining route.
+The same column constraints apply to route planning and to the actual passage.
 
 Separation uses the purchased files/ranks shared with the formation declaration,
 including column depth and a specialist's declared Figure count. Its conservative
@@ -113,7 +121,11 @@ Observation exposes each assigned goal and refusal; selection exceptions and
 notices explain partial execution. Rout/ownership eligibility remains unchanged.
 
 Repeating an unchanged group order yields the same arrivals and preserves step
-progress. A later accepted order replaces the route; paused Commands retain
+progress. Arrival spacing uses the requested formation while a temporary
+marching column crosses an opening. A repeated destination also preserves an
+off-lane yield; Hold cancels it. Moving friendly bodies which obstruct a
+registered passage join its queue even when their own route stays inside the
+courtyard. A later accepted order replaces the route; paused Commands retain
 their submission order and are applied on resume. Explicit `attack`, `garrison`,
 `assault` and `blockade` retain their enemy/settlement target semantics.
 
@@ -166,8 +178,34 @@ code fails the build.
 { "kind": "formation", "faction": "rome", "squads": [3, 5], "formation": "column" }
 { "kind": "group", "faction": "rome", "group": 2, "squads": [3, 5] }
 { "kind": "cancelPending", "faction": "rome", "settlement": 5, "order": 1 }
+{ "kind": "repairFortification", "faction": "rome", "settlement": 5, "structure": "wall", "side": "north" }
+{ "kind": "cancelFortificationRepair", "faction": "rome", "settlement": 5, "structure": "wall", "side": "north" }
+{ "kind": "attackStructure", "faction": "rome", "squads": [3], "target": { "kind": "camp", "id": 0 } }
+{ "kind": "repairWork", "faction": "rome", "settlement": 5, "building": "farm", "ordinal": 0 }
+{ "kind": "cancelWorkRepair", "faction": "rome", "settlement": 5, "building": "farm", "ordinal": 0 }
 ```
 <!-- examples:end -->
+
+Attacks on Works and camps approach a reachable firing position: archers stop
+within four tiles, other arms within two, with a clear line to the target.
+The army Controller can raid currently visible, completed exterior enemy Works
+when an available Squad can face the observed nearby defenders. Remembered
+Works, unknown ownership, construction, ruins and active repairs do not authorize
+a raid; the Match validates every resulting `attackStructure` Command.
+
+Structure damage counts surviving men and troop impact. A foot body with
+24 Force deals four HP per exchange; cavalry contributes half its Force.
+Contributions accumulate per target before rounding, with a one-HP minimum
+for positive total Force, so splitting the same body into more Squads cannot
+multiply its damage. Attack order still decides who delivers a camp's final
+blow and receives its single reward.
+Neutral raiders use the same aggregation for Works and fortifications, preserving
+their full 24-man body's calibration of four and three HP respectively.
+
+An Assault works a wall reached by its actual bodies. When several sides are
+reachable, it concentrates on the side supported by the greatest force, with
+the side code breaking ties. Only bodies in reach of that wall contribute to
+its damage; the existing shared escalade cap still applies.
 
 ## Compatibility with earlier logs
 

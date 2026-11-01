@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { createAi } from '../../src/ai/controller.ts';
 import { createArmyController, militaryRegistry, playAiMatch } from '../../src/cli/ai-match.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
-import type { Command } from '../../src/sim/command.ts';
+import { blockade, garrison, move, type Command } from '../../src/sim/command.ts';
+import { createMatch } from '../../src/sim/match.ts';
+import { MAP_HEIGHT, TERRAIN, tileIndex } from '../../src/sim/map.ts';
 import { scriptedController } from '../../src/sim/controller.ts';
 import { runMatch } from '../../src/sim/driver.ts';
 import { createEconomy } from '../../src/sim/economy.ts';
@@ -33,15 +35,107 @@ function scenario(hiddenX = 70): SiegeWorld {
 }
 
 describe('military decisions in a headless Match', () => {
+  it.each(['rome', 'carthage'] as const)('returns recovered %s wall defenders to field duty when no known threat remains', (faction) => {
+    const world = theatre();
+    const home = world.economy.settlements[faction === 'rome' ? 0 : 1]!;
+    const defender = musterSquad(world.economy, world.map, { faction,
+      squadType: faction === 'rome' ? 'hastati' : 'gaul', men: 24, x: home.x, y: home.y });
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    match.step([garrison(faction, [defender.id], home.id)]);
+    for (let i = 0; i < 100 && observeSiege(world, faction).squads[0]?.garrison === null; i += 1) match.step([]);
+    expect(observeSiege(world, faction).squads[0]?.garrison).toBe(home.id);
+    const controller = createArmyController('centurio');
+    for (let i = 0; i < 300; i += 1) {
+      match.step(controller.decide({ faction, tick: match.state.tick, visible: observeSiege(world, faction) }));
+      if (observeSiege(world, faction).squads[0]?.garrison === null) break;
+    }
+    expect(observeSiege(world, faction).squads[0]?.garrison).toBeNull();
+  });
+
+  it('does not repeat an unreachable recall after ordinary route validation refuses it', () => {
+    const world = theatre();
+    for (let y = 0; y < MAP_HEIGHT; y += 1) world.map.terrain[tileIndex(50, y)] = TERRAIN.river;
+    const defender = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 65, y: 40 });
+    const attacker = musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 29, y: 20 });
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    match.step([blockade('carthage', [attacker.id], 0)]);
+    const controller = createArmyController('centurio');
+    const first = controller.decide({ faction: 'rome', tick: match.state.tick, visible: observeSiege(world, 'rome') });
+    expect(first).toContainEqual({ kind: 'garrison', faction: 'rome', squads: [defender.id], settlement: 0 });
+    match.step(first);
+    const refused = observeSiege(world, 'rome');
+    expect(refused.squads.find((squad) => squad.id === defender.id)?.refused).toBe('unreachable');
+    const second = controller.decide({ faction: 'rome', tick: match.state.tick, visible: refused });
+    expect(second.some((command) => command.kind === 'garrison' && command.squads.includes(defender.id))).toBe(false);
+  });
+  it('recalls an unengaged scout to the walls of its blockaded Stronghold', () => {
+    const world = theatre();
+    const defender = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 40, y: 20 });
+    const attacker = musterSquad(world.economy, world.map, { faction: 'carthage', squadType: 'gaul', men: 24, x: 20, y: 9 });
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    match.step([blockade('carthage', [attacker.id], 0)]);
+    expect(observeSiege(world, 'rome').fronts[0]).toMatchObject({ siege: 'blockade', besieger: 'carthage' });
+    const controller = createArmyController('tiro');
+    for (let i = 0; i < 300; i += 1) {
+      match.step(controller.decide({ faction: 'rome', tick: match.state.tick, visible: observeSiege(world, 'rome') }));
+      if (observeSiege(world, 'rome').squads.find((squad) => squad.id === defender.id)?.garrison === 0) break;
+    }
+    expect(observeSiege(world, 'rome').squads.find((squad) => squad.id === defender.id)?.garrison).toBe(0);
+  });
+  it.each(['rome', 'carthage'] as const)('sends a ready %s defender to its empty walls when an observed blockade begins', (faction) => {
+    // The condition under test is a known blockade, independent of whether a
+    // generated AI campaign happens to choose that path on its changing map.
+    const world = theatre();
+    const home = world.economy.settlements[faction === 'rome' ? 0 : 1]!;
+    const enemy = faction === 'rome' ? 'carthage' : 'rome';
+    const defender = musterSquad(world.economy, world.map, { faction,
+      squadType: faction === 'rome' ? 'hastati' : 'gaul', men: 24, x: home.x, y: home.y });
+    const attacker = musterSquad(world.economy, world.map, { faction: enemy,
+      squadType: enemy === 'rome' ? 'hastati' : 'gaul', men: 24, x: home.x + 10, y: home.y });
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    match.step([blockade(enemy, [attacker.id], home.id)]);
+    expect(observeSiege(world, faction).fronts.find((front) => front.settlement === home.id))
+      .toMatchObject({ siege: 'blockade', besieger: enemy, garrison: 0 });
+    const controller = createArmyController('centurio');
+    for (let i = 0; i < 150; i += 1) {
+      match.step(controller.decide({ faction, tick: match.state.tick, visible: observeSiege(world, faction) }));
+      if (observeSiege(world, faction).squads.find((squad) => squad.id === defender.id)?.garrison === home.id) break;
+    }
+    expect(observeSiege(world, faction).squads.find((squad) => squad.id === defender.id)).toMatchObject({ garrison: home.id });
+  });
+  it('clears a stationary friendly body blocking an entering squad at its own gate', () => {
+    const world = theatre();
+    const waiting = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 35, y: 20 });
+    const blocker = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 25, y: 20 });
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    match.step([move('rome', [waiting.id], 20, 20)]);
+    for (let i = 0; i < 150; i += 1) {
+      if (observeSiege(world, 'rome').squads.find((squad) => squad.id === waiting.id)?.passage?.reason === 'exit-blocked') break;
+      match.step([]);
+    }
+    expect(observeSiege(world, 'rome').squads.find((squad) => squad.id === waiting.id)?.passage?.reason).toBe('exit-blocked');
+    const controller = createArmyController('centurio', militaryRegistry);
+    for (let i = 0; i < 250; i += 1)
+      match.step(controller.decide({ faction: 'rome', tick: match.state.tick, visible: observeSiege(world, 'rome') }));
+    const seen = observeSiege(world, 'rome').squads;
+    expect(seen.find((squad) => squad.id === waiting.id)).toMatchObject({ x: 20, y: 20, goal: null });
+    expect(seen.find((squad) => squad.id === blocker.id)).not.toMatchObject({ x: 25, y: 20 });
+  });
   it('brings the exhausted seed 9 scout home instead of abandoning it after the second Season', () => {
     let final: SiegeVisible | undefined;
+    let scoutId: number | undefined;
     const run = runMatch({ seed: 9, ticks: 5501, rules: siegeMatchRules, observe: observeSiege,
-      outcome(world) { final = observeSiege(world, 'carthage'); return siegeMatchOutcome(world); },
+      outcome(world) {
+        final = observeSiege(world, 'carthage');
+        scoutId ??= final.squads[0]?.id;
+        return siegeMatchOutcome(world);
+      },
       players: [{ faction: 'rome', controller: scriptedController<SiegeVisible>([]) },
         { faction: 'carthage', controller: createArmyController('tiro') }],
     });
-    expect(run.log).toContainEqual({ tick: 4200, command: { kind: 'withdraw', faction: 'carthage', squads: [1] } });
-    expect(final!.squads.find((squad) => squad.id === 1)).toMatchObject({ inQuarters: true, goal: null, routing: false });
+    expect(scoutId).toBeDefined();
+    expect(run.log).toContainEqual({ tick: 4200, command: { kind: 'withdraw', faction: 'carthage', squads: [scoutId] } });
+    expect(final!.squads.find((squad) => squad.id === scoutId)).toMatchObject({ inQuarters: true, goal: null, routing: false });
     const replay = runMatch({ seed: 9, ticks: 5501, rules: siegeMatchRules, observe: observeSiege,
       outcome: siegeMatchOutcome, players: [
         { faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },

@@ -8,7 +8,7 @@
  * things a reader cannot count for themselves.
  */
 import { describe, expect, it } from 'vitest';
-import { formatMap } from '../../src/cli/dump';
+import { formatMap, formatMapGrid } from '../../src/cli/dump';
 import {
   MAP_HEIGHT,
   MAP_WIDTH,
@@ -32,6 +32,8 @@ const TERRAIN_GLYPHS: Readonly<Record<number, string>> = {
   [TERRAIN.river]: '~',
   [TERRAIN.ford]: '=',
   [TERRAIN.road]: '-',
+  [TERRAIN.lake]: 'O',
+  [TERRAIN.marsh]: '%',
 };
 
 /** How the dump is expected to draw a resource node of each kind. */
@@ -96,10 +98,21 @@ describe('a generated map, written out for inspection', () => {
     expect(dump).toContain(`carrying ${fords.join(' and ')} fords`);
   });
 
+  it('counts a ford tile once even when the river path revisits it', () => {
+    const base = generateMap(SEED);
+    const terrain = new Uint8Array(base.terrain.length).fill(TERRAIN.plain);
+    const ford = tileIndex(20, 20);
+    const river = tileIndex(20, 19);
+    terrain[ford] = TERRAIN.ford;
+    terrain[river] = TERRAIN.river;
+    const map = { ...base, terrain, rivers: [{ tiles: [ford, river, ford] }] };
+    expect(formatMapGrid(SEED, map)).toContain('carrying 1 fords');
+  });
+
   it('names every terrain and every resource in its legend, so a glyph can be read', () => {
     const dump = formatMap(SEED);
 
-    for (const word of ['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road']) {
+    for (const word of ['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road', 'lake', 'marsh']) {
       expect(dump).toContain(word);
     }
     for (const word of ['grain', 'timber', 'stone', 'iron']) {
@@ -110,7 +123,7 @@ describe('a generated map, written out for inspection', () => {
     // a picture whose legend has drifted from it is worse than no legend.
     for (const [terrain, glyph] of Object.entries(TERRAIN_GLYPHS)) {
       expect(dump).toContain(
-        `${glyph} ${['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road'][Number(terrain)] ?? ''}`,
+        `${glyph} ${['plain', 'hill', 'forest', 'farmland', 'river', 'ford', 'road', 'lake', 'marsh'][Number(terrain)] ?? ''}`,
       );
     }
     for (const [kind, glyph] of Object.entries(RESOURCE_GLYPHS)) {

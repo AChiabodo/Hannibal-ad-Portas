@@ -2,7 +2,7 @@
  * Settlements and fortifications, drawn: a settlement on the map, and what is left of
  * its walls (ticket U6).
  *
- * B1 puts four to six minor settlements and a Stronghold for each Faction on the
+ * B1 puts minor settlements and a Stronghold for each Faction on the
  * theatre, and until this ticket the main map showed *none* of them: a settlement
  * was a tile the rules knew about, drawn on the minimap as one coloured pixel. A
  * Player could not see a settlement, could not tell a Stronghold from a minor one, and

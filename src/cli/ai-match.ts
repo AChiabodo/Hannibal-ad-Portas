@@ -9,17 +9,19 @@ import { createExpansionBehaviour } from '../ai/expansion.ts';
 import { createBehaviourRegistry, type Behaviour, type BehaviourContext, type BehaviourRegistry,
   type Candidate, type Contribution } from '../ai/registry.ts';
 import { DIFFICULTY, type Difficulty, type DifficultyName } from '../ai/difficulty.ts';
-import { BUILDINGS } from '../content/buildings.ts';
+import { BUILDINGS, workRepairCost } from '../content/buildings.ts';
+import { fortificationRepairStone } from '../content/fortifications.ts';
 import { MATCHUP } from '../content/arms.ts';
 import { payrollBill, recruitCost, SQUAD_TYPES } from '../content/squads.ts';
 import { TICK_HZ } from '../sim/clock.ts';
 import { BASE_HOUSING, BASE_STORAGE, GRAIN_PER_HEAD, TAX_PER_DENARIUS } from '../sim/economy.ts';
 import type { Command } from '../sim/command.ts';
 import { runMatch, type MatchRun } from '../sim/driver.ts';
-import { RELIEF_RADIUS, RAM_COST, SIEGE_RADIUS, ASSAULT_TICKS, WALL_SHOCK, canAssault, observeSiege, siegeMatchOutcome, siegeMatchRules,
+import { RELIEF_RADIUS, RAM_COST, SIEGE_RADIUS, ASSAULT_TICKS, WALL_SHOCK, canAssault, observeSiege, siegeMatchOutcome, siegeMatchRulesForDifficulty,
   type SiegeVisible } from '../sim/siege.ts';
 import { FATIGUE_MAX } from '../sim/squad.ts';
-import { MAP_WIDTH, MAP_HEIGHT, TERRAIN } from '../sim/map.ts';
+import { MAP_WIDTH, MAP_HEIGHT, TERRAIN, type Terrain } from '../sim/map.ts';
+import { paceCost } from '../sim/route.ts';
 import { SQUAD_VISION, UNSEEN } from '../sim/fog.ts';
 import { ticksUntilSeason } from '../sim/season.ts';
 
@@ -28,15 +30,17 @@ export interface AiMatchRun extends MatchRun {
   readonly decisions: readonly AiDecision<Command>[];
 }
 
-const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES,
+const economyContent = { buildings: BUILDINGS, squadTypes: SQUAD_TYPES, fortificationRepairStone, workRepairCost,
   recruitCost, payrollBill,
   grainPerHead: GRAIN_PER_HEAD, baseHousing: BASE_HOUSING, baseStorage: BASE_STORAGE, taxPerDenarius: TAX_PER_DENARIUS,
   ticksUntilPayroll: ticksUntilSeason };
 const canContinueAssault = createAssaultReadiness({ squadTypes: SQUAD_TYPES, siegeRadius: SIEGE_RADIUS, settlementRadius: 7,
   assaultTicks: ASSAULT_TICKS, wallShock: WALL_SHOCK });
 const militaryContent = { squadTypes: SQUAD_TYPES, matchup: MATCHUP, fatigueMax: FATIGUE_MAX, ticksPerSecond: TICK_HZ,
+  mapWidth: MAP_WIDTH, impassableTerrain: [UNSEEN, TERRAIN.river, TERRAIN.lake],
   canContinueAssault, settlementRadius: 7 };
-const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river,
+const scoutingContent = { width: MAP_WIDTH, height: MAP_HEIGHT, unseen: UNSEEN, water: TERRAIN.river, additionalWater: [TERRAIN.lake],
+  terrainCost: (terrain: number, pace: number) => paceCost(terrain === UNSEEN ? TERRAIN.plain : terrain as Terrain, pace),
   vision: SQUAD_VISION, settlementRadius: 7, ticksPerSecond: TICK_HZ, squadTypes: SQUAD_TYPES,
   scoutTypes: ['hastati', 'gaul', 'numidian-horse'] };
 // One garrison is worth the strongest Tier-1 Squad a Faction can raise, since an
@@ -166,12 +170,12 @@ function armyAt(difficulty: Difficulty, withSiege: boolean): BehaviourRegistry<S
   /** The D5 army: the siege owns its Squads, and the field owns the rest. */
   const siegeBehaviour: Behaviour<SiegeVisible, Command> = { ...siege, tactical: (context) => {
     const field = fieldOf(context);
-    // Recovery owns both a new withdrawal and the march it leaves on later
-    // ticks. Remove those Squads before the siege evaluates its available power.
-    const withdrawn = new Set(field?.commands.filter((command) => command.kind === 'withdraw')
+    // Recovery and home-wall defence take precedence over an offensive siege.
+    // Do not count those Squads as available for the attack.
+    const unavailable = new Set(field?.commands.filter((command) => command.kind === 'withdraw' || command.kind === 'garrison')
       .flatMap((command) => command.squads) ?? []);
     const { visible } = context.observation;
-    const squads = visible.squads.filter((squad) => !withdrawn.has(squad.id) &&
+    const squads = visible.squads.filter((squad) => !unavailable.has(squad.id) &&
       !restingAtHome(squad, visible.settlements, SQUAD_TYPES.find((type) => type.id === squad.type)?.morale ?? 0) &&
       !returningHome(squad, visible.settlements));
     const proposed = siege.tactical!({ ...context, observation: { ...context.observation,
@@ -244,8 +248,7 @@ export function createArmyController(
 
 /**
  * Two fresh AIs against the complete Siege Match, at a stated difficulty. The
- * difficulty reaches only the behaviours and the Controller's operational clock;
- * the rules are the same Match at every level.
+ * difficulty sets both the Controllers and the shared neutral raid cadence.
  */
 export function playAiMatch(
   seed: number,
@@ -258,7 +261,7 @@ export function playAiMatch(
   const carthage = createAi<SiegeVisible, Command>({ ticksPerSecond: TICK_HZ,
     operationalSeconds: difficulty.reactionSeconds, registry });
   const run = runMatch({
-    seed, ticks, rules: siegeMatchRules, observe: observeSiege, outcome: siegeMatchOutcome,
+    seed, ticks, rules: siegeMatchRulesForDifficulty(difficulty.name), observe: observeSiege, outcome: siegeMatchOutcome,
     players: [{ faction: 'rome', controller: rome }, { faction: 'carthage', controller: carthage }],
   });
   // Stable sort preserves strategic → operational → tactical within a Faction.

@@ -109,6 +109,26 @@ function settlementOf(id = 4): VisibleSettlement {
   };
 }
 
+it('announces a visible barbarian without following it after sight is lost', () => {
+  const book = createNoticeBook();
+  book.read(visibleOf(), 0);
+  const enemy = { id: 9, type: 'gaul', x: 30, y: 20, neutral: true };
+  const notice = book.read(visibleOf({ enemies: [enemy] }), 1).find((item) => item.kind === 'contact');
+  expect(notice).toMatchObject({ label: 'Barbari avvistati', target: { kind: 'contact', id: 9, x: 30, y: 20 } });
+  expect(book.read(visibleOf(), 2).find((item) => item.kind === 'contact')?.target).toEqual(notice?.target);
+});
+
+it('notifies damage to an owned work once with the settlement location', () => {
+  const book = createNoticeBook();
+  const before = { ...settlementOf(), works: [{ building: 'farm', ordinal: 0, remaining: 0, standing: true, hp: 60 }] };
+  const after = { ...before, works: [{ ...before.works[0]!, hp: 50 }] };
+  book.read(visibleOf({ settlements: [before] }), 0);
+  const notices = book.read(visibleOf({ settlements: [after] }), 1).filter((item) => item.kind === 'workDamage');
+  expect(notices).toHaveLength(1);
+  expect(notices[0]?.target).toEqual({ kind: 'settlement', id: 4, x: 20, y: 20 });
+  expect(book.read(visibleOf({ settlements: [after] }), 2).filter((item) => item.kind === 'workDamage')).toHaveLength(1);
+});
+
 describe('the Morale threshold', () => {
   it('fires on a positive Morale at or below a quarter of the type’s maximum', () => {
     // The hastati's maximum is ten (content/squads.ts), so a quarter is 2.5: two

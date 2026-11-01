@@ -168,6 +168,7 @@ export type NoticeKind =
   | 'refusal'
   | 'engaged'
   | 'contact'
+  | 'workDamage'
   | 'siege'
   | 'loss';
 
@@ -248,15 +249,19 @@ export function createNoticeBook(): NoticeBook {
   const stored = new Map<string, Stored>();
   let seenSquads = new Map<number, Seen>();
   let seenFronts = new Map<number, string | null>();
+  let seenWorks = new Map<string, number>();
   const spotted = new Set<number>();
 
   return {
     read(visible, tick) {
       const beforeSquads = seenSquads;
       const beforeFronts = seenFronts;
+      const beforeWorks = seenWorks;
 
       // What this read will be a change *from* on the next one.
       seenSquads = new Map(visible.squads.map((squad) => [squad.id, seenOf(squad)]));
+      seenWorks = new Map(visible.settlements.flatMap((site) => site.works.flatMap((work, index) =>
+        work.hp === undefined ? [] : [[`${String(site.id)}:${work.building}:${String(work.ordinal ?? index)}`, work.hp] as const])));
       seenFronts = new Map(hasFronts(visible)
         ? [...visible.settlements.map((settlement) => {
           const front = visible.fronts.find((candidate) => candidate.settlement === settlement.id);
@@ -266,7 +271,7 @@ export function createNoticeBook(): NoticeBook {
         : []);
 
       const current = conditionsNow(visible, tick);
-      const events = eventsNow(visible, beforeSquads, beforeFronts);
+      const events = eventsNow(visible, beforeSquads, beforeFronts, beforeWorks);
 
       // Persistent conditions are refreshed in place: a Squad that recovers loses
       // its notice, and one that is still in trouble keeps the tick it began on
@@ -379,6 +384,7 @@ export function createNoticeBook(): NoticeBook {
     visible: EconomyVisible | SiegeVisible,
     beforeSquads: ReadonlyMap<number, Seen>,
     beforeFronts: ReadonlyMap<number, string | null>,
+    beforeWorks: ReadonlyMap<string, number>,
   ): readonly Fresh[] {
     const fresh: Fresh[] = [];
 
@@ -387,9 +393,20 @@ export function createNoticeBook(): NoticeBook {
         if (spotted.has(enemy.id)) continue;
         spotted.add(enemy.id);
         fresh.push({ id: `event:contact:${String(enemy.id)}`, kind: 'contact',
-          label: translate('notice.contact'), detail: null,
+          label: translate(enemy.neutral === true ? 'notice.barbarianContact' : 'notice.contact'), detail: null,
           target: { kind: 'contact', id: enemy.id, x: enemy.x, y: enemy.y } });
       }
+    }
+
+    for (const site of visible.settlements) {
+      const damaged = site.works.some((work, index) => {
+        const key = `${String(site.id)}:${work.building}:${String(work.ordinal ?? index)}`;
+        const before = beforeWorks.get(key);
+        return before !== undefined && work.hp !== undefined && work.hp < before;
+      });
+      if (damaged) fresh.push({ id: `event:workDamage:${String(site.id)}`, kind: 'workDamage',
+        label: message('notice.workDamage', { name: settlementName(site.id) }), detail: null,
+        target: { kind: 'settlement', id: site.id, x: site.x, y: site.y } });
     }
 
     for (const squad of visible.squads) {

@@ -1,7 +1,7 @@
 import { expect, test } from './fixtures';
 import { capture } from './evidence';
 import { advance, applied, describeView, hud, hudLayout, hudRows, hudRects, selection, squads } from './hooks';
-import { generateMap, isWalkable, terrainAt } from '../src/sim/map';
+import { generateMap, isWalkable, terrainAt, MAP_WIDTH, MAP_HEIGHT } from '../src/sim/map';
 import { tilePixel } from '../src/render/terrain';
 
 for (const faction of ['rome', 'carthage'] as const) {
@@ -62,7 +62,7 @@ for (const faction of ['rome', 'carthage'] as const) {
       const target = Array.from({ length: 12 }, (_, i) => 5 + i)
         .flatMap((distance) => [{ x: first.squad.x + distance, y: first.squad.y }, { x: first.squad.x - distance, y: first.squad.y },
           { x: first.squad.x, y: first.squad.y + distance }, { x: first.squad.x, y: first.squad.y - distance }])
-        .find((p) => p.x >= 0 && p.y >= 0 && p.x < 96 && p.y < 96 && isWalkable(terrainAt(map, p.x, p.y)) && open(screen(tilePixel(p.x, p.y).x, tilePixel(p.x, p.y).y)));
+        .find((p) => p.x >= 0 && p.y >= 0 && p.x < MAP_WIDTH && p.y < MAP_HEIGHT && isWalkable(terrainAt(map, p.x, p.y)) && open(screen(tilePixel(p.x, p.y).x, tilePixel(p.x, p.y).y)));
       expect(target).toBeDefined();
       const targetPixel = tilePixel(target!.x, target!.y);
       const click = screen(targetPixel.x, targetPixel.y);

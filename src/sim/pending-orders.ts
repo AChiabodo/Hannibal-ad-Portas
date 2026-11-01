@@ -19,9 +19,10 @@ export function pendingOrderCost(order: PendingOrder): ResourceAmounts {
 }
 
 /** Stable arrival order, no charges or mutations for a request which still waits. */
-export function advancePendingOrders(economy: Economy): void {
+export function advancePendingOrders(economy: Economy, onlyId?: number): void {
   const kept: PendingOrder[] = [];
   for (const order of economy.pending ?? []) {
+    if (onlyId !== undefined && order.id !== onlyId) { kept.push(order); continue; }
     const site = economy.settlements[order.settlement];
     if (site === undefined || site.owner !== order.owner) continue;
     if (!startOrder(economy, site, order)) kept.push(order);
@@ -41,7 +42,10 @@ function startOrder(economy: Economy, site: Settlement, order: PendingOrder): bo
   if (lot === undefined) return true;
   if (occupiedGround(economy, lot)) { order.reason = 1; return false; }
   site.stocks.splice(0, site.stocks.length, ...payment.remaining);
-  site.works.push({ building: order.content, remaining: building.buildTicks, ordinal: order.ordinal, origin: order.owner });
+  const queueOrder = site.repairOrders === undefined ? undefined : economy.nextPendingId ?? 1;
+  if (queueOrder !== undefined) economy.nextPendingId = queueOrder + 1;
+  site.works.push({ building: order.content, remaining: building.buildTicks, ordinal: order.ordinal, origin: order.owner,
+    ...(queueOrder === undefined ? {} : { queueOrder }) });
   invalidateSpace(economy);
   return true;
 }

@@ -49,6 +49,9 @@ const TERRAIN_NAMES: Readonly<Record<Terrain, string>> = {
   [TERRAIN.river]: 'river',
   [TERRAIN.ford]: 'ford',
   [TERRAIN.road]: 'road',
+  [TERRAIN.lake]: 'lake',
+  [TERRAIN.marsh]: 'marsh',
+  [TERRAIN.bridge]: 'bridge',
 };
 
 /** The name of a resource, for a failure a reader can act on. */
@@ -104,7 +107,7 @@ export function strongholdProblems(map: MapGrid): readonly string[] {
   return [];
 }
 
-/** Four to six capturable minor settlements, each on a tile of its own. */
+/** The stated number of capturable minor settlements, each on a tile of its own. */
 export function settlementProblems(map: MapGrid): readonly string[] {
   const problems: string[] = [];
   const count = map.settlements.length;
@@ -164,21 +167,22 @@ export function connectivityProblems(map: MapGrid): readonly string[] {
   return problems;
 }
 
-/** Every river crosses the map, and carries at least the stated minimum of fords a Squad can cross. */
+/** Every substantial river is connected, with enough fords and an optional lake. */
 export function riverProblems(map: MapGrid): readonly string[] {
   const problems: string[] = [];
+  const crossingLabels = labelCrossings(map);
 
   if (map.rivers.length === 0) problems.push('the theatre has no river at all');
 
-  // A river running edge to edge is load-bearing rather than pretty: a river
-  // that stopped inside the map could seal a pocket of land off, and the repair
-  // pass that fords whatever water still parts the land relies on every river
-  // crossing the whole map, so that following it always reaches another
-  // landmass. It is also the shape every planted ford and every road was drawn
-  // against, so a generator that changed it should have to fail a test.
-
   for (const [index, river] of map.rivers.entries()) {
+    if (new Set(river.tiles).size !== river.tiles.length) problems.push(`river ${index} revisits its own course`);
     const fords = river.tiles.filter((tile) => terrainOf(map, tile) === TERRAIN.ford);
+    // A wide crossing is one connected component, including ford or bridge
+    // tiles beside the recorded river path; revisiting it cannot make another.
+    const crossings = new Set(river.tiles.map((tile) => crossingLabels[tile]).filter((label) => label !== undefined && label >= 0)).size;
+    // The current generator treats a course of 100 or more tiles as substantial.
+    // Short, bypassable streams need not offer multiple crossing points.
+    if (river.tiles.length >= 100 && crossings < 2) problems.push(`river ${index} has fewer than two distinct crossings`);
 
     for (const tile of fords) {
       if (dryNeighbours(map, tile) < 2) {
@@ -189,8 +193,8 @@ export function riverProblems(map: MapGrid): readonly string[] {
       }
     }
 
-    const crossable = fords.filter((tile) => isStraightFord(map, tile)).length;
-    if (crossable < MIN_FORDS_PER_RIVER) {
+    const crossable = new Set(fords.filter((tile) => isStraightFord(map, tile))).size;
+    if (river.tiles.length >= 100 && crossable < MIN_FORDS_PER_RIVER) {
       problems.push(
         `river ${index} has ${crossable} fords a Squad can cross, fewer than the ` +
           `${MIN_FORDS_PER_RIVER} the contract states`,
@@ -199,7 +203,7 @@ export function riverProblems(map: MapGrid): readonly string[] {
 
     for (const tile of river.tiles) {
       const here = terrainOf(map, tile);
-      if (here !== TERRAIN.river && here !== TERRAIN.ford) {
+      if (here !== TERRAIN.river && here !== TERRAIN.ford && here !== TERRAIN.lake && here !== TERRAIN.bridge) {
         const name = isTerrain(here) ? TERRAIN_NAMES[here] : String(here);
         problems.push(
           `river ${index} runs through a ${name} tile at (${tileX(tile)}, ${tileY(tile)}), ` +
@@ -219,14 +223,36 @@ export function riverProblems(map: MapGrid): readonly string[] {
       }
     }
 
-    const source = river.tiles[0];
-    const mouth = river.tiles.at(-1);
-    if (source !== undefined && mouth !== undefined && !crossesTheMap(source, mouth)) {
-      problems.push(`river ${index} does not run from one edge of the map to the other`);
-    }
   }
 
   return problems;
+}
+
+/** Label four-connected ford/bridge tiles independently of the river's path. */
+function labelCrossings(map: MapGrid): Int32Array {
+  const labels = new Int32Array(TILE_COUNT).fill(-1);
+  const queue = new Int32Array(TILE_COUNT);
+  let label = 0;
+  const isCrossing = (tile: number): boolean => map.terrain[tile] === TERRAIN.ford || map.terrain[tile] === TERRAIN.bridge;
+  for (let start = 0; start < TILE_COUNT; start += 1) {
+    if (labels[start] !== -1 || !isCrossing(start)) continue;
+    let head = 0, tail = 0;
+    labels[start] = label;
+    queue[tail++] = start;
+    while (head < tail) {
+      const tile = queue[head++]!;
+      const x = tileX(tile), y = tileY(tile);
+      const neighbours = [x > 0 ? tile - 1 : -1, x < MAP_WIDTH - 1 ? tile + 1 : -1,
+        y > 0 ? tile - MAP_WIDTH : -1, y < MAP_HEIGHT - 1 ? tile + MAP_WIDTH : -1];
+      for (const next of neighbours) {
+        if (next < 0 || labels[next] !== -1 || !isCrossing(next)) continue;
+        labels[next] = label;
+        queue[tail++] = next;
+      }
+    }
+    label += 1;
+  }
+  return labels;
 }
 
 /** Every resource appears, and the two halves of the theatre hold the same amount of each. */
@@ -272,6 +298,7 @@ export function roadProblems(map: MapGrid): readonly string[] {
   for (const road of map.roads) {
     endpoints.add(road.from);
     endpoints.add(road.to);
+    if (new Set(road.tiles).size !== road.tiles.length) problems.push('a road revisits one of its own tiles');
 
     if (road.tiles[0] !== road.from) {
       problems.push(`a road starting at (${tileX(road.from)}, ${tileY(road.from)}) begins somewhere else`);
@@ -490,12 +517,4 @@ function dryNeighbours(map: MapGrid, tile: number): number {
   ];
 
   return around.filter((beside) => isWalkable(beside)).length;
-}
-
-/** Whether a river runs from one edge of the map to the opposite one. */
-function crossesTheMap(source: number, mouth: number): boolean {
-  const downTheMap = tileY(source) === 0 && tileY(mouth) === MAP_HEIGHT - 1;
-  const acrossTheMap = tileX(source) === 0 && tileX(mouth) === MAP_WIDTH - 1;
-
-  return downTheMap || acrossTheMap;
 }

@@ -477,18 +477,16 @@ describe('every Match the command line can play replays from its own log (E2)', 
   /** Long enough for every name to have ticked something, short enough to be a unit test. */
   const TICKS = 40;
 
-  it('replays each name to the hash its own play ended on, checkpoints and all', () => {
-    for (const name of RULES_NAMES) {
-      const run = RULES[name].play(1, TICKS);
-      const replayed = RULES[name].replay({
-        seed: run.seed,
-        log: run.log,
-        ticks: run.result.tick,
-        everyTicks: CHECKPOINT_TICKS,
-      });
+  it.each(RULES_NAMES)('replays %s to the hash its own play ended on, checkpoints and all', (name) => {
+    const run = RULES[name].play(1, TICKS);
+    const replayed = RULES[name].replay({
+      seed: run.seed,
+      log: run.log,
+      ticks: run.result.tick,
+      everyTicks: CHECKPOINT_TICKS,
+    });
 
-      expect(replayed.checkpoints.at(-1), name).toEqual({ tick: run.result.tick, hash: run.hash });
-    }
+    expect(replayed.checkpoints.at(-1), name).toEqual({ tick: run.result.tick, hash: run.hash });
   });
 
   it('replays a Match that fields its own armies, which is not the Match its rules alone play', () => {

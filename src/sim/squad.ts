@@ -304,7 +304,7 @@ function requireStrength(shape: Shape): number {
  * like, how wide it stands, where its men stand in it — is derived from these.
  */
 export interface Block extends Shape {
-  /** Shared FIFO for physical Gate/Breach passage; all values are authoritative integers. */
+  /** Shared FIFO for Gate/Breach/Bridge passage; bridge access uses settlement -1 and a stable tile-based passage. */
   access?: { settlement: number; passage: number; ticket: number; active: number; reason: number;
     yielding: number; goalX: number; goalY: number };
   /** Aggregate admission/departure; no individual soldier state. */

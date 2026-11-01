@@ -41,6 +41,12 @@ function drawWork(out: PixelBuffer, rect: GroundRect, work: WorkAppearance): voi
   const roof = flat ? shadeAt(RAMPS.parchment, 3) : shadeAt(RAMPS.blood, 3);
   fillRect(out, x + 4, y + 5, w - 5, h - 6, stone(0));
   fillRect(out, x + 2, y + 3, w - 6, h - 6, stone(2));
+  if (work.stage === 4) {
+    fillRect(out, x + 4, y + h - 12, w - 10, 6, stone(4));
+    for (let dx = 5; dx < w - 5; dx += 8) fillRect(out, x + dx, y + h - 17 - dx % 5, 5, 5, stone(5));
+    fillRect(out, x + 3, y + 4, 4, h - 11, stone(3));
+    return;
+  }
   if (work.stage === 0) {
     for (let dx = 4; dx < w - 3; dx += 7) {
       fillRect(out, x + dx, y + 3, 2, h - 6, wood(3));
@@ -107,6 +113,13 @@ function drawWork(out: PixelBuffer, rect: GroundRect, work: WorkAppearance): voi
     if (work.building === 'granary') {
       for (let dx = 4; dx < w - 4; dx += 8) fillRect(out, x + dx, y + h - 10, 5, 5, wood(5));
     }
+  }
+  if (work.stage === 3) {
+    fillRect(out, x + Math.floor(w / 2), y + 3, 2, Math.max(3, Math.floor(h / 2)), stone(0));
+    fillRect(out, x + Math.floor(w / 2) + 2, y + Math.floor(h / 2), 4, 2, stone(0));
+  } else if (work.stage === 5) {
+    for (let dx = 5; dx < w - 3; dx += 10) fillRect(out, x + dx, y + 2, 2, h - 5, wood(4));
+    fillRect(out, x + 2, y + Math.floor(h / 2), w - 5, 2, wood(5));
   }
 }
 

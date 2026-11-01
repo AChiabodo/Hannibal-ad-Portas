@@ -28,6 +28,7 @@ interface VisibleSiegeFront {
   readonly besieger: Faction | null;
   readonly siege?: 'assault' | 'blockade' | null;
   readonly ram: { readonly built: boolean; readonly hp?: number; readonly remaining?: number } | null;
+  readonly ramKnown?: boolean;
   readonly garrison: number;
   readonly garrisonMen?: number;
   readonly garrisonKnown?: boolean;
@@ -42,7 +43,7 @@ export interface SiegeObservation {
   readonly season: Season;
   readonly treasury: number;
   readonly squads: readonly SiegeSquad[];
-  readonly enemies: readonly (Site & { readonly type: string })[];
+  readonly enemies: readonly (Site & { readonly type: string; readonly appearance?: { readonly men: number } })[];
   readonly contacts: readonly Contact[];
   readonly fronts: readonly VisibleSiegeFront[];
 }
@@ -95,7 +96,7 @@ export type SiegeCommand =
  * has seen is not a target at all.
  *
  * Since #66 power is **men brought to bear** — `strength × impact`, priced with
- * nominal figures for an enemy whose headcount is not in the Observation — so a
+ * currently observed headcount when available and nominal figures otherwise — so a
  * ring of five 24-man Squads is worth the 120 men it is and not five times one of
  * them (ADR-0028). The target is drawn from the same
  * age-limited contact memory the other planning policies read, not from the raw
@@ -113,9 +114,9 @@ export function createSiegeBehaviour(
   difficulty: Difficulty = DIFFICULTY.centurio,
 ): Behaviour<SiegeObservation, SiegeCommand> {
   const types = new Map(content.squadTypes.map((type) => [type.id, type]));
-  const nominal = (typeId: string) => {
-    const type = types.get(typeId);
-    return type === undefined ? content.garrisonEstimate : type.strength * type.impact * type.morale;
+  const observed = (enemy: SiegeObservation['enemies'][number]) => {
+    const type = types.get(enemy.type);
+    return type === undefined ? content.garrisonEstimate : (enemy.appearance?.men ?? type.strength) * type.impact * type.morale;
   };
   const power = (squad: SiegeSquad) => {
     const type = types.get(squad.type);
@@ -146,11 +147,9 @@ export function createSiegeBehaviour(
       const stated = (reason: string) => `${reason} ${sighting}`;
 
       const relief = visible.enemies.filter((enemy) => Math.max(0, distance(enemy, place) - (content.settlementRadius ?? 0)) <= content.reliefRadius);
-      const reliefPower = relief.reduce((sum, enemy) => sum + nominal(enemy.type), 0);
+      const reliefPower = relief.reduce((sum, enemy) => sum + observed(enemy), 0);
       const presence = recordedGarrison(visible.appearances?.find((site) => site.id === target.id));
       const garrison = front === undefined || front.garrisonKnown === false ? presence === false ? 0 : 1 : front.garrison;
-      const threat = garrison * content.garrisonEstimate + reliefPower;
-
       const field = visible.squads.filter((squad) => !squad.routing && squad.garrison === null);
       const atWalls = (squad: SiegeSquad) => bodyPerimeterDistance(squad, place, content.settlementRadius ?? 0, types.get(squad.type)?.figures === 1 ? 1 : squad.capacity) <= content.siegeRadius ||
         (squad.goal !== null && (squad.goal.x === place.x && squad.goal.y === place.y ||
@@ -163,6 +162,10 @@ export function createSiegeBehaviour(
       const committedPower = committed.filter((squad) => !spent(squad, observation))
         .reduce((sum, squad) => sum + power(squad), 0);
       const totalPower = committedPower + reserve.reduce((sum, squad) => sum + power(squad), 0);
+      // Even a thinner Blockade starves the town; field relief can break it.
+      // Wall defenders price the selected Assault, including a paid one whose
+      // ram is hidden, rather than the Faction's ability to build an engine.
+      const threat = (assaultPath() ? garrison * content.garrisonEstimate : 0) + reliefPower;
       const holds = (value: number) => value * 100 >= threat * margin;
       const besieging = committed.length > 0 || front?.besieger === faction;
 
@@ -194,12 +197,23 @@ export function createSiegeBehaviour(
       function assaultPath(): boolean {
         if (!content.canAssault(faction)) return false;
         if (knownBreach) return true;
-        return front?.ram != null || visible.treasury >= content.ramCost;
+        if (front?.ram != null ||
+          (front?.ramKnown === false && front.besieger === faction && front.siege === 'assault')) return true;
+        if (visible.treasury < content.ramCost) return false;
+        // New money does not make an existing thin ring able to storm walls.
+        // Keep its Blockade until the available army can support the change.
+        return front?.besieger !== faction || front.siege !== 'blockade' ||
+          totalPower * 100 >= (garrison * content.garrisonEstimate + reliefPower) * margin;
       }
       /** The stated grounds for the path, with the numbers the decision read. */
       function grounds(assault: boolean, settlement: number, ours: number, theirs: number): string {
         const against = `${String(ours)} power against ${String(theirs)}`;
         if (assault) {
+          if (front?.ramKnown === false && front.besieger === faction && front.siege === 'assault' &&
+              front.ram === null && visible.treasury < content.ramCost && !knownBreach) {
+            return `Continue the assault on settlement ${String(settlement)}: the ram's location is not visible; ` +
+              `keep the existing order with ${against}.`;
+          }
           return knownBreach
             ? `Assault settlement ${String(settlement)}: the walls are breached; storm the centre with ${against}.`
             : `Assault settlement ${String(settlement)}: ${faction} has the ram at the walls or can pay ` +
@@ -207,7 +221,11 @@ export function createSiegeBehaviour(
         }
         if (!content.canAssault(faction)) {
           return `Blockade settlement ${String(settlement)}: ${faction} has no ram and can never assault (ADR-0008); ` +
-            `cut supply and starve it out with ${against}.`;
+            `cut supply with ${against} in the field; wall defenders slow starvation rather than require an Assault.`;
+        }
+        if (front?.besieger === faction && front.siege === 'blockade') {
+          return `Continue the Blockade of settlement ${String(settlement)}: preserve the ring with ${against} in the field; ` +
+            `the available army and treasury do not yet support changing to an Assault.`;
         }
         return `Blockade settlement ${String(settlement)}: no ram at the walls and ` +
           `${String(visible.treasury)} denarii cannot pay ${String(content.ramCost)}; starve it instead with ${against}.`;

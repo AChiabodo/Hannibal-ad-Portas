@@ -28,6 +28,7 @@ export const CODE_OF: Record<CommandKind, number> = {
   move: 1,
   attackMove: 2,
   attack: 3,
+  attackStructure: 16,
   hold: 4,
   garrison: 5,
   withdraw: 6,
@@ -38,6 +39,10 @@ export const CODE_OF: Record<CommandKind, number> = {
   formation: 11,
   group: 12,
   cancelPending: 13,
+  repairFortification: 14,
+  cancelFortificationRepair: 15,
+  repairWork: 17,
+  cancelWorkRepair: 18,
 };
 
 /** One Squad: a block, with everything a Tick might move or spend. */

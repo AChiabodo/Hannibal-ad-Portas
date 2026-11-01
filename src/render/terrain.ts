@@ -58,7 +58,11 @@ import {
   type TerrainMaterial,
 } from '../art/terrain.ts';
 import { nodeMarker, type NodeKind } from '../art/nodes.ts';
-import { blit, createPixelBuffer, type PixelBuffer } from '../art/pixel-buffer.ts';
+import { blit, createPixelBuffer, fillRect, type PixelBuffer } from '../art/pixel-buffer.ts';
+import { RAMPS, shadeAt } from '../art/palette.ts';
+import { landscapeDetail } from '../art/landscape-details.ts';
+import { bridgeDeck } from '../art/bridge.ts';
+import type { Season } from '../sim/season.ts';
 
 /**
  * Which material each terrain of the simulation is drawn with.
@@ -75,6 +79,9 @@ export const MATERIAL_OF_TERRAIN: Readonly<Record<Terrain, TerrainMaterial>> = {
   [TERRAIN.river]: 'river',
   [TERRAIN.ford]: 'ford',
   [TERRAIN.road]: 'road',
+  [TERRAIN.lake]: 'lake',
+  [TERRAIN.marsh]: 'marsh',
+  [TERRAIN.bridge]: 'bridge',
 };
 
 /**
@@ -151,7 +158,7 @@ export function quadrantsAt(map: MapGrid, cellX: number, cellY: number): CellQua
  * the path has something to be a path across, and a marker is drawn last so that
  * a node on a road is still a node.
  */
-export function renderTerrain(map: MapGrid): PixelBuffer {
+export function renderTerrain(map: MapGrid, season: Season = 'spring', detailSeed?: number): PixelBuffer {
   const theatre = createPixelBuffer(THEATRE_PIXELS, THEATRE_PIXELS);
 
   for (let j = 0; j <= MAP_HEIGHT; j += 1) {
@@ -160,12 +167,19 @@ export function renderTerrain(map: MapGrid): PixelBuffer {
     }
   }
 
+  colourSeason(theatre, map, season);
+  if (detailSeed !== undefined) decorateLand(theatre, map, season, detailSeed);
+
+  const bridges = bridgeDirections(map);
+
   for (let y = 0; y < MAP_HEIGHT; y += 1) {
     for (let x = 0; x < MAP_WIDTH; x += 1) {
-      if (terrainAt(map, x, y) !== TERRAIN.road) continue;
+      const terrain = terrainAt(map, x, y);
+      if (terrain !== TERRAIN.road && terrain !== TERRAIN.bridge) continue;
 
       const at = tilePixel(x, y);
-      blit(theatre, roadTile(roadMask(map, x, y)), at.x, at.y);
+      if (terrain === TERRAIN.bridge) blit(theatre, bridgeDeck(bridges[y * MAP_WIDTH + x] === 1), at.x, at.y);
+      else blit(theatre, roadTile(roadMask(map, x, y)), at.x, at.y);
     }
   }
 
@@ -177,16 +191,125 @@ export function renderTerrain(map: MapGrid): PixelBuffer {
   return theatre;
 }
 
-/**
- * Which of a road tile's four neighbours are roads, as a clockwise four-bit mask.
- *
- * A ford is not a road even where a road made it: the crossing is water, and a
- * road that ran through a ford would be a road drawn over a river. The path ends
- * at each bank and the ford is what crosses, which is what the map says.
- */
+/** The adjoining road sets the direction for an entire connected bridge. */
+function bridgeDirections(map: MapGrid): Uint8Array {
+  const result = new Uint8Array(MAP_WIDTH * MAP_HEIGHT);
+  for (let first = 0; first < map.terrain.length; first += 1) {
+    if (map.terrain[first] !== TERRAIN.bridge || result[first] !== 0) continue;
+    const group = [first];
+    result[first] = 3;
+    let horizontalRoads = 0, verticalRoads = 0;
+    let minX = MAP_WIDTH, maxX = 0, minY = MAP_HEIGHT, maxY = 0;
+    for (let at = 0; at < group.length; at += 1) {
+      const tile = group[at] as number;
+      const x = tile % MAP_WIDTH, y = Math.floor(tile / MAP_WIDTH);
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= MAP_WIDTH || ny >= MAP_HEIGHT) continue;
+        const next = ny * MAP_WIDTH + nx;
+        if (map.terrain[next] === TERRAIN.road) {
+          if (dx !== 0) horizontalRoads += 1;
+          else verticalRoads += 1;
+        } else if (map.terrain[next] === TERRAIN.bridge && result[next] === 0) {
+          result[next] = 3;
+          group.push(next);
+        }
+      }
+    }
+    const horizontal = horizontalRoads === verticalRoads ? maxY - minY >= maxX - minX : horizontalRoads > verticalRoads;
+    for (const tile of group) result[tile] = horizontal ? 1 : 2;
+  }
+  return result;
+}
+
+/** Sparse seed-specific plants and rocks; paths and resource markers are drawn later. */
+function decorateLand(buffer: PixelBuffer, map: MapGrid, season: Season, seed: number): void {
+  for (let y = 0; y < MAP_HEIGHT; y += 1) {
+    for (let x = 0; x < MAP_WIDTH; x += 1) {
+      const terrain = terrainAt(map, x, y);
+      if (terrain !== TERRAIN.plain && terrain !== TERRAIN.forest && terrain !== TERRAIN.hill) continue;
+      let hash = Math.imul(x + seed, 0x85ebca6b) ^ Math.imul(y + seed, 0x27d4eb2d);
+      hash = (Math.imul(hash ^ (hash >>> 15), 0x2545f491) ^ (hash >>> 13)) >>> 0;
+      if (hash % (terrain === TERRAIN.forest ? 4 : 8) !== 0) continue;
+      const at = tilePixel(x, y);
+      const px = at.x + 2 + ((hash >>> 4) % 10);
+      const py = at.y + 3 + ((hash >>> 9) % 9);
+      const colour = season === 'winter' ? shadeAt(RAMPS.stone, 6)
+        : terrain === TERRAIN.hill ? shadeAt(RAMPS.stone, 5)
+          : season === 'autumn' ? shadeAt(RAMPS.bronze, 5) : shadeAt(RAMPS.olive, 5);
+      if (terrain === TERRAIN.forest || terrain === TERRAIN.hill) {
+        blit(buffer, landscapeDetail(terrain === TERRAIN.forest ? 'tree' : 'rock', season, hash % 3),
+          at.x + 3, at.y + 2);
+      } else if ((hash >>> 17) % 4 === 0) {
+        blit(buffer, landscapeDetail('bush', season, hash % 3), at.x + 3, at.y + 2);
+      } else {
+        fillRect(buffer, px, py, 1, 2, colour);
+      }
+    }
+  }
+}
+
+/** Recolour natural land before adding roads and markers, leaving their shapes clear. */
+function colourSeason(buffer: PixelBuffer, map: MapGrid, season: Season): void {
+  if (season === 'spring' || season === 'summer') return;
+  for (let y = 0; y < buffer.height; y += 1) {
+    const tileY = Math.max(0, Math.min(MAP_HEIGHT - 1, Math.floor((y - THEATRE_MARGIN) / TERRAIN_TILE)));
+    for (let x = 0; x < buffer.width; x += 1) {
+      const tileX = Math.max(0, Math.min(MAP_WIDTH - 1, Math.floor((x - THEATRE_MARGIN) / TERRAIN_TILE)));
+      const terrain = terrainAt(map, tileX, tileY);
+      if (terrain === TERRAIN.river || terrain === TERRAIN.lake || terrain === TERRAIN.ford ||
+        terrain === TERRAIN.road || terrain === TERRAIN.bridge) continue;
+      const at = (y * buffer.width + x) * 4;
+      const red = buffer.pixels[at] ?? 0;
+      const green = buffer.pixels[at + 1] ?? 0;
+      const blue = buffer.pixels[at + 2] ?? 0;
+      if (season === 'autumn') {
+        if (terrain === TERRAIN.hill) continue;
+        buffer.pixels[at] = Math.floor((red * 3 + 180) / 4);
+        buffer.pixels[at + 1] = Math.floor((green * 3 + 135) / 4);
+        buffer.pixels[at + 2] = Math.floor((blue * 3 + 65) / 4);
+      } else {
+        const weight = terrain === TERRAIN.forest ? 1 : 2;
+        buffer.pixels[at] = Math.floor((red * (4 - weight) + 220 * weight) / 4);
+        buffer.pixels[at + 1] = Math.floor((green * (4 - weight) + 229 * weight) / 4);
+        buffer.pixels[at + 2] = Math.floor((blue * (4 - weight) + 228 * weight) / 4);
+      }
+    }
+  }
+}
+
+/** The generated road paths are static; their edges are presentation data only. */
+const ROAD_EDGES = new WeakMap<MapGrid['roads'], ReadonlySet<number>>();
+
+function roadEdge(a: number, b: number): number {
+  return Math.min(a, b) * MAP_WIDTH * MAP_HEIGHT + Math.max(a, b);
+}
+
+function roadEdges(roads: MapGrid['roads']): ReadonlySet<number> {
+  const cached = ROAD_EDGES.get(roads);
+  if (cached !== undefined) return cached;
+  const edges = new Set<number>();
+  for (const road of roads) for (let index = 1; index < road.tiles.length; index += 1) {
+    const previous = road.tiles[index - 1];
+    const current = road.tiles[index];
+    if (previous !== undefined && current !== undefined) edges.add(roadEdge(previous, current));
+  }
+  ROAD_EDGES.set(roads, edges);
+  return edges;
+}
+
+/** A road reaches an adjacent ford only when an actual road path crosses it. */
 export function roadMask(map: MapGrid, x: number, y: number): number {
-  const connect = (nx: number, ny: number): number =>
-    nx >= 0 && ny >= 0 && nx < MAP_WIDTH && ny < MAP_HEIGHT && terrainAt(map, nx, ny) === TERRAIN.road ? 1 : 0;
+  const connect = (nx: number, ny: number): number => {
+    if (nx < 0 || ny < 0 || nx >= MAP_WIDTH || ny >= MAP_HEIGHT) return 0;
+    const terrain = terrainAt(map, nx, ny);
+    if (terrain === TERRAIN.road || terrain === TERRAIN.bridge) return 1;
+    const current = y * MAP_WIDTH + x;
+    const neighbour = ny * MAP_WIDTH + nx;
+    return terrain === TERRAIN.ford && roadEdges(map.roads).has(roadEdge(current, neighbour)) ? 1 : 0;
+  };
 
   return connect(x, y - 1) | (connect(x + 1, y) << 1) | (connect(x, y + 1) << 2) | (connect(x - 1, y) << 3);
 }

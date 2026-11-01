@@ -3,11 +3,12 @@ import { armyRegistry, createArmyController, difficultyRegistry, playAiMatch, pl
 import { createAi } from '../../src/ai/controller.ts';
 import { DIFFICULTY, type DifficultyName } from '../../src/ai/difficulty.ts';
 import { HEADLESS_TICKS } from '../../src/sim/season.ts';
-import type { Command } from '../../src/sim/command.ts';
+import { assault, type Command } from '../../src/sim/command.ts';
+import { createMatch } from '../../src/sim/match.ts';
 import { scriptedController } from '../../src/sim/controller.ts';
 import { runMatch } from '../../src/sim/driver.ts';
 import { musterSquad } from '../../src/sim/movement.ts';
-import { createSiege, observeSiege, siegeMatchOutcome, siegeMatchRules, type SiegeVisible } from '../../src/sim/siege.ts';
+import { createSiege, observeSiege, siegeMatchOutcome, siegeMatchRules, siegeMatchRulesForDifficulty, type SiegeVisible } from '../../src/sim/siege.ts';
 import { TICK_HZ } from '../../src/sim/clock.ts';
 import { createEconomy } from '../../src/sim/economy.ts';
 import { createFogs } from '../../src/sim/fog.ts';
@@ -25,13 +26,36 @@ function runOf(seed: number, ticks: number, name: DifficultyName = 'centurio'): 
 /** A Match's own Command log, replayed through scripted Controllers: it must reach the same hash. */
 function replayOf(seed: number, name: DifficultyName = 'centurio'): string {
   const run = runOf(seed, HEADLESS_TICKS, name);
-  return runMatch({ seed, ticks: HEADLESS_TICKS, rules: siegeMatchRules, observe: observeSiege,
+  return runMatch({ seed, ticks: HEADLESS_TICKS, rules: siegeMatchRulesForDifficulty(name), observe: observeSiege,
     outcome: siegeMatchOutcome,
     players: [{ faction: 'rome', controller: scriptedController<SiegeVisible>(run.log) },
       { faction: 'carthage', controller: scriptedController<SiegeVisible>(run.log) }] }).hash;
 }
 
 describe('the shipped siege AI in a headless Match', () => {
+  it('does not abandon a paid assault while observing a wall away from the hidden ram (#76)', () => {
+    const map = testMap({ strongholds: [{ x: 25, y: 25 }, { x: 75, y: 75 }] });
+    const economy = createEconomy(map);
+    const world = { map, economy, calendar: startCalendar(), autumns: 0, winters: 0,
+      siege: createSiege(map, economy), fog: createFogs() };
+    // The north wall is visible; the ram is built outside the western Gate.
+    const squad = musterSquad(economy, map, { faction: 'rome', squadType: 'hastati', men: 24, x: 75, y: 65 });
+    const match = createMatch({ seed: 1, rules: { ...siegeMatchRules, createWorld: () => world } });
+    match.step([]);
+    match.step([assault('rome', [squad.id], 1)]);
+    for (let i = 0; i < 10; i += 1) match.step([]);
+    const before = observeSiege(world, 'rome');
+    expect(before.treasury).toBe(5);
+    expect(before.fronts.find((front) => front.settlement === 1))
+      .toMatchObject({ siege: 'assault', besieger: 'rome', ram: null, ramKnown: false });
+    const ai = createArmyController('imperator');
+    const commands = ai.decide({ faction: 'rome', tick: match.state.tick, visible: before });
+    expect(commands).toContainEqual({ kind: 'assault', faction: 'rome', squads: [squad.id], settlement: 1 });
+    match.step(commands);
+    expect(observeSiege(world, 'rome').treasury).toBe(5);
+    expect(observeSiege(world, 'rome').fronts.find((front) => front.settlement === 1)?.siege).toBe('assault');
+  });
+
   it.each(['tiro', 'centurio', 'imperator'] as const)('completes a real Carthaginian Blockade at %s', (level) => {
     const setup = { seed: 13, ticks: HEADLESS_TICKS, rules: siegeMatchRules,
       observe: observeSiege, outcome: siegeMatchOutcome };
@@ -76,7 +100,9 @@ describe('the shipped siege AI in a headless Match', () => {
 
   it('resolves the retained seed 7 stall with an actual Stronghold conquest', () => {
     const run = runOf(7, HEADLESS_TICKS, 'centurio');
-    expect(run.result).toEqual({ kind: 'victory', winner: 'carthage', tick: 4200,
+    // Productive resource placement and sustainable rings change the campaign;
+    // the retained seed's conquest and full Command replay were verified.
+    expect(run.result).toEqual({ kind: 'victory', winner: 'carthage', tick: 6300,
       reason: { kind: 'stronghold', stronghold: 0, path: 'blockade' } });
     const siege = run.decisions.filter((entry) => entry.selected.behaviour === 'siege');
     expect(siege.some((entry) => entry.selected.id === 'blockade')).toBe(true);
@@ -132,7 +158,7 @@ describe('the shipped siege AI in a headless Match', () => {
     { level: 'centurio', seed: 6, winner: 'carthage', path: 'blockade' },
     { level: 'tiro', seed: 13, winner: 'carthage', path: 'blockade' },
     { level: 'tiro', seed: 7, winner: 'carthage', path: 'blockade' },
-    { level: 'imperator', seed: 12, winner: 'rome', path: 'assault' },
+    { level: 'imperator', seed: 12, winner: 'carthage', path: 'blockade' },
     { level: 'imperator', seed: 7, winner: 'carthage', path: 'blockade' },
   ] as const;
 
