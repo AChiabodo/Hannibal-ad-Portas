@@ -1,8 +1,13 @@
-# Issue #76 — economic and expansion calibration, 31 October 2026
+# Issue #76 — economic and expansion calibration, 1 November 2026
 
 The resource-placement correction supports the current campaign's growing local
 production without changing economic formulas or adding adjacency bonuses.
 This does not establish equal outcomes for whole campaigns.
+
+The static production probe was measured on 31 October; generation and economic
+formulas are unchanged. The 400 dynamic Centurio scenes and 96 three-difficulty
+scenes were rerun on 1 November after structure damage was corrected to count
+surviving Force rather than Squad entities, including reinforced neutral groups.
 
 ## Measurement
 
@@ -102,8 +107,8 @@ for Carthage; these are route costs, distinct from capture timestamps.
 | --- | ---: | ---: |
 | Two completed captures | 200 / 200 | 200 / 200 |
 | Scenes with damaged Works | 53 / 200 | 66 / 200 |
-| Scenes with military losses | 11 / 200 | 7 / 200 |
-| Minimum surviving men | 21 / 24 | 20 / 24 |
+| Scenes with military losses | 11 / 200 | 8 / 200 |
+| Minimum surviving men | 18 / 24 | 20 / 24 |
 | Mean combined grain yield of two developed Minors | 15.280 | 15.940 |
 | Mean combined timber yield | 9.190 | 8.455 |
 | Mean combined stone yield | 8.650 | 8.815 |

@@ -2,9 +2,10 @@
 
 ## Stato di implementazione
 
-### Verifica di chiusura del 1 novembre 2026
+### Implementazione completata e verificata — 1 novembre 2026
 
-L'issue #76 resta aperta durante la verifica finale autorizzata dall'utente.
+L'implementazione della #76 è completata sul ramo `feat/map-rework`.
+La verifica finale autorizzata dall'utente è conclusa senza gate falliti.
 La revisione indipendente della specifica non ha individuato lacune funzionali.
 La revisione degli standard ha rilevato un difetto rispetto ad ADR-0026: gli
 attacchi a opere e campi applicavano danno fisso per Squad, premiando la
@@ -18,12 +19,36 @@ e attribuzione ordinata del colpo finale. I test Match/Observation coprono
 specialisti e bersagli distinti. Anche le incursioni neutrali aggregano i gruppi
 parziali, mantenendo quattro HP sulle opere e tre sulle fortificazioni per un
 gruppo completo da 24 uomini. Passano 70 test mirati su otto file.
-Sono in riesecuzione i controlli completi dopo questa correzione.
+Entrambi i revisori hanno ricontrollato la correzione: nessuna violazione
+vincolante aperta per Standards e nessun finding azionabile per Spec. Le due
+osservazioni di manutenzione non bloccanti e i limiti della revisione sono nel
+[resoconto finale](reviews/issue-76-final-review-2026-11-01.md).
+Passano lint, guard, typecheck e build. La suite non browser completa supera
+**1.787/1.787 test in 163 file**, con il benchmark dei cento Match ancora
+entro il limite originale di cinque secondi; il runner usa tre worker per
+evitare contesa con le simulazioni lunghe. Sono verdi la pressione AI
+**60/60**, con replay identico, le **400+96** espansioni, i **12** scenari CI
+con hash attesi e replay effettivi identici e le **sei** campagne storiche
+con vittoria cartaginese per blocco e replay identico.
+L'accettazione Chromium completa supera **181/181 casi in 17,9 minuti**
+su `cda7c5b`, dopo **3/3** ripetizioni del percorso romano con due worker.
+Nel passaggio completo Roma registra due morti avversari al tick 1.045 e
+conclude il percorso al tick 1.238. La fixture del percorso romano
+reagisce al primo avviso, conserva l'ultima posizione osservata a ogni campione
+e usa controlli ordinari a 1x durante l'intercettazione, poi ripristina 3x.
+Richiede perdite nuove rispetto al riferimento, Attack applicato, avversario
+disegnato e tick inferiore a 2.100; non accetta attrito stagionale come scontro.
+Sono verificati anche attesa del boot, riparazioni di entrambe le fazioni,
+pressione a tutte le difficoltà, attraversamenti e calendario stagionale.
+Nessuna regressione funzionale o richiesta della specifica resta aperta.
+Le sezioni del 29–31 ottobre sotto riportate sono storiche; gli esiti sopra
+e il resoconto finale le sostituiscono per lo stato di completamento.
 
 ### Aggiornamento del 31 ottobre 2026
 
-Questa sezione aggiorna i resoconti storici sottostanti. L'issue #76 resta
-**OPEN** in attesa della revisione indipendente finale sul ramo `feat/map-rework`.
+Resoconto storico, sostituito dallo stato del 1 novembre sopra riportato.
+Al 31 ottobre l'issue #76 restava **OPEN** in attesa della revisione
+indipendente finale sul ramo `feat/map-rework`.
 
 - **Calibrato — Q82, opportunità effettive:** la capacità produttiva locale
   è confrontata su 200 seed a popolazione 10, 22 e 40, in primavera e inverno,
@@ -211,7 +236,7 @@ Riprogettare generazione, terreno e presentazione procedurale in coerenza con gl
 
 ### Ambito e generazione
 
-- Una sola dimensione giocabile da calibrare ora; progettare senza nuovi vincoli inutili per dimensioni maggiori, partite più lunghe o più giocatori futuri. Nessun obbligo di implementare quelle modalità ora. La dimensione non è ancora fissata.
+- Una sola dimensione giocabile calibrata ora: **160×160 caselle**. Progettare senza nuovi vincoli inutili per dimensioni maggiori, partite più lunghe o più giocatori futuri. Nessun obbligo di implementare quelle modalità ora; selezione di altre dimensioni fuori ambito.
 - Conservare generazione da seed, mappa organica non speculare e parità effettiva di opportunità, risorse e pericoli. Garantire almeno un insediamento minore relativamente vicino a ogni Stronghold, ancora neutrale e contendibile. Puntare a più di 4–6 insediamenti senza affollamento; favorire uno o due naturalmente contesi, senza vincolo rigido di posizione centrale. Diversità di localizzazione e contesto probabilistica, non categorie speciali predeterminate.
 - Accesso alle quattro risorse comparabile considerando percorso reale, ostacoli e minacce, non soltanto distanza o quantità. Il valore economico deve riflettere le regole effettive: non introdurre bonus di adiacenza non concordati. Dimensione, intervalli, tempi di marcia, densità e parametri vanno calibrati insieme su partite, seed e difficoltà.
 - Rete unica connessa per tutte le strade funzionali, collegando porte/passaggi reali di Stronghold e insediamenti e raccordando aree produttive e luoghi significativi; nessun obbligo di diramazione per ogni nodo. Evitare doppioni, parallele inutili, sovrapposizioni con opere/mura e raccordi inesatti anche durante crescita. Consentire alternative giustificate dalla geografia, senza imporre ridondanza universale. Distinguere eventuali tracce decorative dalle strade che velocizzano. Preparare percorsi tra insediamenti per commercio futuro senza definire o implementare commercio.
