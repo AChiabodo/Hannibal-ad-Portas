@@ -2,7 +2,8 @@ import { expect, it } from 'vitest';
 import { buildingCode } from '../../src/content/buildings';
 import { attackStructure } from '../../src/sim/command';
 import { EXCHANGE_TICKS } from '../../src/sim/combat';
-import { createEconomy } from '../../src/sim/economy';
+import { createEconomy, type Squad } from '../../src/sim/economy';
+import { BARBARIAN_OWNER } from '../../src/sim/barbarian-guards';
 import type { Faction } from '../../src/sim/faction';
 import { createFogs } from '../../src/sim/fog';
 import { createMatch } from '../../src/sim/match';
@@ -97,9 +98,10 @@ it.each([['rome', 'work'], ['rome', 'wall'], ['carthage', 'work'], ['carthage', 
     site.population = 0;
     if (kind === 'work') site.works.push({ building: buildingCode('farm')!, remaining: 0, ordinal: 0 });
     for (const men of survivors) {
-      const guard = musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24,
+      const raised = musterSquad(economy, map, { faction: 'carthage', squadType: 'gaul', men: 24,
         x: site.x - 15, y: site.y + 4 });
-      guard.owner = 2;
+      const guard: Squad = { ...raised, owner: BARBARIAN_OWNER };
+      economy.squads[economy.squads.indexOf(raised)] = guard;
       guard.strength = men;
       guard.barbarianCamp = 0;
       guard.barbarianRaidTarget = site.id;
