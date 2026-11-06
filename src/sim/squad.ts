@@ -29,14 +29,18 @@
  * how hard the Squad hits and how wide a front it offers (C3).
  *
  * The one thing here that is state rather than derivation is `Block`: where a
- * Squad stands, the shape it holds, the way it faces and the route it is
- * walking, which is C1's half of the Squad B6's economy carries the other half
- * of. Its geometry is still derived — `frontage`, `depth` and `menOf` read the
- * shape and the men, never a stored frontage — so a Squad cannot be moved into
- * a shape its own numbers disagree with.
+ * Squad stands, the shape it holds, the way it faces, the route it is walking
+ * and the posture it holds, which is C1's half of the Squad B6's economy carries
+ * the other half of. Its geometry is still derived — `frontage`, `depth` and
+ * `menOf` read the shape and the men, never a stored frontage — so a Squad
+ * cannot be moved into a shape its own numbers disagree with. C3 added the
+ * fight's three numbers (fatigue, ammunition and the routing flag) and C5 added
+ * `garrison`, because a Squad that is inside a settlement rather than in the
+ * field is a posture of the same entity and no system owns a second Squad.
  */
 import { FORMATIONS, type Formation } from './command.ts';
 import { NO_REFUSAL } from './route.ts';
+import type { Facing } from '../content/formation.ts';
 
 /**
  * The four directions a Squad can face, as state holds them.
@@ -55,7 +59,7 @@ export const FACING = {
 } as const;
 
 /** One of the four directions a Squad can face. */
-export type Facing = keyof typeof FACING;
+export type { Facing } from '../content/formation.ts';
 
 /** The four facings, in code order: what a report, a dump or a drawing walks. */
 export const FACINGS: readonly Facing[] = ['north', 'east', 'south', 'west'];
@@ -100,6 +104,53 @@ export function formationOf(code: number): Formation {
   if (formation === undefined) throw new RangeError(`${String(code)} is not a formation a Squad can hold`);
 
   return formation;
+}
+
+/**
+ * The settlement a Squad is not garrisoning: it is in the field (C5).
+ *
+ * The sentinel of `Block.garrison`, and a number no settlement id can be, for
+ * the same reason `UNOWNED` is one no Faction can be (`economy.ts`).
+ */
+export const FIELD = -1;
+
+/**
+ * How tired a Squad can get: the top of the fatigue scale (C3).
+ *
+ * Fatigue is a number in state rather than a flag because a fight is moved by
+ * *how* tired a Squad is, not by whether it is: a block that has marched twenty
+ * tiles fights worse than one that has marched four, and the scale is what lets
+ * a rule say so without a second table of states.
+ */
+export const FATIGUE_MAX = 20;
+
+/**
+ * What a Squad's nerve is doing, as state holds it (C3).
+ *
+ * A Squad is `held` while it stands and fights, and `routed` once its morale has
+ * gone: a routed Squad runs for safety, fights barely, and forms up again on its
+ * own when the ground behind it is quiet. There is no third word, because there
+ * is no manual rallying and no micro-recovery in this game (ADR-0004).
+ *
+ * A flag of two words rather than a boolean, because every other word in state
+ * is an integer code (ADR-0006) and `serializeState` refuses booleans.
+ */
+export const ROUTING = {
+  held: 0,
+  routed: 1,
+} as const;
+
+/**
+ * Whether a Squad has broken and is running: the one question a rule asks of
+ * `routing`.
+ *
+ * There is deliberately no `routingOf`/`routingCode` pair beside it, the way the
+ * facings have one: a facing is a word a report and a drawing both spell, and
+ * this is a flag only the rules read — so a vocabulary nobody walks would be two
+ * exported names and a test for nothing.
+ */
+export function isRouting(shape: { readonly routing: number }): boolean {
+  return shape.routing === ROUTING.routed;
 }
 
 /**
@@ -148,9 +199,12 @@ export interface Shape {
  * its shape stands in.
  *
  * A line with five men has a frontage of five; with forty, twelve, because the
- * other twenty-eight are in the ranks behind. This is the number a fight is
- * decided by (C3) and the number a drawing code needs to know how wide the
- * block is.
+ * other twenty-eight are in the ranks behind. It is how wide the block is drawn
+ * and how wide it stands, and it is the number a drawing code needs; the number a
+ * fight is decided by is the **force** the men bring (`content/squads.ts`,
+ * `sim/combat.ts`), which is not read off the files — a full line saturates at
+ * twelve, and a blow read off the file count would let a Player buy five times the
+ * damage by splitting one body into five Squads (ADR-0028).
  *
  * @throws RangeError when the block has no men in it, or holds a formation no
  *   Squad can hold.
@@ -250,6 +304,22 @@ function requireStrength(shape: Shape): number {
  * like, how wide it stands, where its men stand in it — is derived from these.
  */
 export interface Block extends Shape {
+  /** Shared FIFO for Gate/Breach/Bridge passage; bridge access uses settlement -1 and a stable tile-based passage. */
+  access?: { settlement: number; passage: number; ticket: number; active: number; reason: number;
+    yielding: number; goalX: number; goalY: number };
+  /** Aggregate admission/departure; no individual soldier state. */
+  garrisonJourney?: {
+    settlement: number;
+    phase: number;
+    remaining: number;
+    ticket: number;
+    goalX: number;
+    goalY: number;
+    fromOutside: number;
+    reason?: number;
+  };
+  /** Requested shape retained while a real marching column clears an access. */
+  marchFormation?: number;
   /**
    * The shape it holds, as a `FORMATION` code: the one part of `Shape` a rule
    * writes, when a Formation Command arrives.
@@ -261,6 +331,25 @@ export interface Block extends Shape {
    * type; C3 is the ticket that takes men off it.
    */
   strength: number;
+
+  /**
+   * How tired it is, from 0 to `FATIGUE_MAX`: a march and a fight both add to
+   * it, standing still out of contact takes it away, and a tired Squad strikes
+   * weakly (C3).
+   */
+  fatigue: number;
+
+  /**
+   * How many volleys of missiles it still carries, if any: spent in the first
+   * rounds of a contact and restocked only in its own country (C3).
+   */
+  ammunition: number;
+
+  /**
+   * Its nerve, as a `ROUTING` code: `held` while it fights, `routed` once it has
+   * broken. A routed Squad runs for safety and forms up again by itself (C3).
+   */
+  routing: number;
 
   /** The tile it stands on: one tile, because the Squad is the atomic unit (ADR-0004). */
   x: number;
@@ -280,8 +369,36 @@ export interface Block extends Shape {
   /** Ticks still to wait before it enters the next tile: 0 when it is standing still. */
   wait: number;
 
+  /** An occupied footprint prevented the next step. */
+  waitingForPassage?: 1;
+
+  /** Why an accepted march could no longer reach its destination, as a route code. */
+  marchInterrupted?: number;
+
+  /** Whether the active march was requested as an attack-move. */
+  attackMarch?: 1;
+
   /** Why the last move Command it was given could not be carried out, or `NO_REFUSAL` (`route.ts`). */
   refused: number;
+
+  /**
+   * The settlement it is garrisoning, or `FIELD` when it is in the field (C5).
+   *
+   * A garrison is a posture and not a place: a garrisoned Squad stands at its
+   * settlement's centre but is *inside* it, so the fight's contact rules skip it
+   * (`combat.ts`) — the walls, not the men, are what an enemy at the gate is
+   * facing — while the settlement's own eyes, supply and Payroll still cover it.
+   * Any order that puts it on the road takes it out of the garrison again
+   * (`movement.ts`), which is the whole of how a garrison sallies.
+   */
+  garrison: number;
+}
+
+/** An accepted march ended because its destination can no longer be reached. */
+export function interruptMarch(squad: Block, reason: number): void {
+  squad.marchInterrupted = reason;
+  delete squad.access;
+  delete squad.attackMarch;
 }
 
 /**
@@ -293,16 +410,25 @@ export interface Block extends Shape {
  * as any other answer to "which way is a new Squad facing" — the first step it
  * takes turns it anyway — and `strength` is what a full-strength Squad of its
  * type is counted as (`content/`), until C3 takes men off it.
+ *
+ * A Squad begins fresh, unwounded and in good order: no fatigue, however far it
+ * walked to be raised here; whatever missiles its type carries; and its nerve
+ * held. C3 is the ticket that moves all three, and the state they begin in is
+ * this function's to say for the same reason the rest of it is.
  */
-export function standingAt(x: number, y: number, strength: number): Block {
+export function standingAt(x: number, y: number, strength: number, ammunition = 0): Block {
   return {
     x,
     y,
     strength,
+    fatigue: 0,
+    ammunition,
+    routing: ROUTING.held,
     formation: FORMATION.line,
     facing: FACING.south,
     steps: [],
     wait: 0,
     refused: NO_REFUSAL,
+    garrison: FIELD,
   };
 }

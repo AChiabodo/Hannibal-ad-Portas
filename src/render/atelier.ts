@@ -14,6 +14,7 @@
  */
 
 import { Container } from 'pixi.js';
+import { formationStudy, STUDY_SIZE } from './formation-study.ts';
 import { PLATE_BACKGROUND, PLATE_INK, cataloguePlate } from '../art/catalogue.ts';
 import type { Rgba } from '../art/pixel-buffer.ts';
 import { textPlate } from '../art/font.ts';
@@ -42,8 +43,12 @@ export interface AtelierView extends AtelierHooks {
  * the generated font, one frame drawn.
  */
 export async function createAtelier(mount: HTMLElement): Promise<AtelierView> {
-  const plate = cataloguePlate();
-  const layout = atelierLayout(plate, ATELIER_ZOOMS);
+  const query = new URLSearchParams(location.search);
+  const study = query.get('study') === '67';
+  const treatment = query.get('treatment');
+  const plate = study ? formationStudy(query.get('faction') === 'carthage' ? 'carthage' : 'rome',
+    treatment === 'compact' || treatment === 'fine' ? treatment : 'native', query.get('scene') === 'proportions') : cataloguePlate();
+  const layout = atelierLayout(study ? STUDY_SIZE : plate, study ? [Number(query.get('zoom') ?? 2)] : ATELIER_ZOOMS);
 
   const stage = await createStage(mount, {
     width: layout.width,
@@ -58,7 +63,9 @@ export async function createAtelier(mount: HTMLElement): Promise<AtelierView> {
     column.position.set(section.x, section.y);
     const world = new Container();
     column.addChild(world);
-    world.addChild(stage.spriteOf(plate));
+    const image = stage.spriteOf(plate);
+    if (study) image.scale.set(0.5);
+    world.addChild(image);
     applyCamera(world, createCamera({ zoom: section.zoom }));
     stage.root.addChild(column);
 

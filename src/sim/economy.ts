@@ -57,28 +57,32 @@
  *
  * Only a settlement a Faction owns runs an economy: an unowned minor settlement
  * holds people and a stock but produces nothing until it is taken, and taking
- * one is C6's. Combat, walls and the fall of a Stronghold (C5) and Attrition
- * outside friendly Territory (C6) are deliberately absent.
+ * one is C5's. The walls and the fall of a Stronghold are C5's too, and live in
+ * `siege.ts`; the one thing this module gives it is `Supplied`, the predicate a
+ * Season's production already needed — a blockaded settlement works nothing and
+ * eats what its granary holds. Attrition outside friendly Territory is C6's.
  */
 import {
   amountOf,
   buildingCode,
   buildingOf,
-  pay,
+  isLegalSize,
+  payrollBill,
   squadTypeCode,
   squadTypeOf,
   stockAt,
   stockOf,
-  times,
   type BuildingType,
   type ResourceAmounts,
 } from '../content/index.ts';
 import type { Faction, FactionCode } from './faction.ts';
 import { factionCode } from './faction.ts';
-import { RESOURCE, RESOURCE_KINDS, MAP_HEIGHT, MAP_WIDTH, TERRAIN, terrainAt, type MapGrid, type Site } from './map.ts';
+import { LAND_RADIUS, RESOURCE, RESOURCE_KINDS, MAP_HEIGHT, MAP_WIDTH, TERRAIN, terrainAt, type MapGrid, type Site } from './map.ts';
 import type { BuildCommand, Command, RecruitCommand } from './command.ts';
 import type { Season } from './season.ts';
-import { standingAt, type Block } from './squad.ts';
+import type { Block } from './squad.ts';
+import { advancePendingOrders, enqueueOrder } from './pending-orders.ts';
+import { bindEconomySpace } from './settlement-space.ts';
 
 /**
  * The owner a settlement nobody holds has.
@@ -114,7 +118,7 @@ export const LAND_YIELD = 1;
 export const HARVEST_YIELD = 3;
 
 /** How far from a settlement its land reaches, in tiles: the ground within this is what it works. */
-export const LAND_RADIUS = 14;
+export { LAND_RADIUS } from './map.ts';
 
 /**
  * How much of each resource every settlement works without anyone having to find
@@ -154,6 +158,20 @@ export const MORALE_LOSS_PER_UNPAID_SEASON = 2;
 export const MORALE_RECOVERY = 1;
 
 /**
+ * Whether a settlement is drawing supply: a blockaded one produces nothing (C5).
+ *
+ * The economy knows that production follows supply; *who* is cut off is the
+ * Siege's answer, handed in as this predicate rather than imported, because
+ * `siege.ts` reads the economy and the economy must not read it back. A Match
+ * with no Siege in it passes nothing and every settlement is supplied, which is
+ * why the other Matches are byte-identical without it.
+ */
+export type Supplied = (settlement: Settlement) => boolean;
+
+/** The predicate of a world where nothing is besieged: every settlement is fed. */
+export const ALWAYS_SUPPLIED: Supplied = () => true;
+
+/**
  * A work, standing or being built: one building in one settlement.
  *
  * `remaining` is the timer. A work with ticks left is being built: it is staffed
@@ -163,6 +181,18 @@ export const MORALE_RECOVERY = 1;
  * working (ADR-0005).
  */
 export interface Work {
+  /** Damageable completed works default to full health when no damage has occurred. */
+  hp?: number;
+  /** Remaining work-repair time; unfinished construction cannot be repaired. */
+  repairTicks?: number;
+  repairOwner?: number;
+  repairOrder?: number;
+  repairRequest?: number;
+  /** Ordering of a construction that started alongside a fortification repair. */
+  readonly queueOrder?: number;
+  /** Permanent copy number and original builder, preserved on conquest. */
+  readonly ordinal?: number;
+  origin?: number;
   /** Which building it is, as a content code — state holds numbers, not ids. */
   readonly building: number;
 
@@ -187,14 +217,31 @@ export interface Work {
  * being one interface.
  */
 export interface Squad extends Block {
+  /** Origin of a neutral barbarian guard, absent on player Squads. */
+  barbarianCamp?: number;
+  /** Set when a surviving camp defender has become a wandering orphan. */
+  barbarianRetired?: number;
+  /** Temporary nearby target and deadline for a neutral raid. */
+  barbarianRaidTarget?: number;
+  barbarianRaidUntil?: number;
   /** What a Command names it by, and what an Observation reports: an id is never reused. */
   readonly id: number;
 
-  /** The Faction that owns it, as state holds a Faction. */
-  readonly owner: FactionCode;
+  /** A player Faction or the distinct neutral barbarian owner. */
+  readonly owner: FactionCode | 2;
 
   /** Its type, as a content code. */
   readonly type: number;
+
+  /**
+   * The men it was raised with: its recruited capacity, fixed for its life.
+   *
+   * Kept apart from `strength`, which is the men still standing, so a Squad that
+   * has lost half its men still knows what it was bought as — what a panel reads
+   * its survivors against, and what a replay hashes. Payroll does **not** use
+   * it: the bill follows the survivors (ADR-0026, ADR-0027).
+   */
+  readonly capacity: number;
 
   /** The settlement that raised it: where Payroll and desertion say it belongs. */
   readonly home: number;
@@ -208,6 +255,8 @@ export interface Squad extends Block {
 
 /** How a settlement's people are divided, at one moment, between its works and its land. */
 export interface Allocation {
+  /** Started fortification repairs that received their full labour allocation. */
+  readonly repairs?: readonly number[];
   /** Workers staffed on each work, in the settlement's own work order: 0 when it is not staffed. */
   readonly works: readonly number[];
 
@@ -217,6 +266,10 @@ export interface Allocation {
 
 /** One settlement: what the economy owns on one tile of the map. */
 export interface Settlement {
+  /** Ordered active fortification repairs competing with construction. */
+  repairOrders?: readonly number[];
+  /** Construction tradition persists through conquest, independently of holder. */
+  origin?: number;
   /** Its id: the index it takes in the economy's list, which is what a Command names. */
   readonly id: number;
 
@@ -244,6 +297,9 @@ export interface Settlement {
 
 /** Everything the economy is: the settlements, the two treasuries, and the Squads. */
 export interface Economy {
+  nextAccessTicket?: number;
+  pending?: PendingOrder[];
+  nextPendingId?: number;
   /** Every settlement on the map, owned or not, by id. */
   readonly settlements: Settlement[];
 
@@ -263,7 +319,7 @@ export interface Economy {
  * Pure in the map, which is pure in the seed, so two Matches on one seed open
  * the same settlements with the same people and the same empty stocks (ADR-0006).
  * The two Strongholds are Rome's and Carthage's, in the order `MapGrid` keeps
- * them; every minor settlement belongs to nobody until C6 says who took it.
+ * them; every minor settlement belongs to nobody until a Faction takes it (C5).
  */
 export function createEconomy(map: MapGrid): Economy {
   const settlements: Settlement[] = [];
@@ -276,17 +332,35 @@ export function createEconomy(map: MapGrid): Economy {
     settlements.push(openSettlement(settlements.length, site, UNOWNED));
   }
 
-  return {
+  return bindEconomySpace(map, {
     settlements,
     treasuries: [STARTING_DENARII, STARTING_DENARII],
     squads: [],
     nextSquadId: 1,
-  };
+    pending: [],
+    nextPendingId: 1,
+  });
+}
+
+/** Unpaid, integer-only requests. A pending request is not yet a Work or Squad. */
+export interface PendingOrder {
+  readonly id: number;
+  readonly owner: number;
+  readonly settlement: number;
+  /** 0: construction; 1: recruitment. */
+  readonly kind: number;
+  readonly content: number;
+  readonly ordinal: number;
+  readonly men: number;
+  count: number;
+  /** 1: occupied ground; 2: insufficient stock. */
+  reason: number;
 }
 
 /** A settlement at the opening of a Match: its people, and the four empty stocks. */
 function openSettlement(id: number, site: Site, owner: number): Settlement {
   return {
+    origin: owner === 1 ? 1 : 0,
     id,
     x: site.x,
     y: site.y,
@@ -407,9 +481,10 @@ function measureLand(map: MapGrid, settlement: Settlement): readonly number[] {
 /**
  * How a settlement's people are divided between its works and its land.
  *
- * The works first, in the order the settlement raised them: each takes its
- * `labour` out of the pool if the pool can cover it, and one it cannot cover
- * gets nobody and waits. What is left over works the land, one worker at a time
+ * Ordinarily works are staffed in the order raised. When fortification repairs
+ * are active, completed works take precedence and construction and repairs
+ * compete in their start order. Each takes its full labour or waits. What is
+ * left over works the land, one worker at a time
  * around the four kinds, so the leftovers are spread as evenly as the land
  * allows and never put where there is no land for them.
  *
@@ -420,15 +495,28 @@ function measureLand(map: MapGrid, settlement: Settlement): readonly number[] {
  */
 export function allocate(settlement: Settlement, capacity: readonly number[]): Allocation {
   let available = settlement.population;
-
-  const works = settlement.works.map((work) => {
+  const works = settlement.works.map(() => 0);
+  const repairs: number[] = [];
+  const staff = (work: Work, index: number): void => {
+    if (work.remaining === 0 && (work.hp === 0 || work.repairTicks !== undefined)) return;
     const building = buildingOf(work.building);
-    if (building === undefined) return 0;
-    if (available < building.labour) return 0;
-
+    if (building === undefined || available < building.labour) return;
     available -= building.labour;
-    return building.labour;
-  });
+    works[index] = building.labour;
+  };
+  if (settlement.repairOrders === undefined) {
+    settlement.works.forEach(staff);
+  } else {
+    settlement.works.forEach((work, index) => { if (work.remaining === 0) staff(work, index); });
+    const jobs = [
+      ...settlement.works.flatMap((work, index) => work.remaining > 0 ? [{ order: work.queueOrder ?? 0, index }] : []),
+      ...settlement.repairOrders.map((order) => ({ order, index: -1 })),
+    ].sort((a, b) => a.order - b.order || a.index - b.index);
+    for (const job of jobs) {
+      if (job.index >= 0) { const work = settlement.works[job.index]; if (work !== undefined) staff(work, job.index); }
+      else if (available >= 2) { available -= 2; repairs.push(job.order); }
+    }
+  }
 
   const land = RESOURCE_KINDS.map(() => 0);
   let remaining = available;
@@ -448,7 +536,7 @@ export function allocate(settlement: Settlement, capacity: readonly number[]): A
     if (!placed) break;
   }
 
-  return { works, land };
+  return { works, land, ...(settlement.repairOrders === undefined ? {} : { repairs }) };
 }
 
 /**
@@ -468,6 +556,7 @@ export function seasonYield(
 
   settlement.works.forEach((work, index) => {
     if (work.remaining > 0) return;
+    if (work.hp === 0 || work.repairTicks !== undefined) return;
     if (!isStaffed(work, allocation, index)) return;
 
     const building = buildingOf(work.building);
@@ -510,14 +599,27 @@ export function harvestYield(allocation: Allocation): number {
  * `onAutumn` hook (`harvest`), so a Season's ordinary work and the harvest are
  * two things a reader can see apart.
  */
-export function produceSeason(map: MapGrid, economy: Economy, season: Season): void {
+export function produceSeason(
+  map: MapGrid,
+  economy: Economy,
+  season: Season,
+  supplied: Supplied = ALWAYS_SUPPLIED,
+): void {
   for (const settlement of economy.settlements) {
     if (!isHeld(settlement)) continue;
 
+    const fed = supplied(settlement);
     const allocation = allocate(settlement, landCapacity(map, settlement));
-    addStock(settlement, seasonYield(settlement, allocation, season));
-    feedAndGrow(settlement);
-    earn(settlement, allocation, economy);
+
+    // A cut-off settlement is not a settlement that skipped a Season: it works
+    // nothing, sells nothing, and eats what its granary holds until it is empty.
+    // The order is the year's own — produce, eat, tax the people still there —
+    // and it is the same order whether the fields were cut or not.
+    if (fed) addStock(settlement, seasonYield(settlement, allocation, season));
+
+    feedAndGrow(settlement, fed);
+
+    if (fed) earn(settlement, allocation, economy);
   }
 }
 
@@ -529,9 +631,14 @@ export function produceSeason(map: MapGrid, economy: Economy, season: Season): v
  * the harvest is a distinct number a test can read rather than a multiplier
  * buried in `seasonYield`.
  */
-export function harvest(map: MapGrid, economy: Economy): void {
+export function harvest(
+  map: MapGrid,
+  economy: Economy,
+  supplied: Supplied = ALWAYS_SUPPLIED,
+): void {
   for (const settlement of economy.settlements) {
     if (!isHeld(settlement)) continue;
+    if (!supplied(settlement)) continue;
 
     const allocation = allocate(settlement, landCapacity(map, settlement));
     addStock(settlement, [harvestYield(allocation), 0, 0, 0]);
@@ -548,6 +655,7 @@ export function harvest(map: MapGrid, economy: Economy): void {
  * then — the building is the tier, and there is no separate upgrade.
  */
 export function advanceConstruction(map: MapGrid, economy: Economy): void {
+  advancePendingOrders(economy);
   for (const settlement of economy.settlements) {
     if (settlement.works.every((work) => work.remaining === 0)) continue;
 
@@ -572,10 +680,12 @@ export function advanceConstruction(map: MapGrid, economy: Economy): void {
  *
  * Squads are paid in the order they were raised, out of one treasury, until it
  * runs out: a Faction that cannot cover its army pays the oldest first, and the
- * rest go unpaid. An unpaid Squad loses morale and counts the Seasons it has
- * been owed; a paid one recovers a point of it, up to the most its type comes
- * with. A Squad whose morale reaches none **deserts** — it leaves the list, and
- * the id it held is not reused.
+ * rest go unpaid. A bill is `payrollBill(type, squad.strength)`: the type's rate
+ * per 24 *surviving* men, rounded up, not the men the Squad was recruited with
+ * (ADR-0027). An unpaid Squad loses morale and counts the Seasons it has been
+ * owed; a paid one recovers a point of it, up to the most its type comes with. A
+ * Squad whose morale reaches none **deserts** — it leaves the list, and the id it
+ * held is not reused.
  *
  * Deterministic on purpose: a treasury and a list in id order decide everything,
  * so the same Season pays the same Squads on every engine.
@@ -592,7 +702,7 @@ export function chargePayroll(economy: Economy): void {
       }
 
       const type = squadTypeOf(squad.type);
-      const owed = type?.payroll ?? 0;
+      const owed = type === undefined ? 0 : payrollBill(type, squad.strength);
 
       if (available >= owed) {
         available -= owed;
@@ -630,6 +740,12 @@ export function applyEconomyCommand(economy: Economy, command: Command): boolean
       return applyBuild(economy, command);
     case 'recruit':
       return applyRecruit(economy, command);
+    case 'cancelPending': {
+      if (heldSettlement(economy, command.settlement, command.faction) === undefined) return false;
+      const previous = economy.pending ?? [];
+      economy.pending = previous.filter((order) => order.id !== command.order || order.settlement !== command.settlement || order.owner !== factionCode(command.faction));
+      return economy.pending.length !== previous.length;
+    }
     default:
       return false;
   }
@@ -648,14 +764,15 @@ function applyBuild(economy: Economy, command: BuildCommand): boolean {
   if (building.faction !== undefined && building.faction !== command.faction) return false;
   if (building.tier > settlement.tier) return false;
 
-  const standing = settlement.works.filter((work) => work.building === code).length;
-  if (standing >= building.maxPerSettlement) return false;
-
-  const payment = pay(settlement.stocks, building.cost);
-  if (!payment.affordable) return false;
-
-  settled(settlement, payment.remaining);
-  settlement.works.push({ building: code, remaining: building.buildTicks });
+  const used = new Set([
+    ...settlement.works.filter((work) => work.building === code).map((work, ordinal) => work.ordinal ?? ordinal),
+    ...(economy.pending ?? []).filter((order) => order.settlement === settlement.id && order.kind === 0 && order.content === code).map((order) => order.ordinal),
+  ]);
+  let ordinal = 0;
+  while (used.has(ordinal)) ordinal += 1;
+  if (ordinal >= building.maxPerSettlement) return false;
+  enqueueOrder(economy, { owner: factionCode(command.faction), settlement: settlement.id,
+    kind: 0, content: code, ordinal, men: 0, count: 1 });
 
   return true;
 }
@@ -671,27 +788,10 @@ function applyRecruit(economy: Economy, command: RecruitCommand): boolean {
   const type = squadTypeOf(code);
   if (type === undefined || type.faction !== command.faction) return false;
   if (type.tier > settlement.tier) return false;
+  if (!isLegalSize(type, command.men)) return false;
 
-  const payment = pay(settlement.stocks, times(type.cost, command.count));
-  if (!payment.affordable) return false;
-
-  settled(settlement, payment.remaining);
-
-  for (let raised = 0; raised < command.count; raised += 1) {
-    economy.squads.push({
-      // A Squad leaves the settlement it was raised in, standing where it is
-      // with the men its type is counted as: from there it is C1's block, and
-      // the first order it is given moves it off the square.
-      ...standingAt(settlement.x, settlement.y, type.strength),
-      id: economy.nextSquadId,
-      owner: factionCode(command.faction),
-      type: code,
-      home: settlement.id,
-      morale: type.morale,
-      unpaid: 0,
-    });
-    economy.nextSquadId += 1;
-  }
+  enqueueOrder(economy, { owner: factionCode(command.faction), settlement: settlement.id,
+    kind: 1, content: code, ordinal: 0, men: command.men, count: command.count });
 
   return true;
 }
@@ -731,8 +831,14 @@ function isStaffed(work: Work, allocation: Allocation, index: number): boolean {
   return building !== undefined && (allocation.works[index] ?? -1) === building.labour;
 }
 
-/** The people eat, and grow when there is enough left over; a settlement that cannot feed them starves. */
-function feedAndGrow(settlement: Settlement): void {
+/**
+ * The people eat, and grow when there is enough left over and the fields are
+ * theirs; a settlement that cannot feed them starves.
+ *
+ * `mayGrow` is false for a settlement whose supply is cut: a blockaded town does
+ * not raise more mouths on a granary it is emptying.
+ */
+function feedAndGrow(settlement: Settlement, mayGrow: boolean): void {
   const needed = Math.max(1, Math.floor(settlement.population / GRAIN_PER_HEAD));
   const held = stockAt(settlement.stocks, RESOURCE.grain);
 
@@ -745,7 +851,7 @@ function feedAndGrow(settlement: Settlement): void {
   settlement.stocks[RESOURCE.grain] = held - needed;
 
   const surplus = held - needed;
-  if (settlement.population < housingCapacity(settlement) && surplus >= needed) {
+  if (mayGrow && settlement.population < housingCapacity(settlement) && surplus >= needed) {
     settlement.population += POPULATION_GROWTH;
   }
 }
@@ -759,6 +865,7 @@ function earn(settlement: Settlement, allocation: Allocation, economy: Economy):
 
   settlement.works.forEach((work, index) => {
     if (work.remaining > 0) return;
+    if (work.hp === 0 || work.repairTicks !== undefined) return;
     if (!isStaffed(work, allocation, index)) return;
 
     earned += buildingOf(work.building)?.denarii ?? 0;
@@ -768,8 +875,3 @@ function earn(settlement: Settlement, allocation: Allocation, economy: Economy):
 }
 
 /** Writes a paid cost back into a settlement's stock. */
-function settled(settlement: Settlement, remaining: readonly number[]): void {
-  for (const kind of RESOURCE_KINDS) {
-    settlement.stocks[kind] = remaining[kind] ?? stockAt(settlement.stocks, kind);
-  }
-}

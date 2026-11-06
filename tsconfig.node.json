@@ -27,6 +27,7 @@
   },
   "include": [
     "src/cli/**/*.ts",
+    "examples/**/*.ts",
     "scripts/**/*.mjs",
     "tests/**/*.ts",
     "vite.config.ts",

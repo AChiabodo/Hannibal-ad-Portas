@@ -14,17 +14,25 @@
  * is avoided by rectangle, as everywhere else, because the panels are drawn over
  * the theatre.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import type { Page } from '@playwright/test';
 import { pixelAt } from '../src/art/pixel-buffer';
-import { blockPlacement, squadBlock, squadFrameKey } from '../src/render/squads';
+import { blockPlacement, squadBlock, squadFrameKey, visualShape } from '../src/render/squads';
 import { tilePixel } from '../src/render/terrain';
-import { describeView, hudRects, samples, squads } from './hooks';
+import { bootGame, describeView, hudRects, samples, squads } from './hooks';
 
 /** Boots the page with the clock stopped, so one tick is one picture. */
 async function boot(page: Page): Promise<void> {
-  await page.goto('/');
-  await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
-  await page.evaluate(() => window.__SPQR.game?.pause());
+  await bootGame(page, { paused: true });
+  await page.evaluate(() => {
+    const game = window.__SPQR.game!;
+    const home = game.state().visible.settlements[0]!;
+    const army = game.squads();
+    const field = army.find((squad) => squad.x > home.x) ?? army[0]!;
+    game.select({ kind: 'squad', id: field.id });
+    game.centerSelection();
+    game.select(null);
+  });
 }
 
 /** The page's own tick, which is what a frame is chosen from. */
@@ -39,7 +47,7 @@ test('draws a Squad as the soldiers the generator composes, where the Match says
   const now = await tick(page);
 
   const block = (await squads(page)).find((squad) => {
-    const shape = { men: squad.men, formation: squad.formation, facing: squad.facing };
+    const shape = visualShape(squad);
     const at = blockPlacement(tilePixel(squad.x, squad.y), shape);
     const onScreen = {
       x: (at.x - view.camera.x) * view.camera.zoom,
@@ -66,7 +74,7 @@ test('draws a Squad as the soldiers the generator composes, where the Match says
   expect(block, 'a Squad is drawn on screen and clear of the interface').toBeDefined();
   if (block === undefined) return;
 
-  const shape = { men: block.men, formation: block.formation, facing: block.facing };
+  const shape = visualShape(block);
   const drawn = squadBlock(block, { faction: 'rome', tick: now });
   const at = blockPlacement(tilePixel(block.x, block.y), shape);
 
@@ -109,5 +117,5 @@ test('draws a Squad as the soldiers the generator composes, where the Match says
 
   // The key the layer rebuilds on names the shape that was drawn, so a Squad
   // that lost a man, turned or changed formation would have been re-composed.
-  expect(squadFrameKey(block, { faction: 'rome', tick: now })).toContain(`${String(block.men)}`);
+  expect(squadFrameKey(block, { faction: 'rome', tick: now })).toContain(`${String(block.figures)}`);
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_DIFFICULTY,
   DEFAULT_SEED,
   DEFAULT_TICKS,
   parseArguments,
@@ -16,7 +17,9 @@ function run(
     seed: number;
     ticks: number;
     expectedHash: string | null;
+    record: string | null;
     rules: RulesName;
+    difficulty: typeof DEFAULT_DIFFICULTY;
   }> = {},
 ) {
   return {
@@ -25,7 +28,9 @@ function run(
       seed: DEFAULT_SEED,
       ticks: DEFAULT_TICKS,
       expectedHash: null,
+      record: null,
       rules: DEFAULT_RULES,
+      difficulty: DEFAULT_DIFFICULTY,
       ...overrides,
     },
   };
@@ -110,6 +115,33 @@ describe('the command line', () => {
     expect(() => parseArguments(['--map', '--rules', 'draws'])).toThrow(/--rules/);
   });
 
+  it('takes the level the AI plays at, which is the one thing a tournament Match needs named', () => {
+    expect(parseArguments(['--rules', 'ai', '--difficulty', 'imperator']))
+      .toEqual(run({ rules: 'ai', difficulty: 'imperator' }));
+
+    expect(() => parseArguments(['--difficulty', 'proconsul'])).toThrow(/--difficulty must name a level/);
+  });
+
+  it('refuses a level for a Match with no AI in it', () => {
+    expect(() => parseArguments(['--difficulty', 'tiro'])).toThrow(/--rules economy has no AI in it/);
+    expect(() => parseArguments(['--rules', 'march', '--difficulty', 'tiro'])).toThrow(/has no AI in it/);
+  });
+
+  it('takes where to write the record a replay is made of', () => {
+    expect(parseArguments(['--seed', '3', '--ticks', '40', '--record', 'artifacts/seed-3.json'])).toEqual(
+      run({ seed: 3, ticks: 40, record: 'artifacts/seed-3.json' }),
+    );
+  });
+
+  it('refuses a record path that names no file', () => {
+    expect(() => parseArguments(['--record', ''])).toThrow(UsageError);
+    expect(() => parseArguments(['--record', ''])).toThrow(/--record must name a file/);
+  });
+
+  it('refuses --record beside --map, which plays no Match to record', () => {
+    expect(() => parseArguments(['--map', '--record', 'seed-7.json'])).toThrow(/--record/);
+  });
+
   it('refuses --map twice like any other flag', () => {
     expect(() => parseArguments(['--map', '--map'])).toThrow(/--map is given twice/);
   });
@@ -119,6 +151,7 @@ describe('the command line', () => {
     expect(() => parseArguments(['--ticks'])).toThrow(/--ticks needs a value/);
     expect(() => parseArguments(['--expect-hash'])).toThrow(/--expect-hash needs a value/);
     expect(() => parseArguments(['--rules'])).toThrow(/--rules needs a value/);
+    expect(() => parseArguments(['--record'])).toThrow(/--record needs a value/);
   });
 
   it('refuses a flag given twice, rather than guessing which one was meant', () => {
@@ -154,7 +187,8 @@ describe('the command line', () => {
   });
 
   it('describes itself in one place, so the usage message cannot drift from the parser', () => {
-    for (const flag of ['--seed', '--ticks', '--expect-hash', '--rules', '--map', '--help']) {
+    for (const flag of ['--seed', '--ticks', '--expect-hash', '--rules', '--difficulty', '--record',
+      '--map', '--help']) {
       expect(USAGE).toContain(flag);
     }
     expect(USAGE).toContain(DEFAULT_TICKS.toString());

@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import { attackMove, formation, group, hold, move, withdraw } from '../../src/sim/command';
 import type { EconomyVisible, VisibleSquad } from '../../src/sim/economy-match';
-import { MAP_HEIGHT, MAP_WIDTH } from '../../src/sim/map';
+import { MAP_HEIGHT, MAP_WIDTH, TILE_COUNT } from '../../src/sim/map';
 import type { Observation } from '../../src/sim/observation';
 import { createHuman, type HumanController } from '../../src/input/human';
 import { NOTHING_SELECTED } from '../../src/input/selection';
@@ -25,14 +25,24 @@ function squadOf(id: number): VisibleSquad {
     x: 10,
     y: 10,
     men: 120,
+    capacity: 120,
+    figures: 120,
     formation: 'line',
     facing: 'south',
     goal: null,
     refused: null,
     morale: 10,
+    fatigue: 0,
+    ammunition: 4,
+    routing: false,
+    engaged: false,
     payroll: 3,
     unpaid: 0,
+    bearing: 0,
+    garrison: null,
     home: 0,
+    inTerritory: true,
+    inCamp: false,
   };
 }
 
@@ -44,6 +54,7 @@ function observationWith(squads: readonly number[], settlements: readonly number
     visible: {
       season: 'spring',
       year: 1,
+      territory: new Uint8Array(TILE_COUNT),
       treasury: 20,
       settlements: settlements.map((id) => ({
         id,
@@ -126,6 +137,22 @@ describe('a human Controller', () => {
     expect(human.order({ kind: 'move', x: 4, y: MAP_HEIGHT })).toBe(false);
     expect(human.order({ kind: 'move', x: 1.5, y: 4 })).toBe(false);
     expect(human.pending).toBe(0);
+  });
+
+  it('keeps the settlement whose panel a click opened, whatever the Faction holds', () => {
+    // A place on the map has a panel a Player can open by clicking its structure
+    // (U6): the enemy's Stronghold in sight, a village it remembers, a village
+    // nobody holds. None of those is one of the Faction's own settlements, and the
+    // Controller must not close the panel on the next tick for that.
+    const human = createHuman('rome');
+    human.select({ squads: [], settlement: 4 });
+
+    human.decide(observationWith([1], [0]));
+    expect(human.selection).toEqual({ squads: [], settlement: 4 });
+
+    human.select({ squads: [1], settlement: 4 });
+    human.decide(observationWith([1], [0]));
+    expect(human.selection).toEqual({ squads: [1], settlement: 4 });
   });
 
   it('drops a Squad that has left the field from what it has picked', () => {

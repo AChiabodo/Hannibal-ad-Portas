@@ -24,23 +24,37 @@ in [docs/COMMANDS.md](docs/COMMANDS.md), and the decisions behind the plan in
 | Command             | What it does                                                          |
 | ------------------- | --------------------------------------------------------------------- |
 | `npm run dev`       | Development server on `http://127.0.0.1:5173/`, with the Atelier on `/atelier.html` |
-| `npm run build`     | Type-checks, then builds the static site into `dist/`                  |
+| `npm run build`     | Checks the architectural fences and types, then builds into `dist/`   |
 | `npm run preview`   | Serves the built site on `http://127.0.0.1:5174/`                      |
 | `npm run check`     | TypeScript in strict mode, all three projects, no emit                 |
 | `npm run lint`      | ESLint over the repository                                             |
-| `npm run guard`     | The six fences: `pixi.js` under `render/`, no `Math.random`, transcendentals or ambient clock in the simulation, no committed asset |
+| `npm run guard`     | The seven fences: rendering boundaries, deterministic simulation, no committed asset, AI Observation imports |
 | `npm run match`     | One whole Match headless as a JSON report, or — with `--map` — the map a seed generates, with no build step |
+| `npm run agent`     | One whole Match with an outside process playing one Faction over the protocol in [docs/PROTOCOL.md](docs/PROTOCOL.md) |
+| `npm run replay`    | Re-runs a Match recorded with `--record` and reports whether it still happens, and where it first diverges |
+| `npm run tournament`| The balance instrument: a batch of AI-vs-AI Matches on distinct seeds, and one JSON report of what they add up to |
 | `npm run bake`      | Writes the whole generated catalogue into `artifacts/` as PNGs, with the pixel hash of each, for inspection |
 | `npm test`          | Unit tests (Vitest, Node)                                              |
+| `npm run test:unit` | Every non-browser test, through the profile entry point                |
+| `npm run test:focus`| The non-browser tests related to the working tree's changes            |
+| `npm run test:smoke`| The small real-browser smoke: boot, one ordinary Command, frame and console health |
+| `npm run test:feature -- <name>` | One browser responsibility: `orders`, `fog`, `hud`, `host`, …  |
+| `npm run test:accept`| Complete browser acceptance, with visual captures off                 |
+| `npm run test:visual`| Explicit visual-frame production into `SPQR_VISUAL_DIR`               |
+| `npm run test:profiles` | List the browser responsibilities and their owner specs            |
 | `npm run test:e2e`  | Browser tests (Playwright, headless Chromium, software WebGL)           |
 | `npm run verify`    | Lint, check, guard, unit tests and build in one go                      |
 
-The first `npm run test:e2e` installs Chromium if it is missing; CI installs it
-with `--with-deps` in its own step.
+The profiles and their selection rules are in [docs/VERIFICATION.md](docs/VERIFICATION.md).
+The first browser run installs Chromium if it is missing; CI installs it with
+`--with-deps` in its own step. In CI, a pull request into `main` and a push to
+`main` take the smoke and complete acceptance; a pull request into `develop` runs
+the fast checks and no Chromium unless it carries the `browser` label; a merge into
+`develop` runs the smoke as a post-merge net.
 
 ## The fences
 
-Six architectural rules are cheap now and expensive later, so CI enforces them
+Seven architectural rules are cheap now and expensive later, so CI enforces them
 on every push:
 
 1. **Nothing reachable from the simulation may import the rendering engine**
@@ -75,6 +89,9 @@ on every push:
    generator the moment either changes (PLAN §2.1, ADR-0002). The fence reads file
    names, and says so: it does not look inside a file, and it cannot see an asset
    pasted into a source file as a string.
+7. **The AI may import only Observation types from the simulation.** The fence
+   follows local helpers and re-export barrels too, refuses unresolved imports,
+   and runs before every build. See [docs/AI.md](docs/AI.md) for the contract.
 
 The walk behind the `Math.random`, transcendental and ambient checks is
 syntactic, and it says so instead of pretending to be complete. It sees a global
@@ -85,7 +102,7 @@ spelled out — `Math.random`, `Math["random"]`, `Math?.random`,
 and `new Date()` all pass the guard today. A green tick means the ordinary
 spellings are absent, not that no other spelling exists.
 
-`npm run guard` walks all six fences. On a breach it prints the offending file,
+`npm run guard` walks all seven fences. On a breach it prints the offending file,
 the line, and — for reachability — the chain that got there. One file can breach
 two of them, which is why they stay separately labelled: naming the wrong rule is
 worse than reporting both.
@@ -103,6 +120,18 @@ through an import says so instead of staying quiet. None of the fences walks
 *inside* a bare package import — the guard does not resolve `node_modules` — so
 today's simulation imports nothing but its own modules, and the day it imports a
 package, the fence sees the dependency rather than what is inside it.
+
+## The AI foundation
+
+`npm run match -- --rules ai --seed 1 --ticks 2101` runs two AI Controllers
+headlessly across a Season boundary. Its JSON report includes every strategic,
+operational and tactical decision, all candidate utilities and reasons, and the
+selected candidate. The economy policy grows settlements and recruits against
+recurring Payroll capacity; the military policy defends observed threats,
+chooses counters, commits reserves and withdraws beaten Squads. Shipped scouting
+keeps last-known contacts current, and the siege policy chooses between Assault
+and Blockade. See
+[docs/AI.md](docs/AI.md) for clocks, registration and log interpretation.
 
 ## The deterministic core
 
@@ -130,7 +159,7 @@ in review.
 ## The map
 
 A Match begins on a map nobody drew. `generateMap(seed)` — `src/sim/map.ts` —
-is a pure function of its seed, returning a 96×96 grid of 16×16 tiles: terrain,
+is a pure function of its seed, returning a 160×160 grid of 16×16 tiles: terrain,
 one or two rivers crossed by fords, resource nodes of grain, timber, stone and
 iron, four to six capturable minor settlements, a Stronghold for each Faction,
 and roads joining the nodes to one another. The map is integer state like
@@ -177,6 +206,7 @@ npm run match -- --seed 7 --map
 ```
 
 ```
+Historical pre-#74 example (the current theatre is 160×160):
 seed 7 — 96×96 tiles of 16×16 pixels
 
 Rome's Stronghold at (14, 70); Carthage's at (88, 89); 76 tiles apart
@@ -210,12 +240,14 @@ Time has a shape. A game year is four **Seasons** of three and a half minutes
 each — `SEASON_TICKS` in `src/sim/season.ts` — and the calendar is integer state
 like everything else, so the state hash covers it and two replays cross the same
 boundaries on the same ticks. Spring and summer are the campaign season, autumn
-brings the harvest and winter brings Attrition; those last two are the **only
-hooks another system needs**, so no system counts the year for itself:
+brings the harvest and winter is the Season whose own rules a system may want to
+single out; every Season is announced to every subscriber, and autumn and winter
+have a hook of their own on top of that, so **no system counts the year for
+itself** (ADR-0010, ADR-0011):
 
 ```ts
 const changes = advanceCalendar(world.calendar, tick); // once per tick
-announceSeasons(changes, economy.seasons, attrition.seasons);
+announceSeasons(changes, economy.seasons, attritionSeasons(world.economy));
 ```
 
 `advanceCalendar` is handed the tick being *left* — the same argument a rule's
@@ -236,11 +268,12 @@ paused are held by the Player's Controller and applied on the first tick after
 the resume, in the order they were given, so thinking costs nothing. Pausing is
 idempotent, and the time spent paused is not banked and then replayed as a burst.
 
-A human Match has no time limit. A **headless Match is bound to three game
-years** — `HEADLESS_TICKS`, 25 200 ticks, 42 minutes of Match time — because a
-Match that can never end is a test that can never finish (ADR-0010). The CLI's
-default bound is exactly that, and its default Match is the one with the theatre
-and the economy in it.
+A **Match is bound to three game years** — `MATCH_TICKS`, 25 200 ticks, 42 minutes
+of Match time — wherever it is played: the CLI's default bound and the bound the
+page plays to are that one number, under the name (`HEADLESS_TICKS`) the CLI's
+arguments read it by, because a Match that can never end is one nothing can watch
+to the end (ADR-0022). A caller may hand over another length for a tournament or a
+long test, but not none.
 
 ## The economy
 
@@ -273,10 +306,20 @@ const produced = seasonYield(settlement, allocation, season); // + harvest in au
   second tier and `forum` to its third, and a Squad type states the tier it
   needs: a tier-2 Squad cannot be recruited in a tier-1 settlement. The
   progression is the tiers.
-- **Payroll every Season.** A Faction owes its Squads' Payroll each Season out of
-  its treasury; a Squad it cannot pay loses morale and, after enough Seasons
-  owed, **deserts**. A paid Squad recovers a little of what it lost, so a rough
-  patch is survivable and a permanent one is not.
+- **Payroll every Season, on the men still standing.** A Faction owes each Squad
+  its type's Payroll rate per 24 survivors, rounded up, out of its treasury; a
+  Squad it cannot pay loses morale and, after enough Seasons owed, **deserts**.
+  A paid Squad recovers a little of what it lost, so a rough patch is survivable
+  and a permanent one is not.
+- **Recruited capacity is not strength.** A Squad is raised at one of its type's
+  real sizes (`24`, `60` or `120` for Roman melee; `24` or `48` for Carthaginian;
+  one fixed size for a specialist) and remembers those men as its capacity. Loss
+  reduces its survivors and its Payroll bill, never the purchase it was.
+- **A price is a 24-man price.** The starting resource bill is the old price
+  applied to 24 men and scales exactly — `1`, `2.5`, `5` for Rome and `1`, `2`
+  for Carthage — with no bulk discount. A 120-man line therefore costs five
+  24-man lines and no more. Specialist prices and combat balance remain a later
+  calibration (ADR-0026, ADR-0027).
 - **The autumn harvest is a peak.** Ordinary production runs every Season
   (`onSeason`); the harvest arrives on top of it on the autumn boundary
   (`onAutumn`), so the grain it brings in is a number a reader can see apart from
@@ -286,7 +329,8 @@ const produced = seasonYield(settlement, allocation, season); // + harvest in au
 `MatchState` — the first Match whose hash covers the tiles it begins on — and
 `observeEconomy` is what a Faction reads of it: its settlements and where they
 stand, their tier, people, stocks, land and works, its treasury, and its Squads
-with the Payroll terms they are charged on. An enemy's settlement is not in the
+with their recruited capacity, surviving men and the Payroll bill those survivors
+owe. An enemy's settlement is not in the
 Observation, which is the one filtering B6 can do before fog (B4) arrives.
 
 The plan's own test of the thing is a Match left alone: over three game years an
@@ -320,16 +364,20 @@ Three files carry the rest (`src/sim/route.ts`, `squad.ts` and `movement.ts`):
   search's edge weight and the Squad's marching speed, and a tile is paid for
   *before* it is entered, so a route costs exactly the ticks it was costed at —
   the destination included — and the way chosen is the way that arrives first.
-- **The way there.** A* over the 96×96 grid, four-connected, with a Manhattan
+  The price is divided by the *walker's* pace (C4): a horse's tile is
+  `ceil(cost / pace)`, and the search weighs a route in the same currency, so a
+  fast Squad is not merely quicker along a footsoldier's road.
+- **The way there.** A* over the 160×160 grid, four-connected, with a Manhattan
   heuristic times the cheapest tile — admissible and consistent, so a tile
   leaving the frontier is settled. Every number is an integer and ties break on
   the order tiles were queued, never on a heap's internal shape: the same
   question has the same answer on every engine (ADR-0006).
 - **Routes are not worked out twice.** `createRouteCache(map)` remembers what it
-  searched on one theatre — a bounded memory, forgotten least-recently-first —
-  and an order to the tile a Squad is already walking to is not a new order at
-  all. The memory is derived rather than state, so whether a route happened to be
-  remembered cannot move a hash.
+  searched on one theatre — a bounded memory, forgotten least-recently-first,
+  and one route per *pace*, because a horse's quickest way is not always a
+  footsoldier's — and an order to the tile a Squad is already walking to is not a
+  new order at all. The memory is derived rather than state, so whether a route
+  happened to be remembered cannot move a hash.
 
 A Squad ordered to a tile no way reaches walks nowhere, forgets nothing and
 remembers why: the order is refused with one of three reasons — the tile is not
@@ -338,8 +386,8 @@ is taken clears it. `observeEconomy` reports the reason in words, which is what
 an interface shows a Player (`refused`), beside the tile the Squad is still
 walking to and where it stands.
 
-The CLI can play a harness Match that is nothing but movement — a dozen Squads,
-six a Faction, mustered at their own Stronghold and ordered across the theatre to
+The CLI can play a harness Match that is nothing but movement — seven Squads,
+two Roman and five Carthaginian, mustered at their own Stronghold and ordered across the theatre to
 the other one:
 
 ```
@@ -351,17 +399,407 @@ npm run match -- --seed 1 --ticks 600 --rules march
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 2,
-  "hash": "0cbe91ba1dacebcb"
+  "hash": "b5d29129ff9d86e7"
 }
 ```
 
-Two Commands, twelve Squads, and a hash CI gates: it covers the map in state,
+Two Commands, seven Squads, and a hash CI gates: it covers the map in state,
 the routes worked out over it, the terrain costs walked, every turn taken and
 the economy's half of every Squad beside them, so a change to any of it is a
 decision in review rather than a silent one. `musterSquad` is a scenario's way
 in — recruitment is the economy's — and the `march` Match exists because a
-ticket that says "a dozen Squads moving at once" should be something the
-repository runs rather than something it claims.
+ticket that says "a body of Squads moving at once" should be something the
+repository runs rather than something it claims. Since C3 the two forces meet in
+the middle of that theatre, so the hash covers the fight as well as the march:
+the survivors are the men who got through, and every one of them still stands on
+separate legal arrival ground near the Stronghold it was sent to (#68).
+
+Group Move and Attack-move allocate arrivals in stable Squad-ID order, within
+twelve Tiles of the click, using purchased formation geometry for separation.
+Routes can overlap through fords. A Squad with no reachable separated arrival
+keeps its previous order and exposes an Italian refusal; peers still proceed.
+See [the ground movement contract](docs/COMMANDS.md#ground-arrival-allocation-68)
+for edge, water, insufficient-space and Replay behavior. This rule intentionally
+changes the `march` and `roster` golden hashes; the other recorded gates remain
+unchanged.
+
+Since #66 the two forces are **the same men and not the same number of Squads**:
+two Roman lines of 120 against five Carthaginian bodies of 48, two hundred and
+forty a side. The fight is decided by the men brought to bear
+(`docs/adr/0028-combat-reads-the-men-brought-to-bear.md`), so six 48-man bodies
+against six 120-man ones would have been a walkover and a golden hash that
+tested nothing. The new hash is a real engagement between two equal forces.
+
+C4 adds a second harness Match, `--rules roster`, which fields both Factions'
+whole rosters — the nine types of `content/squads.ts`, the elephant included —
+and sends them at each other. Its hash is the one number that covers every
+strength, morale, arm and pace in the tables, so a balance change moves it:
+
+```
+npm run match -- --seed 1 --ticks 600 --rules roster
+{
+  "seed": 1,
+  "ticks": 600,
+  "outcome": "clock",
+  "winner": null,
+  "reason": "the Match reached its tick bound of 600 ticks without a decision",
+  "commands": 2,
+  "hash": "76b515304e285b62"
+}
+```
+
+## Combat and morale
+
+Two Squads that touch fight, and what they fight over is not a health bar. Each
+round of contact moves the same two quantities on both sides — how many men are
+left, and how close the Squad is to breaking — and a Squad that breaks runs
+rather than dying to the last man (ADR-0004, ADR-0015). Everything the plan
+lists as a lever moves one of those two numbers and nothing else:
+
+| Lever | What it does |
+| --- | --- |
+| the men brought to bear | a blow is counted in **force points**, twelve to a man, and read from the men a Squad has left times its type's `impact`: a 120-man line lands 120 points a round, and five 24-man Squads land 120 between them |
+| the shape it holds | a line lands all of its points and a column a quarter of them |
+| the matchup matrix | `spear > cavalry > light > archers > spear`, the sword even against all; an advantage is ×3/2 and a disadvantage ×2/3 |
+| flank and rear | more men and more morale shock, and the flanked Squad strikes weakly back, because its front faces the wrong way |
+| terrain | a hill is harder to assault, a ford disorders whoever stands in it, cavalry in a forest cannot charge |
+| fatigue | a march and a fight both cost; a spent Squad strikes for 40% of a fresh one |
+| ammunition | the first volleys add men and shock; after that the type fights with its arm alone |
+| Supply | a Squad cut off from its Faction's country loses morale at every Season boundary |
+| Payroll | a Season in arrears is a Season of morale lost, and a Squad that breaks sooner |
+
+**One round, resolved at once** (`src/sim/combat.ts`). A round is five ticks —
+half a second — and every blow in it is computed from the state as the round
+*began*, then applied, so it cannot matter which Squad the list walked first.
+Nothing draws from the Match's generator: a fight is a pure function of the
+world, a replay reproduces it, and a balance change is a measurement. Every
+modifier is a ratio of whole numbers applied in a fixed order, which is why the
+test that predicts a number can work it out by hand.
+
+**The same men fight the same, however they are divided** (ADR-0028, #66). A
+Squad's blow is its `bearing` — men times `impact` — and a defender's casualties
+are floored **once per round, from the sum of every blow that landed on it**, so
+five 24-man Squads kill what one 120-man Squad kills and not five times as much.
+Two rules finish the job: a Squad's attention is **divided** among the enemies it
+is in contact with, so a body fighting on three sides inflicts its force once;
+and Morale shock is counted **once per defender**, so five bodies pressing one
+shake no more nerve than the one body they add up to. A volley is a weight of
+missiles per man and not per Squad, for the same reason. The measurements — the
+band they are held to, the scenes, and what they do not cover — are in
+[the P3 review](docs/reviews/issue-66-military-balance.md).
+
+**Breaking, running, rallying.** A Squad at no morale has *routed*: it runs for
+the nearest settlement its Faction holds, strikes at a third of its force,
+gives no shock at all, and cannot be ordered anywhere — no manual rallying, no
+micro-recovery. It also cannot be annihilated while it still has a route to
+walk: its strength floors at one man for as long as there is somewhere to run,
+which is what "breaks rather than dies to the last man" means mechanically. Once
+the ground behind it is quiet it recovers a point of morale a round and forms up
+by itself. That is the only fast recovery there is: a Squad in good order gets
+its nerve back from being paid (`chargePayroll`), not from waiting.
+
+**The dead are residue** (`src/sim/residue.ts`, `src/render/corpses.ts`). The men
+a round costs are recorded *beside* the Match, in a `WeakMap` keyed by the
+economy: one mark per round per Squad, on the tile they fell on, drawn as the
+death frame of the figure they were, faded over the last seconds of thirty and
+then swept away. None of it is in `MatchState`, so a Match that recorded a
+thousand corpses hashes as the Match that recorded none — which is the ticket's
+own criterion, asserted directly. The page draws only the ones its own fog is
+looking at (`visibleCorpses`): the residue list holds both Factions' dead, and a
+corpse on a tile nobody has an eye on is a fact about the enemy the Faction has
+not paid for.
+
+**What C3 does not own.** No generals or heroes; no ram, which is siege (C5); no
+manual rallying. Being cut off was read as "no settlement the Faction holds
+within thirty-two tiles", charged with Payroll at the Season boundary — a
+stand-in C3 named and rejected for itself. C6 has replaced that inference with
+real Territory: `inSupply` asks `territory.ts` whether a Squad stands in its own
+country, and Attrition charges the men of the ones that do not at the same
+boundary.
+
+The Observation carries the fight to the Faction that is in it: `morale`,
+`fatigue`, `ammunition`, whether the Squad has `routed` and whether it is
+`engaged`. Contact is one tile, which is inside any Squad's own eyes, so the fog
+is not being spent by it. The HUD prints the figures, and reads a routed Squad as
+*In rotta* rather than naming an order it is not obeying.
+
+## The two rosters, and their real sizes
+
+The other half of the game (C4), and P2's real sizes on top of it. `content/squads.ts` now carries both rosters,
+and they are not two sets of numbers: Rome's three lines are disciplined,
+durable and slow to replace, and Carthage's six are a mercenary coalition —
+cheap to raise, brittle in morale, dearer to keep and, in the elephant, unlike
+anything Rome fields at all.
+
+| type | tier | sizes | arm | morale | volleys | pace | 24-man cost | Payroll / 24 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `hastati` | 1 | 24 / 60 / 120 | sword | 10 | 4 | 1 | grain 8, iron 2 | 3 |
+| `principes` | 2 | 24 / 60 / 120 | sword | 12 | 4 | 1 | grain 10, iron 4 | 4 |
+| `triarii` | 3 | 24 / 60 / 120 | spear | 14 | 0 | 1 | grain 10, iron 6 | 6 |
+| `libyan-spear` | 1 | 24 / 48 | spear | 9 | 0 | 1 | grain 6, iron 2 | 3 |
+| `gaul` | 1 | 24 / 48 | sword | 6 | 0 | 1 | grain 5, iron 1 | 2 |
+| `iberian-sword` | 2 | 24 / 48 | sword | 11 | 2 | 1 | grain 8, iron 4 | 5 |
+| `balearic-slinger` | 2 | 24 | archers | 8 | 8 | 1 | grain 8, iron 1 | 4 |
+| `numidian-horse` | 3 | 12 | cavalry | 10 | 6 | 2 | grain 8, iron 2 | 4 |
+| `elephant` | 3 | 24 (one figure) | cavalry | 16 | 0 | 2 | grain 12, iron 6 | 8 |
+
+**Sizes, prices and Payroll (P2).** The small Carthaginian numbers are the
+roster's distinct shape, not a discount: Carthage can field more, smaller
+contingents and keep them through a wider front, while Rome can concentrate a
+120-man line. A Recruit names one real size; `36`, `64` and every number between
+the roster's sizes are refused rather than rounded. The resource bill is
+`ceil(24-man cost × men / 24)` and the Payroll bill is
+`ceil(rate × survivors / 24)`, both integer arithmetic. Rounding *up* is
+deliberate: splitting the same men across more Squads can never lower the bill,
+so fragmentation buys no free Payroll. A 120-man `hastati` therefore costs grain
+40 and iron 10 to raise and 15 denarii a Season, while a 24-man one costs grain
+8, iron 2 and 3 denarii. `capacity` is hashed state, so a Replay remembers what
+each Squad was bought as even after casualties. Pre-P2 logs with no `men` are
+rejected at the Command seam rather than defaulted (ADR-0026, ADR-0027).
+
+**Before and after.** Before P2 a Recruit raised one full-strength block per type:
+Rome at 120/120/100 and Carthage at 120/140/120/90/60/24 men, with the resource
+cost above charged once per Squad and Payroll a flat 3/4/6 and 3/2/5/4/4/8. After
+P2 the sizes in the table above are real purchases, the same resource figures are
+the 24-man basis (so a 120-man `hastati` costs grain 40 and iron 10, five times
+the old bill), and Payroll is 15 denarii for those 120 survivors against the old
+flat 3. No combat calibration is claimed: the P2 checks measure the price,
+capacity, bill and Replay arithmetic and the AI's opening purchases, while #66
+owns whether the resulting armies fight each other fairly.
+
+**A pace is a type's own.** `pace` is a whole number of tiles' worth of ground
+per tile's cost: `1` is a man on foot and `2` is a horse. `route.ts`'s
+`paceCost` divides the ground's ticks by it and rounds up, the search weighs
+every route with it, and the route cache remembers one answer per pace — so the
+Numidian horse and the elephant are quicker *and* routed as what they are. A
+faster Squad is the whole of "light mobile cavalry rather than a line to hold":
+the Numidians are faster than anything Rome fields, carry six volleys and are
+fewer men than any Roman line, so they harass and do not stand. The rest of the
+harassment — refusing a line, falling back before contact, keeping the last
+known enemy current — is what a Controller does with those numbers, and it is
+D3 and D4's; C4's half is the type that is worth doing it with.
+
+**Nine types, five arms.** A type's `arm` is its row and column in the matchup
+matrix, and more than one type may carry the same one: the Libyan spearman and
+the triarius are both `spear`, and the Numidian horse and the elephant are both
+`cavalry` — the mobile arm, which beats light troops and is broken by spears.
+The elephant's distinctness is not a matrix row of its own but its figure, its
+pace, its strength of staying power and its morale above every Roman line's;
+C4's criterion is that every type *has* a matchup behaviour, not that all nine
+differ, which five arms and nine types could not do.
+
+**A Squad of a single figure.** An elephant is one figure — `figures: 1` — whose
+abstract `strength` of 24 is the staying power that figure is worth, which is
+what lets a single beast weather a round or two of a Roman line instead of dying
+to the first blow. `figuresOf(type)` is the one place the two numbers are tied,
+and the Observation carries both, so a drawing code lays out a beast as one
+figure and an infantry Squad as three representative figures per four survivors
+(rounded up): a 120-man Squad draws 90. The elephant stays one figure, and its
+`strength` is separate from the beast count. The 1:1 figure pass is P4's; P2
+deliberately keeps the existing procedural renderer. Everything else about an
+elephant is an ordinary Squad:
+it is recruited, paid, ordered, flanked and routed like any other (the ticket's
+own "an ordinary Squad type with an extraordinary figure").
+
+**The silhouette is the design and the colour is the confirmation**, and C4 is
+where that rule is a criterion rather than a preference: every type has to be
+tellable from its Roman counterpart **in greyscale**. So the nine types have no
+shield in common — the parma, the scutum, the hoplon, the thureos, the
+little caetra, the tall gaulish wall, the two who carry none — and the weapon
+and the head say the same thing a second time: a pilum, a gladius, a hasta, a
+plain spear, a curved falcata, a longsword that reaches the top row, a sling, a
+fistful of javelins; a cap, a crest, a transverse crest, and a bare head. The
+rider is drawn on a horse under him, and the elephant is not a paper doll at all
+but a beast with a trunk, ears and a trapper in its Faction's cloth.
+
+**The whole roster is on the Atelier's plate.** `art/figures.ts` names both
+rosters (`FIGURE_NAMES`), gives each figure the Faction whose cloth it wears
+(`FIGURE_FACTION`), and `figureEntries()` composes every one of them in four
+directions and all six frames, so the Carthaginian roster is looked at exactly
+the way the Roman one is — and `tests/art/figures.test.ts` tells every pair of
+the nine apart in greyscale, by luminance and by pixels of ink, rather than
+trusting the palette.
+
+## Siege
+
+The other way a Match ends (C5). A settlement falls either to an **Assault** —
+fast, expensive, and needing the ram, which only Rome can build — or to a
+**Blockade**, which is slow and cheap in lives, starves the place into surrender,
+and is broken by the besieged Faction's field army. The two are alternatives and
+not stages, and Carthage has no siege engine at all, which is the historical
+asymmetry and the plan's largest balance risk (ADR-0008, ADR-0018).
+
+| path | pace | costs | broken by |
+| --- | --- | --- | --- |
+| Assault | a fight: a round a second, under a minute to the Stronghold | denarii for the ram, men and nerve under the walls, the ram itself | a garrison strong enough to break the ram, and the wall |
+| Blockade | Seasons: about three to an empty granary, ten minutes of Match time | almost nothing in lives | the besieged Faction's field army, within `RELIEF_RADIUS` |
+
+**Walls are structures, not a health bar** (`src/sim/siege.ts`). A Stronghold
+carries a **gate** and four stretches of **wall**, one to a side, each with its
+own hit points, and a **breach** is any one of them broken. The ram goes for the
+gate; the men under the walls work at a wall too, at about a third of the speed,
+and the walls cost them lives and nerve while they do it. Both of those are read
+off the besieging **force** and not off the number of Squads under the wall: three
+Roman bodies chip it no faster than one, and a body of 120 pays exactly what five
+bodies of 24 pay in blood (ADR-0028). That is the whole of
+"an assault without a breach is possible but punishing": an assault can be issued
+before anything is broken, waiting for the breach is the sane order of business,
+and a ram the garrison has wrecked pays for itself in blood. Walls do not repair,
+so a failed assault leaves the place weaker for the next one.
+
+**The ram** is laid down on the spot, paid out of the Faction's one treasury,
+built over `RAM_BUILD_TICKS`, and it is the only thing that shields an assault —
+while it is still being built the walls cost men and morale every round, and once
+it is at work they cost nothing. It is also **vulnerable**: the garrison takes it
+apart at `RAM_BEARING_PER_BLOW`, one point of ram for every sixteen of its force
+a round, so a 48-man body of spearmen needs twenty rounds to break a ram and the
+gate needs eight, while four such bodies break it in five and the gate stands —
+and five 24-man bodies defend the ram exactly as well as the 120-man body they add
+up to, because the wall counts men and not Squads (ADR-0028). A manned Stronghold
+turns an assault into an escalade that pays for itself in blood. `canAssault` is the whole of "Rome's
+alone", and ADR-0008's escape hatch — *give Carthage a ram* — is that one
+function.
+
+**A garrison is a posture, not a second army.** A Squad told to `garrison` stands
+at its settlement's centre but is *inside* the walls: the contact rules skip it
+(`Block.garrison`), so an enemy at the gate fights the wall and not the men
+behind it, while the settlement's own supply, Payroll and eyes still cover it. A
+move order takes it out again, which is the whole of how a garrison sallies. A
+garrison that breaks in the storm **surrenders** rather than running through the
+men who just came over the wall, and one that is starved sheds nerve each Season
+until it slips away in the night.
+
+**A blockade uses the settlement's own granary.** The Siege supplies the
+predicate the economy already needed — `produceSeason` and `harvest` take a
+`Supplied`, and a blockaded settlement works no land, earns no tax and grows no
+people. What its granary holds is what it lives on, and every Season of blockade
+spoils `BLOCKADE_GRAIN_LOSS` of grain and takes `BLOCKADE_POPULATION_LOSS` of its
+people — at up to twice that rate when the ring outweighs the garrison, because a
+blockade is men against men and not Squads against Squads; a town with no grain
+and nobody left on its walls opens its gates. A
+*field* army of the besieged Faction within `RELIEF_RADIUS` lifts the ring — the
+garrison is the thing being starved, so only men outside it can threaten the
+besiegers — and the besieger has to close the ring again.
+
+**A minor settlement is taken by holding its centre**, and nothing is razed. An
+open settlement has no wall to break and nothing to starve: a Squad that stands on
+its tile, uncontested, for `CAPTURE_HOLDS` checks takes it, and its people, its
+works and its stocks stay. "Uncontested" is a question about men: the larger body
+on the centre holds it, a tie holds nothing, and a single 24-man body is enough
+for a village nobody is defending. An open settlement is still seen through the Faction's
+own fog, though: no wall to keep a secret is not a licence to skip an eye, so an
+unseen village's front is absent from the Observation until a Squad or settlement
+of the Faction looks at it (ADR-0020). Only a Stronghold's fall ends the Match,
+and the result names it as the reason:
+
+```
+npm run match -- --seed 1 --ticks 9000 --rules assault
+{
+  "seed": 1,
+  "ticks": 251,
+  "outcome": "victory",
+  "winner": "rome",
+  "reason": "rome won the Match: the carthage Stronghold fell to an assault",
+  "commands": 2,
+  "hash": "0f37cc5352591836"
+}
+```
+
+`--rules blockade` is the same Match won the other way, in Seasons rather than in
+a fight, and its reason says so:
+
+```
+npm run match -- --seed 1 --ticks 9000 --rules blockade
+{
+  "seed": 1,
+  "ticks": 6300,
+  "outcome": "victory",
+  "winner": "rome",
+  "reason": "rome won the Match: the carthage Stronghold fell to a blockade",
+  "commands": 2,
+  "hash": "1f42040d1278803f"
+}
+```
+
+Two whole Matches won headless, one by each path, with the fall of a Stronghold as
+the golden hash: a change to the walls, the ram, the starvation or the verdict
+moves those numbers and has to be a decision in review. The blockade's 6300 ticks
+against the assault's 251 is the asymmetry the ticket is about, in one pair of
+numbers — three Seasons of siege to twenty-five seconds of storm. The blockade's
+hash moved when C6 landed, because the Roman army at those walls now winters
+outside its own country and Attrition takes its men: ADR-0006 says a moved hash is
+a decision in review, and that was the decision. Both hashes moved again when D4
+landed: the Siege world now carries each Faction's fog, that fog is hashed state,
+and an open settlement's front is sighted through it rather than announced to
+everyone who can read the map (ADR-0020). ADR-0006 says a moved hash is a decision
+in review, and that was the decision too.
+
+**What C5 does not own.** No siege towers, multiple ladders, mines or artillery:
+the plan excludes them from v1. The shipped D5 siege policy chooses when to
+Assault and when to Blockade from the walls, breach, ram, hold and garrison in
+`observeSiege`. The page still
+plays the economy Match, so a wall is something the CLI and the tests exercise
+rather than something drawn on screen yet: putting the walls in the interface is
+B7's and E4's, and `observeSiege` is the projection they will read.
+
+## Territory and Attrition
+
+Supply is a **place on the map** (C6, ADR-0005). A Faction's **Territory** is
+inferred from the settlements it holds — there is no boundary to draw and no
+supply line to cut — and a Squad standing outside its own country loses men to
+**Attrition** every Season, worst in winter. Taking a village redraws the
+Territory on the tick the village falls, so a campaign rewrites the map of
+supply as it advances (GLOSSARY: Territory, Attrition, Supply).
+
+**Territory is the ground within `TERRITORY_RADIUS` of a Faction's settlements**
+(`src/sim/territory.ts`), twelve tiles of country each way, measured Chebyshev in
+whole tiles, as the land a settlement works is (`LAND_RADIUS`). Two Factions' squares may overlap, and
+a contested tile goes to the settlement nearer it — a tile exactly halfway goes
+to the Faction the economy holds first, which is Rome's Stronghold by its id, so
+the same position always draws the same boundary on every engine (ADR-0006).
+Nothing stores the grid: it is inferred from who owns what, remembered until an
+ownership changes, and handed to a Faction's Observation as its own country — the
+far half of the theatre reads as nobody's, because whose settlements feed a
+distant tile is that Faction's business.
+
+**Attrition is charged at the Season boundary** and takes men rather than nerve:
+`applyAttrition` runs on the same clock that pays Payroll and, since C6,
+`inSupply` — C3's own being-cut-off rule — asks the same Territory rather than a
+radius of thirty-two tiles. Two men in a hundred for a Season outside the
+ground, three times that for a winter outside it, and two for wintering in the
+open *inside* it with no roof over the army:
+
+| where the Squad stands | spring, summer, autumn | winter |
+| --- | --- | --- |
+| its own Territory, in quarters | — | — |
+| its own Territory, in the field | — | 2% of its men |
+| outside its own Territory | 2% of its men | 6% of its men |
+
+The cost is a share of the men a Squad is counted as, never less than one, rather
+than a fixed number: a tax of one man a Season would be invisible in a line of a
+hundred and twenty and ruinous to an elephant of twenty-four, and it would never
+wear anything out. A share compounds — a third of an army is gone after three
+years in the field — and a Squad worn to nobody leaves the list, so overextending
+without supply costs the force it was overextended with.
+
+**The Roman Castrum is what makes the field a place to winter.** A Squad is in
+**quarters** when it is garrisoned in one of its Faction's settlements or
+standing on its centre, and one that is holding position within `CAMP_RADIUS` of
+a settlement with a standing `castrum` is in a **camp**: the open ground round
+the camp counts as quarters, so a Roman army winters in the field without paying
+for it. Carthage cannot — the Castrum is Rome's alone (`content/buildings.ts`), a
+Carthaginian Faction cannot build one, and an open settlement cannot be
+garrisoned at all — so Hannibal's army pays for every winter it spends in Italy,
+which is the plan's asymmetry (PLAN §1) as a rule rather than a statistic. It is
+read off the Faction and not off the ground (`canCamp`), so the camp a Roman
+village holds is still Rome's when Carthage storms the village: nothing is razed
+on capture, and the camp stands there unusable until Rome takes it back.
+
+**What C6 does not own.** No supply lines, convoys or depots, and no naval supply
+of any kind: ADR-0005 settled supply as Territory. Nothing draws the boundary on
+screen yet — `observeEconomy` carries it for B7 and E4 to read — and the numbers
+above are the second thing F1's balance pass measures, `TERRITORY_RADIUS` and the
+three percentages all in one file.
 
 ## The first pixels
 
@@ -385,6 +823,16 @@ base exactly. Generators pick from ramps, which is how a stone wall, a hill and 
 HUD frame cannot drift into three different greys (PLAN §8). `water` joined the
 bases with B3: a river painted out of the stone ramp reads as wet rock, and a map
 is not allowed to have that confusion.
+
+The same derivation runs at a second resolution. **`DETAIL_RAMPS`** are the six
+bases again at thirteen shades instead of seven — one between every two, the same
+dark and light ends, ten points of the spread to a step rather than twenty — and
+their even indices *are* the standard shades. They exist because a surface and a
+figure want different steps: a helmet has an edge and wants a visible one, while a
+tile of terrain is nine thousand tiles of dither, and a dither of whole standard
+shades reads as flicker competing with the men standing on it (U5,
+[#56](https://github.com/AChiabodo/Hannibal-ad-Portas/issues/56)). Terrain paints
+from the detail ramps and nothing else in the library does.
 
 **The font is data** (`art/font.ts`). Seven rows of five pixels per letterform,
 written as 5-bit numbers — `0b01110` is `.###.` — for every printable ASCII
@@ -479,7 +927,7 @@ pixels reads the same at low zoom whatever the colours are — so no two of the 
 share a profile, and the colours only confirm what the shapes already say.
 
 **The whole theatre is one texture** (`render/terrain.ts`). The map is composed
-once, on boot, into a 1552×1552 `PixelBuffer` — the logical map translated by half
+once, on boot, into a 2576×2576 `PixelBuffer` — the logical map translated by half
 a tile, with a half-tile margin of edge tile around it — and drawn as a single
 sprite under the camera. Panning and zooming move one container: no tile is culled
 and no sprite is created, so the work per frame is the same at the corner of the
@@ -669,16 +1117,20 @@ figure is a paper doll composed from parts — a helmet, a shield and a weapon,
 each one a kind rather than a sprite — so the three Roman lines are told apart by
 *shape* at the lowest zoom: the hastatus' little round parma and short pilum, the
 principes' wall of a scutum under a low crest, the triarius' great round hoplon
-with a spear that reaches over every other man's head. Four directions and four
-actions are drawn: two of the directions are authored (the front and the profile)
-and the other two are mirrors with the face painted out, and the frames are idle,
-walk and attack in two steps each and a death. The block is composed from the
-*simulation's own* list of men (`sim/squad.ts`'s `menOf`), so the formation on
-screen is the formation the rules hold, and it is anchored by the middle of its
-front rank's ground line, so a Squad that loses a rank loses the men at the back
-and nobody shuffles. One sprite per Squad, re-composed only when the shape it
-draws has changed, and the whole roster in every direction and frame is on the
-Atelier's plate beside the glyphs, the ramps and the terrain.
+with a spear that reaches over every other man's head. C4 draws the other roster
+the same way and equally unlike it: the Libyan's tall oval thureos, the Gaul's
+longsword behind a tall wall of a shield, the scutarius' little caetra and curved
+falcata, a slinger with no shield at all, a horseman with none and a fistful of
+javelins, and an elephant that is not a doll but a beast. Four directions and
+four actions are drawn: two of the directions are authored (the front and the
+profile) and the other two are mirrors with the face painted out, and the frames
+are idle, walk and attack in two steps each and a death. The block is composed
+from the *simulation's own* list of men (`sim/squad.ts`'s `menOf`), so the
+formation on screen is the formation the rules hold, and it is anchored by the
+middle of its front rank's ground line, so a Squad that loses a rank loses the
+men at the back and nobody shuffles. One sprite per Squad, re-composed only when
+the shape it draws has changed, and the whole of both rosters in every direction
+and frame is on the Atelier's plate beside the glyphs, the ramps and the terrain.
 
 **The Player is a Controller** (`input/`, ADR-0014). A click picks a Squad by the
 rectangle its men are drawn in, a drag picks every block it touches, and an order
@@ -768,7 +1220,7 @@ npm run match -- --seed 1 --ticks 600
   "winner": null,
   "reason": "the Match reached its tick bound of 600 ticks without a decision",
   "commands": 0,
-  "hash": "3aaaf501674cafe1"
+  "hash": "cbce1e06d55987eb"
 }
 ```
 
@@ -778,16 +1230,25 @@ else, so it pipes into `jq`; the report holds no timing, no path and no wall
 clock, so two runs of the same command are byte-identical and a recorded hash can
 be gated on. `--seed` and `--ticks` choose the Match, `--rules` chooses which
 harness Match to play, `--expect-hash` requires it to end on a hash you
-recorded, and `--help` describes the lot.
+recorded, `--record` writes the record `npm run replay` re-runs (below), and
+`--help` describes the lot.
 
 CI plays that very command, with the hash above as its `--expect-hash`: a change
 that moves the hash is a decision in review (ADR-0006). It plays more than one:
 the default Match over its whole three-year bound, the clock's own `seasons`
 Match, B4's `fog` Match — B1's theatre with both Factions' memory of it in state
 — the engine-only `empty` Match, C1's `march` Match — a dozen Squads walking a
-whole theatre — and one that draws on every tick. The economy, the clock, the
-fog, pathfinding and marching, the seed expansion and the draw loop are each
-gated rather than inferred from the others.
+whole theatre — C4's `roster` Match, both Factions' whole rosters sent at each
+other — C5's `assault` and `blockade` Matches, each a whole Match won headless by
+one path of the Siege — C6's `attrition` Match, two armies in the field through
+the Seasons with only one of them in a camp — and one that draws on every tick.
+The economy, the clock, the fog, pathfinding and marching, the two rosters, both
+ways a Stronghold falls, the country a Faction holds and what a Season outside it
+costs, the seed expansion and the draw loop are each gated rather than inferred
+from the others. C5 put a Squad's garrison posture into state, so the `march` and
+`roster` goldens moved with it; C6 put Attrition on the Season boundary, so the
+`blockade` golden moved — Rome's besieging army now winters in the field — and
+both were decisions rather than drifts.
 
 The exit codes are the same three `npm run guard` uses: **0** the Match ran,
 **1** a game invariant was violated — a hash that is not the expected one, a
@@ -795,21 +1256,304 @@ Command outside the vocabulary, a float where state must be integers — and **2
 the command line was misused. A violated hash still prints the report first: the
 interesting number is the one the Match ended on.
 
-Today the Match has a theatre, a clock, an economy and Squads that walk on it
-(B1, B5, B6, C1): its world is the map the seed generated, the calendar, the
-settlements standing on it and the Squads those settlements raise, and the tick
-bound is what ends the run (`src/sim/economy-match.ts`). `--rules` chooses which
-harness Match the CLI plays: `economy` is the default, `seasons` is the clock on
-its own, `fog` is B1's theatre with B4's two fogs in state, `march` is a dozen
-Squads ordered across the theatre, `empty` is the engine and the seam alone, and
-`draws` plays one whose rules draw from the seed on every tick, so the golden
-hash in CI covers the draw loop as well as the seed expansion
-(`src/cli/rules.ts`). The harness around it is the point, and the waves that
-build the world change what is inside it rather than how it is driven.
+Today the Match has a theatre, a clock, an economy, Squads that walk and fight
+on it and a Siege that can end it (B1, B5, B6, C1, C3, C5): its world is the map
+the seed generated, the calendar, the settlements standing on it, the Squads
+those settlements raise and the walls they can hide behind, and either the fall
+of a Stronghold or the tick bound ends the run (`src/sim/siege.ts`,
+`src/sim/economy-match.ts`). `--rules` chooses which harness Match the CLI plays:
+`economy` is the default, `seasons` is the clock on its own, `fog` is B1's
+theatre with B4's two fogs in state, `march` is a dozen Squads ordered across the
+theatre, `roster` is both Factions' whole rosters sent at each other, `assault`
+and `blockade` are whole Matches won by the two paths of the Siege, `attrition`
+is two armies through the Seasons with only one of them in a camp, `siege` is the
+bare theatre with nobody commanding it — the Match the external-agent harness
+plays, and so the one an agent's record is filed under — `empty` is the engine and
+the seam alone, and `draws` plays one whose rules draw from the seed on every
+tick, so the golden hash in CI covers the draw loop as well as the seed expansion
+(`src/cli/rules.ts`). The harness around it is the point, and the
+waves that build the world change what is inside it rather than how it is driven.
 
 The command needs no build step. Node strips the types and runs `src/cli/main.ts`
 as it stands, which is why every relative import under `src/` names its extension
 (`./command.ts`) — see [ADR-0009](docs/adr/0009-the-cli-runs-the-source-with-node.md).
+
+## The outside agent
+
+```
+npm run agent -- --agent examples/agent.ts --seed 7 --opponent idle
+```
+
+```json
+{
+  "seed": 7,
+  "ticks": 14700,
+  "outcome": "victory",
+  "winner": "rome",
+  "reason": "rome won the Match: the carthage Stronghold fell to a blockade",
+  "commands": 63,
+  "hash": "29e12382a7559932",
+  "agent": {
+    "faction": "rome",
+    "opponent": "idle",
+    "status": "played",
+    "stoppedBy": null,
+    "detail": null,
+    "decisions": 1470,
+    "commands": 63
+  }
+}
+```
+
+The example now demonstrates the **Blockade** path. P2's smaller, dearer armies
+no longer carry the old script's storm of the walls, and final Siege/combat
+equivalence is #66's; what the example proves is the external-agent contract, not
+a balance claim about the Assault.
+
+A process that is not this codebase plays a whole Match: the harness starts the
+file `--agent` names, speaks [the protocol](docs/PROTOCOL.md) to it over that
+process's standard input and output, and puts the built-in AI — or nobody at all —
+on the other side. What crosses the pipe is the seam and only the seam: one
+**Observation** per decision, filtered through the agent's own fog, and the
+**Commands** it answers with, read through the vocabulary before anything is
+applied. No state, no seed of its own, no privileged window into the Match.
+
+The ticket's fourth rule is the one that shapes the command: a malformed reply, a
+reply that never arrives and a process that dies are all a **Player who stopped
+playing**. The harness says `stopped` with the reason, asks nothing more, leaves
+that Faction idle and plays the Match to its own end — so an agent whose answers
+are not trusted can run in CI, and the exit code stays 0 because a Match was
+played. `--decision-ticks` and `--deadline` are how often a process is asked and
+how long it has, `--log` writes the Command log, and `--expect-hash` gates it.
+
+A Match played this way is a seed plus the log it wrote, like any other:
+`--record` writes it as the file `npm run replay` reads, and `npm run replay --
+match.json` re-runs it in a process that could not talk to the agent at all —
+which is the whole of "an external agent completes a Match" as a thing CI can
+check.
+`examples/agent.ts` is an agent written from the document alone — raise two
+Squads, sweep the theatre until the enemy Stronghold is seen, assault it — and it
+imports nothing from this repository. The suite runs it to a victory, replays the
+Match from its log, and runs the skeleton agent the document ends with.
+
+## The browser's hooks
+
+`window.__SPQR` stops being a test's private convenience and becomes the product's
+second interface (E4, ADR-0003). The page publishes what it booted, where it is
+looking, what its Match believes, and the calls that drive it — and
+[the document an agent is written from](docs/BROWSER.md) is the sibling of the
+Command vocabulary and the external agent's protocol, written for whoever drives
+the page instead of a pipe.
+
+```js
+await page.goto('/');
+await page.locator('body[data-spqr-booted="true"]').waitFor();
+
+const before = await page.evaluate(() => window.__SPQR.game.state());
+await page.evaluate(() => window.__SPQR.game.pause());
+await page.evaluate(() => window.__SPQR.game.select({ kind: 'squad', id: 1 }));
+await page.evaluate(() => window.__SPQR.game.orderNow('hold'));
+await page.evaluate(() => window.__SPQR.game.resume());
+
+// 42 minutes of Match time, in about a second: the wall clock is skipped, not
+// accelerated, so the answer is the rules' and not the frame rate's.
+const result = await page.evaluate(() => window.__SPQR.game.fastForward());
+// { kind: 'clock', tick: 25200 }
+```
+
+**`state()` is the whole of it in one call**: the tick, the bound, the result, the
+state hash, the Faction's Observation, the interface's model, the picked set, the
+Squads, the dead, the fog and the Commands applied lately — a plain-data copy, so an inspector
+may keep it, diff two of them or carry it across the browser bridge. The hooks
+beside it are how it was assembled, and a test that wants one figure asks for one.
+
+The surface is deliberately narrower than a debugger's: **no hook takes a Command**.
+The five that issue one (`orderAt`, `orderNow`, `setFormation`, `bindGroup`,
+`recallGroup`) take a screen point, a kind with a fixed vocabulary, a Formation or a
+digit — what a pointer or a keyboard produces — and hand it to the human Controller,
+which validates it and refuses the other Faction's. That is the ticket's *without
+exposing Commands a Player could not issue* as a property rather than a promise, and
+`e2e/surface.spec.ts` proves it at the type level: a hook that took a Command would
+stop the build. The names themselves live in `src/hooks.ts` as data, because an
+interface erases when the page is built — one list is what the document, the
+interfaces and the running page are all held to.
+
+**A browser Match has an end**, which is what makes "one short Match played to its
+end" a thing Playwright can assert: the page plays to `MATCH_TICKS` and reports the
+`MatchResult` the CLI's report carries (ADR-0022). `advance` refuses to step past
+the bound rather than clamping to it, a Match that has ended answers a second
+`fastForward` with the ending it already had, and the frame loop stops with it.
+
+**A failing browser test explains itself without a picture.** Every spec runs on
+`e2e/fixtures.ts`, which watches its page from the moment it opens and, on a
+failure only, attaches the boot report, `describe()`, the snapshot with its state
+hash, the console, the uncaught errors and failed requests, the DOM as text, and the
+trace Playwright kept. The state hash is what makes that evidence: two runs that
+disagree about a pixel and agree about the hash are a rendering question, and two
+that disagree about the hash are a rules question, with the tick already narrowed.
+No screenshot is taken, because a picture of a canvas cannot say which tick it was.
+
+## The record, and the replay
+
+```
+npm run match -- --rules march --seed 1 --ticks 600 --record march.json
+npm run replay -- march.json
+```
+
+```json
+{
+  "seed": 1,
+  "rules": "march",
+  "ticks": 600,
+  "everyTicks": 10,
+  "checkpoints": 61,
+  "outcome": "clock",
+  "winner": null,
+  "reason": "the Match reached its tick bound of 600 ticks without a decision",
+  "hash": "b5d29129ff9d86e7",
+  "verdict": "reproduced"
+}
+```
+
+A Match is reproducible by construction — integer state, a seeded generator, a
+fixed step — so a **record** is not a video and not a snapshot: it is the seed,
+the Command log, how the Match ended, and the state hash of every checkpoint it
+was fingerprinted at. `npm run match -- --record <file>` and `npm run agent
+-- --record <file>` write one; `npm run replay -- <file>` reads one back, re-runs
+the Match with no Controllers at all, and prints the verdict on standard output.
+
+The verdict is `reproduced` or `diverged`, and a divergence names the first
+checkpoint whose two hashes disagree, quoting both, and the last checkpoint the
+two still agreed on:
+
+```
+replay: the record and this replay diverged at tick 3400: the record has
+0f1e2d3c4b5a6978, and this run reached 9a8b7c6d5e4f3021. They were still the same
+Match at tick 3390
+```
+
+That is the instrument the ticket exists for: a bug an external agent reports
+arrives as a small text file — some thirty kilobytes for a Match an agent played,
+some hundred and sixty for one that ran its whole three-year bound, because a
+checkpoint is a game second apart — and it replays on the machine of whoever fixes
+it. A change to a game rule produces exactly this report, and the command exits 1
+for it; the report is printed first, so the divergence is readable in a CI log
+without a second run. The checkpoints are not the only check: the *ending* is
+derived again too, because a rule can change when a Match is decided without
+moving a single number in the world, and a record whose ending this build does not
+reach is reported the same way, in the words a Match's own report uses
+(`docs/adr/0023-a-record-is-a-seed-a-log-and-its-fingerprints.md`).
+
+`npm run replay` exits 0 when the record reproduced, 1 when the replay parted from
+it — the hashes at a tick, or the ending once every hash agrees — and 2 when the
+command line was misused or the file is not a record: a record
+arrives from outside, so it is read the way a Command from outside is — every
+field checked, an unknown field refused by name, and the checkpoints required to
+be the schedule a run keeps.
+
+## The tournament
+
+```
+npm run tournament
+```
+
+One command plays a batch of AI-vs-AI Matches — one per distinct seed, two hundred
+of them by default — and prints one JSON report of what they add up to. This is
+where "is the game balanced?" stops being an opinion: the report states the win
+rate of each Faction, the median and the spread of how long a Match lasts, the
+share of Matches the clock decided, and the seed of every Match that was lopsided
+or stalled, so the Match behind an odd number can be played again and read.
+
+The report below was measured **before P2**. The smaller, dearer roster and the
+survivor-based Payroll move every number in it; #29 owns re-measuring the batch,
+and P2 records the baseline rather than pretending the old odds still hold.
+
+```json
+{
+  "rules": "ai",
+  "difficulty": "centurio",
+  "bound": 25200,
+  "seeds": { "first": 1, "count": 200 },
+  "wins": { "rome": 7, "carthage": 185, "draws": 0 },
+  "winRate": { "rome": 0.035, "carthage": 0.925 },
+  "decidedByClock": { "matches": 8, "share": 0.04 },
+  "duration": {
+    "ticks": { "min": 5401, "p10": 6300, "median": 8400, "p90": 10500, "max": 25200 },
+    "minutes": { "min": 9, "p10": 10.5, "median": 14, "p90": 17.5, "max": 42 }
+  },
+  "outliers": {
+    "lopsided": [],
+    "stalled": [
+      { "seed": 10, "outcome": "clock", "winner": null, "victoryReason": null, "ticks": 25200, "decisions": 50592, "commands": 42375, "hash": "90ad57ccfd000e8d" }
+    ]
+  },
+  "matches": [
+    { "seed": 1, "outcome": "victory", "winner": "rome", "victoryReason": "stronghold", "ticks": 6651, "decisions": 13356, "commands": 13130, "hash": "5f6ee34847ce5b65" }
+  ]
+}
+```
+
+That report is the batch of seeds 1 to 200, and it is the first thing that says
+something about the game rather than about a Match: Carthage wins nine Matches in
+ten, the middle Match is over in fourteen game minutes rather than the twenty-five
+to forty-five the plan asks for, and eight Matches — seeds 10, 18, 57, 75, 151,
+171, 184 and 196 — ran their whole three-year bound with nobody able to win.
+Nothing in this batch was lopsided: the shortest Match is 5,401 ticks against a
+median of 8,400, and no Faction was ever annihilated. The numbers are stated, not
+judged: rebalancing is F1's ticket, and a report that had already decided would
+make F1's first job auditing the report.
+
+Everything in it is a function of the seeds and the build. There is no timing, no
+path and no wall clock in the report, so two runs of the same batch print the
+same bytes — which is what lets a later ticket gate on it, and what lets a reader
+diff this week's against last week's and see only what changed in the game. The
+Matches themselves are independent, so they are played on the machine's other
+cores: one core would take half an hour over this batch, and twelve take a few
+minutes (`--workers` says how many, `--workers 1` says one). In a terminal the
+run says how far it has got, on standard error; a pipe or a CI log gets the report
+and nothing else.
+
+A Match's decisions are not in the report — one Match's log is some twenty
+megabytes of JSON, every candidate every behaviour proposed and the utility that
+decided — so `--keep <dir>` writes them beside it, one file per seed:
+
+```
+npm run tournament -- --seeds 200 --keep artifacts/tournament   # every Match's decisions
+npm run match -- --rules ai --seed 10 --difficulty centurio --ticks 25200
+```
+
+The file is the very report `npm run match --rules ai` prints for that Match,
+decisions and all, and it is named after its seed by a rule rather than by a path
+in the report — so the report does not even depend on whether logs were kept.
+Without `--keep` a Match is retrieved by playing it again, which determinism makes
+exact: name the seed the report names, at the `--difficulty` and `--ticks` it
+states, and the `hash` it gives that Match is what proves the Match retrieved is
+the Match measured. `--difficulty` is therefore a flag on `npm run match` too —
+and it is refused beside any `--rules` that has no AI in it, because a level that
+changed nothing would be a flag that lies.
+
+Two Matches are a balance reader's business rather than a distribution's:
+**stalled** is a Match the clock ended — nobody could win it — and **lopsided** is
+a victory that was not a contest, either won in at most half the batch's median
+duration or won outright by leaving the loser neither settlement nor Squad. Both
+are listed by seed, so the Match behind an odd number can be opened and read.
+
+The flags worth knowing before reading a report: `--first-seed` moves the batch,
+`--ticks` moves the bound every Match is given, and `--difficulty` picks the level
+both AIs play at, because a win rate means nothing without it.
+The command exits 0 however the game turned out — a report is a measurement — 1
+when a Match of the batch could not be played, naming its seed, and 2 when the
+command line was misused or a decision log could not be written where `--keep`
+asked for it.
+
+Building this batch found the game's own hot spot: a Match spent most of its time
+in the scouting behaviour, walking the whole theatre for frontier ground on every
+tick, and planning the same patrols twice per tick for two different callers.
+Computing the frontier once per theatre per call, and planning the patrols once per
+Observation, cut a Match's cost by about two and a half times without changing a
+single decision — the same state hashes, the same Command logs, the same decision
+logs — which is what turned this batch from eleven minutes into four
+(`src/ai/scouting.ts`, `src/cli/ai-match.ts`).
 
 ## Layout
 
@@ -824,7 +1568,8 @@ src/                application code
     state.ts        the canonical form of authoritative state, and what it refuses
     hash.ts         the state hash, over that canonical form
     match.ts        the tick: a clock, a world, a random cursor, a hash
-    replay.ts       a seed plus a command log, run again and compared
+    replay.ts       a seed plus a command log, run again and compared; and where two runs part
+    outcome.ts      how a Match ended and why: the verdict the rules give, and two endings compared
     faction.ts      the two Factions, as words rather than as state
     command.ts      the closed Command vocabulary: constructors and a reader
     observation.ts  everything a Controller may know, and nothing else
@@ -841,7 +1586,13 @@ src/                application code
     route.ts        what crossing a tile costs, A* to find a way, and routes not searched twice
     squad.ts        the block a Squad is: its facings, its formations, and where its men stand
     movement.ts     the moving half of a Squad: routes, refused orders, and the Commands obeyed
-  content/          the typed tables the rules read: resources, Squad types, buildings
+    combat.ts       the fight: contact, the matchup, flanking, fatigue, missiles, rout and rally
+    siege.ts        walls, the Roman ram, the assault, the blockade and the fall of a Stronghold
+    siege-fog.ts    the siege world's fog contacts, and the typed kind each memory holds
+    territory.ts    the country a Faction's settlements give it, and what a Season outside it costs
+    residue.ts      the dead, kept beside the Match because they fade and never enter a hash
+  content/          the typed tables the rules read: resources, Squad types, arms, buildings
+    arms.ts         the five arms, and the matchup matrix: a cycle, not a ladder
   art/              pure pixel generation: PixelBuffer in, PixelBuffer out (no engine imports)
     pixel-buffer.ts the one currency: RGBA bytes, the drawing primitives and the pixel hash
     palette.ts      nine bases, and the ramps derived from them by integer arithmetic
@@ -849,17 +1600,39 @@ src/                application code
     terrain.ts      the seven materials, the five dual-grid shapes, the six road pieces
     nodes.ts        the four resource markers: a sheaf, two logs, a heap and a diamond
     figures.ts      the paper-doll soldiers: a body, and the helmet, shield and weapon hung on it
+    icons.ts        the command card's verbs and the badges a panel reads a figure with
+    separation.ts   a soldier of each Faction on three tiles of every material: the figure/ground specimens
     catalogue.ts    every artefact, named, and the one plate the Atelier renders
   cli/              the headless Match as a command
     arguments.ts    what the command line means, and what it refuses
     rules.ts        the Matches a run can play, by name, and what each draws
+    ai-match.ts     composing economy, military, scouting and siege policies for headless AI Matches
     run.ts          playing one Match, and the hash invariant the CLI checks
     dump.ts         the map a seed generates, written out for inspection
     report.ts       the JSON report, ordered and free of anything that varies
     main.ts         the entry: standard output, standard error, exit codes
+    protocol.ts     the external agent protocol's messages, the wire Observation, the reply reader
+    agent.ts        an outside process as a Player: the pipe, the deadline, a Player who stopped
+    agent-arguments.ts  what the agent command line means, and what it refuses
+    agent-main.ts   the agent command: standard output, standard error, exit codes
+    record.ts       a Match's record: the file a replay is made of, read strictly
+    replay.ts       replaying a record: two kinds of departure, and the verdict
+    replay-arguments.ts  what the replay command line means, and what it refuses
+    replay-main.ts  the replay command: standard output, standard error, exit codes
     png.ts          a PNG encoder in the repository's own code, for the bake step
     bake.ts         the catalogue written out as files, and the table it prints
     bake-main.ts    the bake command: standard output, standard error, exit codes
+  ai/               the built-in Controller, registered behaviours and difficulty levels
+    controller.ts   three decision clocks, utility selection and replayable decision logs
+    registry.ts     behaviour registration and deterministic candidate ordering
+    economy.ts      settlement growth, production, recruitment and payroll planning
+    military.ts     field defence, counters, reserves and withdrawal
+    scouting.ts     exploration and last-known contact patrols
+    contacts.ts     the last-known contact memory and the age limit every planner reads
+    calendar.ts     the four Seasons a policy reads, as the AI's own closed word set
+    site.ts         the tile a policy plans about, and the one Chebyshev distance between two
+    siege.ts        Assault and Blockade prosecution
+    difficulty.ts   Tiro, Centurio and Imperator settings
   input/            the Player's hands: a selection, control groups and a Controller (no engine imports)
     selection.ts    what a Player has picked, and how a click or a drag picks it
     human.ts        the human Controller: an order becomes a Command on the next tick
@@ -875,27 +1648,43 @@ src/                application code
     fog.ts          the fog over that image: unexplored opaque, remembered veiled, visible clear
     view.ts         the seed, zoom, viewport and Faction the page opens on, with no engine in sight
     boot.ts         the game page's boot: the theatre, its fog, the Match, the camera, the hooks
-    game.ts         the Match behind the interface, and the real-time loop that drives it
+    game.ts         the Match behind the interface, the real-time loop that drives it, and its end
     opening.ts      the army the page musters, and the eyes it therefore has
     squads.ts       a Squad drawn as its soldiers in formation, from the simulation's own list
-    squad-layer.ts  one sprite per Squad on the map, and the mark of where it was told to go
+    squad-layer.ts  one sprite per Squad on the map, the mark of where it was told to go, and the dead
+    corpses.ts      a corpse: which body, where on its tile, and how far through its fade
     controls.ts     the pointer and the keyboard, ending at the hooks a test calls
     hud.ts          the interface's two plates on the stage, in screen space
     atelier-layout.ts  where the several zoom levels of the catalogue stand on the page
     atelier.ts      the Atelier page: the catalogue plate, one column per zoom level
   page.ts           where a page mounts, and what a failed boot looks like
   debug.ts          the hooks a page publishes: what booted, where the camera is, what it drew
+  hooks.ts          every hook and snapshot field a page publishes, by name, so a document can be held to it
   main.ts           the game page's entry
   atelier.ts        the Atelier page's entry
 scripts/guard.mjs   the fences
+scripts/profiles.mjs        the browser responsibilities, their owner specs and the coverage map
+scripts/verify.mjs          the profile entry point: focus, unit, smoke, feature, accept, visual
+scripts/selection.mjs       whether a change must take complete acceptance
+scripts/selection-rules.mjs the escalation rules, as data and pure functions
 tests/              Vitest unit tests
+  verify/           the profile inventory and the escalation rules, held to their owners
 e2e/                Playwright browser tests (a real browser, so `pixi.js` is allowed)
+  hooks.ts          reading a page's hooks from a test, one datum at a time
+  fixtures.ts       the `test` every spec runs on: a page watched for the evidence a failure needs
+  diagnostics.ts    what that evidence is: the boot report, the snapshot, the console, the errors, the DOM
+  evidence.ts       the only writer of visual frames: off unless `SPQR_VISUAL=1`
+  smoke.spec.ts     the small real-browser smoke: boot, one Command, frame and console health
 docs/PLAN.md        the plan of record
 docs/COMMANDS.md    the Command vocabulary an external agent is written from
+docs/PROTOCOL.md    the protocol an external agent is written from, and a skeleton agent
+docs/BROWSER.md     the hooks an agent driving the page is written from, and what a failure leaves
+docs/VERIFICATION.md  the verification profiles, their owners, the CI gates and the budgets
+examples/agent.ts   an agent written from that document, importing nothing from this repository
 ```
 
-Further modules from the plan's architecture (`ai/`, `audio/`)
-arrive with the tickets that need them, under `src/`.
+Further modules from the plan's architecture (`audio/`) arrive with the tickets
+that need them, under `src/`.
 
 ## Continuous integration
 
@@ -936,4 +1725,20 @@ a plan that includes Pages.
   reach the Match are read back through the page's hooks. The army is hidden with
   the page's own `showSquads(false)` lens for the comparisons that are about the
   ground, and one test composes a Squad's block in Node and compares it with the
-  GPU's pixels, so the men on screen are the generator's.
+  GPU's pixels, so the men on screen are the generator's. Since E4 a whole Match
+  is played in the browser too: the page is paused, ordered about and
+  fast-forwarded to its bound, which is 42 minutes of Match time in about a second
+  because the wall clock is skipped rather than accelerated (ADR-0022). Every spec
+  runs on `e2e/fixtures.ts`, so a failure attaches the page's own account of itself
+  — boot report, snapshot, state hash, console, errors, DOM — instead of a
+  screenshot, and the surface itself is held to its document and to its interfaces
+  by `e2e/surface.spec.ts` and `tests/render/browser-docs.test.ts`.
+
+The browser suite is selected by [responsibility](docs/VERIFICATION.md), not run
+whole for every change: `npm run test:smoke` boots the real page in under ninety
+seconds, `npm run test:feature -- orders` runs one owner, `npm run test:accept`
+runs every spec with captures off, and `npm run test:visual` is the explicit
+request for frames. In CI, `main` is the integration gate: a pull request into
+`main` and a push to `main` take the smoke and complete acceptance, while a
+`develop` pull request runs the fast checks and opts into Chromium with the
+`browser` label. A merge into `develop` runs the smoke as a post-merge net.

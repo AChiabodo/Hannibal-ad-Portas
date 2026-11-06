@@ -3,7 +3,7 @@
  *
  * A Squad is ordered to a tile; what it needs is the cheapest sequence of tiles
  * to walk to get there, or a reason why there is none. That is `findRoute`, and
- * it is A* over the 96×96 grid, four-connected, with the terrain's cost as its
+ * it is A* over the 160×160 grid, four-connected, with the terrain's cost as its
  * edge weight — which is the plan's decision, taken when a dozen Squads on one
  * theatre were known to be the whole demand for pathfinding.
  *
@@ -13,6 +13,12 @@
  * - **Water is not crossed.** A river is not an expensive tile but a wall, and a
  *   route never enters one; a ford is how the water is crossed, and it costs
  *   time rather than being forbidden.
+ * - **A route is priced in the walker's own pace.** Every type marches at a
+ *   `speed` (`content/squads.ts`): a tile costs the terrain's own ticks divided
+ *   by the pace and rounded up, so a horse does not merely walk a footsoldier's
+ *   road faster — the search that chose the road chose it *for the horse*, and a
+ *   cache remembers one route per pace rather than pretending all walkers are
+ *   alike.
  * - **The same question has the same answer.** Every number here is an integer,
  *   the heuristic is the Manhattan distance times the cheapest tile there is —
  *   admissible and consistent, so a tile taken out of the frontier is settled —
@@ -74,16 +80,18 @@ import {
  * A river has no entry: it is not crossed at all, and `moveCost` refuses to
  * price it rather than pretending it is expensive.
  */
-const MOVE_COST: Readonly<Record<Exclude<Terrain, typeof TERRAIN.river>, number>> = {
+const MOVE_COST: Readonly<Record<Exclude<Terrain, typeof TERRAIN.river | typeof TERRAIN.lake>, number>> = {
   [TERRAIN.road]: 2,
+  [TERRAIN.bridge]: 2,
   [TERRAIN.plain]: 4,
   [TERRAIN.farmland]: 5,
   [TERRAIN.hill]: 8,
   [TERRAIN.forest]: 8,
   [TERRAIN.ford]: 10,
+  [TERRAIN.marsh]: 10,
 };
 
-/** The cheapest tile there is: what the search's heuristic counts in. */
+/** The cheapest tile there is, at the pace of a man on foot: the search's heuristic counts in it. */
 const CHEAPEST_TILE = Math.min(...Object.values(MOVE_COST));
 
 /**
@@ -93,23 +101,46 @@ const CHEAPEST_TILE = Math.min(...Object.values(MOVE_COST));
  *   route crosses — a caller that asks is a caller that has already gone wrong.
  */
 export function moveCost(terrain: Terrain): number {
-  if (terrain === TERRAIN.river) {
-    throw new RangeError('a river is not crossed: a tile of open water has no cost to enter');
+  if (terrain === TERRAIN.river || terrain === TERRAIN.lake) {
+    throw new RangeError('open water has no cost to enter');
   }
 
   return MOVE_COST[terrain];
 }
 
 /**
+ * How many ticks a Squad of a given pace spends entering a tile of this terrain.
+ *
+ * The terrain's own cost divided by the pace and rounded up, so the pace is a
+ * whole number of tiles' worth of ground per tile's cost and never a float in
+ * state: a road costs a horse one tick, plain ground two, a ford five. `moveCost`
+ * and `paceCost` are the two halves of one table, and the search weighs a route
+ * with the second so that a fast Squad is routed by the time *it* would take.
+ *
+ * @throws RangeError when the pace is not a whole number of at least one, or the
+ *   terrain is water.
+ */
+export function paceCost(terrain: Terrain, pace: number): number {
+  return Math.ceil(moveCost(terrain) / requirePace(pace));
+}
+
+/** A pace a Squad can march at, refusing the numbers that are not one. */
+function requirePace(pace: number): number {
+  if (!Number.isInteger(pace) || pace < 1) {
+    throw new RangeError(`a pace is a whole number of tiles at least one, got ${String(pace)}`);
+  }
+
+  return pace;
+}
+
+/**
  * Why a route was refused, in the words an Observation carries.
  *
- * Three reasons, because there are three ways an order can be impossible: the
- * tile is not on this theatre at all, the tile is water, or the tile is land
- * that nothing reaches. The last one is not reachable on a generated map —
- * B1's invariants make the land one landmass — and is the honest answer for a
- * theatre that is not generated, or for one a later system has walled off.
+ * A route can name an off-map Tile, water or land that nothing reaches. Group
+ * allocation can additionally exhaust separated arrival positions near its
+ * target: `no-space` is assigned by movement, never by the route search.
  */
-export type RouteRefusal = 'off-map' | 'water' | 'unreachable';
+export type RouteRefusal = 'off-map' | 'water' | 'unreachable' | 'no-space' | 'garrison-full' | 'garrison-type' | 'target-not-visible' | 'target-unavailable' | 'target-repairing';
 
 /**
  * The refusals in code order: what state holds, spelled out.
@@ -119,7 +150,7 @@ export type RouteRefusal = 'off-map' | 'water' | 'unreachable';
  * the numbers are, the way `RESOURCE_KINDS` is for resources, so the words and
  * the codes cannot drift apart.
  */
-export const ROUTE_REFUSALS: readonly RouteRefusal[] = ['off-map', 'water', 'unreachable'];
+export const ROUTE_REFUSALS: readonly RouteRefusal[] = ['off-map', 'water', 'unreachable', 'no-space', 'garrison-full', 'garrison-type', 'target-not-visible', 'target-unavailable', 'target-repairing'];
 
 /** The code a Squad holds when its last order was taken: not a refusal at all. */
 export const NO_REFUSAL = -1;
@@ -157,10 +188,18 @@ export type Route =
 /**
  * The cheapest way from one tile to another, or why there is none.
  *
+ * @param pace The whole number of tiles' worth of ground the walker covers for
+ *   the cost of one; `1` is a man on foot. A route is searched in the walker's
+ *   own pace, so the way a horse is given is the quickest way for a horse.
  * @throws RangeError when the tile it sets out from is not a walkable tile of
- *   this map: a route starts where a Squad stands, and a Squad stands on land.
+ *   this map, or the pace is not a whole number of at least one: a route starts
+ *   where a Squad stands, and a Squad stands on land.
  */
-export function findRoute(map: MapGrid, from: Site, to: Site): Route {
+export type PassageCheck = (x: number, y: number, fromX?: number, fromY?: number) => boolean;
+
+export function findRoute(map: MapGrid, from: Site, to: Site, pace = 1, canEnter?: PassageCheck): Route {
+  requirePace(pace);
+
   const start = tileOf(from);
   if (start < 0 || !isWalkable(terrainAt(map, from.x, from.y))) {
     throw new RangeError(
@@ -171,9 +210,10 @@ export function findRoute(map: MapGrid, from: Site, to: Site): Route {
   const goal = tileOf(to);
   if (goal < 0) return { kind: 'refused', reason: 'off-map' };
   if (!isWalkable(terrainAt(map, to.x, to.y))) return { kind: 'refused', reason: 'water' };
+  if (canEnter !== undefined && !canEnter(to.x, to.y)) return { kind: 'refused', reason: 'unreachable' };
   if (goal === start) return { kind: 'route', steps: [] };
 
-  const steps = search(map, start, goal);
+  const steps = search(map, start, goal, pace, canEnter);
 
   return steps === null ? { kind: 'refused', reason: 'unreachable' } : { kind: 'route', steps };
 }
@@ -194,20 +234,25 @@ function tileOf(site: Site): number {
  * are broken by the order tiles were queued in — a number that only ever grows —
  * so the heap's shape can never decide which of two equally short routes comes
  * back. A tile is settled when it leaves the frontier, which is correct because
- * the heuristic never overestimates: the cheapest a step can cost is
- * `CHEAPEST_TILE`, so no tile behind the one in hand can be reached more cheaply.
+ * the heuristic never overestimates: the cheapest a step can cost *this walker*
+ * is the road's ticks divided by its pace, so no tile behind the one in hand can
+ * be reached more cheaply.
  */
-function search(map: MapGrid, start: number, goal: number): number[] | null {
+function search(map: MapGrid, start: number, goal: number, pace: number, canEnter?: PassageCheck): number[] | null {
   const cost = new Int32Array(TILE_COUNT).fill(-1);
   const cameFrom = new Int32Array(TILE_COUNT).fill(-1);
   const estimate = new Int32Array(TILE_COUNT).fill(-1);
   const arrival = new Int32Array(TILE_COUNT).fill(-1);
   const settled = new Uint8Array(TILE_COUNT);
   const frontier: number[] = [];
+  // The cheapest a step can cost *this* walker, which is the road's own ticks
+  // divided by its pace: the heuristic never overestimates a horse by counting
+  // in a footsoldier's pace.
+  const cheapest = Math.ceil(CHEAPEST_TILE / pace);
   let arrivals = 0;
 
   cost[start] = 0;
-  estimate[start] = stepsBetween(start, goal) * CHEAPEST_TILE;
+  estimate[start] = stepsBetween(start, goal) * cheapest;
   arrival[start] = 0;
   frontier.push(start);
 
@@ -224,14 +269,15 @@ function search(map: MapGrid, start: number, goal: number): number[] | null {
 
       const ground = terrainAt(map, tileX(neighbour), tileY(neighbour));
       if (!isWalkable(ground)) continue;
+      if (canEnter !== undefined && !canEnter(tileX(neighbour), tileY(neighbour), tileX(tile), tileY(tile))) continue;
 
-      const through = reached + moveCost(ground);
+      const through = reached + paceCost(ground, pace);
       const known = cost[neighbour] as number;
       if (known >= 0 && known <= through) continue;
 
       cost[neighbour] = through;
       cameFrom[neighbour] = tile;
-      estimate[neighbour] = through + stepsBetween(neighbour, goal) * CHEAPEST_TILE;
+      estimate[neighbour] = through + stepsBetween(neighbour, goal) * cheapest;
       arrival[neighbour] = arrivals;
       arrivals += 1;
       push(frontier, neighbour, estimate, arrival);
@@ -380,8 +426,12 @@ function elementAt<T>(items: ArrayLike<T>, index: number): T {
  * second time.
  */
 export interface RouteCache {
-  /** The way from one tile to another: searched for once, and looked up after that. */
-  route(from: Site, to: Site): Route;
+  /**
+   * The way from one tile to another at a walker's pace: searched for once, and
+   * looked up after that. One route is remembered per pace, because a horse's
+   * quickest way is not always a footsoldier's.
+   */
+  route(from: Site, to: Site, pace?: number, canEnter?: PassageCheck, context?: string): Route;
 
   /** How many searches it has run: what "remembered rather than recomputed" is counted by. */
   readonly searches: number;
@@ -408,17 +458,18 @@ export function createRouteCache(map: MapGrid, limit: number = ROUTE_CACHE_LIMIT
     throw new RangeError(`a route cache remembers a whole number of routes, one or more, got ${String(limit)}`);
   }
 
-  const routes = new Map<number, Route>();
+  const routes = new Map<string, Route>();
   let searches = 0;
   let hits = 0;
 
   return {
-    route(from: Site, to: Site): Route {
-      const key = routeKey(from, to);
+    route(from: Site, to: Site, pace = 1, canEnter?: PassageCheck, context = ''): Route {
+      const base = routeKey(from, to, pace);
+      const key = base === null ? null : `${context}/${base}`;
 
       // A tile that is not on the map is refused without a search and without a
       // memory: there is nothing to work out, and nothing worth remembering.
-      if (key < 0) return findRoute(map, from, to);
+      if (key === null) return findRoute(map, from, to, pace, canEnter);
 
       const remembered = routes.get(key);
       if (remembered !== undefined) {
@@ -431,7 +482,7 @@ export function createRouteCache(map: MapGrid, limit: number = ROUTE_CACHE_LIMIT
       }
 
       searches += 1;
-      const route = findRoute(map, from, to);
+      const route = findRoute(map, from, to, pace, canEnter);
       routes.set(key, route);
       if (routes.size > limit) forgetOldest(routes);
 
@@ -452,12 +503,19 @@ export function createRouteCache(map: MapGrid, limit: number = ROUTE_CACHE_LIMIT
   };
 }
 
-/** The key two tiles are remembered under, or -1 when either end is not a tile of the map. */
-function routeKey(from: Site, to: Site): number {
+/**
+ * The key two tiles are remembered under at a pace, or `null` when either end is
+ * not a tile of the map.
+ *
+ * The pace is part of the key: two walkers of the same ground may take different
+ * ways, so remembering one answer for both would answer the second walker with
+ * the first walker's route.
+ */
+function routeKey(from: Site, to: Site, pace: number): string | null {
   const start = tileOf(from);
   const goal = tileOf(to);
 
-  return start < 0 || goal < 0 ? -1 : start * TILE_COUNT + goal;
+  return start < 0 || goal < 0 ? null : `${String(pace)}:${String(start)}:${String(goal)}`;
 }
 
 /** A route of the caller's own, so walking it cannot spoil what was remembered. */
@@ -466,7 +524,7 @@ function copyOf(route: Route): Route {
 }
 
 /** Forgets the route the cache has gone longest without being asked about. */
-function forgetOldest(routes: Map<number, Route>): void {
+function forgetOldest(routes: Map<string, Route>): void {
   const oldest = routes.keys().next();
 
   if (!oldest.done) routes.delete(oldest.value);

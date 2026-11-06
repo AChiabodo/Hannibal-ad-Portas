@@ -69,7 +69,7 @@ export const REMEMBERED: Rgba = withAlpha(UNEXPLORED, 160);
  * One pass per logical tile, then the four half-tile margins around them, so
  * every pixel of the image is covered by exactly one state.
  *
- * @throws RangeError when the view is not over a 96×96 theatre, which is the
+ * @throws RangeError when the view is not over a 160×160 theatre, which is the
  *   only theatre this project has.
  */
 export function renderFog(fog: FogView): PixelBuffer {

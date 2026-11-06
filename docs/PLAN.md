@@ -39,6 +39,10 @@ Boundaries are enforced in CI, because they are what makes headless testing poss
 - **`sim/`** — the Match: map, visibility, seasons, economy, Squads, combat, siege, victory. Pure TypeScript. Imports nothing from `render/`, `art/`, `ui/` or `ai/`, and never `pixi.js`.
 - **`content/`** — Factions, Squad types, buildings, costs, as typed TypeScript data. No runtime parsing, no fetching. Fenced as part of the simulation, on the same terms as `ai/`.
 - **`ai/`** — Controllers that reason. May import an Observation's *types*; never the internals of `sim/`. Fenced as part of the simulation: nothing reachable from here may import `pixi.js` or use arithmetic ECMA-262 leaves implementation-approximated.
+
+D1's [AI contract](AI.md) documents the three clocks, independent behaviour
+registration and scored decision logs. The AI import fence follows local helpers
+and re-exports, and is enforced by `guard` and `build`.
 - **`art/`** — pure pixel generators: `PixelBuffer` in, `PixelBuffer` out. Never imports `pixi.js`, enforced by the render allow-list.
 - **`audio/`** — score and effects described as data, synthesized by a WebAudio adapter.
 - **`render/`** — the only place `pixi.js` exists, enforced. Converts `PixelBuffer` into `BufferImageSource`; owns camera, culling and picking.
@@ -75,17 +79,17 @@ A debug page that renders the entire generated catalogue: every Squad figure in 
 
 ## 4. Systems, as decided
 
-**Map.** `generateMap(seed) → MapGrid`, a pure function on a **96×96** grid of 16×16 tiles. Organic, not mirrored, with invariants that tests assert: full land connectivity, resource parity between halves within tolerance, at least N fords per river, minimum distance between Strongholds, every settlement reachable. Contents: 2 Strongholds, 4–6 capturable minor settlements, rivers with fords, forests, hills, resource nodes (grain, timber, stone, iron), roads generated as paths joining the nodes. Not the real Italy — an abstract Italic theatre, and we say so rather than invite the wrong expectation.
+**Map.** `generateMap(seed) → MapGrid`, a pure function on a **160×160** grid of 16×16 tiles (ADR-0030). Organic, not mirrored, with invariants that tests assert: full land connectivity, resource parity between halves within tolerance, at least N fords per river, separated maximum settlement grounds, every settlement reachable. Contents: 2 Strongholds, 6–8 capturable minor settlements, rivers with fords, occasional inland lakes and slowing marshes, forests, hills, resource nodes (grain, timber, stone, iron), roads generated as paths joining the nodes. Reserved grounds remain walkable except for actual structures and started Works. Not the real Italy — an abstract Italic theatre.
 
 **Terrain.** Orthogonal top-down, square tiles, sprites drawn three-quarter. **No playable elevation** (ADR-0007): the heightmap is generative noise for placing biomes, never a height. Terrain *types* carry the modifiers: plain, hill (defensive), forest (conceals, penalises cavalry), ford (disorders), road (speed), farmland. Terrain tiles are autotiled with the **dual-grid technique — five tiles plus rotation**, not forty-seven variants.
 
 **Fog of war.** Unexplored black, explored-but-unobserved dimmed, visible clear, with memory of terrain and of the **last known enemy contact**. Vision by radius per tile; no elevation-based line of sight in v1. An omniscient inspection mode exists for debugging only: it is not a Player and cannot emit Commands.
 
-**Time.** A **Season** is 3–4 minutes; a game year is 13–16 minutes. Spring and summer are campaign season; autumn is harvest; **winter** brings Attrition outside friendly Territory and favours the defender, and the AI keeps winter quarters. Three speeds, and a real pause with queueable orders. Human Matches have no time limit; **headless and AI-vs-AI Matches run bound to 3 years** so that a match always terminates.
+**Time.** A **Season** is 3–4 minutes; a game year is 13–16 minutes. Spring and summer are campaign season; autumn is harvest; **winter** brings Attrition outside friendly Territory and favours the defender, and the AI keeps winter quarters. Three speeds, and a real pause with queueable orders. A Match is bound to **3 game years**, in a browser and headless alike, so that every Match always terminates and one can be watched — or fast-forwarded — to its end (ADR-0022).
 
 **Economy.** No worker units (ADR-0005). Population is a pool allocated to buildings and land; production matures on a timer; **resources accumulate per settlement** while denarii form one treasury. Construction is a labour allocation plus a timer. Three settlement tiers gate Squad tiers — the progression *is* the tiers, so there is no technology tree. **Payroll** is charged every Season: unpaid Carthaginian Squads lose morale and eventually desert.
 
-**Squads.** The atomic unit (ADR-0004). Pathfinding is A* on the 96×96 grid with path caching; at a dozen Squads, flow fields are unnecessary. Formations matter (frontage versus depth) and are a property of the Squad itself.
+**Squads.** The atomic unit (ADR-0004). Pathfinding is A* on the 160×160 grid with bounded path caching and shared formation footprints. Formations matter in space and combat. Gates and Breaches use real marching columns and one-Squad FIFO traffic; no individual soldier paths (ADR-0030).
 
 **Combat.** Morale-primary: **Squads break, they do not die to the last man.** Levers: the matchup matrix (`spear > cavalry > light > archers > spear`), flanking and rear attacks as morale shock as well as damage, terrain, fatigue, ammunition, faction character, Payroll, and being cut off from Territory. Rout is automatic and rallying is automatic — no micro-recovery, consistent with ADR-0004. No generals. Corpses are visual residue that fades after about thirty seconds and never touches state.
 

@@ -14,10 +14,18 @@ function ran(result: MatchResult, log: CommandLog<Command> = []): MatchRun {
 
 describe('the JSON report of a Match', () => {
   it('names the seed, the outcome, the tick it ended on and the reason, in a fixed order', () => {
-    const report = ran({ kind: 'victory', winner: 'rome', tick: 25 }, [
-      { tick: 0, command: move('rome', [1], 4, 4) },
-      { tick: 24, command: hold('carthage', [3]) },
-    ]);
+    const report = ran(
+      {
+        kind: 'victory',
+        winner: 'rome',
+        reason: { kind: 'stronghold', stronghold: 0, path: 'assault' },
+        tick: 25,
+      },
+      [
+        { tick: 0, command: move('rome', [1], 4, 4) },
+        { tick: 24, command: hold('carthage', [3]) },
+      ],
+    );
 
     expect(formatReport(reportOf(report))).toBe(
       `{
@@ -25,7 +33,7 @@ describe('the JSON report of a Match', () => {
   "ticks": 25,
   "outcome": "victory",
   "winner": "rome",
-  "reason": "rome won the Match",
+  "reason": "rome won the Match: the carthage Stronghold fell to an assault",
   "commands": 2,
   "hash": "0123456789abcdef"
 }
@@ -33,12 +41,31 @@ describe('the JSON report of a Match', () => {
     );
   });
 
-  it('names the winner of a victory and nobody else', () => {
-    const report = reportOf(ran({ kind: 'victory', winner: 'carthage', tick: 900 }));
+  it('names the winner of a victory and nobody else, and the Stronghold the reason names', () => {
+    const report = reportOf(
+      ran({
+        kind: 'victory',
+        winner: 'carthage',
+        reason: { kind: 'stronghold', stronghold: 1, path: 'blockade' },
+        tick: 900,
+      }),
+    );
 
     expect(report.outcome).toBe('victory');
     expect(report.winner).toBe('carthage');
-    expect(report.reason).toBe('carthage won the Match');
+    expect(report.reason).toBe(
+      'carthage won the Match: the rome Stronghold fell to a blockade',
+    );
+  });
+
+  it('says so when the loser has nothing left at all, which is the other way a Match ends', () => {
+    const report = reportOf(
+      ran({ kind: 'victory', winner: 'rome', reason: { kind: 'annihilation' }, tick: 40 }),
+    );
+
+    expect(report.reason).toBe(
+      'rome won the Match: the carthage has neither settlements nor Squads left',
+    );
   });
 
   it('reports a draw the rules called as a draw, with no winner', () => {

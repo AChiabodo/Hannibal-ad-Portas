@@ -82,7 +82,9 @@ export interface Stage {
    * shape would be the second implementation of every generator that the plan
    * exists to avoid (PLAN §3, ADR-0002).
    */
+  resize(width: number, height: number): void;
   extract(): PixelBuffer;
+  destroy(): void;
 }
 
 /**
@@ -115,6 +117,7 @@ export async function createStage(mount: HTMLElement, options: StageOptions): Pr
   const gl = readGl(app.renderer);
 
   return {
+    destroy: () => app.destroy(true, { children: true, texture: true, textureSource: true }),
     root: app.stage as Container,
     canvas: app.canvas,
     renderer: {
@@ -122,8 +125,13 @@ export async function createStage(mount: HTMLElement, options: StageOptions): Pr
       webglVersion: gl !== null && gl instanceof WebGL2RenderingContext ? 2 : null,
       rendererDescription: gl === null ? null : readRendererDescription(gl),
     },
-    width: options.width,
-    height: options.height,
+    get width() { return app.renderer.width; },
+    get height() { return app.renderer.height; },
+    resize: (width, height) => {
+      app.renderer.resize(width, height);
+      app.canvas.style.width = `${String(width)}px`;
+      app.canvas.style.height = `${String(height)}px`;
+    },
     spriteOf: (buffer) => new Sprite(textureOf(buffer)),
     render: () => {
       app.render();
@@ -135,7 +143,7 @@ export async function createStage(mount: HTMLElement, options: StageOptions): Pr
     extract: () =>
       app.renderer.extract.pixels({
         target: app.stage as Container,
-        frame: new Rectangle(0, 0, options.width, options.height),
+        frame: new Rectangle(0, 0, app.renderer.width, app.renderer.height),
       }),
   };
 }

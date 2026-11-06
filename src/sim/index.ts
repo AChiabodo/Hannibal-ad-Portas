@@ -19,7 +19,8 @@
  * - `match.ts` — the tick itself: a clock, a world, a cursor, and a hash of all three.
  * - `replay.ts` — a seed plus a command log, run again and compared; `replay`
  *   re-enacts a log the caller holds, `replayCommands` closes the vocabulary on
- *   one that arrived from outside.
+ *   one that arrived from outside, and `divergenceOf` says where two runs of the
+ *   same Match stopped agreeing (E2).
  *
  * A3 made the seam real: one place where a decision enters the game.
  *
@@ -56,13 +57,27 @@
  *   Observation built from that memory, recomputed on every tick from the
  *   settlements the Faction holds.
  *
+ * C1 made the Squads walk, and C3 made them fight:
+ *
+ * - `squad.ts` — the block a Squad is: its facings, its formations, its fatigue
+ *   and its nerve, and where its men stand (the last two derived).
+ * - `route.ts` and `movement.ts` — what crossing a tile costs, A* over the
+ *   theatre, refusals, and the Commands that move a Squad.
+ * - `combat.ts` — the fight: contact, the matchup matrix, flanking and rear
+ *   attacks, terrain, fatigue, missiles, Supply, and the rout and rally that
+ *   follow. Morale is the primary resource and a round of it is one simultaneous
+ *   exchange (ADR-0015).
+ * - `residue.ts` — the men a fight costs, kept *beside* the Match: corpses are
+ *   drawn, fade, and never enter the state hash.
+ *
  * B5 gave the Match its strategic clock, which the CLI plays today:
  *
  * - `season.ts` — the calendar: four Seasons to a game year, autumn and winter
  *   as the only two hooks another system needs, and a Season Match whose
- *   Observation carries the season and the year. The headless bound of three
- *   game years is `HEADLESS_TICKS` here, so the clock and the bound cannot
- *   disagree about how long a year is.
+ *   Observation carries the season and the year. A Match's horizon of three
+ *   game years is `MATCH_TICKS` here — `HEADLESS_TICKS` is the same number under
+ *   the name the CLI reads it by — so the clock, the CLI's default bound and the
+ *   page's bound cannot disagree about how long a year or a Match is.
  * - `pacing.ts` — the three speeds, the pause, and the orders given in it: a
  *   paused loop steps no ticks, and a `PausableController` holds what a Player
  *   decides until the Match resumes. Neither ever reaches state or the hash.
@@ -103,6 +118,40 @@
  * Faction's eyes — its settlements' watches and its marching Squads' — that the
  * page refreshes its fog from (ADR-0013). The Player's selection and control
  * groups are not here at all: they are `input/`'s, and not state (ADR-0014).
+ *
+ * C4 filled both rosters out, and what it added to the simulation is two numbers
+ * a type now states. `paceCost` (`route.ts`) divides a tile's cost by the
+ * walker's own `pace`, and the search and its cache are priced in that pace, so
+ * a horse is routed as a horse (ADR-0017). A type may also state how many
+ * `figures` a full-strength Squad of it is drawn as — one, for an elephant whose
+ * `strength` is the staying power that figure is worth — and the Observation
+ * carries it beside the men (ADR-0016). The fight reads `strength` and knows
+ * nothing about either.
+ *
+ * C5 is where a Match first ends sooner than its bound (ADR-0008, ADR-0018):
+ *
+ * - `siege.ts` — the walls of every settlement as structures with their own hit
+ *   points, the Roman ram built on the spot and vulnerable to the garrison, the
+ *   Assault through a breach, the Blockade that cuts a settlement's supply and
+ *   starves it, the minor settlement taken by holding its centre, and the fall of
+ *   a Stronghold that ends the Match and says why. A garrison is a posture of an
+ *   ordinary Squad (`Block.garrison`), so there is no second kind of army.
+ * - `siegeMatchRules`, `observeSiege` and `siegeMatchOutcome` are the Match that
+ *   joins all of it: the economy's tick with the blockaded settlements cut out
+ *   of production, the Siege's own Commands and clocks, and the verdict.
+ *
+ * C6 makes supply a place on the map (ADR-0005):
+ *
+ * - `territory.ts` — the country a Faction's settlements give it, inferred
+ *   afresh from who holds what and handed to an Observation as a grid of its
+ *   own; the Attrition a Season outside that country takes off a Squad's men;
+ *   and the quarters that shield it — a settlement's walls, its centre, or the
+ *   ground a standing Castrum makes into a camp — Rome's alone, and still Rome's
+ *   when the village it stands in changes hands (`canCamp`). It
+ *   subscribes to the Season boundary beside the economy (`attritionSeasons`),
+ *   and C3's `inSupply` asks the same question rather than guessing it from a
+ *   radius, so a Squad's nerve and its men are cut off by one boundary and not
+ *   two.
  */
 export { TICK_HZ, TICK_MS } from './clock.ts';
 export { requireTickCount } from './ticks.ts';
@@ -112,9 +161,13 @@ export { StateSerializationError, serializeState } from './state.ts';
 export { hashState } from './hash.ts';
 export { createMatch } from './match.ts';
 export type { Match, MatchOptions, MatchRules, MatchState } from './match.ts';
-export { replay, replayCommands } from './replay.ts';
+export { sameEnding } from './outcome.ts';
+export type { MatchResult, Outcome, VictoryReason } from './outcome.ts';
+
+export { divergenceOf, replay, replayCommands } from './replay.ts';
 export type {
   CommandLog,
+  Divergence,
   LoggedCommand,
   ReplayOptions,
   ReplayResult,
@@ -127,8 +180,11 @@ export {
   assault,
   attack,
   attackMove,
+  attackStructure,
   blockade,
   build,
+  cancelFortificationRepair,
+  cancelWorkRepair,
   COMMAND_KINDS,
   CommandValidationError,
   FORMATIONS,
@@ -138,6 +194,8 @@ export {
   hold,
   move,
   recruit,
+  repairFortification,
+  repairWork,
   validateCommand,
   withdraw,
 } from './command.ts';
@@ -145,6 +203,7 @@ export type {
   AssaultCommand,
   AttackCommand,
   AttackMoveCommand,
+  AttackStructureCommand,
   BlockadeCommand,
   BuildCommand,
   Command,
@@ -152,18 +211,27 @@ export type {
   CommandKind,
   Formation,
   FormationCommand,
+  FortificationRepairCommand,
+  WorkRepairCommand,
   GarrisonCommand,
   GroupCommand,
   HoldCommand,
   MoveCommand,
   RecruitCommand,
+  SiegePath,
   WithdrawCommand,
 } from './command.ts';
 export type { Observation } from './observation.ts';
 export { scriptedController, idleController } from './controller.ts';
 export type { Controller, Player, Players } from './controller.ts';
-export { ForeignCommandError, ObservationProjectionError, runMatch } from './driver.ts';
-export type { MatchResult, MatchRun, MatchSetup, Outcome } from './driver.ts';
+export {
+  ForeignCommandError,
+  ObservationProjectionError,
+  matchQuestions,
+  runMatch,
+  runMatchAsync,
+} from './driver.ts';
+export type { Answer, MatchRun, MatchSetup, Question } from './driver.ts';
 export { emptyMatchOutcome, emptyMatchRules, observeEmptyMatch } from './empty.ts';
 export type { EmptyMatchVisible, EmptyMatchWorld } from './empty.ts';
 
@@ -175,6 +243,8 @@ export {
   announceSeasons,
   HEADLESS_TICKS,
   HEADLESS_YEARS,
+  MATCH_TICKS,
+  MATCH_YEARS,
   observeSeasonMatch,
   SEASON_TICKS,
   SEASONS,
@@ -198,6 +268,7 @@ export type {
 export {
   advanceConstruction,
   allocate,
+  ALWAYS_SUPPLIED,
   applyEconomyCommand,
   BASE_HOUSING,
   BASE_LAND_CAPACITY,
@@ -228,9 +299,9 @@ export {
   TREASURY_CAP,
   UNOWNED,
 } from './economy.ts';
-export type { Allocation, Economy, Settlement, Squad, Work } from './economy.ts';
+export type { Allocation, Economy, Settlement, Squad, Supplied, Work } from './economy.ts';
 
-export { economyMatchOutcome, economyMatchRules, eyesOfEconomy, observeEconomy } from './economy-match.ts';
+export { economyMatchOutcome, economyMatchRules, eyesOfEconomy, observeEconomy, stepEconomyWorld } from './economy-match.ts';
 export type {
   EconomyVisible,
   EconomyWorld,
@@ -245,6 +316,7 @@ export {
   findRoute,
   moveCost,
   NO_REFUSAL,
+  paceCost,
   refusalCode,
   refusalOf,
   ROUTE_CACHE_LIMIT,
@@ -258,11 +330,15 @@ export {
   FACINGS,
   facingCode,
   facingOf,
+  FATIGUE_MAX,
+  FIELD,
   FORMATION,
   formationCode,
   formationOf,
   frontage,
+  isRouting,
   menOf,
+  ROUTING,
   standingAt,
 } from './squad.ts';
 export type { Block, Facing, Man, Shape } from './squad.ts';
@@ -272,9 +348,69 @@ export {
   goalOf,
   march,
   musterSquad,
+  orderedSquads,
+  orderSquadTo,
+  ownedSquads,
+  paceOf,
   routeCacheFor,
 } from './movement.ts';
 export type { Placement } from './movement.ts';
+
+export {
+  ADVANTAGE_RATIO,
+  applyCombatCommands,
+  armOfType,
+  ASPECT_SHOCK,
+  ASPECT_STRIKE,
+  aspectOf,
+  BASE_SHOCK,
+  bearing,
+  BREAKING_MORALE,
+  engagedPairs,
+  engagedWith,
+  enemyWithin,
+  exchangeOf,
+  EXCHANGE_TICKS,
+  FATIGUE_PENALTY,
+  fight,
+  FORMATION_STRIKE,
+  FORD_DISORDER,
+  FORD_SHOCK,
+  FOREST_CAVALRY,
+  HILL_DEFENCE,
+  inContact,
+  inSupply,
+  MATCHUP_SHOCK,
+  menOfPoints,
+  POINTS_PER_MAN,
+  VOLLEY_STRIKE,
+  AMMUNITION_PER_VOLLEY,
+  moraleCeiling,
+  RALLY_MORALE,
+  RALLY_RADIUS,
+  resupply,
+  ROUTED_STRIKE,
+  safetyFor,
+  scaledBy,
+  shockOf,
+  supplyMorale,
+  SUPPLY_MORALE_LOSS,
+  VOLLEY_SHOCK,
+  woundsOf,
+} from './combat.ts';
+export type { Aspect, Exchange, Ratio, Wound } from './combat.ts';
+
+export {
+  CORPSE_FADE_TICKS,
+  CORPSE_LIMIT,
+  CORPSE_TICKS,
+  corpsesOf,
+  fadeResidue,
+  isLying,
+  recordCasualties,
+  residueFor,
+} from './residue.ts';
+export type { Corpse, Fallen, Residue } from './residue.ts';
 
 export {
   generateMap,
@@ -332,3 +468,79 @@ export type { EnemyInSight, Eye, Fog, FogView, Knowledge, LastKnownContact } fro
 
 export { createFogMatchWorld, eyesOf, fogMatchOutcome, fogMatchRules, observeFogMatch } from './fog-match.ts';
 export type { FogMatchVisible, FogMatchWorld } from './fog-match.ts';
+
+export {
+  applyAttrition,
+  ATTRITION_FIELD_WINTER_PERCENT,
+  attritionSeasons,
+  ATTRITION_PERCENT,
+  ATTRITION_WINTER_PERCENT,
+  attritionPercent,
+  CAMP_RADIUS,
+  canCamp,
+  holdsTerritory,
+  inCamp,
+  inQuarters,
+  territoryAt,
+  territoryOf,
+  territoryView,
+  TERRITORY_RADIUS,
+} from './territory.ts';
+export type { Territory } from './territory.ts';
+
+export {
+  applySiegeCommand,
+  ASSAULT_TICKS,
+  besiege,
+  BLOCKADE_GRAIN_LOSS,
+  BLOCKADE_MORALE_LOSS,
+  BLOCKADE_POPULATION_LOSS,
+  breached,
+  canAssault,
+  CAPTURE_HOLDS,
+  CAPTURE_TICKS,
+  createSiege,
+  createSiegeWorld,
+  ESCALADE_BEARING,
+  ESCALADE_DAMAGE,
+  escaladeDamage,
+  frontAt,
+  GATE_HP,
+  gateOf,
+  garrisonOf,
+  isBlockaded,
+  isWalled,
+  observeSiege,
+  RAM_BUILD_TICKS,
+  RAM_COST,
+  RAM_DAMAGE,
+  RAM_BEARING_PER_BLOW,
+  RAM_HP,
+  RELIEF_RADIUS,
+  SIEGE,
+  SIEGE_RADIUS,
+  settlementIdAt,
+  siegeMatchOutcome,
+  siegeMatchRules,
+  starveBlockades,
+  STRUCTURE,
+  STRUCTURE_KINDS,
+  suppliedBy,
+  WALL_ASSAULT_LOSS,
+  wallLoss,
+  WALL_HP,
+  WALL_SECTIONS,
+  WALL_SHOCK,
+} from './siege.ts';
+export type {
+  Front,
+  Siege,
+  SiegeCode,
+  SiegeVisible,
+  SiegeWorld,
+  Structure,
+  StructureKind,
+  VisibleFront,
+  VisibleRam,
+  VisibleStructure,
+} from './siege.ts';

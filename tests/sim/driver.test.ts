@@ -132,7 +132,7 @@ describe('a headless Match', () => {
     const run = play();
 
     expect(run.seed).toBe(99);
-    expect(run.result).toEqual({ kind: 'victory', winner: 'rome', tick: 3 });
+    expect(run.result).toEqual({ kind: 'victory', winner: 'rome', reason: { kind: 'annihilation' }, tick: 3 });
     expect(run.hash).toMatch(/^[0-9a-f]{16}$/);
   });
 

@@ -23,10 +23,21 @@ import {
  *
  * The row defaults to the rectangle's own vertical position, which is what a
  * test that does not care about depth wants; the tests that do care pass one.
+ * The layer defaults to `MEN`, which is where the stage draws the blocks: over
+ * the places they are standing in.
  */
-function block(id: number, x: number, y: number, width = 54, height = 50, depth = y): Pickable {
-  return { id, rect: { x, y, width, height }, depth };
+function block(id: number, x: number, y: number, width = 54, height = 50, depth = y, layer = MEN): Pickable {
+  return { kind: 'squad', id, rect: { x, y, width, height }, depth, layer };
 }
+
+/** A settlement's structure: a drawn square, round the tile it stands on. */
+function place(id: number, x: number, y: number, size = 48, depth = y): Pickable {
+  return { kind: 'settlement', id, rect: { x, y, width: size, height: size }, depth, layer: PLACES };
+}
+
+/** How high the stage draws the two kinds against each other (`render/game.ts`). */
+const PLACES = 0;
+const MEN = 1;
 
 /** The middle of a block. */
 function middle(squad: Pickable): { readonly x: number; readonly y: number } {
@@ -82,7 +93,7 @@ describe('one click', () => {
   });
 
   it('picks nothing where a block has no width or no height', () => {
-    const sliver: Pickable = { id: 1, rect: { x: 10, y: 10, width: 0, height: 10 }, depth: 10 };
+    const sliver: Pickable = { kind: 'squad', id: 1, rect: { x: 10, y: 10, width: 0, height: 10 }, depth: 10, layer: MEN };
 
     expect(selectAt(NOTHING_SELECTED, [sliver], { x: 10, y: 15 })).toEqual(NOTHING_SELECTED);
   });
@@ -121,6 +132,49 @@ describe('a dragged box', () => {
 });
 
 describe('a settlement', () => {
+  it('opens its panel from the structure a click lands on', () => {
+    const places = [place(7, 0, 0)];
+    const picked = selectAt(NOTHING_SELECTED, places, middle(places[0]!));
+
+    expect(picked).toEqual({ squads: [], settlement: 7 });
+  });
+
+  it('is what a shift-click picks too, and adds nothing to a wall', () => {
+    const places = [place(7, 0, 0), place(8, 100, 0)];
+    const men = selectAt(NOTHING_SELECTED, [block(1, 0, 0)], { x: 10, y: 10 });
+
+    expect(selectAt(men, places, middle(places[0]!), true)).toEqual({ squads: [], settlement: 7 });
+  });
+
+  it('is drawn under the men standing in it, and picked under them too', () => {
+    const town = place(7, 0, 0);
+    const men = block(1, 10, 10, 20, 20, 0);
+    const at = { x: 15, y: 15 };
+
+    // The same pixels: the Squad is drawn in the later layer, so it is what a
+    // Player sees and what the click takes, whatever rows the two are on.
+    expect(selectAt(NOTHING_SELECTED, [town, men], at).squads).toEqual([1]);
+    expect(selectAt(NOTHING_SELECTED, [men, town], at).squads).toEqual([1]);
+    // And where the men are not, the place is.
+    expect(selectAt(NOTHING_SELECTED, [town, men], { x: 40, y: 40 }).settlement).toBe(7);
+  });
+
+  it('picks the place drawn in front when two structures overlap', () => {
+    const behind = place(1, 0, 0, 48, 10);
+    const front = place(2, 0, 0, 48, 20);
+
+    expect(selectAt(NOTHING_SELECTED, [behind, front], { x: 10, y: 10 }).settlement).toBe(2);
+    expect(selectAt(NOTHING_SELECTED, [front, behind], { x: 10, y: 10 }).settlement).toBe(2);
+  });
+
+  it('is not swept up by a dragged box, which is a gesture about men', () => {
+    const places = [place(7, 0, 0)];
+    const men = [block(1, 100, 100)];
+
+    expect(selectIn(NOTHING_SELECTED, [...places, ...men], box(-10, -10, 200, 200)).squads).toEqual([1]);
+    expect(selectIn(NOTHING_SELECTED, places, box(-10, -10, 200, 200))).toEqual(NOTHING_SELECTED);
+  });
+
   it('takes the panel and puts the men down', () => {
     const picked = { squads: [1, 2], settlement: null };
 
@@ -128,12 +182,14 @@ describe('a settlement', () => {
     expect(picked).toEqual({ squads: [1, 2], settlement: null });
   });
 
-  it('drops a Squad that has left the field, and a settlement that is no longer held', () => {
-    expect(stillHeld({ squads: [1, 2], settlement: null }, [2], [])).toEqual({ squads: [2], settlement: null });
-    expect(stillHeld({ squads: [], settlement: 7 }, [], [7])).toEqual({ squads: [], settlement: 7 });
-    expect(stillHeld({ squads: [], settlement: 7 }, [], [])).toEqual(NOTHING_SELECTED);
+  it('drops a Squad that has left the field, and keeps the place whose panel is open', () => {
+    expect(stillHeld({ squads: [1, 2], settlement: null }, [2])).toEqual({ squads: [2], settlement: null });
+    // A settlement does not leave the field: it can change hands, and what the panel
+    // may say about it is the interface's question (U6), so the Controller keeps it.
+    expect(stillHeld({ squads: [], settlement: 7 }, [])).toEqual({ squads: [], settlement: 7 });
+    expect(stillHeld({ squads: [1], settlement: 7 }, [])).toEqual({ squads: [], settlement: 7 });
     // Nothing to prune is the same object: a busy tick allocates nothing.
     const picked = { squads: [1], settlement: null };
-    expect(stillHeld(picked, [1], [])).toBe(picked);
+    expect(stillHeld(picked, [1])).toBe(picked);
   });
 });

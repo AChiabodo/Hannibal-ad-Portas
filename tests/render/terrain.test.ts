@@ -14,6 +14,7 @@
  * test beside this one a comparison rather than a smoke test.
  */
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import {
   MAP_HEIGHT,
   MAP_WIDTH,
@@ -40,7 +41,7 @@ import {
 } from '../../src/render/terrain';
 import { MATERIALS, TERRAIN_TILE, materialTile, roadTile, type TerrainMaterial } from '../../src/art/terrain';
 import { NODE_KINDS, nodeMarker, type NodeKind } from '../../src/art/nodes';
-import { blitRegion, createPixelBuffer, hashPixelBuffer, pixelAt, type PixelBuffer } from '../../src/art/pixel-buffer';
+import { pixelAt, type PixelBuffer } from '../../src/art/pixel-buffer';
 
 /** A map of one terrain, with the trimmings a `MapGrid` must carry and nothing that is drawn. */
 function flatMap(terrain: Terrain = TERRAIN.plain): MapGrid {
@@ -94,22 +95,44 @@ function holesIn(buffer: PixelBuffer): number {
 }
 
 /**
- * A fingerprint of a generous crop, rather than of the whole theatre.
- *
- * The pixel hash walks every byte with a 64-bit mix, which is the right trade for
- * a 16×16 tile and a slow one for two and a half million pixels; a crop is a
- * fingerprint of the same generator, and the test that needs the *whole* map
- * compared is the tiling one, which compares pixels directly.
+ * The complete theatre, hashed with Node's native implementation so a pair of
+ * seed-specific grass crops cannot conceal differences elsewhere on the map.
  */
 function fingerprint(buffer: PixelBuffer): string {
-  const size = 128;
-  const crop = createPixelBuffer(size, size);
-  blitRegion(crop, buffer, 700, 700, size, size, 0, 0);
-
-  return hashPixelBuffer(crop);
+  return createHash('sha256').update(buffer.pixels).digest('hex');
 }
 
 describe('the material a terrain is drawn with', () => {
+  it('renders bridge decking aligned to its adjoining road', () => {
+    const horizontal = mapWith(TERRAIN.river, { x: 10, y: 10 }, TERRAIN.bridge);
+    horizontal.terrain[tileIndex(9, 10)] = TERRAIN.road;
+    horizontal.terrain[tileIndex(11, 10)] = TERRAIN.road;
+    const vertical = mapWith(TERRAIN.river, { x: 10, y: 10 }, TERRAIN.bridge);
+    vertical.terrain[tileIndex(10, 9)] = TERRAIN.road;
+    vertical.terrain[tileIndex(10, 11)] = TERRAIN.road;
+    const h = renderTerrain(horizontal);
+    const v = renderTerrain(vertical);
+    const at = tilePixel(10, 10);
+    expect(pixelAt(h, at.x + 4, at.y + 5)).not.toEqual(pixelAt(v, at.x + 4, at.y + 5));
+  });
+  it('connects a road visually to its adjacent bridge', () => {
+    const map = mapWith(TERRAIN.plain, { x: 10, y: 10 }, TERRAIN.road);
+    map.terrain[tileIndex(11, 10)] = TERRAIN.bridge;
+    expect(roadMask(map, 10, 10) & 0b0010).not.toBe(0);
+  });
+  it('connects a road to its ford without joining an unrelated nearby ford', () => {
+    const road = tileIndex(10, 10);
+    const ford = tileIndex(11, 10);
+    const map: MapGrid = { ...flatMap(), roads: [{ from: road, to: ford, tiles: [road, ford] }] };
+    map.terrain[road] = TERRAIN.road;
+    map.terrain[ford] = TERRAIN.ford;
+    map.terrain[tileIndex(10, 9)] = TERRAIN.ford;
+
+    expect(roadMask(map, 10, 10)).toBe(0b0010);
+    const theatre = renderTerrain(map);
+    const at = tilePixel(10, 10);
+    expect(pixelAt(theatre, at.x + 15, at.y + 8)).toEqual(pixelAt(roadTile(0b0010), 15, 8));
+  });
   it('covers every terrain the map knows, and never draws two terrains as one', () => {
     const drawn = new Set<TerrainMaterial>();
 

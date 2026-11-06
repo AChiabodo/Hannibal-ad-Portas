@@ -52,6 +52,9 @@ const TERRAIN_GLYPHS: Readonly<Record<Terrain, string>> = {
   [TERRAIN.river]: '~',
   [TERRAIN.ford]: '=',
   [TERRAIN.road]: '-',
+  [TERRAIN.lake]: 'O',
+  [TERRAIN.marsh]: '%',
+  [TERRAIN.bridge]: '#',
 };
 
 /** The glyph a resource node of each kind is drawn as. */
@@ -85,6 +88,9 @@ const TERRAIN_NAMES: Readonly<Record<Terrain, string>> = {
   [TERRAIN.river]: 'river',
   [TERRAIN.ford]: 'ford',
   [TERRAIN.road]: 'road',
+  [TERRAIN.lake]: 'lake',
+  [TERRAIN.marsh]: 'marsh',
+  [TERRAIN.bridge]: 'bridge',
 };
 
 /** The terrains in the order the legend lists them: the ground first, then the water and the ways. */
@@ -96,6 +102,9 @@ const TERRAIN_ORDER: readonly Terrain[] = [
   TERRAIN.river,
   TERRAIN.ford,
   TERRAIN.road,
+  TERRAIN.lake,
+  TERRAIN.marsh,
+  TERRAIN.bridge,
 ];
 
 /**
@@ -121,7 +130,11 @@ const LEGEND: readonly string[] = [
  * command's, so the shell prompt never lands on the last row of the map.
  */
 export function formatMap(seed: number): string {
-  const map = generateMap(seed);
+  return formatMapGrid(seed, generateMap(seed));
+}
+
+/** Format an already generated theatre, including testable diagnostic fixtures. */
+export function formatMapGrid(seed: number, map: MapGrid): string {
   const lines = [
     `seed ${String(seed)} — ${String(MAP_WIDTH)}×${String(MAP_HEIGHT)} tiles of ` +
       `${String(TILE_SIZE)}×${String(TILE_SIZE)} pixels`,
@@ -140,7 +153,7 @@ export function formatMap(seed: number): string {
 function summary(map: MapGrid): string[] {
   const [rome, carthage] = map.strongholds;
   const fords = map.rivers.map(
-    (river) => river.tiles.filter((tile) => terrainAt(map, tileX(tile), tileY(tile)) === TERRAIN.ford).length,
+    (river) => new Set(river.tiles.filter((tile) => terrainAt(map, tileX(tile), tileY(tile)) === TERRAIN.ford)).size,
   );
   const riverWord = map.rivers.length === 1 ? 'river' : 'rivers';
   const settlementWord = map.settlements.length === 1 ? 'minor settlement' : 'minor settlements';

@@ -51,6 +51,7 @@ export function createHudLayer(stage: Stage): HudLayer {
       const at = hudLayout(model, size).minimap;
       minimap = upload(minimap, root, buffer);
       minimap.position.set(at.x, at.y);
+      minimap.scale.set(model.view.desktop ? model.view.uiScale ?? 2 : 1);
     },
   };
 }

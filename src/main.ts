@@ -1,24 +1,13 @@
-import { failBoot, publishHooks, requireMount } from './page.ts';
-import { bootRenderer } from './render/boot.ts';
+import { failBoot, requireMount } from './page.ts';
+import { showJourney } from './render/journey.ts';
 import { translate } from './ui/strings.ts';
+import { readConfiguration } from './input/match-setup.ts';
 
-/**
- * Boots the game: the theatre B1 generated, on one texture under B2's camera,
- * B4's fog over it, and the economy Match of B6 running behind B7's Italian
- * interface, with the debug hooks published.
- *
- * The war is not part of this page yet — C1 brings movement, C2 the Squads a
- * player commands — and what B7 puts here is the window a Player will watch all
- * of it through.
- */
+/** Opens bitmap setup, or the complete Match described by a validated setup address. */
 async function boot(): Promise<void> {
-  const view = await bootRenderer(requireMount('app'));
-
-  // The table is the source of the page's title as well as of its canvas text,
-  // so the markup's copy is a pre-script fallback rather than a second author.
   document.title = translate('ui.title');
-
-  publishHooks({ boot: { booted: true, render: view.probe }, view, game: view, atelier: null });
+  const config = readConfiguration(new URLSearchParams(location.search));
+  await showJourney(requireMount('app'), config);
 }
 
 boot().catch((error: unknown) => {

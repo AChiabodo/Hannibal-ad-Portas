@@ -23,6 +23,8 @@ function match(...args: readonly string[]): Ran {
     cwd: ROOT,
     encoding: 'utf8',
     timeout: 30_000,
+    // The early patrol now contributes scored Commands on every tactical tick.
+    maxBuffer: 4 * 1024 * 1024,
   });
 
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -35,6 +37,30 @@ function reportOf(result: Ran): MatchReport {
 }
 
 describe('one command plays a Match end to end, with no browser anywhere', () => {
+  it('plays two economy and military AIs and prints every scored decision after the Match', () => {
+    const ran = match('--seed', '1', '--ticks', '301', '--rules', 'ai');
+    expect(ran.status).toBe(0);
+    expect(ran.stderr).toBe('');
+    const report = reportOf(ran);
+    // Productive node placement and travel-priced patrols shape the opening;
+    // layer clocks and the independently reproduced Record remain unchanged.
+    expect(report.commands).toBe(562);
+    expect(report.decisions).toHaveLength(608);
+    expect(report.decisions?.slice(0, 3).map((entry) => [entry.faction, entry.layer, entry.tick])).toEqual([
+      ['rome', 'strategic', 0], ['rome', 'operational', 0], ['rome', 'tactical', 0],
+    ]);
+    expect(report.decisions?.at(-1)).toMatchObject({
+      faction: 'carthage', tick: 300, layer: 'tactical',
+      candidates: expect.arrayContaining([
+        expect.objectContaining({ id: 'idle', utility: 0, reason: 'Keep the current plan and emit no Commands.' }),
+        expect.objectContaining({ behaviour: 'military', id: 'threat-map' }),
+      ]),
+      selected: { behaviour: 'scouting', id: 'explore' },
+    });
+    expect(report.decisions?.[1]?.selected.behaviour).toBe('economy');
+    expect(match('--seed', '1', '--ticks', '301', '--rules', 'ai').stdout).toBe(ran.stdout);
+  });
+
   it('plays a whole Match and prints a JSON report of it', () => {
     const ran = match('--seed', '7', '--ticks', '120');
 

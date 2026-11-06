@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { cataloguePlate } from '../src/art/catalogue';
-import { pixelAt, type PixelBuffer } from '../src/art/pixel-buffer';
+import { pixelAt, type PixelBuffer, type Rgba } from '../src/art/pixel-buffer';
 import { ATELIER_ZOOMS, atelierLayout } from '../src/render/atelier-layout';
 import { atelierReport, samples } from './hooks';
 
@@ -20,6 +20,17 @@ const PLATE: PixelBuffer = cataloguePlate();
 
 /** The page's own layout, computed in Node from the same inputs. */
 const LAYOUT = atelierLayout(PLATE, ATELIER_ZOOMS);
+
+/**
+ * How far apart the lattice of plate pixels this page is checked against stands.
+ *
+ * Every fifth pixel and no sparser: the plate is the whole catalogue and the
+ * figures section is the tallest of it, so the test is tens of thousands of
+ * comparisons at every zoom and wants a longer bound than the default. C4 added
+ * the Carthaginian roster, which made the plate taller and this test slower; the
+ * bound below is what keeps it honest rather than the sampling.
+ */
+const SAMPLE_STEP = 5;
 
 
 
@@ -44,6 +55,7 @@ test('renders the whole catalogue on one page, at several zoom levels', async ({
 });
 
 test('shows every column as the catalogue plate magnified by exactly its zoom', async ({ page }) => {
+  test.setTimeout(180_000);
   await page.goto('/atelier.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
@@ -53,20 +65,31 @@ test('shows every column as the catalogue plate magnified by exactly its zoom', 
     const points: [number, number][] = [];
     const expected: [number, number][] = [];
 
-    for (let y = 0; y < PLATE.height; y += 5) {
-      for (let x = 0; x < PLATE.width; x += 5) {
+    for (let y = 0; y < PLATE.height; y += SAMPLE_STEP) {
+      for (let x = 0; x < PLATE.width; x += SAMPLE_STEP) {
         points.push([section.x + x * section.zoom, section.y + y * section.zoom]);
         expected.push([x, y]);
       }
     }
 
     const drawn = await samples(page, 'atelier', points);
+
+    // Every point is compared and the *mismatches* are asserted, rather than one
+    // matcher per pixel: a plate this tall is tens of thousands of samples, and the
+    // question is "did any of them move", not "which line of the report names it".
+    const wrong: { readonly at: readonly [number, number]; readonly got: unknown; readonly wanted: Rgba }[] = [];
     for (let index = 0; index < points.length; index += 1) {
       const [plateX, plateY] = expected[index] ?? [0, 0];
-      expect(drawn[index], `zoom ${String(section.zoom)}: plate (${String(plateX)}, ${String(plateY)})`).toEqual(
-        pixelAt(PLATE, plateX, plateY),
-      );
+      const wanted = pixelAt(PLATE, plateX, plateY);
+      const got = drawn[index];
+      if (got === undefined || got.some((channel, at) => channel !== wanted[at])) {
+        wrong.push({ at: [plateX, plateY], got, wanted });
+        // A handful of examples is all a reader needs; the count is what matters.
+        if (wrong.length === 8) break;
+      }
     }
+
+    expect(wrong, `zoom ${String(section.zoom)}: pixels that are not the plate's`).toEqual([]);
   }
 });
 
