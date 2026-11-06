@@ -143,6 +143,11 @@ export function selectAt(
     return additive ? selection : NOTHING_SELECTED;
   }
 
+  return selectNamed(selection, hit, additive);
+}
+
+/** Select the named row or map target with the same modifier semantics. */
+export function selectNamed(selection: Selection, hit: Pick<Pickable, 'kind' | 'id'>, additive = false): Selection {
   // A place is one selection and not a set: picking a settlement opens its panel
   // and puts the men down, and a shift adds nothing to a wall.
   if (hit.kind === 'settlement') return selectSettlement(hit.id);

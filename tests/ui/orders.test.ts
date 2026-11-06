@@ -302,7 +302,7 @@ describe('the offers a settlement has', () => {
     const hastati = settlementOrders(visible(), 'rome', poor, 'recruitment').find((order) => order.id === 'recruit:hastati:24');
 
     expect(hastati).toMatchObject({ enabled: true, reason: null });
-    expect(hastati?.note).toContain(translate('pending.offer'));
+    expect(hastati?.note).toContain(translate('pending.recruitOffer'));
   });
 
   it('offers no command on the overview page, which is about what the settlement has', () => {

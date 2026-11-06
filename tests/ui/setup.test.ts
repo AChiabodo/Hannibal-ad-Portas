@@ -74,6 +74,14 @@ describe('the setup page', () => {
     expect(invalid.texts.map((text) => text.text).join(' ')).toContain(translate('match.invalidSeed'));
   });
 
+  it('fits the return label at scale two above the help text', () => {
+    const menu = setupLayout({ width: 1280, height: 540 }, MODEL, true);
+    const back = menu.buttons.find(({ action }) => action === 'back')!;
+    expect(back.text).toBe('Menu principale');
+    expect(back.rect.height).toBeGreaterThanOrEqual(28);
+    expect(menu.texts.every(({ rect }) => !overlaps(rect, back.rect))).toBe(true);
+  });
+
   it('keeps the objective above the buttons when a long seed is typed', () => {
     const long = setupLayout(SIZE, { ...MODEL, seedText: '4294967295' });
     const objective = long.texts.findIndex((text) => text.text.startsWith('Obiettivo'));

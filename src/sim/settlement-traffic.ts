@@ -4,7 +4,7 @@ import { squadTypeOf } from '../content/squads.ts';
 import type { Economy, Squad } from './economy.ts';
 import { tileX, tileY, type MapGrid, type Terrain } from './map.ts';
 import { canOccupy, coreOf, nearAccess, occupiedGround, physicalAccesses, squadGround, type PhysicalAccess } from './settlement-space.ts';
-import { FIELD } from './squad.ts';
+import { FIELD, interruptMarch } from './squad.ts';
 import { NO_REFUSAL, paceCost } from './route.ts';
 
 function same(one: NonNullable<Squad['access']>, other: NonNullable<Squad['access']>): boolean {
@@ -51,7 +51,7 @@ function routeBodies(squad: Squad): readonly GroundRect[] {
 }
 
 /** Registration precedes any movement, making simultaneous arrivals stable by Squad id. */
-export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squad, target: { x: number; y: number }) => void): void {
+export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squad, target: { x: number; y: number }) => number): void {
   for (const squad of [...economy.squads].sort((a, b) => a.id - b.id)) {
     const accesses = physicalAccesses(map, squad.owner);
     const current = squad.access;
@@ -60,9 +60,11 @@ export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squ
       // A completed field order is no longer an admission in progress, even
       // when the column's tail touches the Gate. Keeping its ticket makes the
       // Controller wait forever for a journey which has already arrived.
-      const arrived = current.settlement >= 0 && current.yielding === 0 && squad.steps.length === 0 && squad.garrisonJourney === undefined;
-      if (access === undefined || arrived || (squad.garrisonJourney?.phase !== 1 && current.yielding === 0 && !onRoute(squad, access) && !intersects(squadGround(squad), access.rect) &&
-        (!nearAccess(squadGround(squad), access) || squad.steps.length === 0))) delete squad.access;
+      const arrived = current.settlement >= 0 && squad.steps.length === 0 && squad.garrisonJourney === undefined;
+      // A yielding Squad still needs its original goal when the opening disappears.
+      if (current.yielding === 0 && (access === undefined || arrived ||
+        (squad.garrisonJourney?.phase !== 1 && !onRoute(squad, access) && !intersects(squadGround(squad), access.rect) &&
+          (!nearAccess(squadGround(squad), access) || squad.steps.length === 0)))) delete squad.access;
     }
     if (squad.access !== undefined || squad.garrison !== FIELD) continue;
     const admission = squad.garrisonJourney?.phase === 1 && squad.garrisonJourney.fromOutside === 1;
@@ -88,7 +90,8 @@ export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squ
       if (squad.steps.length === 0) {
         if (leader === undefined) {
           waiting.yielding = 0;
-          send(squad, { x: waiting.goalX, y: waiting.goalY });
+          const result = send(squad, { x: waiting.goalX, y: waiting.goalY });
+          if (result !== NO_REFUSAL && squad.garrisonJourney === undefined) interruptMarch(squad, result);
         } else waiting.yielding = 2;
       }
       continue;
@@ -110,8 +113,7 @@ export function prepareTraffic(economy: Economy, map: MapGrid, send: (squad: Squ
       const rect = squadGround(squad, x, y);
       if (!canOccupy(map, squad, x, y) || occupiedGround(economy, rect, squad.id) || lane.some((body) => intersects(body, rect))) continue;
       waiting.yielding = 1;
-      send(squad, { x, y });
-      if (squad.refused !== NO_REFUSAL) { waiting.yielding = 0; continue; }
+      if (send(squad, { x, y }) !== NO_REFUSAL) { waiting.yielding = 0; continue; }
       break;
     }
   }

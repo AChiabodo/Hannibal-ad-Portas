@@ -80,17 +80,6 @@ export interface SquadField {
 
   /** Which Faction's cloth the soldiers wear. */
   readonly faction: 'rome' | 'carthage';
-
-  /**
-   * The kind of destination mark each Squad's order wears, when the page knows it.
-   *
-   * A `VisibleSquad` carries *where* it is walking and not *how* it was told to:
-   * `attackMove` and `move` are the same route once the rules have them. So the
-   * page remembers the verb it submitted and hands it here, which is what makes a
-   * march and an attack-march different marks on the ground without inventing
-   * state the Match does not hold.
-   */
-  readonly orderMarks?: Readonly<Record<number, OrderMarkKind>>;
 }
 
 /** The layer: one call, and the stage agrees with the field. */
@@ -237,7 +226,7 @@ export function createSquadLayer(parent: Container): SquadLayer {
         if (!neutral) standard(standards, standardSprites, standardTextures, squad, faction, placement.standard);
         if (own) annotate(annotations, {
           plates, plateTextures, pins, pinTextures, facings, facingTextures, destinationTextures, marks,
-        }, own, selected, placement, field.orderMarks?.[squad.id] ?? 'move');
+        }, own, selected, placement);
       }
 
       for (const [id, drawn] of squads) {
@@ -361,14 +350,13 @@ function annotate(
   squad: VisibleSquad,
   selected: boolean,
   placement: ReturnType<typeof markerPlacement>,
-  orderMark: OrderMarkKind,
 ): void {
   const conditions = squadConditions(squad);
 
   if (selected) {
     syncPlate(parent, sinks, squad, placement.condition);
     syncFacing(parent, sinks, squad, placement.facing);
-    syncMark(parent, sinks, squad, orderMark);
+    syncMark(parent, sinks, squad, squad.attackMarch ? 'attackMove' : 'move');
     dropPin(sinks, squad.id);
   } else {
     dropPlate(sinks, squad.id);

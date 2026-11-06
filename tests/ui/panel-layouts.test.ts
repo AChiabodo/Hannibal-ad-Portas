@@ -5,6 +5,8 @@ import { TILE_COUNT } from '../../src/sim/map';
 import type { EconomyVisible } from '../../src/sim/economy-match';
 import { desktopMatchMenu } from '../../src/ui/match-menu';
 import { measureText } from '../../src/art/font';
+import { createTutorial } from '../../src/input/tutorial';
+import { tutorialPanel } from '../../src/ui/tutorial';
 
 const visible: EconomyVisible = { season: 'spring', year: 1, treasury: 20,
   territory: new Uint8Array(TILE_COUNT), squads: [], settlements: [{ id: 0, x: 10, y: 10, tier: 1,
@@ -66,6 +68,62 @@ describe('selectable presentation layouts', () => {
 });
 
 const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+
+it.each([
+  { width: 640, height: 892, scale: 1, smallWindow: true },
+  { width: 1280, height: 720, scale: 2, smallWindow: false },
+])('keeps the practice controls inside the canvas at $width pixels', ({ width, height, scale, smallWindow }) => {
+  const practice = createTutorial('economy');
+  const guide = tutorialPanel(practice);
+  const model = hudModel(practice.host.observe(), [0], { kind: 'settlement', id: 0 }, [],
+    { desktop: true, uiScale: scale, panelLayout: 'sidebar', smallWindow,
+      pageOverflow: smallWindow ? 'horizontal' : undefined },
+    { faction: 'rome', guide, notices: [{ id: 'notice', kind: 'refusal', label: 'Avviso', persistent: false, detail: null, target: null, raised: 0, lost: false }] });
+  const size = { width, height };
+  const layout = hudLayout(model, size);
+  expect(layout.text.some(({ text }) => text.includes('scorrere di lato'))).toBe(smallWindow);
+  expect(layout.text.some(({ text }) => text.includes('scorri in verticale'))).toBe(false);
+  const controls = [
+    ...layout.buttons.filter(({ action }) => ['reference', 'notices', 'settlement:management'].includes(action)),
+    ...layout.guideButtons.filter(({ enabled }) => enabled),
+    ...layout.tabs,
+  ];
+  expect(controls.map((control) => 'action' in control ? control.action : control.tab)).toEqual(
+    expect.arrayContaining(['reference', 'notices', 'settlement:management', 'tutorialNext', 'recruitment']));
+  for (const control of controls) {
+    const { x, y, width: w, height: h } = control.rect;
+    expect(x).toBeGreaterThanOrEqual(0);
+    expect(y).toBeGreaterThanOrEqual(0);
+    expect(x + w).toBeLessThanOrEqual(width);
+    expect(y + h).toBeLessThanOrEqual(height);
+    expect(hudHit(model, size, x + w / 2, y + h / 2)).toMatchObject(
+      'action' in control ? { kind: 'button', action: control.action } : { kind: 'tab', tab: control.tab });
+  }
+});
+
+it('shows the single-recruit capacity and offers a link to manage a confirmed order', () => {
+  const queued = { kind: 'recruit' as const, building: '', squadType: 'hastati', men: 120, reason: 'capacity' as const };
+  const economy = { ...visible, settlements: [{ ...visible.settlements[0]!, storage: 30,
+    pending: [{ ...queued, id: 3, count: 1 }, { ...queued, id: 4, count: 2 }] }] };
+  const model = hudModel(economy, [0], { kind: 'settlement', id: 0 }, [],
+    { desktop: true, uiScale: 2, panelLayout: 'sidebar', inspectedOrder: 'recruit:hastati:120' },
+    { faction: 'rome', tab: 'recruitment', recruitCount: 2,
+      last: { name: 'Astati 120', tick: 1, status: 'applied', detail: null,
+        recruitment: { settlement: 0, squadType: 'hastati', men: 120, afterId: 2 } } });
+  expect(model.orders.queuedRecruitment).toBe(4);
+  const size = { width: 1280, height: 720 };
+  const layout = hudLayout(model, size);
+  expect(layout.text.map(({ text }) => text).join(' ')).toContain('Grano: serve capienza 40 per reparto (attuale 30).');
+  expect(layout.text.map(({ text }) => text).join(' ')).toContain('Reclutamento in coda');
+  const queue = layout.buttons.find(({ action }) => action === 'recruitQueue')!;
+  expect(hudHit(model, size, queue.rect.x + 2, queue.rect.y + 2)).toEqual({ kind: 'button', action: 'recruitQueue' });
+  const latest = model.orders.last!;
+  const remaining = { ...economy, settlements: [{ ...economy.settlements[0]!, pending: [{ ...queued, id: 3, count: 1 }] }] };
+  const afterCancel = hudModel(remaining, [0], model.selected, [], model.view, {
+    tab: 'recruitment', last: { ...latest, recruitment: { ...latest.recruitment!, queueId: 4 } },
+  });
+  expect(afterCancel.orders.queuedRecruitment).toBeNull();
+});
 it('keeps every purchase and catalogue page clear of paging controls in all saved layouts', () => {
   for (const panelLayout of ['sidebar', 'dock', 'compact'] as const) {
     const menu = desktopMatchMenu({ width: 1280, height: 720 }, 80,

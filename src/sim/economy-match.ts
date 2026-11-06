@@ -52,6 +52,7 @@
  * keeps it.
  */
 import {
+  amountOf,
   buildingOf,
   figuresOf,
   namedStock,
@@ -77,6 +78,7 @@ import {
   createEconomy,
   harvest,
   landCapacity,
+  storageCapacity,
   produceSeason,
   type Economy,
   type Settlement,
@@ -85,9 +87,9 @@ import {
 } from './economy.ts';
 import { factionCode, type Faction } from './faction.ts';
 import { eyeOf, settlementEyes, SQUAD_VISION, type Eye } from './fog.ts';
-import { generateMap, type MapGrid, type Site } from './map.ts';
+import { generateMap, RESOURCE_KINDS, type MapGrid, type Site } from './map.ts';
 import { applyMovementCommands, goalOf, march, routeCacheFor } from './movement.ts';
-import { refusalOf, type RouteRefusal } from './route.ts';
+import { NO_REFUSAL, refusalOf, type RouteRefusal } from './route.ts';
 import { pendingOrderCost } from './pending-orders.ts';
 import { workOrdinal } from './settlement-space.ts';
 import { WORK_MAX_HP } from '../content/buildings.ts';
@@ -165,10 +167,11 @@ export interface VisiblePendingOrder {
   readonly squadType: string;
   readonly men: number;
   readonly count: number;
-  readonly reason: 'space' | 'resources';
+  readonly reason: 'space' | 'resources' | 'capacity';
 }
 
 export interface VisibleSettlement {
+  readonly storage?: number;
   /** Labour used and requested by active repairs, when they compete with Works. */
   readonly repairWorkforce?: { readonly staffed: number; readonly needed: number };
   readonly pending?: readonly VisiblePendingOrder[];
@@ -199,6 +202,9 @@ export interface VisibleSettlement {
 
 /** What a Faction sees of one Squad it keeps: what it is, where it stands and what it costs to keep. */
 export interface VisibleSquad {
+  readonly waitingForPassage?: true;
+  readonly marchInterrupted?: RouteRefusal;
+  readonly attackMarch?: true;
   readonly passage?: {
     readonly settlement: number;
     /** The owner's order, distinguishing wall duty from ordinary transit. */
@@ -498,6 +504,8 @@ export function eyesOfEconomy(world: EconomyWorld, faction: Faction): readonly E
 
 /** A settlement, as its holder reads it: where it is, and how its people are spent. */
 function visibleSettlement(map: MapGrid, settlement: Settlement, economy: Economy): VisibleSettlement {
+  const storage = storageCapacity(settlement);
+  const stocks = namedStock(settlement.stocks);
   const allocation = allocate(settlement, landCapacity(map, settlement));
 
   return {
@@ -506,7 +514,7 @@ function visibleSettlement(map: MapGrid, settlement: Settlement, economy: Econom
     y: settlement.y,
     tier: settlement.tier,
     population: settlement.population,
-    stocks: namedStock(settlement.stocks),
+    stocks,
     land: namedStock(allocation.land),
     ...(settlement.repairOrders === undefined ? {} : { repairWorkforce: {
       needed: settlement.repairOrders.length * 2, staffed: (allocation.repairs?.length ?? 0) * 2,
@@ -526,19 +534,30 @@ function visibleSettlement(map: MapGrid, settlement: Settlement, economy: Econom
       ...(work.repairTicks === undefined || allocation.repairs?.includes(work.repairOrder ?? 0) ? {} : { repairWaiting: 'workers' as const }),
       standing: work.remaining === 0,
     })),
-    pending: (economy.pending ?? []).filter((order) => order.settlement === settlement.id).map((order) => ({
-      id: order.id, kind: order.kind === 0 ? 'build' : 'recruit',
-      cost: pendingOrderCost(order),
-      building: order.kind === 0 ? buildingOf(order.content)?.id ?? 'unknown' : '',
-      squadType: order.kind === 1 ? squadTypeOf(order.content)?.id ?? 'unknown' : '',
-      men: order.men, count: order.count, reason: order.reason === 2 ? 'resources' : 'space',
-    })),
+    storage,
+    pending: (economy.pending ?? []).filter((order) => order.settlement === settlement.id).map((order) => {
+      const single = pendingOrderCost(order, 1);
+      const needsCapacity = order.kind === 1 && RESOURCE_KINDS.some((kind) => {
+        const needed = amountOf(single, kind);
+        return needed > storage && needed > amountOf(stocks, kind);
+      });
+      return {
+        id: order.id, kind: order.kind === 0 ? 'build' : 'recruit',
+        cost: pendingOrderCost(order),
+        building: order.kind === 0 ? buildingOf(order.content)?.id ?? 'unknown' : '',
+        squadType: order.kind === 1 ? squadTypeOf(order.content)?.id ?? 'unknown' : '',
+        men: order.men, count: order.count,
+        reason: order.reason !== 2 ? 'space' : needsCapacity ? 'capacity' : 'resources',
+      };
+    }),
   };
 }
 
 /** A Squad, as its owner reads it: where it stands, what it costs to keep, and how the fight is going. */
 function visibleSquad(economy: Economy, territory: Territory, squad: Squad): VisibleSquad {
   const type = squadTypeOf(squad.type);
+  const goal = goalOf(squad);
+  const interruption = goal === null ? refusalOf(squad.marchInterrupted ?? NO_REFUSAL) : null;
 
   return {
     id: squad.id,
@@ -566,7 +585,11 @@ function visibleSquad(economy: Economy, territory: Territory, squad: Squad): Vis
     figures: type === undefined ? squad.strength : figuresOf(type, squad.strength),
     formation: formationOf(squad.formation),
     facing: facingOf(squad.facing),
-    goal: goalOf(squad),
+    goal,
+    ...(goal !== null && squad.attackMarch ? { attackMarch: true as const } : {}),
+    ...(interruption === null ? {} : { marchInterrupted: interruption }),
+    ...(goal !== null && (squad.waitingForPassage || squad.access?.reason || squad.garrisonJourney?.reason)
+      ? { waitingForPassage: true as const } : {}),
     refused: refusalOf(squad.refused),
     morale: squad.morale,
     fatigue: squad.fatigue,

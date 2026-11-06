@@ -108,7 +108,10 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
   let inspector: Rect | null = null;
 
   if (sidebar && !hidden) {
-    addText(model.detail?.title ?? translate('ui.selectEntity'), detail.x + 4, detail.y + 4, detail.width - 8, true);
+    const showCenter = !settlement && model.guide?.actions.some(({ action }) => action === 'tutorialNext');
+    addText(model.detail?.title ?? translate('ui.selectEntity'), detail.x + 4, detail.y + 4, detail.width - (showCenter ? 80 : 8), true);
+    if (showCenter) button('center', translate('ui.center'),
+      { x: detail.x + detail.width - 72, y: detail.y + 2, width: 68, height: 16 });
     if (settlement) {
       if (ownSettlement) prose([`${translate('ui.tier')}: ${model.detail?.lines[2]?.value ?? ''}`], { x: detail.x + 4, y: detail.y + 18, width: detail.width - 8, height: 12 }, 0, false);
       catalogue = { x: detail.x + 4, y: detail.y + (ownSettlement ? 32 : 20), width: detail.width - 8, height: detail.height - (ownSettlement ? 36 : 24) };
@@ -237,11 +240,14 @@ export function arrangePanelLayout(model: HudModel, size: HudSize, base: HudLayo
     }
     if (inspected) {
       addText(inspected.label, inspector.x + 4, inspector.y + 4, inspector.width - 8, true);
-      const pending = model.orders.pending > 0 ? message(model.view.paused ? 'ui.pendingPaused' : 'ui.pending', { count: model.orders.pending }) : model.orders.notice;
+      const queued = inspected.kind === 'recruit' && model.orders.last?.name === inspected.label && model.orders.queuedRecruitment !== null;
+      const pending = model.orders.pending > 0 ? message(model.view.paused ? 'ui.pendingPaused' : 'ui.pending', { count: model.orders.pending })
+        : queued ? translate('pending.recruitQueued') : model.orders.notice;
       detailScroll = prose([...(pending ? [pending] : []), ...offerLines(inspected)], { x: inspector.x + 4, y: inspector.y + 17, width: inspector.width - 8, height: inspector.height - 42 - inspectorGroups }, model.view.detailOffset ?? 0, true);
       button(`purchase:${inspected.id}`, translate(inspected.kind === 'build' ? 'ui.purchase' : 'ui.purchaseRecruit'),
         { x: inspector.x + 4, y: inspector.y + inspector.height - 20 - inspectorGroups, width: Math.floor((inspector.width - 10) / 2), height: 18 }, inspected.enabled);
-      button(`reference:${inspected.kind === 'build' ? 'building' : 'squad'}:${inspected.subject}`, translate('ui.shortDetails'),
+      button(queued ? 'recruitQueue' : `reference:${inspected.kind === 'build' ? 'building' : 'squad'}:${inspected.subject}`,
+        translate(queued ? 'pending.recruitQueue' : 'ui.shortDetails'),
         { x: inspector.x + Math.floor(inspector.width / 2) + 1, y: inspector.y + inspector.height - 20 - inspectorGroups, width: Math.floor((inspector.width - 10) / 2), height: 18 });
       if (!sidebar && !dock) button('closeInspection', translate('ui.closeInspection'),
         { x: inspector.x, y: inspectionTop - 20, width: inspector.width, height: 18 });

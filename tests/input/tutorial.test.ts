@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { createTutorial, type Tutorial } from '../../src/input/tutorial.ts';
 import { build, recruit, move, attack, attackMove, blockade } from '../../src/sim/command.ts';
+import { selectNamed } from '../../src/input/selection.ts';
 import { generateMap } from '../../src/sim/map.ts';
 
 function showCurrentControl(practice: Tutorial): void {
@@ -90,14 +91,32 @@ it('teaches selection, group movement, binding, discovery and real combat as sep
   const host = practice.host;
   host.human.submit(recruit('rome', 0, 'hastati', 24, 2));
   host.advance(1);
-  readAvailable(practice);
+  for (let i = 0; i < practice.lessons.length && practice.lesson.id !== 'groupSelect'; i += 1) {
+    showCurrentControl(practice);
+    expect(practice.next()).toBe(true);
+  }
+  const [first, second] = host.observe().squads.map(({ id }) => ({ kind: 'squad' as const, id }));
+  const selectRow = (row: NonNullable<typeof first>, additive = false) => {
+    host.human.select(selectNamed(host.human.selection, row, additive));
+    practice.present({ ...host.human.selection, tab: 'overview', category: 'production', page: 'summary', inspected: null });
+  };
+  selectRow(first!);
+  selectRow(second!);
+  expect(host.human.selection.squads).toEqual([second!.id]);
+  expect(practice.ready).toBe(false);
+  selectRow(first!, true);
+  expect(practice.ready).toBe(true);
+  selectRow(first!, true);
+  expect(practice.ready).toBe(false);
+  selectRow(first!, true);
+  expect(practice.next()).toBe(true);
   expect(practice.lesson.id).toBe('move');
   host.human.submit(move('rome', [999, 1000], 0, 0));
   host.advance(5);
   expect(practice.next()).toBe(false);
   const squads = host.observe().squads;
   const home = host.observe().settlements[0]!;
-  host.human.submit(move('rome', squads.map(({ id }) => id), home.x + 5, home.y));
+  host.human.submit(move('rome', host.human.selection.squads, home.x + 5, home.y));
   host.advance(100);
   readAvailable(practice);
   expect(practice.lesson.id).toBe('groupBind');

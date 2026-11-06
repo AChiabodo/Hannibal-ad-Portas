@@ -46,7 +46,8 @@ import { hashPixelBuffer } from '../../src/art/pixel-buffer';
 // All other catalogue artefacts retain their accepted hashes.
 // The saved panel selector changes only the Options and result specimens.
 // The centered pause/result menu replaces the flat options drawer.
-const PLATE_HASH = '749236996aa2c779';
+// #79 pins the active order and destination together in the Squad specimens.
+const PLATE_HASH = 'f4522f24ba3dc0d9';
 
 const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'ui:carthage-column': 'ab1340faad9c09ab',
@@ -59,8 +60,8 @@ const ARTEFACT_HASHES: Readonly<Record<string, string>> = {
   'interface:disabled': '4612506f4557e9b7',
   'interface:focus': '74aad50e7b9be297',
   'ui:setup': '82906ab423edd8b4',
-  'ui:squad': '3fd3d9968cc4a435',
-  'ui:armed-pending': '78a862393d03a967',
+  'ui:squad': 'eafdbdeee573b60a',
+  'ui:armed-pending': '664ccd6da65c7c70',
   'ui:construction': 'cbc1644682f3ec6e',
   'ui:options': 'fb2786518b684947',
   'ui:result': 'f890a9df694a7771',

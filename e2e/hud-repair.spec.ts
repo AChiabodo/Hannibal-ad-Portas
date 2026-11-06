@@ -148,7 +148,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 108
         expect(layout.listScroll.offset).toBeGreaterThan(0);
         expect(layout.rows.at(-1)!.selection).toEqual({ kind: 'squad', id: 80 });
         expect([...layout.priority, ...layout.text].map((line) => line.text).join(' ')).toContain(kind === 'squad'
-          ? 'Ordine: Acque profonde' : 'Villa: In costruzione: 12345679 s con personale');
+          ? 'Ordine rifiutato: Acque profonde' : 'Villa: In costruzione: 12345679 s con personale');
         // Fixture rendering uses exactly the production PixelBuffer/Pixi adapter.
         // It supplies a filtered model, never a hidden-world rendering hook.
         await page.evaluate(async ({ model, size }: { model: HudModel; size: { width: number; height: number } }) => {

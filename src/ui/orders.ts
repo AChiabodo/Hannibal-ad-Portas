@@ -399,7 +399,13 @@ function recruitmentOrders(
   const squads = recruitCountInRange(count);
 
   return squadTypesOf(faction).flatMap((type) => type.sizes.map((men) => {
-    const total = times(recruitCost(type, men), squads);
+    const single = recruitCost(type, men);
+    const total = times(single, squads);
+    const storage = settlement.storage;
+    const capacityWarnings = storage === undefined ? [] : RESOURCE_KINDS.flatMap((kind) => {
+      const needed = amountOf(single, kind);
+      return needed > storage && needed > amountOf(settlement.stocks, kind) ? [message('pending.capacityNeeded', { resource: resourceLabel(kind), needed, capacity: storage })] : [];
+    });
     const affordable = pay(stockOf(settlement.stocks), total).affordable;
     const bill = payrollBill(type, men) * squads;
     const reason = type.tier > settlement.tier
@@ -415,7 +421,7 @@ function recruitmentOrders(
       costs: [...resourceCosts(total), { badge: 'men', value: men * squads }, { badge: 'coin', value: bill }],
       subject: type.id,
       recruit: { men, count: squads },
-      note: message('ui.recruitNote', {
+      note: [...capacityWarnings, message('ui.recruitNote', {
         men,
         count: squads,
         total: men * squads,
@@ -424,7 +430,7 @@ function recruitmentOrders(
         payrollLabel: translate('ui.payroll'),
         payroll: bill,
         perSeason: translate('ui.perSeason'),
-      }) + (!affordable ? '\n' + translate('pending.offer') : ''),
+      }), ...(!affordable ? [translate('pending.recruitOffer')] : [])].join('\n'),
       shortcut: null,
       target: 'none' as const,
       targetHint: null,
@@ -633,6 +639,7 @@ function exceptionsOf(picked: readonly VisibleSquad[]): readonly GroupException[
     const name = message('ui.listItem', { name: squadLabel(squad.type), id: squad.id });
     if (squad.routing) found.push({ squad: squad.id, name, reason: translate('order.routing') });
     else if (squad.refused !== null) found.push({ squad: squad.id, name, reason: refusalLabel(squad.refused) });
+    else if (squad.waitingForPassage) found.push({ squad: squad.id, name, reason: translate('order.waiting') });
     else if (squad.unpaid > 0) {
       found.push({ squad: squad.id, name, reason: `${translate('ui.unpaid')} ${String(squad.unpaid)}` });
     } else if (!squad.inTerritory) found.push({ squad: squad.id, name, reason: translate('supply.outside') });

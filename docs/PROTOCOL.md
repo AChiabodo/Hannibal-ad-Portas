@@ -190,7 +190,8 @@ Each entry of `settlements`:
 | `stocks`     | What it holds of each resource: `{ grain, timber, stone, iron }`.            |
 | `land`       | How its labour is divided between the works and the land, same four fields.  |
 | `works`      | Its buildings in the order it raised them: `{ building, remaining, standing }`, where `remaining` is the ticks of work left. |
-| `pending`    | Unpaid requests awaiting space or resources, including their cost and cancellation id. |
+| `storage`    | The current storage capacity for each local resource.                        |
+| `pending`    | Unpaid requests with cost and cancellation id. The reason is `space`, `resources` or `capacity`. For recruitment, the capacity check uses the cost of one Squad. |
 <!-- settlement:end -->
 
 When active repairs compete for workers, an owned settlement also exposes
@@ -212,7 +213,7 @@ Each entry of `squads`:
 | `formation`   | `"line"` or `"column"`: the shape it holds.                                        |
 | `facing`      | The side it faces: `"north"`, `"east"`, `"south"` or `"west"`.                     |
 | `goal`        | The tile it is still walking to, `{ "x": …, "y": … }`, or `null` when it has arrived.|
-| `refused`     | Why the last `move` could not be walked, or `null`.                                 |
+| `refused`     | Why the last attempted order was refused, or `null`. A refused march can leave an existing destination active. |
 | `morale`      | What it has left to fight with: the primary resource of a fight.                    |
 | `fatigue`     | How tired it is: a tired Squad strikes weakly.                                      |
 | `ammunition`  | Volleys of missiles it still carries: the first rounds of a contact are worth more. |
@@ -227,6 +228,11 @@ Each entry of `squads`:
 | `inCamp`      | Whether it stands in a camp, which counts as quarters for the winter.               |
 | `inQuarters`  | Whether its whole body is sheltered in an owned inhabited core or a usable camp. |
 <!-- squad:end -->
+
+An owned Squad can also carry `attackMarch: true` for an active attack-move
+and `waitingForPassage: true` while traffic holds it up. If an accepted march
+ends because its destination became unreachable, `marchInterrupted` carries
+the route failure separately from `refused`.
 
 `fog`:
 

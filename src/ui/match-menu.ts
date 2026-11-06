@@ -91,7 +91,7 @@ export function setupLayout(size: HudSize, model: SetupModel, returnToMenu = fal
   }
 
   if (returnToMenu) buttons.push({ action: 'back', text: translate('entry.home'), enabled: true,
-    rect: { x: rect.x + 16, y: rect.y + rect.height - 74, width: textWidth, height: 22 } });
+    rect: { x: rect.x + 16, y: rect.y + rect.height - 74, width: textWidth, height: 30 } });
   return { rect, texts, buttons };
 }
 

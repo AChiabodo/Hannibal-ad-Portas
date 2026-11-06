@@ -5,6 +5,7 @@ import { createTutorial, TUTORIAL_CHAPTERS } from '../../src/input/tutorial.ts';
 import { entryMenu } from '../../src/ui/entry-menu.ts';
 import { hudHit, hudLayout, hudModel, wrapText } from '../../src/ui/hud.ts';
 import { menuPlate, setupLayout } from '../../src/ui/match-menu.ts';
+import { translate } from '../../src/ui/strings.ts';
 import { tutorialPanel } from '../../src/ui/tutorial.ts';
 
 for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
@@ -56,6 +57,11 @@ it('explains production, building labour, recruitment costs and Payroll using th
   expect(text).toContain('6 unita di grano');
   const purchase = tutorialPanel({ ...practice, lesson: { id: 'firstRecruit', goal: 'oneSquad' } });
   expect(purchase.lines.join(' ')).toContain('8 grano e 2 ferro');
+  const catalogue = hudModel(practice.host.observe(), [0], { kind: 'settlement', id: 0 }, [], {}, { tab: 'recruitment' });
+  const offer = catalogue.commands.find(({ id }) => id === 'recruit:hastati:24')!;
+  expect(purchase.lines.join(' ')).toContain(offer.label);
+  const chooseOffer = tutorialPanel({ ...practice, lesson: { id: 'hastati', goal: 'hastatiOffer' } });
+  expect(chooseOffer.lines.join(' ')).toContain(`In ${translate('tab.short.recruitment')} fai clic su ${offer.label}`);
   const payroll = tutorialPanel({ ...practice, lesson: { id: 'payroll', goal: 'read' } });
   expect(payroll.lines.join(' ')).toContain('3 denari');
   expect(payroll.lines.join(' ')).toContain('6 denari');

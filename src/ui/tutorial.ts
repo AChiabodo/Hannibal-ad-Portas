@@ -4,13 +4,15 @@ import { TICK_HZ } from '../sim/clock.ts';
 import { SEASON_TICKS } from '../sim/season.ts';
 import { CAPTURE_HOLDS, CAPTURE_TICKS } from '../sim/siege.ts';
 import type { GuidePanel } from './guide.ts';
-import { message, translate, type StringKey } from './strings.ts';
+import { message, squadLabel, translate, type StringKey } from './strings.ts';
 
 const farm = BUILDINGS.find((building) => building.id === 'farm')!;
 const hastati = SQUAD_TYPES.find((squad) => squad.id === 'hastati')!;
 const terms = { timber: farm.cost.timber, workers: farm.labour, seconds: farm.buildTicks / TICK_HZ,
   grain: farm.yields.grain, seasonSeconds: SEASON_TICKS / TICK_HZ, recruitGrain: hastati.cost.grain,
   recruitIron: hastati.cost.iron, payroll: hastati.payroll, doublePayroll: hastati.payroll * 2,
+  recruitTab: translate('tab.short.recruitment'), recruitName: squadLabel(hastati.id),
+  recruitOffer: `${squadLabel(hastati.id)} ${hastati.sizes[0]}`,
   captureSeconds: CAPTURE_TICKS * CAPTURE_HOLDS / TICK_HZ };
 
 /** Every explanation remains visible until acknowledged; action steps also require their outcome. */

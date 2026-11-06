@@ -93,7 +93,7 @@ import {
   pickableAt,
   selectAt,
   selectIn,
-  selectSettlement,
+  selectNamed,
   type PickRect,
   type Pickable,
   type Selection as PlayerSelection,
@@ -635,8 +635,6 @@ export function createGame(options: GameOptions): Game {
   /** Whether the notice history is open, and how far it is scrolled. */
   let noticesOpen = false;
   let noticeOffset = 0;
-  /** The ground mark each Squad's last movement order wears (#58): the page's memory. */
-  let orderMarks: Record<number, OrderMarkKind> = {};
 
   /**
    * The tick the page's Match ends on: a Match's own horizon, the same three game
@@ -761,7 +759,7 @@ export function createGame(options: GameOptions): Game {
     },
     selection: () => human.selection,
     select: (next) => {
-      human.select(asPicked(next));
+      human.select(next === null ? NOTHING_SELECTED : selectNamed(human.selection, next));
       noteGuide({ kind: 'selection', what: whatIsSelected() });
       repaint();
     },
@@ -1191,7 +1189,7 @@ export function createGame(options: GameOptions): Game {
         maxMorale: moraleOf(squad).max,
         conditions,
         facing: squad.facing,
-        orderMark: squad.goal === null ? null : orderMarks[squad.id] ?? 'move',
+        orderMark: squad.goal === null ? null : squad.attackMarch ? 'attackMove' : 'move',
         destination: squad.goal === null ? null : { x: squad.goal.x, y: squad.goal.y },
         standard: faction,
         annotation: selected ? 'plate' as const : markedConditions(conditions).length > 0 ? 'pin' as const : 'none' as const,
@@ -1251,10 +1249,16 @@ export function createGame(options: GameOptions): Game {
 
   /** The HUD's model, with the panel's selection, every picked Squad and every known settlement. */
   function readModel(known: readonly KnownSite[], observation: SiegeVisible): HudModel {
+    const page = document.documentElement;
+    const horizontal = options.size.width > page.clientWidth;
+    const vertical = options.size.height > page.clientHeight;
     const next = hudModel(observation, strongholdIds(observation), panelSelection(), human.selection.squads,
       { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
         tick: match.state.tick, noticesOpen, noticeOffset },
       session(observation, known));
+    if (submission?.recruitment !== undefined && submission.recruitment.queueId === undefined && next.orders.queuedRecruitment !== null) {
+      submission = { ...submission, recruitment: { ...submission.recruitment, queueId: next.orders.queuedRecruitment } };
+    }
     if (next.selected?.id !== detailSelection?.id || next.selected?.kind !== detailSelection?.kind) {
       detailOffset = 0;
       commandOffset = 0;
@@ -1268,6 +1272,7 @@ export function createGame(options: GameOptions): Game {
     return { ...next, guide: options.tutorial && !guide.open ? tutorialPanel(options.tutorial) : next.guide,
       view: { ended: result !== null, paused: pacing.paused, listOffset, detailOffset, commandOffset,
       noticesOpen, noticeOffset, settlementPage, inspectedOrder,
+      pageOverflow: !desktop ? undefined : horizontal ? (vertical ? 'both' : 'horizontal') : vertical ? 'vertical' : undefined,
       desktop, navigatorExpanded, sessionOpen, speed: pacing.speed, ...preferences,
       uiScale: fittedUiScale(preferences.uiScale, windowSize()), tick: match.state.tick,
       scaleWarning: desktop && (windowSize().width < 640 * preferences.uiScale || windowSize().height < 360 * preferences.uiScale),
@@ -1381,7 +1386,6 @@ export function createGame(options: GameOptions): Game {
     // The journal first: a notice raised on this tick is part of the frame the
     // Player is about to see, and reading it twice in one tick is harmless.
     notices = noticeBook.read(observation, match.state.tick);
-    orderMarks = pruneOrderMarks(orderMarks, observation.squads);
     model = readModel(known, observation);
     const focused = interfaceControls().find(({ id }) => id === focusId);
     if (focused === undefined) focusId = null;
@@ -1397,7 +1401,7 @@ export function createGame(options: GameOptions): Game {
     ground.update({ sites: known, selected: human.selection.settlement });
     barbarianCamps.update(observation.barbarianCamps ?? []);
     field.update({
-      squads: visible().squads,
+      squads: observation.squads,
       enemies: observation.enemies,
       selected: human.selection.squads,
       tick: match.state.tick,
@@ -1407,7 +1411,6 @@ export function createGame(options: GameOptions): Game {
       // the world's residue, through its own fog, which is a drawing decision
       // and nothing else. One read, which the `corpses` hook hands back too.
       corpses: dead,
-      orderMarks,
     });
     minimap = readMinimap();
     layer.minimap(model, minimap, options.size);
@@ -1481,6 +1484,7 @@ export function createGame(options: GameOptions): Game {
     reference = next;
     referenceFocus = 'close';
     repaint();
+    revealFocusedControl();
   }
 
   function closeReference(): void {
@@ -1491,6 +1495,7 @@ export function createGame(options: GameOptions): Game {
     if (referencePaused && result === null) { pacing.resume(); lastFrame = performance.now(); }
     referencePaused = false;
     repaint();
+    revealFocusedControl();
   }
 
   function activateReference(action: string): void {
@@ -1499,14 +1504,7 @@ export function createGame(options: GameOptions): Game {
     reference = referenceAction(reference, action, readReference());
     referenceFocus = action;
     repaint();
-  }
-
-  /** The selection as the interface names one, which is what a click on a row knows. */
-  function asPicked(selection: Selection | null): PlayerSelection {
-    if (selection === null) return NOTHING_SELECTED;
-    if (selection.kind === 'settlement') return selectSettlement(selection.id);
-
-    return { squads: [selection.id], settlement: null };
+    revealFocusedControl();
   }
 
   /** A click at a screen point: the interface's rows first, then the men on the map. */
@@ -1537,7 +1535,6 @@ export function createGame(options: GameOptions): Game {
       return;
     }
     if (menu.visible) return;
-    const layout = hudLayout(model, options.size);
     const hit = hudHit(model, options.size, screenX, screenY);
     if (hit !== null) {
       if (hit.kind === 'button') hudButton(hit.action);
@@ -1550,8 +1547,7 @@ export function createGame(options: GameOptions): Game {
       else if (hit.kind === 'tab') hooks.setTab(hit.tab);
       else if (hit.kind === 'group') hooks.recallGroup(hit.index);
       else if (armed !== null && hit.selection.kind === 'settlement') targetSettlement(hit.selection.id);
-      else pickSelection(hit.selection, layout.exceptions.some((row) => row.selection.kind === hit.selection.kind
-        && row.selection.id === hit.selection.id));
+      else pickSelection(hit.selection, hit.exception, additive && !hit.exception);
       return;
     }
 
@@ -1609,6 +1605,7 @@ export function createGame(options: GameOptions): Game {
     pausePage = 'main';
     focusId = 'menu:close';
     repaint();
+    revealFocusedControl();
   }
 
   function closePauseMenu(resume: boolean): void {
@@ -1619,6 +1616,19 @@ export function createGame(options: GameOptions): Game {
     if (resume && result === null && !guide.open) { pacing.resume(); lastFrame = performance.now(); }
     menuWasRunning = false;
     repaint();
+  }
+
+  function revealFocusedControl(): void {
+    const id = reference === null ? focusId : referenceFocus;
+    const focused = interfaceControls().find((control) => control.id === id);
+    if (focused === undefined) return;
+    const rect = focused.rect;
+    const canvas = options.stage.canvas.getBoundingClientRect();
+    const left = canvas.left + rect.x;
+    const top = canvas.top + rect.y;
+    const dx = left < 0 ? left : Math.max(0, left + rect.width - document.documentElement.clientWidth);
+    const dy = top < 0 ? top : Math.max(0, top + rect.height - document.documentElement.clientHeight);
+    if (dx || dy) window.scrollBy(dx, dy);
   }
 
   function interfaceKey(key: string, reverse: boolean): boolean {
@@ -1635,12 +1645,14 @@ export function createGame(options: GameOptions): Game {
         const index = controls.findIndex((control) => control.id === referenceFocus);
         referenceFocus = controls[(index + (reverse ? -1 : 1) + controls.length) % controls.length]!.id;
         repaint();
+        revealFocusedControl();
       } else if (key === 'Enter' || key === ' ') activateReference(referenceFocus);
       else if (key === 'PageUp' || key === 'PageDown') activateReference(key === 'PageDown' ? 'next' : 'previous');
       else if (key === 'ArrowDown' || key === 'ArrowUp') {
         reference = referenceAction(reference, key === 'ArrowDown' ? 'entryNext' : 'entryPrevious', readReference());
         referenceFocus = `entry:${reference.entry}`;
         repaint();
+        revealFocusedControl();
       }
       return true;
     }
@@ -1660,6 +1672,7 @@ export function createGame(options: GameOptions): Game {
       const index = found < 0 && reverse ? 0 : found;
       focusId = controls[(index + (reverse ? -1 : 1) + controls.length) % controls.length]!.id;
       repaint();
+      revealFocusedControl();
       return true;
     }
     if (key === 'Enter' || key === ' ') {
@@ -1670,6 +1683,7 @@ export function createGame(options: GameOptions): Game {
         if (!options.stage.canvas.isConnected) return true;
         focusId = focused.id;
         repaint();
+        revealFocusedControl();
       }
       return true;
     }
@@ -1730,6 +1744,17 @@ export function createGame(options: GameOptions): Game {
       repaint();
     }
     else if (action.startsWith('purchase:')) perform(action.slice(9));
+    else if (action === 'recruitQueue') {
+      const order = model.orders.queuedRecruitment;
+      if (order === null) return;
+      const index = model.detail?.management?.findIndex(({ actions }) => actions.some(
+        ({ action: control }) => control === `cancelPending:${order}`)) ?? -1;
+      tab = 'overview';
+      settlementPage = 'management';
+      inspectedOrder = null;
+      detailOffset = Math.max(0, index);
+      repaint();
+    }
     else if (action === 'closeInspection') { inspectedOrder = null; repaint(); }
     else if (action.startsWith('settlement:')) {
       const page = action.slice(11);
@@ -1770,9 +1795,9 @@ export function createGame(options: GameOptions): Game {
    * from a group keeps the group it came from, so the panel can offer the way
    * back. A row pressed from the navigator is a new selection and keeps nothing.
    */
-  function pickSelection(selection: Selection, fromException = false): void {
+  function pickSelection(selection: Selection, fromException = false, additive = false): void {
     const previous = human.selection.squads;
-    human.select(asPicked(selection));
+    human.select(selectNamed(human.selection, selection, additive));
     groupMemory = fromException && previous.length > 1 ? [...previous] : null;
     armed = null;
     commandNotice = null;
@@ -1899,15 +1924,16 @@ export function createGame(options: GameOptions): Game {
     const command = commandFor(offer, squads, point);
     if (command === null || !human.submit(command)) return false;
 
-    // The page's own memory of the verb, which is what makes a move and an
-    // attack-move different marks on the ground (#58): the rules keep one route.
-    if (offer.kind === 'move' || offer.kind === 'attackMove') {
-      for (const id of squads) orderMarks[id] = offer.kind;
-    }
     noteGuide({ kind: 'command', verb: offer.kind === 'move' || offer.kind === 'attackMove' || offer.kind === 'recruit'
       ? offer.kind : 'other' });
 
+    const recruitment = command.kind === 'recruit' ? {
+      settlement: command.settlement, squadType: command.squadType, men: command.men,
+      afterId: Math.max(0, ...(visible().settlements.find(({ id }) => id === command.settlement)?.pending ?? []).map(({ id }) => id)),
+    } : undefined;
+    if (recruitment !== undefined) detailOffset = 0;
     submission = {
+      recruitment,
       name: offer.label,
       status: 'pending',
       tick: match.state.tick,
@@ -2045,27 +2071,6 @@ export function createGame(options: GameOptions): Game {
       ...squads.map((squad) => ({ kind: 'squad' as const, id: squad.id, rect: squad.rect,
         ink: squadInk(squad), depth: squad.y, layer: SQUAD_LAYER })),
     ];
-  }
-
-  /**
-   * Drops the ground marks of Squads that are gone or have arrived.
-   *
-   * The marks are the page's memory of the verb a Player gave; a Squad with
-   * nowhere to walk has no mark to wear, and a Squad that has left the field has
-   * no block to wear it on.
-   */
-  function pruneOrderMarks(
-    marks: Readonly<Record<number, OrderMarkKind>>,
-    squads: readonly VisibleSquad[],
-  ): Record<number, OrderMarkKind> {
-    const kept: Record<number, OrderMarkKind> = {};
-
-    for (const squad of squads) {
-      const mark = marks[squad.id];
-      if (mark !== undefined && squad.goal !== null) kept[squad.id] = mark;
-    }
-
-    return kept;
   }
 
   /** The settlement ids that are Strongholds, which the Observation does not say and the map does. */

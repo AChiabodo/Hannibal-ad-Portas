@@ -452,9 +452,14 @@ export async function bootRenderer(mount: HTMLElement, options: BrowserViewOptio
   function centerOn(x: number, y: number): void {
     const layout = game.hooks.hudLayout();
     const area = theatreArea(layout);
-    const left = area.x, top = area.y, bottom = area.y + area.height;
+    const middle = area.x + area.width / 2;
+    const bottom = area.y + area.height;
+    const guideBottom = layout.guide.y + layout.guide.height;
+    const belowGuide = options.tutorial && middle >= layout.guide.x && middle < layout.guide.x + layout.guide.width
+      && bottom - guideBottom >= 72;
+    const top = belowGuide ? Math.max(area.y, guideBottom) : area.y;
     moveTo({ zoom: camera.zoom,
-      x: Math.floor(x - (left + area.width / 2) / camera.zoom),
+      x: Math.floor(x - middle / camera.zoom),
       y: Math.floor(y - (top + (bottom - top) / 2) / camera.zoom) });
   }
 

@@ -212,23 +212,24 @@ describe('the HUD model', () => {
     expect(going.detail?.lines.map(lineText)).toContain(`${translate('ui.destination')} 20,21`);
   });
 
-  it('says why a Squad is not doing what it was told, in words a Player reads', () => {
+  it('shows a refused attempt separately from standing or marching', () => {
     const refused = hudModel({ ...VISIBLE, squads: [{ ...VISIBLE.squads[0]!, refused: 'water' }] }, STRONGHOLDS, {
       kind: 'squad',
       id: 1,
     });
 
-    expect(refused.detail?.lines.map(lineText)).toContain(`${translate('ui.order')} ${translate('refusal.water')}`);
+    expect(refused.detail?.lines.map(lineText)).toContain(`${translate('ui.order')} ${translate('order.standing')}`);
+    expect(refused.detail?.lines.map(lineText)).toContain(`${translate('order.refused')} ${translate('refusal.water')}`);
 
-    // And a refusal outranks the march it interrupted: the Squad kept its route,
-    // so "on the march" is true and is not the answer to the Player's question.
     const interrupted = hudModel(
       { ...VISIBLE, squads: [{ ...VISIBLE.squads[0]!, goal: { x: 20, y: 20 }, refused: 'unreachable' }] },
       STRONGHOLDS,
       { kind: 'squad', id: 1 },
     );
+    expect(interrupted.detail?.lines.map(lineText)).toContain('Ordine In marcia');
+    expect(interrupted.detail?.lines.map(lineText)).toContain('Destinazione 20,20');
     expect(interrupted.detail?.lines.map(lineText)).toContain(
-      `${translate('ui.order')} ${translate('refusal.unreachable')}`,
+      `${translate('order.refused')} ${translate('refusal.unreachable')}`,
     );
   });
 
@@ -334,7 +335,7 @@ describe('the HUD on screen', () => {
     const visible = { ...VISIBLE, squads: VISIBLE.squads.map((squad) => ({ ...squad, refused: 'water' as const })) };
     const model = hudModel(visible, STRONGHOLDS, { kind: 'squad', id: 1 }, [], { detailOffset: 999 });
     const layout = hudLayout(model, SIZE);
-    expect(layout.priority.map((line) => line.text).join(' ')).toContain('Ordine: Acque profonde');
+    expect(layout.priority.map((line) => line.text).join(' ')).toContain('Ordine rifiutato: Acque profonde');
     expect(layout.detailScroll.offset).toBeGreaterThan(0);
     expect(layout.text.every((line) => measureText(line.text) <= line.rect.width)).toBe(true);
   });

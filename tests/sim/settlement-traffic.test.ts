@@ -27,6 +27,69 @@ function stage() {
 }
 
 describe('physical access traffic (#74)', () => {
+  it.each([move, attackMove])('uses a clear column step to pass a stationary body at the Gate (#79)', (order) => {
+    const { world, match } = stage();
+    const traveller = musterSquad(world.economy, world.map,
+      { faction: 'rome', squadType: 'hastati', men: 60, x: 35, y: 22, facing: 'east' });
+    const blocker = musterSquad(world.economy, world.map,
+      { faction: 'rome', squadType: 'hastati', men: 60, x: 39, y: 23, facing: 'north' });
+    match.step([order('rome', [traveller.id], 41, 25)]);
+    for (let tick = 0; tick < 120; tick += 1) {
+      match.step();
+      const squads = observeSiege(world, 'rome').squads;
+      expect(intersects(ground(squads[0]!), ground(squads[1]!))).toBe(false);
+    }
+    const squads = observeSiege(world, 'rome').squads;
+    expect(squads.find(({ id }) => id === traveller.id)).toMatchObject({ x: 41, y: 25, goal: null, refused: null });
+    expect(squads.find(({ id }) => id === blocker.id)).toMatchObject({ x: 39, y: 23, goal: null });
+  });
+  it('reports a blocked destination and resumes the retained march when it clears (#79)', () => {
+    const { world, match } = stage();
+    const traveller = musterSquad(world.economy, world.map,
+      { faction: 'rome', squadType: 'hastati', men: 24, x: 38, y: 25, facing: 'west' });
+    const blocker = musterSquad(world.economy, world.map,
+      { faction: 'rome', squadType: 'hastati', men: 24, x: 34, y: 25, facing: 'west' });
+    const seen = () => observeSiege(world, 'rome').squads.find(({ id }) => id === traveller.id);
+    match.step([move('rome', [traveller.id], 34, 25)]);
+    for (let tick = 0; tick < 30; tick += 1) match.step();
+    expect(seen()).toMatchObject({ goal: { x: 34, y: 25 }, waitingForPassage: true, engaged: false, refused: null });
+    match.step([move('rome', [blocker.id], 34, 18)]);
+    for (let tick = 0; tick < 90; tick += 1) match.step();
+    expect(seen()).toMatchObject({ x: 34, y: 25, goal: null, refused: null });
+    expect(seen()?.waitingForPassage).toBeUndefined();
+  });
+
+  it('reports an interrupted march when its only opening closes and takes a new order (#79)', () => {
+    const { world, match } = stage();
+    const gate = world.siege.fronts[1]!.structures.find(({ kind }) => kind === 0)!;
+    gate.hp = 0;
+    const squad = musterSquad(world.economy, world.map,
+      { faction: 'rome', squadType: 'hastati', men: 24, x: 60, y: 75 });
+    const seen = () => observeSiege(world, 'rome').squads.find(({ id }) => id === squad.id);
+    match.step([move('rome', [squad.id], 75, 75)]);
+    expect(seen()?.goal).toEqual({ x: 75, y: 75 });
+    gate.hp = 1;
+    for (let tick = 0; tick < 120; tick += 1) match.step();
+    expect(seen()).toMatchObject({ goal: null, marchInterrupted: 'unreachable', refused: null });
+    match.step([move('rome', [squad.id], 55, 75)]);
+    expect(seen()?.marchInterrupted).toBeUndefined();
+    for (let tick = 0; tick < 120; tick += 1) match.step();
+    expect(seen()).toMatchObject({ x: 55, y: 75, goal: null, refused: null });
+  });
+
+  it('keeps the accepted attack march and its destination when a move is refused (#79)', () => {
+    const { world, match } = stage();
+    const squad = musterSquad(world.economy, world.map,
+      { faction: 'rome', squadType: 'hastati', men: 24, x: 45, y: 25 });
+    const seen = () => observeSiege(world, 'rome').squads.find(({ id }) => id === squad.id);
+    match.step([attackMove('rome', [squad.id], 55, 25)]);
+    match.step([move('rome', [squad.id], 1000, 25)]);
+    expect(seen()).toMatchObject({ goal: { x: 55, y: 25 }, attackMarch: true, refused: 'off-map' });
+    for (let tick = 0; tick < 120; tick += 1) match.step();
+    expect(seen()).toMatchObject({ x: 55, y: 25, goal: null, refused: null });
+    expect(seen()?.attackMarch).toBeUndefined();
+  });
+
   it.each(['rome', 'carthage'] as const)('lets %s sidestep water without replacing the legal retained facing (#76)', (faction) => {
     const { world, match } = stage();
     world.map.terrain[tileIndex(49, 51)] = TERRAIN.river;
@@ -209,12 +272,14 @@ describe('physical access traffic (#74)', () => {
     const leaving = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 25, y: 25 });
     const entering = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 40, y: 25 });
     match.step([move('rome', [leaving.id], 48, 25), move('rome', [entering.id], 25, 23)]);
+    match.step([move('rome', [entering.id], 1000, 25)]);
     for (let tick = 0; tick < 320; tick += 1) {
       match.step();
       const seen = observeSiege(match.state.world, 'rome').squads;
       const a = seen.find((squad) => squad.id === leaving.id)!;
       const b = seen.find((squad) => squad.id === entering.id)!;
       expect(intersects(ground(a), ground(b)), `body overlap at tick ${tick}`).toBe(false);
+      if (b.goal !== null) expect(b.refused).toBe('off-map');
     }
     const seen = observeSiege(match.state.world, 'rome').squads;
     expect(seen.find((squad) => squad.id === leaving.id)).toMatchObject({ x: 48, y: 25, goal: null });

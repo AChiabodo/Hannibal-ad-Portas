@@ -369,6 +369,15 @@ export interface Block extends Shape {
   /** Ticks still to wait before it enters the next tile: 0 when it is standing still. */
   wait: number;
 
+  /** An occupied footprint prevented the next step. */
+  waitingForPassage?: 1;
+
+  /** Why an accepted march could no longer reach its destination, as a route code. */
+  marchInterrupted?: number;
+
+  /** Whether the active march was requested as an attack-move. */
+  attackMarch?: 1;
+
   /** Why the last move Command it was given could not be carried out, or `NO_REFUSAL` (`route.ts`). */
   refused: number;
 
@@ -383,6 +392,13 @@ export interface Block extends Shape {
    * (`movement.ts`), which is the whole of how a garrison sallies.
    */
   garrison: number;
+}
+
+/** An accepted march ended because its destination can no longer be reached. */
+export function interruptMarch(squad: Block, reason: number): void {
+  squad.marchInterrupted = reason;
+  delete squad.access;
+  delete squad.attackMarch;
 }
 
 /**

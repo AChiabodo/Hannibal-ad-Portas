@@ -1,6 +1,6 @@
 /** Common RTS resource chrome: faction treasury, named local stocks, calendar and menu. */
 import type { HudModel, HudLayout, HudSize } from './hud.ts';
-import { message, translate } from './strings.ts';
+import { message, smallWindowLabel, translate } from './strings.ts';
 import { SEASON_TICKS } from '../sim/season.ts';
 
 export function resourceBar(model: HudModel, size: HudSize): Pick<HudLayout, 'readouts' | 'text' | 'buttons'> {
@@ -13,7 +13,7 @@ export function resourceBar(model: HudModel, size: HudSize): Pick<HudLayout, 're
     { role: 'pace' as const, text: message('hud.pace', { state: translate(model.view.ended ? 'pause.finished' : model.view.paused ? 'ui.paused' : 'ui.running'), speed: model.view.speed ?? 1 }), rect: rect(414, 26, 104, 10) },
   ];
   if (model.view.scaleWarning || model.view.smallWindow) text.push({
-    text: translate(model.view.smallWindow ? 'ui.smallWindow' : 'ui.scaleWarning'),
+    text: model.view.smallWindow ? smallWindowLabel(model.view.pageOverflow) : translate('ui.scaleWarning'),
     rect: rect(4, 42, width - 8, 10),
   });
   const readouts = [model.readouts[3], ...model.readouts.slice(4, 8)].flatMap((line, i) => line ? [{

@@ -19,6 +19,25 @@ function stage() {
 }
 
 describe('the shared settlement rules (#74)', () => {
+  it('reports capacity for one recruit, then stock until the order can start (#79)', () => {
+    const { world, match } = stage();
+    const site = world.economy.settlements[0]!;
+    const seen = () => observeSiege(world, 'rome').settlements[0];
+    match.step([recruit('rome', 0, 'hastati', 120, 2)]);
+    expect(seen()).toMatchObject({ storage: 30, pending: [{ count: 2, reason: 'capacity' }] });
+    site.works.push({ building: buildingCode('granary')!, remaining: 0 });
+    match.step();
+    expect(seen()?.pending).toMatchObject([{ count: 2, reason: 'resources' }]);
+    site.stocks[0] = 40;
+    site.stocks[3] = 10;
+    match.step();
+    expect(seen()?.pending).toMatchObject([{ count: 1, reason: 'resources' }]);
+    const order = seen()!.pending![0]!;
+    match.step([validateCommand({ kind: 'cancelPending', faction: 'rome', settlement: 0, order: order.id })]);
+    expect(seen()?.pending).toEqual([]);
+    expect(observeSiege(world, 'rome').squads).toHaveLength(1);
+  });
+
   it('keeps the headquarters solid while leaving the capture square reachable', () => {
     const { world, match } = stage();
     const squad = musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', men: 24, x: 40, y: 22 });

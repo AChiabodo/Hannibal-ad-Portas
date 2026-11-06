@@ -12,10 +12,10 @@ export function enqueueOrder(economy: Economy, order: Omit<PendingOrder, 'id' | 
   advancePendingOrders(economy);
 }
 
-export function pendingOrderCost(order: PendingOrder): ResourceAmounts {
+export function pendingOrderCost(order: PendingOrder, count = order.count): ResourceAmounts {
   if (order.kind === 0) return buildingOf(order.content)?.cost ?? NOTHING;
   const type = squadTypeOf(order.content);
-  return type === undefined ? NOTHING : times(recruitCost(type, order.men), order.count);
+  return type === undefined ? NOTHING : times(recruitCost(type, order.men), count);
 }
 
 /** Stable arrival order, no charges or mutations for a request which still waits. */

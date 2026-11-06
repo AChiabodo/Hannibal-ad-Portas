@@ -85,7 +85,7 @@ import { TICK_HZ } from '../sim/clock.ts';
 import type { ForecastLine } from './forecast.ts';
 import type { GuidePanel } from './guide.ts';
 import { paintControl, paintFocus } from '../art/interface.ts';
-import { message, refusalLabel, resourceLabel, seasonLabel, squadLabel, translate, workLabel } from './strings.ts';
+import { message, refusalLabel, resourceLabel, seasonLabel, smallWindowLabel, squadLabel, translate, workLabel } from './strings.ts';
 import type { PanelLayout } from './preferences.ts';
 import { arrangePanelLayout } from './panel-layout.ts';
 
@@ -161,6 +161,14 @@ export interface HudOrderStatus {
   readonly tick: number;
   /** What the panel knew about the selection when it was given, e.g. `1 su 2 a portata`. */
   readonly detail: string | null;
+  /** Identifies new queue entries that match this recruitment submission. */
+  readonly recruitment?: {
+    readonly settlement: number;
+    readonly squadType: string;
+    readonly men: number;
+    readonly afterId: number;
+    readonly queueId?: number;
+  };
 }
 
 /**
@@ -176,6 +184,8 @@ export interface HudOrdersView {
   readonly pending: number;
   /** The last order given, and whether it has reached the Match. */
   readonly last: HudOrderStatus | null;
+  /** The newly queued recruitment shown by the selected settlement, if any. */
+  readonly queuedRecruitment: number | null;
   /** Whether opening an exception from a group left a way back to it. */
   readonly backToGroup: boolean;
   /** Why the last action pressed is unavailable, shown until the next press. */
@@ -239,6 +249,7 @@ export interface HudView {
   readonly sessionOpen?: boolean;
   readonly scaleWarning?: boolean;
   readonly smallWindow?: boolean;
+  readonly pageOverflow?: 'horizontal' | 'vertical' | 'both';
   readonly uiScale?: number;
   readonly navigator?: boolean;
   readonly navigatorExpanded?: boolean;
@@ -267,7 +278,7 @@ export interface HudScroll {
   readonly page: number;
 }
 
-export type HudAction = `repairWork:${string}:${number}` | `cancelWorkRepair:${string}:${number}` | `repairFortification:${string}:${string}` | `cancelFortificationRepair:${string}:${string}` | `cancelPending:${number}` | `garrisonSelect:${number}` | `garrisonExit:${number}` | `purchase:${string}` | 'closeInspection' | `settlement:${'summary' | 'balance' | 'works' | 'management' | 'catalogue'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore' | 'tutorialNext' | 'tutorialRetry' | 'tutorialExit' | 'tutorialHelp';
+export type HudAction = `repairWork:${string}:${number}` | `cancelWorkRepair:${string}:${number}` | `repairFortification:${string}:${string}` | `cancelFortificationRepair:${string}:${string}` | `cancelPending:${number}` | `garrisonSelect:${number}` | `garrisonExit:${number}` | `purchase:${string}` | 'closeInspection' | 'recruitQueue' | `settlement:${'summary' | 'balance' | 'works' | 'management' | 'catalogue'}` | `reference:${string}` | `category:${ConstructionCategory}` | 'reference' | 'session' | 'speed1' | 'speed2' | 'speed3' | 'navigator' | 'center' | 'pause' | 'listPrevious' | 'listNext' | 'detailPrevious' | 'detailNext' | 'commandsPrevious' | 'commandsNext' | 'groupBack' | 'notices' | 'noticesPrevious' | 'noticesNext' | 'guideBegin' | 'guideSkip' | 'guideClose' | 'recruitFewer' | 'recruitMore' | 'tutorialNext' | 'tutorialRetry' | 'tutorialExit' | 'tutorialHelp';
 
 export interface HudButton {
   readonly action: HudAction;
@@ -425,7 +436,7 @@ export interface NoticeRect {
 
 /** What a click on the interface lands on, in the order the panels stack. */
 export type HudHit =
-  | { readonly kind: 'selection'; readonly selection: Selection }
+  | { readonly kind: 'selection'; readonly selection: Selection; readonly exception?: true }
   | { readonly kind: 'order'; readonly order: OrderOption }
   | { readonly kind: 'tab'; readonly tab: SettlementTab }
   | { readonly kind: 'group'; readonly index: number }
@@ -546,6 +557,12 @@ export function hudModel(
     ? settlementOrders(visible, faction, settlement, tab, ended, session.recruitCount ?? 1, category)
     : selected?.kind === 'settlement' ? [] : squadOrders(visible, faction, pickedSquadList, ended);
   const armed = session.armed == null ? null : commands.find((order) => order.id === session.armed) ?? null;
+  const receipt = session.last?.status === 'applied' ? session.last.recruitment : undefined;
+  const queuedRecruitment = receipt !== undefined && settlement?.id === receipt.settlement
+    ? settlement.pending?.filter((order) => order.id > receipt.afterId && order.kind === 'recruit' &&
+      order.squadType === receipt.squadType && order.men === receipt.men &&
+      (receipt.queueId === undefined || order.id === receipt.queueId)).at(-1)?.id ?? null
+    : null;
 
   return {
     view,
@@ -553,7 +570,7 @@ export function hudModel(
     rows: rows(visible, strongholds),
     detail: selected === null
       ? null
-      : group !== null ? groupDetail(group) : detail(visible, strongholds, selected, known, view.tick ?? 0, ended),
+      : group !== null ? groupDetail(group, pickedSquadList) : detail(visible, strongholds, selected, known, view.tick ?? 0, ended),
     selected,
     picked: pickedRows,
     commands,
@@ -566,6 +583,7 @@ export function hudModel(
       armed,
       pending: session.pending ?? 0,
       last: session.last ?? null,
+      queuedRecruitment,
       backToGroup: session.backToGroup ?? false,
       notice: session.notice ?? null,
     },
@@ -810,7 +828,7 @@ export function hudHit(model: HudModel, size: HudSize, x: number, y: number): Hu
     if (contains(notice.rect, x, y)) return { kind: 'notice', id: notice.id };
   }
   for (const exception of layout.exceptions) {
-    if (contains(exception.rect, x, y)) return { kind: 'selection', selection: exception.selection };
+    if (contains(exception.rect, x, y)) return { kind: 'selection', selection: exception.selection, exception: true };
   }
   for (const row of layout.rows) {
     if (contains(row.rect, x, y)) return { kind: 'selection', selection: row.selection };
@@ -1132,10 +1150,14 @@ function rows(visible: EconomyVisible, strongholds: readonly number[]): readonly
 }
 
 /** The panel for a mixed selection: what the group is, before what any one man in it is. */
-function groupDetail(group: GroupSummary): HudDetail {
+function groupDetail(group: GroupSummary, picked: readonly VisibleSquad[]): HudDetail {
   return {
     title: message('ui.groupMembers', { count: group.squads, composition: group.composition }),
     lines: [
+      ...(picked.some((squad) => squad.goal !== null || squad.refused !== null || squad.marchInterrupted !== undefined) ? picked.map((squad) => ({
+        label: message('ui.listItem', { name: squadLabel(squad.type), id: squad.id }),
+        value: squad.goal === null ? orderLabel(squad) : `${orderLabel(squad)} (${squad.goal.x},${squad.goal.y})`,
+      })) : []),
       { label: translate('ui.composition'), value: group.composition },
       { label: translate('ui.menTotal'), value: String(group.men) },
       { label: translate('ui.morale'), value: message('ui.moraleRange', { low: group.moraleMin, high: group.moraleMax }) },
@@ -1247,7 +1269,7 @@ function settlementLines(visible: EconomyVisible, settlement: VisibleSettlement,
       { action: `garrisonExit:${squad.id}` as const, text: translate('settlement.exit') },
     ] })),
     ...(settlement.pending ?? []).map((order) => ({
-      text: `${order.kind === 'build' ? workLabel(order.building) : `${squadLabel(order.squadType)} ${order.count} x ${order.men}`} - ${order.reason === 'space' ? translate('pending.space') : translate('pending.resources')}${order.cost === undefined ? '' : message('pending.cost', { cost: RESOURCE_KINDS.map((kind) => `${resourceLabel(kind)} ${amountOf(order.cost!, kind)}`).join(', ') })}`,
+      text: `${order.kind === 'build' ? workLabel(order.building) : `${squadLabel(order.squadType)} ${order.count} x ${order.men}`} - ${order.reason === 'space' ? translate('pending.space') : translate(order.reason === 'capacity' ? 'pending.capacity' : 'pending.resources')}${order.cost === undefined ? '' : message('pending.cost', { cost: RESOURCE_KINDS.map((kind) => `${resourceLabel(kind)} ${amountOf(order.cost!, kind)}`).join(', ') })}`,
       actions: [{ action: `cancelPending:${order.id}` as const, text: translate('settlement.cancel') }],
     })),
     ...settlement.works.filter((work) => work.standing && (work.repairing || (work.hp ?? 0) < (work.maxHp ?? 0))).map((work) => {
@@ -1419,6 +1441,7 @@ function squadLines(squad: VisibleSquad, visible: EconomyVisible): Pick<HudDetai
   const lines: HudLine[] = [
     { label: translate('ui.order'), value: orderLabel(squad) },
     { label: translate('ui.destination'), value: squad.goal === null ? translate('ui.none') : `${String(squad.goal.x)},${String(squad.goal.y)}` },
+    ...(squad.refused === null ? [] : [{ label: translate('order.refused'), value: refusalLabel(squad.refused) }]),
     { label: translate('ui.type'), value: squadLabel(squad.type) },
     { label: translate('ui.men'), value: `${String(men.men)}/${String(men.capacity)}` },
     { label: translate('ui.capacity'), value: String(squad.capacity) },
@@ -1456,9 +1479,9 @@ function squadLines(squad: VisibleSquad, visible: EconomyVisible): Pick<HudDetai
     });
   }
 
-  // The Order is pinned, and so is a supply problem: a Squad outside its own
-  // country is losing morale every Season, which is not a figure to scroll for.
-  return { lines, priority: squad.inTerritory ? [0] : [0, 8] };
+  const priority = squad.refused === null ? [0, 1] : [0, 1, 2];
+  if (!squad.inTerritory) priority.push(lines.findIndex(({ label }) => label === translate('ui.supply')));
+  return { lines, priority };
 }
 
 /**
@@ -1487,24 +1510,13 @@ function frontState(front: VisibleFront): string {
   return parts.join(' - ');
 }
 
-/**
- * What a Squad is doing, as a Player reads it: whether it has broken and is
- * running, the reason its last order was refused if one was, and otherwise
- * whether it is walking.
- *
- * A rout goes first because it *overrides* the other two: a running Squad is not
- * obeying orders and is not holding a refusal, and a panel that said "In marcia"
- * about it would be telling the Player they are still in command of it (C3).
- * A refusal comes next, because it is the answer to a question the Player has
- * already asked — they clicked, nothing moved, and this is why (`ui/strings.ts`
- * says the words). A Squad standing still because it has arrived and one that
- * was never ordered anywhere are the same state (C1) and read the same way.
- */
+/** The active movement state, independent of the result of the last attempt. */
 function orderLabel(squad: VisibleSquad): string {
   if (squad.routing) return translate('order.routing');
-  if (squad.refused !== null) return refusalLabel(squad.refused);
+  if (squad.marchInterrupted !== undefined) return message('order.interrupted', { reason: refusalLabel(squad.marchInterrupted) });
+  if (squad.waitingForPassage) return translate('order.waiting');
 
-  return translate(squad.goal === null ? 'order.standing' : 'order.marching');
+  return translate(squad.goal === null ? 'order.standing' : squad.attackMarch ? 'cmd.attackMove' : 'order.marching');
 }
 
 /** The name a settlement reads as: its Stronghold status, not its id. */
@@ -1668,7 +1680,7 @@ function desktopLayout(model: HudModel, size: HudSize): HudLayout {
       enabled: action === 'pause' || action.startsWith('speed') ? !model.view.ended : action === 'center' ? model.selected !== null : true });
     x += buttonWidth + 2;
   }
-  if (warning) text.push({ text: translate(model.view.smallWindow ? 'ui.smallWindow' : 'ui.scaleWarning'),
+  if (warning) text.push({ text: model.view.smallWindow ? smallWindowLabel(model.view.pageOverflow) : translate('ui.scaleWarning'),
     rect: { x: 4, y: 42, width: width - 8, height: LINE_STEP } });
   const listScroll = scrollWindow(model.view.listOffset ?? 0, listLines.length, list.height - 48);
   if (showNavigator) {

@@ -13,6 +13,8 @@ type Send = (squad: Squad, target: GroundPoint) => void;
 type Journey = NonNullable<Squad['garrisonJourney']>;
 
 export function requestDeparture(squad: Squad, target: GroundPoint): void {
+  delete squad.attackMarch;
+  delete squad.marchInterrupted;
   if (squad.garrisonJourney?.phase === 3) {
     squad.garrisonJourney.goalX = target.x;
     squad.garrisonJourney.goalY = target.y;
@@ -48,7 +50,11 @@ export function requestGarrison(world: SiegeWorld, siteId: number, owner: number
     if (!inside) send(squad, target);
     else { squad.steps = []; squad.wait = 0; squad.refused = NO_REFUSAL; }
     if (squad.refused !== NO_REFUSAL) delete squad.garrisonJourney;
-    else accepted = true;
+    else {
+      delete squad.attackMarch;
+      delete squad.marchInterrupted;
+      accepted = true;
+    }
   }
   return accepted;
 }

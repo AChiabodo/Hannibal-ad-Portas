@@ -245,6 +245,16 @@ export function bindControls(stage: Stage, target: ControlTarget): void {
   canvas.addEventListener(
     'wheel',
     (event) => {
+      const page = document.documentElement;
+      const horizontal = page.scrollWidth > page.clientWidth;
+      const vertical = page.scrollHeight > page.clientHeight;
+      if (event.shiftKey && horizontal && event.deltaY !== 0 && event.deltaX === 0) {
+        event.preventDefault();
+        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? page.clientWidth : 1;
+        window.scrollBy(event.deltaY * unit, 0);
+        return;
+      }
+      if ((horizontal && event.deltaX !== 0) || (vertical && !event.ctrlKey && !event.shiftKey)) return;
       event.preventDefault();
 
       const at = local(event);
