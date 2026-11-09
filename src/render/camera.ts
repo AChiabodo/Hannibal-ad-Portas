@@ -162,6 +162,9 @@ export function zoomAbout(camera: Camera, zoom: number, screenX: number, screenY
 
 /** What a camera has to be kept inside: the stage's size and the viewport's. */
 export interface Viewport {
+  /** Screen area covered by the HUD at the near edges. */
+  readonly insetLeft?: number;
+  readonly insetTop?: number;
   /** Stage width in pixels. */
   readonly stageWidth: number;
   /** Stage height in pixels. */
@@ -182,12 +185,14 @@ export interface Viewport {
  * clamped to zero instead of negative.
  */
 export function clampTo(camera: Camera, viewport: Viewport): Camera {
-  const across = Math.max(0, viewport.stageWidth - Math.floor(viewport.width / camera.zoom));
-  const down = Math.max(0, viewport.stageHeight - Math.floor(viewport.height / camera.zoom));
+  const left = 0 - Math.floor((viewport.insetLeft ?? 0) / camera.zoom);
+  const top = 0 - Math.floor((viewport.insetTop ?? 0) / camera.zoom);
+  const across = Math.max(left, viewport.stageWidth - Math.floor(viewport.width / camera.zoom));
+  const down = Math.max(top, viewport.stageHeight - Math.floor(viewport.height / camera.zoom));
 
   return {
-    x: Math.min(Math.max(0, camera.x), across),
-    y: Math.min(Math.max(0, camera.y), down),
+    x: Math.min(Math.max(left, camera.x), across),
+    y: Math.min(Math.max(top, camera.y), down),
     zoom: camera.zoom,
   };
 }

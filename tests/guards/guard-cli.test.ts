@@ -24,6 +24,17 @@ function runGuard(files: Record<string, string>, args: readonly string[] = FIXTU
 }
 
 describe('guard CLI', () => {
+  it('fails the AI fence when a helper reads past Observation types', () => {
+    const { status, output } = runGuard({
+      'src/sim/state.ts': 'export const hidden = 1;',
+      'src/ai/brain.ts': "import { hidden } from '../shared/leak.ts';",
+      'src/shared/leak.ts': "export { hidden } from '../sim/state.ts';",
+    });
+    expect(status).toBe(1);
+    expect(output).toContain('AI Observation imports');
+    expect(output).toContain('src/shared/leak.ts:1');
+  });
+
   it('passes a clean tree and says which fences it checked', () => {
     const { status, output } = runGuard({
       'src/sim/index.ts': "export { makeRng } from './prng';\n",

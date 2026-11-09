@@ -95,11 +95,12 @@ describe('building a Command', () => {
       settlement: 12,
       building: 'castrum',
     });
-    expect(recruit('carthage', 12, 'libyan-spear', 3)).toEqual({
+    expect(recruit('carthage', 12, 'libyan-spear', 48, 3)).toEqual({
       kind: 'recruit',
       faction: 'carthage',
       settlement: 12,
       squadType: 'libyan-spear',
+      men: 48,
       count: 3,
     });
   });
@@ -121,13 +122,25 @@ describe('building a Command', () => {
 
   it('refuses a settlement that is not an id, and a count that is not a positive whole number', () => {
     expect(() => build('rome', -1, 'castrum')).toThrow(/command\.settlement/);
-    expect(() => recruit('rome', 12, 'hastati', 0)).toThrow(/command\.count/);
-    expect(() => recruit('rome', 12, 'hastati', 1.5)).toThrow(/command\.count/);
+    expect(() => recruit('rome', 12, 'hastati', 24, 0)).toThrow(/command\.count/);
+    expect(() => recruit('rome', 12, 'hastati', 24, 1.5)).toThrow(/command\.count/);
+  });
+
+  it('requires a real size on a Recruit, and refuses one that is not a positive whole number', () => {
+    for (const men of [0, -1, 1.5, Number.NaN]) {
+      expect(() => recruit('rome', 12, 'hastati', men, 1)).toThrow(/command\.men is not a positive size/);
+    }
+
+    expect(recruit('rome', 12, 'hastati', 60, 2)).toMatchObject({ men: 60, count: 2 });
+    // The pre-P2 record: a Recruit with no size is refused at the seam rather
+    // than silently reinterpreted as some default (COMMANDS.md, ADR-0027).
+    expect(() => validateCommand({ kind: 'recruit', faction: 'rome', settlement: 12,
+      squadType: 'hastati', count: 1 })).toThrow(/command\.men/);
   });
 
   it('refuses a building or a Squad type with no name', () => {
     expect(() => build('rome', 12, '')).toThrow(/command\.building/);
-    expect(() => recruit('rome', 12, '', 1)).toThrow(/command\.squadType/);
+    expect(() => recruit('rome', 12, '', 24, 1)).toThrow(/command\.squadType/);
   });
 
   it('refuses a formation that is not one of the shapes a Squad knows', () => {

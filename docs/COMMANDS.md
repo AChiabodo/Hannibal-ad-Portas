@@ -34,14 +34,25 @@ is `replayCommands` (`src/sim/replay.ts`), and it reads every line through the
 vocabulary below before the first tick runs, so a word that is not a Command is
 refused with the field named instead of reaching the rules.
 
+This file is the vocabulary; the *transport* an external agent uses — the messages
+it is handed, how often it is asked, what a deadline means — is
+[docs/PROTOCOL.md](PROTOCOL.md). The Commands below are what it writes on that
+wire, unchanged: a process emits exactly what a human's hands and the built-in AI
+emit.
+
 A Controller can read nothing else: not the other Faction's Squads, not the
 Match state, not the seed. `Observation` carries a projection of the world that
 the rules supply, and a Controller that reaches for anything else fails to
 compile — that is tested, not promised.
 
+The one thing an external agent is told that is not in its Observation is the
+run's own paperwork — its Faction, the seed, the tick bound, its roster — in the
+protocol's `hello`, which is the harness speaking and not a second window on the
+world: an agent still learns where the enemy is only by looking (`PROTOCOL.md`).
+
 ## What every Command carries
 
-- **`kind`** — one of the twelve Commands in the table below. Nothing else is a
+- **`kind`** — one of the fifteen Commands in the table below. Nothing else is a
   Command.
 - **`faction`** — `"rome"` or `"carthage"`: the Faction that issued the Command. It
   is part of the Command because a log has to be readable without the Players
@@ -60,23 +71,84 @@ compile — that is tested, not promised.
 <!-- vocabulary:start -->
 | Command       | Fields                                    | What it orders                                                                                          |
 | ------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `move`        | `faction`, `squads`, `x`, `y`             | March the Squads to the tile `x, y` and hold there.                                                     |
-| `attackMove`  | `faction`, `squads`, `x`, `y`             | March to `x, y`, engaging whatever is met on the way.                                                   |
+| `move`        | `faction`, `squads`, `x`, `y`             | March to separate legal arrivals near `x, y` and hold there (see below).                               |
+| `attackMove`  | `faction`, `squads`, `x`, `y`             | Use the same arrival allocation, engaging whatever is met on the way.                                 |
 | `attack`      | `faction`, `squads`, `target`             | Attack one enemy Squad.                                                                                 |
 | `hold`        | `faction`, `squads`                       | Hold position: stand, face the enemy, do not pursue.                                                    |
 | `garrison`    | `faction`, `squads`, `settlement`         | Take up garrison inside a settlement: man its walls instead of the field.                                |
 | `withdraw`    | `faction`, `squads`                       | Break off and fall back. Which ground is behind you is the rules' question, not the Command's.          |
-| `build`       | `faction`, `settlement`, `building`       | Start building `building` in a settlement: a labour allocation plus a timer, not a construction site.   |
-| `recruit`     | `faction`, `settlement`, `squadType`, `count` | Raise `count` Squads of `squadType` in a settlement.                                                |
+| `build`       | `faction`, `settlement`, `building`       | Request a visible Work in its assigned lot; wait unpaid if space or resources are unavailable. |
+| `recruit`     | `faction`, `settlement`, `squadType`, `men`, `count` | Raise `count` Squads of `squadType`, each of `men` real soldiers, in a settlement.                  |
 | `assault`     | `faction`, `squads`, `settlement`         | Take a settlement by force. Fast, expensive, needs the ram, and Rome's alone (ADR-0008).                |
 | `blockade`    | `faction`, `squads`, `settlement`         | Starve a settlement into surrender. Slow, cheap in lives, breakable by a relieving army (ADR-0008).     |
 | `formation`   | `faction`, `squads`, `formation`          | Set the shape the Squads hold: `line` for frontage, `column` for depth (PLAN §4).                       |
 | `group`       | `faction`, `group`, `squads`              | Bind Squads to a numbered control group, or clear it with an empty list.                                |
+| `cancelPending` | `faction`, `settlement`, `order` | Cancel an owned unpaid construction or recruitment request by its observed order ID. |
+| `repairFortification` | `faction`, `settlement`, `structure`, `side` | Start a paid repair of one owned wall or gate outside a Siege. |
+| `cancelFortificationRepair` | `faction`, `settlement`, `structure`, `side` | Cancel a paid fortification repair without a refund. |
+| `attackStructure` | `faction`, `squads`, `target` | Attack a currently visible barbarian camp or completed economic Work. A Work target names its settlement, building and ordinal. |
+| `repairWork` | `faction`, `settlement`, `building`, `ordinal` | Repair a damaged owned Work outside a Siege. |
+| `cancelWorkRepair` | `faction`, `settlement`, `building`, `ordinal` | Cancel an owned Work repair without refund. |
 <!-- vocabulary:end -->
+
+### Ground arrival allocation (#68)
+
+One eligible Squad still marches to the exact clicked Tile. For a group, owned
+Squads in good order are allocated in ascending ID order, independently of the
+Command's list order. The first reachable Squad claims the click; subsequent
+Squads take the nearest available walkable Tile within twelve Tiles on each
+axis. Squared distance to the click orders candidates, then y, then x. Each
+candidate must be on the click's connected landmass and reachable from the Squad.
+At physical approaches, later routes account for the resting footprints of
+earlier arrivals, so a completed journey cannot seal a peer's remaining route.
+The same column constraints apply to route planning and to the actual passage.
+
+Separation uses the purchased files/ranks shared with the formation declaration,
+including column depth and a specialist's declared Figure count. Its conservative
+radius in Tiles is `ceil(max(files, ranks) / 6) + 1`; two arrival centres must be
+at least the sum of their radii apart on one axis, regardless of arrival facing.
+This reserves arrivals within this Command. Actual formation footprints must also
+fit the terrain and active settlement obstacles. Gates and Breaches admit one
+Squad at a time; river crossings provide room for real marching columns.
+
+Off-map and water clicks refuse the whole ground order with `off-map` or `water`.
+Disconnected Squads receive `unreachable` and claim no slot. An eligible Squad
+with no separated reachable candidate in the neighbourhood receives `no-space`
+(**Spazio insufficiente vicino alla destinazione**). Allocation is greedy in ID
+order; it never relocates an earlier assignment to fit a later Squad. Refused
+Squads keep their previous route and step timer; accepted peers proceed. The
+Observation exposes each assigned goal and refusal; selection exceptions and
+notices explain partial execution. Rout/ownership eligibility remains unchanged.
+
+Repeating an unchanged group order yields the same arrivals and preserves step
+progress. Arrival spacing uses the requested formation while a temporary
+marching column crosses an opening. A repeated destination also preserves an
+off-lane yield; Hold cancels it. Moving friendly bodies which obstruct a
+registered passage join its queue even when their own route stays inside the
+courtyard. A later accepted order replaces the route; paused Commands retain
+their submission order and are applied on resume. Explicit `attack`, `garrison`,
+`assault` and `blockade` retain their enemy/settlement target semantics.
+
+This intentionally changes rule hashes for Records containing multi-Squad ground
+Commands (including `march` and `roster`); old checkpoints can diverge. The seed
+and logged Commands still reproduce deterministically under these rules. No
+Command fields, random draws or state fields were added; `no-space` appends
+refusal code 3 without renumbering the existing codes.
+
+### Content and control groups
 
 `building` and `squadType` are ids from the content table (`content/`, B6 and
 C4). The vocabulary fixes that a name goes there; the rules refuse names they do
 not know.
+
+`men` is one of the type's real sizes, not a free number: Rome raises its melee
+infantry at `24`, `60` or `120`, Carthage at `24` or `48`, and a specialist at
+its one starting size (24 Balearic slingers, 12 Numidian horse, one elephant
+whose abstract strength is 24). A size the type does not offer is a Command the
+rules refuse, not one rounded to another size. The purchase is quoted from the
+type's 24-man price and scales in exact proportion, and the Squads raised
+remember the men they were recruited with as their capacity even after combat
+reduces their survivors (ADR-0026, ADR-0027).
 
 `group` is a number from 1 to 9. A control group binds Squads to a key: it
 **commands nobody**. It is the Player's own memory of a selection, recorded so
@@ -100,13 +172,49 @@ code fails the build.
 { "kind": "garrison", "faction": "rome", "squads": [3], "settlement": 12 }
 { "kind": "withdraw", "faction": "carthage", "squads": [7] }
 { "kind": "build", "faction": "rome", "settlement": 12, "building": "castrum" }
-{ "kind": "recruit", "faction": "carthage", "settlement": 12, "squadType": "libyan-spear", "count": 3 }
+{ "kind": "recruit", "faction": "carthage", "settlement": 12, "squadType": "libyan-spear", "men": 48, "count": 3 }
 { "kind": "assault", "faction": "rome", "squads": [3], "settlement": 12 }
 { "kind": "blockade", "faction": "carthage", "squads": [7], "settlement": 12 }
 { "kind": "formation", "faction": "rome", "squads": [3, 5], "formation": "column" }
 { "kind": "group", "faction": "rome", "group": 2, "squads": [3, 5] }
+{ "kind": "cancelPending", "faction": "rome", "settlement": 5, "order": 1 }
+{ "kind": "repairFortification", "faction": "rome", "settlement": 5, "structure": "wall", "side": "north" }
+{ "kind": "cancelFortificationRepair", "faction": "rome", "settlement": 5, "structure": "wall", "side": "north" }
+{ "kind": "attackStructure", "faction": "rome", "squads": [3], "target": { "kind": "camp", "id": 0 } }
+{ "kind": "repairWork", "faction": "rome", "settlement": 5, "building": "farm", "ordinal": 0 }
+{ "kind": "cancelWorkRepair", "faction": "rome", "settlement": 5, "building": "farm", "ordinal": 0 }
 ```
 <!-- examples:end -->
+
+Attacks on Works and camps approach a reachable firing position: archers stop
+within four tiles, other arms within two, with a clear line to the target.
+The army Controller can raid currently visible, completed exterior enemy Works
+when an available Squad can face the observed nearby defenders. Remembered
+Works, unknown ownership, construction, ruins and active repairs do not authorize
+a raid; the Match validates every resulting `attackStructure` Command.
+
+Structure damage counts surviving men and troop impact. A foot body with
+24 Force deals four HP per exchange; cavalry contributes half its Force.
+Contributions accumulate per target before rounding, with a one-HP minimum
+for positive total Force, so splitting the same body into more Squads cannot
+multiply its damage. Attack order still decides who delivers a camp's final
+blow and receives its single reward.
+Neutral raiders use the same aggregation for Works and fortifications, preserving
+their full 24-man body's calibration of four and three HP respectively.
+
+An Assault works a wall reached by its actual bodies. When several sides are
+reachable, it concentrates on the side supported by the greatest force, with
+the side code breaking ties. Only bodies in reach of that wall contribute to
+its damage; the existing shared escalade cap still applies.
+
+## Compatibility with earlier logs
+
+Before P2 a `recruit` had no `men` field. Such a log is **rejected explicitly**
+at the vocabulary (`the command at command.men is not a positive size: undefined`)
+rather than given a default: a deterministic default would silently reinterpret
+an old purchase at a different size and price. Re-record the log with the real
+size it meant. The rules' state hash also moved with P2's capacity and Payroll
+fields; that is a documented baseline change, not a presentation-neutral one.
 
 ## Malformed, and illegal
 
@@ -115,7 +223,7 @@ Two refusals live at different layers, and the difference matters.
 **Malformed** means it is not a Command: the vocabulary refuses it at the seam,
 saying where the value went wrong.
 
-- a `kind` that is not one of the twelve;
+- a `kind` that is not one of the thirteen;
 - a field the vocabulary does not have — `squad` is a typo for `squads`, and a
   Command that silently orders nobody is the worst kind of accepted input;
 - a missing field, a field of the wrong type, a fraction, a negative id, an
@@ -131,7 +239,7 @@ the command at command.squads[1] is not a Squad id: 1.5
 ```
 
 **Illegal** means it is a Command, but not one that Faction may issue now: an
-enemy Squad, a tile in the sea, a building nobody can afford, an Assault by
+enemy Squad, a tile in the sea, a building above the settlement's Tier, an Assault by
 Carthage, a Blockade with nothing to besiege. Only the rules of the tick can answer that,
 because only they can look at the world and say why, so `command.ts` owns the
 first question and nothing of the second.

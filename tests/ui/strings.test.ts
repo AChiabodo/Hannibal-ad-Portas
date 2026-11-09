@@ -50,6 +50,7 @@ describe('the string table', () => {
 
       expect(translation.it, key).toBeTypeOf('string');
       expect(translation.it.trim(), key).not.toBe('');
+      expect(translation.it, `${key} must be valid Unicode`).not.toContain('\uFFFD');
       for (const locale of LOCALES) {
         const text = translation[locale];
         if (text === undefined) continue;

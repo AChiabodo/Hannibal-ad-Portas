@@ -15,7 +15,8 @@
  * seed the page reports, so "the minimap matches the map" is a comparison and
  * not a smoke test.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import type { Page } from '@playwright/test';
 import { pixelAt } from '../src/art/pixel-buffer';
 import { MAP_HEIGHT, MAP_WIDTH, generateMap, type MapGrid } from '../src/sim/map';
 import { KNOWLEDGE, createFog, knows, refreshVision, viewOf, type FogView } from '../src/sim/fog';
@@ -64,7 +65,7 @@ function openingFog(): FogView {
  * forever for a Squad the page never got to raise.
  */
 async function boot(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
   await advance(page, 1);
   await page.evaluate(() => window.__SPQR.game?.pause());
@@ -95,7 +96,8 @@ test('boots with the interface over the theatre, and says it in Italian', async 
 
   // The page raises one Squad through the same seam a Player will use (C2 gives
   // the Player a way to raise one by hand), so the Squad panel is live.
-  expect(model.rows.map((row) => row.selection)).toContainEqual({ kind: 'squad', id: 1 });
+  const first = (await squads(page))[0]!;
+  expect(model.rows.map((row) => row.selection)).toContainEqual({ kind: 'squad', id: first.id });
   expect(model.rows.find((row) => row.selection.kind === 'squad')?.label).toBe('Astati');
 
   expect(pageErrors).toEqual([]);
@@ -104,15 +106,19 @@ test('boots with the interface over the theatre, and says it in Italian', async 
 test('shows a Squad its morale and its Payroll when it is selected', async ({ page }) => {
   await boot(page);
   await advance(page, 1);
-  await select(page, { kind: 'squad', id: 1 });
+  const first = (await squads(page))[0]!;
+  await select(page, { kind: 'squad', id: first.id });
 
   const model = await hud(page);
   const words = (model.detail?.lines ?? []).map(line);
 
-  expect(model.detail?.title).toBe('Reparto 1');
+  expect(model.detail?.title).toBe(`Reparto ${first.id}`);
   expect(words).toContain(`${translate('ui.type')} Astati`);
-  expect(words).toContain(`${translate('ui.morale')} 10`);
-  expect(words).toContain(`${translate('ui.payroll')} 3`);
+  expect(words).toContain(`${translate('ui.men')} 120/120`);
+  expect(words).toContain(`${translate('ui.capacity')} 120`);
+  expect(words).toContain(`${translate('ui.morale')} 10/10`);
+  // A 120-man hastati is five 24-man rates: 15 denarii a Season (ADR-0027).
+  expect(words).toContain(`${translate('ui.payroll')} 15`);
 });
 
 test('selects the row a Player clicks', async ({ page }) => {
@@ -130,7 +136,7 @@ test('selects the row a Player clicks', async ({ page }) => {
 
   // A click on the row the page drew picks that Squad (C2's selection is the
   // Player's: a set of Squads, and the panel over one of them).
-  expect((await selection(page)).squads).toEqual([1]);
+  expect((await selection(page)).squads).toEqual([squad.selection.id]);
 
   // And a click on bare theatre clears it again rather than selecting whatever
   // happens to be underneath the pointer. The point is chosen against the Squads
@@ -143,6 +149,7 @@ test('selects the row a Player clicks', async ({ page }) => {
 /** A canvas point no Squad's block covers, which is where a click lands on the theatre alone. */
 async function emptyCanvasPoint(page: Page): Promise<{ readonly x: number; readonly y: number }> {
   const view = await describeView(page);
+  const panels = await hudRects(page);
   const blocks = (await squads(page)).map((squad) => ({
     x: (squad.rect.x - view.camera.x) * view.camera.zoom,
     y: (squad.rect.y - view.camera.y) * view.camera.zoom,
@@ -152,6 +159,7 @@ async function emptyCanvasPoint(page: Page): Promise<{ readonly x: number; reado
 
   for (let y = 40; y < view.height - 40; y += 20) {
     for (let x = 160; x < view.width - 40; x += 20) {
+      if (panels.some((panel) => x >= panel.x && x < panel.x + panel.width && y >= panel.y && y < panel.y + panel.height)) continue;
       if (blocks.some((block) => x >= block.x && x < block.x + block.width && y >= block.y && y < block.y + block.height)) {
         continue;
       }
@@ -192,7 +200,7 @@ test('draws the minimap from the map, through the fog the Faction actually has',
     width: Math.floor(view.width / view.camera.zoom),
     height: Math.floor(view.height / view.camera.zoom),
   };
-  const expected = minimapPlate(MAP, fog, viewport);
+  const expected = minimapPlate(MAP, fog, viewport, [{ ...MAP.strongholds[0], owner: 0 }]);
 
   const points: [number, number][] = [];
   for (let y = 0; y < MINIMAP_PLATE_HEIGHT; y += 1) {

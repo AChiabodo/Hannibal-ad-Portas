@@ -9,13 +9,21 @@
  * against today's and see only what actually changed (A4's acceptance criteria).
  *
  * The *reason* is a sentence rather than a code because the outcome and the
- * winner are already codes. Today the rules cannot name a reason — nothing can
- * lose a Stronghold yet — so the reason is the driver's outcome written out,
- * and C5 makes it specific ("the Roman ram breached the walls at tick 4312")
- * when there is something specific to say.
+ * winner are already codes. C5 made it specific: a Match now ends when a
+ * Stronghold falls or a Faction is annihilated, and the sentence says which, and
+ * by which path of the Siege.
  */
-import type { MatchResult, MatchRun } from '../sim/driver.ts';
+import type { Command, SiegePath } from '../sim/command.ts';
+import type { AiDecision } from '../ai/controller.ts';
+import type { MatchResult, MatchRun, VictoryReason } from '../sim/driver.ts';
 import type { Faction } from '../sim/faction.ts';
+import type { CommandLog } from '../sim/replay.ts';
+import type { AgentRun, AgentVerdict } from './agent.ts';
+
+/** Ordinary harness runs keep their existing report; AI runs add explanations. */
+export interface ReportableRun extends MatchRun {
+  readonly decisions?: readonly AiDecision<Command>[];
+}
 
 /** The report of one finished Match, in the order it is written to standard output. */
 export interface MatchReport {
@@ -39,21 +47,54 @@ export interface MatchReport {
 
   /** The state hash the Match ended on: the fingerprint two runs are compared by (ADR-0006). */
   readonly hash: string;
+
+  /** Present for AI runs, in tick/Faction/layer order, including idle decisions. */
+  readonly decisions?: readonly AiDecision<Command>[];
+
+  /** Present for runs with an external agent on one side: how its Player did (E1). */
+  readonly agent?: AgentVerdict;
 }
 
 /** Reads a finished Match into the shape the CLI prints. */
-export function reportOf(run: MatchRun): MatchReport {
+export function reportOf(run: ReportableRun): MatchReport {
   return {
     seed: run.seed,
     ticks: run.result.tick,
     ...verdictOf(run.result),
     commands: run.log.length,
     hash: run.hash,
+    ...(run.decisions === undefined ? {} : { decisions: run.decisions }),
   };
 }
 
+/**
+ * The report of a Match an external agent played: the ordinary one, and how its
+ * Player did.
+ *
+ * The verdict is last because it is the answer to the question the report
+ * provokes — "the agent was asked 306 times and issued 61 Commands, so why was
+ * this a defeat?" — and because the run's own facts come first in every report
+ * this project prints.
+ */
+export function agentReportOf(run: AgentRun): MatchReport {
+  return { ...reportOf(run), agent: run.agent };
+}
+
+/**
+ * The Match's Command log, as the file a replay is made of (E2).
+ *
+ * One JSON line per applied Command, stamped with the tick it applied on, in
+ * application order — exactly the shape `replayCommands` reads back. It is
+ * written beside the report rather than in it: a log of a whole Match is
+ * thousands of lines, and the report is a thing to read and diff.
+ */
+export function formatCommandLog(log: CommandLog<Command>): string {
+  return log.map((entry) => `${JSON.stringify(entry)}
+`).join('');
+}
+
 /** How a Match ended, as the three fields the report says it with. */
-interface Verdict {
+export interface Verdict {
   readonly outcome: MatchReport['outcome'];
   readonly winner: Faction | null;
   readonly reason: string;
@@ -62,11 +103,14 @@ interface Verdict {
 /**
  * The outcome the rules gave, the winner when there is one, and the reason said
  * in a sentence — read in one place, so the three cannot come to disagree.
+ *
+ * Exported because a replay reports the ending a record describes, and its
+ * report must say it in exactly the words a Match's own report would (E2).
  */
-function verdictOf(result: MatchResult): Verdict {
+export function verdictOf(result: MatchResult): Verdict {
   switch (result.kind) {
     case 'victory':
-      return { outcome: 'victory', winner: result.winner, reason: `${result.winner} won the Match` };
+      return { outcome: 'victory', winner: result.winner, reason: victoryOf(result.winner, result.reason) };
     case 'draw':
       return { outcome: 'draw', winner: null, reason: 'the rules called the Match a draw' };
     case 'clock':
@@ -75,6 +119,43 @@ function verdictOf(result: MatchResult): Verdict {
         winner: null,
         reason: `the Match reached its tick bound of ${result.tick} ticks without a decision`,
       };
+  }
+}
+
+/**
+ * An ending in the words a report uses, stamped with the tick it was given on —
+ * except the clock's, whose own sentence already names it.
+ *
+ * Exported for the replay's verdict, which has to say what a record's ending was
+ * and what this build reached instead, in the same words a Match's own report
+ * would (E2).
+ */
+export function endingWords(result: MatchResult): string {
+  const reason = verdictOf(result).reason;
+
+  return result.kind === 'clock' ? reason : `${reason}, at tick ${String(result.tick)}`;
+}
+
+/** How a Siege's two paths read in a sentence. */
+const PATH_WORD: Readonly<Record<SiegePath, string>> = {
+  assault: 'an assault',
+  blockade: 'a blockade',
+};
+
+/**
+ * A victory said in one sentence, from the reason the rules gave.
+ *
+ * The Faction that lost is the other one, so it is derived rather than passed:
+ * two Factions and one winner leaves no third answer to get wrong.
+ */
+function victoryOf(winner: Faction, reason: VictoryReason): string {
+  const loser = winner === 'rome' ? 'carthage' : 'rome';
+
+  switch (reason.kind) {
+    case 'stronghold':
+      return `${winner} won the Match: the ${loser} Stronghold fell to ${PATH_WORD[reason.path]}`;
+    case 'annihilation':
+      return `${winner} won the Match: the ${loser} has neither settlements nor Squads left`;
   }
 }
 

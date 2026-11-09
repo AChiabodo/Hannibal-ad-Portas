@@ -28,6 +28,7 @@ export const CODE_OF: Record<CommandKind, number> = {
   move: 1,
   attackMove: 2,
   attack: 3,
+  attackStructure: 16,
   hold: 4,
   garrison: 5,
   withdraw: 6,
@@ -37,6 +38,11 @@ export const CODE_OF: Record<CommandKind, number> = {
   blockade: 10,
   formation: 11,
   group: 12,
+  cancelPending: 13,
+  repairFortification: 14,
+  cancelFortificationRepair: 15,
+  repairWork: 17,
+  cancelWorkRepair: 18,
 };
 
 /** One Squad: a block, with everything a Tick might move or spend. */
@@ -140,8 +146,10 @@ export function toyOutcome(world: ToyMatchWorld): Outcome | null {
   const carthage = world.squads.some((squad) => squad.owner === CARTHAGE);
 
   if (rome && carthage) return null;
-  if (rome) return { kind: 'victory', winner: 'rome' };
-  if (carthage) return { kind: 'victory', winner: 'carthage' };
+  const reason = { kind: 'annihilation' } as const;
+
+  if (rome) return { kind: 'victory', winner: 'rome', reason };
+  if (carthage) return { kind: 'victory', winner: 'carthage', reason };
 
   return { kind: 'draw' };
 }

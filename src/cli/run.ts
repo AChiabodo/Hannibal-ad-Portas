@@ -22,6 +22,7 @@
 import type { RunOptions } from './arguments.ts';
 import { RULES } from './rules.ts';
 import type { MatchRun } from '../sim/index.ts';
+import type { ReportableRun } from './report.ts';
 
 /**
  * Plays one whole Match, headless, from the options a command line gave.
@@ -39,8 +40,8 @@ import type { MatchRun } from '../sim/index.ts';
  *   when a Player or a rule breaks an invariant of the seam; the CLI reports
  *   those and exits 1.
  */
-export function playMatch(options: RunOptions): MatchRun {
-  return RULES[options.rules].play(options.seed, options.ticks);
+export function playMatch(options: RunOptions): ReportableRun {
+  return RULES[options.rules].play(options.seed, options.ticks, options.difficulty);
 }
 
 /**
@@ -76,7 +77,10 @@ export class HashMismatchError extends Error {
  *
  * @throws HashMismatchError when the Match ended on any other hash.
  */
-export function requireExpectedHash(run: MatchRun, options: RunOptions): void {
+export function requireExpectedHash(
+  run: MatchRun,
+  options: { readonly expectedHash: string | null },
+): void {
   if (options.expectedHash !== null && run.hash !== options.expectedHash) {
     throw new HashMismatchError(options.expectedHash, run.hash);
   }

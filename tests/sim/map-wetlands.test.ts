@@ -1,0 +1,53 @@
+import { describe, expect, it } from 'vitest';
+import { materialTile } from '../../src/art/terrain';
+import { MATERIAL_OF_TERRAIN } from '../../src/render/terrain';
+import { generateMap, isWalkable, TERRAIN, tileX, tileY } from '../../src/sim/map';
+import { findRoute, moveCost } from '../../src/sim/route';
+import { blockedTile } from '../../src/sim/settlement-space';
+
+describe('lakes and marshes', () => {
+  it('provides a ford on the long branch before the confluence on seed 2', () => {
+    const map = generateMap(2);
+    expect(map.rivers).toHaveLength(2);
+    const [one, two] = map.rivers;
+    const other = new Set(one!.tiles);
+    const junction = two!.tiles.findIndex((tile) => other.has(tile));
+    expect(junction).toBeGreaterThan(20);
+    const branch = two!.tiles.slice(0, junction);
+    expect(branch.some((tile) => map.terrain[tile] === TERRAIN.ford || map.terrain[tile] === TERRAIN.bridge)).toBe(true);
+  });
+
+  it('generates water to go around and walkable, slower marsh in the landscape', () => {
+    const maps = Array.from({ length: 20 }, (_, seed) => generateMap(seed));
+    expect(maps.some((map) => map.terrain.includes(TERRAIN.lake))).toBe(true);
+    expect(maps.some((map) => map.terrain.includes(TERRAIN.marsh))).toBe(true);
+    expect(isWalkable(TERRAIN.lake)).toBe(false);
+    expect(isWalkable(TERRAIN.marsh)).toBe(true);
+    expect(moveCost(TERRAIN.marsh)).toBeGreaterThan(moveCost(TERRAIN.plain));
+    expect(() => moveCost(TERRAIN.lake)).toThrow(RangeError);
+  });
+
+  it('gives both terrains a procedural material', () => {
+    expect(materialTile(MATERIAL_OF_TERRAIN[TERRAIN.lake]).width).toBeGreaterThan(0);
+    expect(materialTile(MATERIAL_OF_TERRAIN[TERRAIN.marsh]).width).toBeGreaterThan(0);
+    expect(MATERIAL_OF_TERRAIN[TERRAIN.lake]).not.toBe(MATERIAL_OF_TERRAIN[TERRAIN.marsh]);
+  });
+
+  it('refuses to march into a lake in both the route and physical-space checks', () => {
+    const map = Array.from({ length: 20 }, (_, seed) => generateMap(seed))
+      .find((candidate) => candidate.terrain.includes(TERRAIN.lake));
+    expect(map).toBeDefined();
+    if (map === undefined) return;
+    const lake = map.terrain.indexOf(TERRAIN.lake);
+    const target = { x: tileX(lake), y: tileY(lake) };
+    expect(findRoute(map, map.strongholds[0], target)).toEqual({ kind: 'refused', reason: 'water' });
+    expect(blockedTile(map, 0, target.x, target.y)).toBe(true);
+  });
+
+  it('sometimes joins a river source or mouth to an inland lake', () => {
+    const connected = Array.from({ length: 30 }, (_, seed) => generateMap(seed)).some((map) =>
+      map.rivers.some((river) => [river.tiles[0], river.tiles.at(-1)].some((tile) =>
+        tile !== undefined && map.terrain[tile] === TERRAIN.lake)));
+    expect(connected).toBe(true);
+  });
+});

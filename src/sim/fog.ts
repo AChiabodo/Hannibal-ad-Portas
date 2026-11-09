@@ -54,6 +54,7 @@
  * makes that a compile error); the game's omniscient mode watches, and nothing
  * else.
  */
+import type { SettlementMemory } from './settlement-knowledge.ts';
 import type { Faction } from './faction.ts';
 import {
   isTerrain,
@@ -167,6 +168,10 @@ export interface FogView {
  * type per Match, and it is the one the Observation carries.
  */
 export interface Fog extends FogView {
+  /** Last observed camp appearances, never refreshed from hidden territory. */
+  barbarianCamps?: { readonly id: number; readonly x: number; readonly y: number; readonly variant: number; condition: number }[];
+  /** Private authoritative numeric snapshots; public appearance DTOs decode these. */
+  settlements?: SettlementMemory[];
   readonly terrain: Uint8Array;
   readonly visible: Uint8Array;
   readonly contacts: LastKnownContact[];
@@ -213,7 +218,7 @@ export function createFog(): Fog {
   const terrain = new Uint8Array(TILE_COUNT);
   terrain.fill(UNSEEN);
 
-  return { terrain, visible: new Uint8Array(TILE_COUNT), contacts: [] };
+  return { terrain, visible: new Uint8Array(TILE_COUNT), contacts: [], settlements: [] };
 }
 
 /**
@@ -232,6 +237,19 @@ export function createFogs(): Readonly<Record<Faction, Fog>> {
 /** The eye something standing on the map sees from, at the radius it sees to. */
 export function eyeOf(site: Site, radius: number): Eye {
   return { x: site.x, y: site.y, radius };
+}
+
+/** An owned settlement watches from its centre and the corners of its grounds. */
+export function settlementEyes(site: Site): readonly Eye[] {
+  return [eyeOf(site, SETTLEMENT_VISION), ...[-6, 6].flatMap((dx) => [-6, 6].map((dy) =>
+    eyeOf({ x: site.x + dx, y: site.y + dy }, SETTLEMENT_VISION)))];
+}
+
+/** The same disc for a visible enemy and for a tile of visible terrain. */
+export function eyeCovers(eye: Eye, site: Site): boolean {
+  const dx = site.x - eye.x;
+  const dy = site.y - eye.y;
+  return dx * dx + dy * dy <= eye.radius * eye.radius;
 }
 
 /**
@@ -377,18 +395,14 @@ function remember(fog: Fog, contact: LastKnownContact): void {
 
 /** Paints one eye's disc into both grids: in view now, and remembered from here on. */
 function stamp(fog: Fog, map: MapGrid, eye: Eye): void {
-  const reach = eye.radius * eye.radius;
   const top = Math.max(0, eye.y - eye.radius);
   const bottom = Math.min(MAP_HEIGHT - 1, eye.y + eye.radius);
   const left = Math.max(0, eye.x - eye.radius);
   const right = Math.min(MAP_WIDTH - 1, eye.x + eye.radius);
 
   for (let y = top; y <= bottom; y += 1) {
-    const dy = y - eye.y;
-
     for (let x = left; x <= right; x += 1) {
-      const dx = x - eye.x;
-      if (dx * dx + dy * dy > reach) continue;
+      if (!eyeCovers(eye, { x, y })) continue;
 
       const tile = tileIndex(x, y);
       fog.visible[tile] = 1;

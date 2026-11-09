@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+import type { Page } from '@playwright/test';
 import type { SpqrDebugHooks } from '../src/debug';
 import { blit, pixelAt, type PixelBuffer } from '../src/art/pixel-buffer';
 import { createFog, refreshVision, viewOf } from '../src/sim/fog';
@@ -7,10 +8,13 @@ import type { ViewState } from '../src/render/boot';
 import { renderFog } from '../src/render/fog';
 import { VIEWED_FACTION, DEFAULT_SEED, DEFAULT_ZOOM, VIEWPORT_HEIGHT, VIEWPORT_WIDTH } from '../src/render/view';
 import { renderTerrain, THEATRE_PIXELS, tilePixel } from '../src/render/terrain';
+import { siteSprite } from '../src/art/settlements';
+import { siteLook } from '../src/render/settlements';
+import { squadBlock } from '../src/render/squads';
 import { openingEyes } from '../src/render/opening';
+import { visibleWildlife, wildlifeOf, wildlifeSprite } from '../src/render/wildlife';
 import { screenToStage, stageToScreen } from '../src/render/camera';
-import type { Rect } from '../src/ui/hud';
-import { describeView, hudRects, samples } from './hooks';
+import { covers, describeView, hudRects, samples, sites, squads, state } from './hooks';
 
 /**
  * The theatre on screen (ticket B3).
@@ -24,7 +28,7 @@ import { describeView, hudRects, samples } from './hooks';
  *
  * What that buys is the map's own acceptance criteria: a map that renders
  * completely (every sampled point matches, including the corners of the theatre),
- * pans and zooms across all 96×96 tiles, and stays exactly in step with the
+ * pans and zooms across the whole theatre, and stays exactly in step with the
  * generator at every zoom level.
  *
  * B4 put the fog over the map (see `fog.spec.ts` for the fog itself), so the
@@ -44,13 +48,15 @@ const GRID = generateMap(DEFAULT_SEED);
 const THEATRE: PixelBuffer = foggedByThePlayer();
 
 /** The theatre rendered, with the fog the page opens with drawn over it. */
-function foggedByThePlayer(): PixelBuffer {
+function foggedByThePlayer(tick = 0): PixelBuffer {
   const fog = createFog();
   // The eyes the page opens with: the Stronghold's watch, and the opening
   // army's own (C2 — a Squad has eyes, and the fog follows the men).
   refreshVision(fog, GRID, openingEyes(GRID, VIEWED_FACTION));
 
-  const frame = renderTerrain(GRID);
+  const frame = renderTerrain(GRID, 'spring', DEFAULT_SEED);
+  for (const animal of visibleWildlife(wildlifeOf(GRID, DEFAULT_SEED), viewOf(fog), tick))
+    blit(frame, wildlifeSprite(animal.kind), animal.pixelX, animal.pixelY);
   blit(frame, renderFog(viewOf(fog)), 0, 0);
 
   return frame;
@@ -99,6 +105,7 @@ function visiblePoints(view: ViewState): { points: [number, number][]; expected:
  * deliberately not the map.
  */
 async function expectTheatrePixels(page: Page, view: ViewState, context: string): Promise<void> {
+  const theatre = foggedByThePlayer((await state(page)).tick);
   const rects = await hudRects(page);
   const { points, expected } = visiblePoints(view);
   const kept: { point: [number, number]; stage: [number, number] }[] = [];
@@ -120,7 +127,7 @@ async function expectTheatrePixels(page: Page, view: ViewState, context: string)
     const entry = kept[index];
     if (entry === undefined) continue;
 
-    const wanted = pixelAt(THEATRE, entry.stage[0], entry.stage[1]);
+    const wanted = pixelAt(theatre, entry.stage[0], entry.stage[1]);
     const got = drawn[index];
     if (got === undefined || got[0] !== wanted[0] || got[1] !== wanted[1] || got[2] !== wanted[2]) wrong += 1;
   }
@@ -128,23 +135,23 @@ async function expectTheatrePixels(page: Page, view: ViewState, context: string)
   expect(wrong, `${context}: mismatched pixels`).toBe(0);
 }
 
-/** Whether a screen point falls on the interface rather than on the theatre. */
-function covers(rect: Rect, x: number, y: number): boolean {
-  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
-}
-
 /** Boots the page and waits for the hooks, answering with what the renderer reported. */
 async function boot(page: Page): Promise<SpqrDebugHooks['boot'] & { readonly booted: true }> {
-  await page.goto('/');
+  await page.goto('/e2e/game-fixture.html');
   await expect(page.locator('body[data-spqr-booted="true"]')).toBeAttached();
 
   const report: SpqrDebugHooks['boot'] = await page.evaluate(() => window.__SPQR.boot);
   if (!report.booted) throw new Error(`boot failed: ${report.error}`);
 
-  // C2 puts an army on the map, and these tests are about the map: the men are
-  // hidden with the page's own lens, so what is compared is the theatre and the
-  // fog the generators produced and not a hundred soldiers standing on it.
-  await page.evaluate(() => window.__SPQR.game?.showSquads(false));
+  // C2 puts an army on the map and U6 puts the settlements on it, and these tests
+  // are about the map: both are hidden with the page's own lenses, so what is
+  // compared is the theatre and the fog the generators produced and not the men
+  // standing on it or the towns drawn over it.
+  await page.evaluate(() => {
+    window.__SPQR.game?.pause();
+    window.__SPQR.game?.showSquads(false);
+    window.__SPQR.game?.showSettlements(false);
+  });
 
   return report;
 }
@@ -207,10 +214,34 @@ test('boots in a real browser and draws the generated theatre through software W
   // inside the theatre's edges (B3's clamp), instead of the middle of the map.
   expect(view.camera).toEqual(openingCamera());
 
-  // The centre pixel of the frame is the theatre pixel the camera says is there.
+  // The centre pixel of the frame is the theatre pixel the camera says is there —
+  // or, where a settlement stands on that pixel, the settlement's own (#57: the
+  // camera opens on the Faction's Stronghold, which is a structure on the map).
   const centre = { x: Math.floor(VIEWPORT_WIDTH / 2), y: Math.floor(VIEWPORT_HEIGHT / 2) };
   const stageCentre = screenToStage(view.camera, centre.x, centre.y);
-  expect(report.render.pixel).toEqual(pixelAt(THEATRE, stageCentre.x, stageCentre.y));
+  const standing = await sites(page);
+  const under = standing.find((site) => stageCentre.x >= site.rect.x && stageCentre.x < site.rect.x + site.rect.width
+    && stageCentre.y >= site.rect.y && stageCentre.y < site.rect.y + site.rect.height);
+  let expected = under === undefined
+    ? pixelAt(THEATRE, stageCentre.x, stageCentre.y)
+    : pixelAt(
+      siteSprite(siteLook(under)),
+      stageCentre.x - under.rect.x,
+      stageCentre.y - under.rect.y,
+    );
+  // Purchased formations can overlap the boot camera's Stronghold. Its opaque
+  // Figure pixels are drawn above structures, so compose that same public art
+  // over the expected ground pixel rather than assuming the town is uncovered.
+  for (const squad of [...await squads(page)].sort((a, b) => a.y - b.y || a.id - b.id)) {
+    const x = stageCentre.x - squad.rect.x;
+    const y = stageCentre.y - squad.rect.y;
+    const block = squadBlock(squad);
+    if (x < 0 || y < 0 || x >= block.width || y >= block.height) continue;
+    const ink = pixelAt(block, x, y);
+    if (ink[3] === 255) expected = ink;
+  }
+  expect(report.render.pixel).toEqual(expected);
+  expect(under?.kind, 'the boot camera opens on the Stronghold').toBe('stronghold');
 
   await expect(page.locator('#app canvas')).toHaveCount(1);
   expect(pageErrors).toEqual([]);
@@ -244,7 +275,7 @@ test('pans in whole stage pixels and lands on them exactly', async ({ page }) =>
   await expectTheatrePixels(page, view, 'after panning');
 });
 
-test('reaches every corner of a full 96×96 map, and stays exact there', async ({ page }) => {
+test('reaches every corner of the full map, and stays exact there', async ({ page }) => {
   await boot(page);
 
   // The whole theatre, at the zoom that shows the most of it, walked corner to

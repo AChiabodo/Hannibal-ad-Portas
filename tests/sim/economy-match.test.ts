@@ -6,6 +6,7 @@ import { runMatch } from '../../src/sim/driver';
 import {
   allocate,
   applyEconomyCommand,
+  chargePayroll,
   harvestYield,
   housingCapacity,
   isHeld,
@@ -28,15 +29,21 @@ import {
 import { SQUAD_VISION, SETTLEMENT_VISION } from '../../src/sim/fog';
 import { musterSquad } from '../../src/sim/movement';
 import { createMatch } from '../../src/sim/match';
-import { RESOURCE, RESOURCE_KINDS } from '../../src/sim/map';
+import { replay, replayCommands } from '../../src/sim/replay';
+import { forecastTreasury } from '../../src/ui/forecast';
+import { RESOURCE, RESOURCE_KINDS, tileIndex, type MapGrid } from '../../src/sim/map';
 import {
   HEADLESS_TICKS,
   HEADLESS_YEARS,
   SEASON_TICKS,
   YEAR_TICKS,
+  startCalendar,
   type Season,
 } from '../../src/sim/season';
-import { blockOf, squadTypeId } from './economy-fixtures';
+import { CAMP_RADIUS, TERRITORY_RADIUS } from '../../src/sim/territory';
+import { createEconomy } from '../../src/sim/economy';
+
+import { blockOf, CARTHAGE, ROME, squadTypeId, strongholdStage, work } from './economy-fixtures';
 
 /** The two Players a Match on this world runs on unless a test says otherwise. */
 function idlePlayers(): readonly [Player<EconomyVisible>, Player<EconomyVisible>] {
@@ -58,6 +65,8 @@ function squad(overrides: Partial<Squad> = {}): Squad {
     id: 1,
     owner: 0,
     type: squadTypeId('hastati'),
+    strength: 24,
+    capacity: 24,
     home: 0,
     morale: 10,
     unpaid: 0,
@@ -124,7 +133,66 @@ describe('what a Faction reads of the economy', () => {
 
     const works = observeEconomy(world, 'rome').settlements[0]?.works ?? [];
 
-    expect(works).toEqual([{ building: 'lumber-camp', remaining: 12, standing: false }]);
+    expect(works).toEqual([{ building: 'lumber-camp', remaining: 12, standing: false, repairing: false, ordinal: 0, origin: 'rome' }]);
+  });
+});
+
+describe('the country a Faction reads, and who is standing in it', () => {
+  /** A world on a painted theatre, where every tile is the one the test put there. */
+  function worldOn(map: MapGrid): EconomyWorld {
+    return {
+      map,
+      calendar: startCalendar(),
+      economy: createEconomy(map),
+      autumns: 0,
+      winters: 0,
+    };
+  }
+
+  it('shows a Faction the tiles its own Territory covers, and the other’s as nobody’s', () => {
+    const world = worldOn(strongholdStage());
+    const rome = observeEconomy(world, 'rome');
+    const carthage = observeEconomy(world, 'carthage');
+
+    expect(rome.territory[tileIndex(ROME.x, ROME.y)]).toBe(1);
+    expect(rome.territory[tileIndex(ROME.x, ROME.y + TERRITORY_RADIUS)]).toBe(1);
+    expect(rome.territory[tileIndex(ROME.x, ROME.y + TERRITORY_RADIUS + 1)]).toBe(0);
+
+    // The far side of the theatre is Carthage's country, and Rome reads it as
+    // nobody's: whose settlements feed a distant tile is that Faction's business.
+    expect(rome.territory[tileIndex(CARTHAGE.x, CARTHAGE.y)]).toBe(0);
+    expect(carthage.territory[tileIndex(CARTHAGE.x, CARTHAGE.y)]).toBe(1);
+    expect(carthage.territory[tileIndex(ROME.x, ROME.y)]).toBe(0);
+  });
+
+  it('tells a Faction which of its Squads are in supply, and which have a camp over them', () => {
+    const map = strongholdStage();
+    const world = worldOn(map);
+
+    musterSquad(world.economy, world.map, { faction: 'rome', squadType: 'hastati', x: ROME.x, y: ROME.y });
+    musterSquad(world.economy, world.map, {
+      faction: 'rome',
+      squadType: 'hastati',
+      x: ROME.x,
+      y: ROME.y + TERRITORY_RADIUS + 1,
+    });
+    const camped = musterSquad(world.economy, world.map, {
+      faction: 'rome',
+      squadType: 'hastati',
+      x: ROME.x + CAMP_RADIUS,
+      y: ROME.y,
+    });
+    world.economy.settlements[0]?.works.push(work('castrum'));
+
+    const seen = observeEconomy(world, 'rome').squads;
+
+    expect(seen[0]).toMatchObject({ inTerritory: true, inCamp: false });
+    expect(seen[1]).toMatchObject({ inTerritory: false, inCamp: false });
+    expect(seen[2]).toMatchObject({ inTerritory: true, inCamp: true });
+
+    // It is a posture and not a place: a Squad under way is not in camp.
+    camped.steps = [0];
+    expect(observeEconomy(world, 'rome').squads[2]).toMatchObject({ inCamp: false });
   });
 });
 
@@ -132,7 +200,7 @@ describe('a Match on the economy, with two Controllers', () => {
   it('applies a Build and a Recruit through the driver, and logs both', () => {
     const log: { tick: number; command: Command }[] = [
       { tick: 0, command: build('rome', 0, 'lumber-camp') },
-      { tick: 0, command: recruit('rome', 0, 'hastati', 1) },
+      { tick: 0, command: recruit('rome', 0, 'hastati', 24, 1) },
     ];
 
     const run = runMatch<EconomyWorld, EconomyVisible>({
@@ -153,7 +221,7 @@ describe('a Match on the economy, with two Controllers', () => {
 
   it('leaves a Faction’s Commands in its own settlements, and the other Faction’s stock alone', () => {
     const world = worldOf(7);
-    apply(world.economy, [build('rome', 0, 'lumber-camp'), recruit('rome', 0, 'hastati', 1)]);
+    apply(world.economy, [build('rome', 0, 'lumber-camp'), recruit('rome', 0, 'hastati', 24, 1)]);
 
     const rome = observeEconomy(world, 'rome');
     const carthage = observeEconomy(world, 'carthage');
@@ -263,13 +331,76 @@ describe('an economy left alone for three game years', () => {
   });
 });
 
+describe('Recruited capacity, survivor Payroll and Replay', () => {
+  it('reads capacity apart from survivors, and prices the next bill on the survivors', () => {
+    const match = createMatch({ seed: 7, rules: economyMatchRules });
+    const world = match.state.world;
+
+    match.step([recruit('rome', 0, 'hastati', 60, 1)]);
+    const raised = world.economy.squads[0]!;
+    expect(raised).toMatchObject({ strength: 60, capacity: 60 });
+
+    raised.strength = 17;
+    const [shown] = observeEconomy(world, 'rome').squads;
+    expect(shown).toMatchObject({ men: 17, capacity: 60, type: 'hastati' });
+    // ceil(17 * 3 / 24) = 3 denarii, and the capacity has not moved.
+    expect(shown?.payroll).toBe(3);
+    expect(raised.capacity).toBe(60);
+  });
+
+  it('makes the quoted bill, the rule’s deduction and the forecast agree', () => {
+    const match = createMatch({ seed: 7, rules: economyMatchRules });
+    const world = match.state.world;
+
+    match.step([recruit('rome', 0, 'hastati', 60, 1)]);
+    world.economy.squads[0]!.strength = 17;
+    world.economy.treasuries[0] = 100;
+
+    const visible = observeEconomy(world, 'rome');
+    const quoted = visible.squads[0]?.payroll ?? -1;
+    const forecast = forecastTreasury(visible, match.state.tick);
+    expect(forecast.available).toBe(true);
+    if (forecast.available) expect(forecast.value.payroll).toBe(quoted);
+
+    chargePayroll(world.economy);
+
+    expect(100 - (world.economy.treasuries[0] ?? 0)).toBe(quoted);
+    expect(quoted).toBe(3);
+  });
+
+  it('replays a Recruit of a named size to the same capacity and hash', () => {
+    const log = [{ tick: 0, command: recruit('rome', 0, 'hastati', 60, 1) }];
+    const first = replay({ seed: 7, rules: economyMatchRules, log, ticks: 3 });
+    const second = replay({ seed: 7, rules: economyMatchRules, log, ticks: 3 });
+
+    expect(first.hash).toBe(second.hash);
+    // A different real size is a different purchase and a different Match.
+    const other = replay({ seed: 7, rules: economyMatchRules,
+      log: [{ tick: 0, command: recruit('rome', 0, 'hastati', 120, 1) }], ticks: 3 });
+    expect(other.hash).not.toBe(first.hash);
+  });
+
+  it('refuses a pre-P2 record with no size instead of silently reinterpreting it', () => {
+    expect(() => replayCommands({
+      seed: 7,
+      rules: economyMatchRules,
+      log: [{ tick: 0, command: { kind: 'recruit', faction: 'rome', settlement: 0,
+        squadType: 'hastati', count: 1 } as never }],
+      ticks: 1,
+    })).toThrow(/command\.men/);
+  });
+});
+
 describe('Payroll across a Season boundary', () => {
   it('charges on the boundary and not before it, and moves morale when it does', () => {
     const match = createMatch({ seed: 7, rules: economyMatchRules });
     const world = match.state.world;
 
     world.economy.treasuries[0] = 10;
-    world.economy.squads.push(squad({ id: 1, owner: 0, morale: 5 }));
+    // Standing in its own country, so the Season charges Payroll and nothing
+    // else: a Squad cut off from Supply is a different Season's bill (C3).
+    const home = world.economy.settlements[0]!;
+    world.economy.squads.push(squad({ id: 1, owner: 0, morale: 5, x: home.x, y: home.y }));
 
     for (let tick = 0; tick < SEASON_TICKS - 1; tick += 1) match.step();
     expect(world.economy.squads[0]?.morale).toBe(5);
@@ -285,8 +416,11 @@ describe('Payroll across a Season boundary', () => {
 
     // An army the treasury cannot keep: six denarii a Season against a couple of tax.
     world.economy.treasuries[0] = 0;
+    const home = world.economy.settlements[0]!;
     for (const id of [1, 2]) {
-      world.economy.squads.push(squad({ id, owner: 0, type: squadTypeId('triarii'), morale: 4 }));
+      world.economy.squads.push(
+        squad({ id, owner: 0, type: squadTypeId('triarii'), morale: 4, x: home.x, y: home.y }),
+      );
     }
 
     for (let tick = 0; tick < SEASON_TICKS; tick += 1) match.step();
@@ -324,9 +458,11 @@ describe('the eyes a Faction has in this world', () => {
 
     const eyes = eyesOfEconomy(world, 'rome');
 
-    expect(eyes).toHaveLength(2);
+    expect(eyes).toHaveLength(6);
     expect(eyes[0]).toEqual({ x: stronghold.x, y: stronghold.y, radius: SETTLEMENT_VISION });
-    expect(eyes[1]).toEqual({ x: 4, y: 4, radius: SQUAD_VISION });
+    expect(eyes[1]).toEqual({ x: stronghold.x - 6, y: stronghold.y - 6, radius: SETTLEMENT_VISION });
+    expect(eyes[4]).toEqual({ x: stronghold.x + 6, y: stronghold.y + 6, radius: SETTLEMENT_VISION });
+    expect(eyes[5]).toEqual({ x: 4, y: 4, radius: SQUAD_VISION });
   });
 
   it('has no eyes for the other Faction’s things', () => {

@@ -184,3 +184,58 @@ export type RampName = keyof typeof RAMPS;
 
 /** The ramps in the order a catalogue, a swatch strip or a test walks them. */
 export const RAMP_NAMES: readonly RampName[] = ['stone', 'bronze', 'blood', 'olive', 'parchment', 'water'];
+
+/**
+ * How many shades a *detail* ramp carries: the standard seven, with one between each.
+ *
+ * A standard ramp is the right granularity for a thing that is *drawn* — a helmet,
+ * a wall, a banner — because a drawn thing has an edge and an edge wants a visible
+ * step. It is the wrong granularity for a surface: the terrain is nine thousand
+ * tiles of dither, and a dither that steps a whole standard shade alternates pixels
+ * between two colours twenty percentage points of the ramp's spread apart, which at
+ * one-to-one zoom reads as flicker and competes with the soldiers standing on it
+ * (ticket U5).
+ *
+ * The answer is not a narrower ramp — that would leave the palette's own reference
+ * grid — but the same ramp at twice the resolution: the same base in the middle,
+ * the same dark and light ends, a shade in between every two, and ten points of the
+ * spread to a step instead of twenty. Its even indices *are* the standard shades
+ * (`DETAIL_RAMPS.olive[6]` is `RAMPS.olive[3]`, which is `BASE.olive`), so it is a
+ * subdivision of the palette rather than a second one — though its odd indices are
+ * colours nothing else in the library paints, which is what a surface needs: a step
+ * too fine to read as a step.
+ */
+export const DETAIL_SHADES = 2 * RAMP_SHADES - 1;
+
+/**
+ * The detail ramps, one per base, in the same order as `RAMPS`.
+ *
+ * A whole table rather than only the bases terrain happens to want: the two ramps of
+ * a base are one derivation at two resolutions, a ramp that exists for one base and
+ * not another is a table that drifts, and `tests/art/palette.test.ts` checks the pair
+ * base by base.
+ */
+export const DETAIL_RAMPS = {
+  stone: ramp(BASE.stone, DETAIL_SHADES),
+  bronze: ramp(BASE.bronze, DETAIL_SHADES),
+  blood: ramp(BASE.blood, DETAIL_SHADES),
+  olive: ramp(BASE.olive, DETAIL_SHADES),
+  parchment: ramp(BASE.parchment, DETAIL_SHADES),
+  water: ramp(BASE.water, DETAIL_SHADES),
+} as const;
+
+/** The name of one of the detail ramps. */
+export type DetailRampName = keyof typeof DETAIL_RAMPS;
+
+/**
+ * One shade of a detail ramp, by index, darkest first.
+ *
+ * The counterpart of `shadeAt`, and it refuses the same way: a generator that
+ * asks for a shade the ramp does not have is a bug worth hearing about where it
+ * is written rather than a hole to paint with.
+ *
+ * @throws RangeError when the ramp has no such shade.
+ */
+export function detailAt(name: DetailRampName, index: number): Rgba {
+  return shadeAt(DETAIL_RAMPS[name], index);
+}

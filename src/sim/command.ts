@@ -30,6 +30,8 @@
  * hand on the Match through the object it handed over.
  */
 import { FACTIONS, isFaction, type Faction } from './faction.ts';
+import type { Formation } from '../content/formation.ts';
+import type { Facing } from './squad.ts';
 
 /** The field every Command carries: the Faction that issued it. */
 const FACTION_FIELD = 'faction';
@@ -46,10 +48,21 @@ export class CommandValidationError extends Error {
   /** Where in the Command the offending value is, e.g. `command.squads[1]`. */
   readonly path: string;
 
+  /**
+   * What is wrong with it, without the path: the second half of the message.
+   *
+   * Kept as a field as well as being in the sentence because a caller that has
+   * its own name for the path — a protocol line, where the same Command sits at
+   * `message.commands[3]` — has to say it in its own words rather than slice the
+   * message and hope it still parses.
+   */
+  readonly reason: string;
+
   constructor(path: string, reason: string) {
     super(`the command at ${path} ${reason}`);
     this.name = 'CommandValidationError';
     this.path = path;
+    this.reason = reason;
   }
 }
 
@@ -59,7 +72,7 @@ export class CommandValidationError extends Error {
  * C1 owns what each shape means for movement and combat. The vocabulary names
  * only that the choice exists, because a Controller has to be able to make it.
  */
-export type Formation = 'line' | 'column';
+export type { Formation } from '../content/formation.ts';
 
 /**
  * The part every Command shares: the Faction it is addressed to.
@@ -98,6 +111,14 @@ export interface AttackCommand extends CommandBase {
   readonly squads: readonly number[];
   /** The enemy Squad to attack, by id. */
   readonly target: number;
+}
+
+/** An explicit attack on an observed camp or completed economic work. */
+export interface AttackStructureCommand extends CommandBase {
+  readonly kind: 'attackStructure';
+  readonly squads: readonly number[];
+  readonly target: { readonly kind: 'camp'; readonly id: number } |
+    { readonly kind: 'work'; readonly settlement: number; readonly building: string; readonly ordinal: number };
 }
 
 /** Hold position: stand, face the enemy, and do not pursue. */
@@ -140,8 +161,33 @@ export interface RecruitCommand extends CommandBase {
   readonly settlement: number;
   /** A Squad type id from the content table (C4). */
   readonly squadType: string;
+  /** The men each Squad is raised with: one of the type's real sizes (ADR-0026). */
+  readonly men: number;
   /** How many Squads to raise; at least one. */
   readonly count: number;
+}
+
+/** Cancel an owned construction/recruitment request which has not yet started. */
+export interface CancelPendingCommand extends CommandBase {
+  readonly kind: 'cancelPending';
+  readonly settlement: number;
+  readonly order: number;
+}
+
+/** Order or cancel repair of one owned fortification. */
+export interface FortificationRepairCommand extends CommandBase {
+  readonly kind: 'repairFortification' | 'cancelFortificationRepair';
+  readonly settlement: number;
+  readonly structure: 'wall' | 'gate';
+  readonly side: Facing;
+}
+
+/** Order or cancel repair of one owned completed work. */
+export interface WorkRepairCommand extends CommandBase {
+  readonly kind: 'repairWork' | 'cancelWorkRepair';
+  readonly settlement: number;
+  readonly building: string;
+  readonly ordinal: number;
 }
 
 /** Take a settlement by force: the fast, expensive path of a Siege, and Rome's alone (ADR-0008). */
@@ -157,6 +203,16 @@ export interface BlockadeCommand extends CommandBase {
   readonly squads: readonly number[];
   readonly settlement: number;
 }
+
+/**
+ * The two paths of a Siege (GLOSSARY: Siege, ADR-0008).
+ *
+ * A Siege is one or the other and never both, and the words are the Command
+ * kinds because choosing a path is exactly issuing one of them: `assault`
+ * breaks the walls with the ram, and `blockade` starves the settlement into
+ * surrender. The two are alternatives rather than stages.
+ */
+export type SiegePath = 'assault' | 'blockade';
 
 /** Set the shape the Squads hold: their frontage and depth (PLAN §4). */
 export interface FormationCommand extends CommandBase {
@@ -186,6 +242,7 @@ export type Command =
   | MoveCommand
   | AttackMoveCommand
   | AttackCommand
+  | AttackStructureCommand
   | HoldCommand
   | GarrisonCommand
   | WithdrawCommand
@@ -194,7 +251,10 @@ export type Command =
   | AssaultCommand
   | BlockadeCommand
   | FormationCommand
-  | GroupCommand;
+  | GroupCommand
+  | CancelPendingCommand
+  | FortificationRepairCommand
+  | WorkRepairCommand;
 
 /** The `kind` of any Command in the vocabulary. */
 export type CommandKind = Command['kind'];
@@ -220,6 +280,12 @@ export const COMMAND_KINDS: readonly CommandKind[] = [
   'blockade',
   'formation',
   'group',
+  'cancelPending',
+  'repairFortification',
+  'cancelFortificationRepair',
+  'attackStructure',
+  'repairWork',
+  'cancelWorkRepair',
 ];
 
 /** Every formation a Squad can hold: frontage and depth, in the order `docs/COMMANDS.md` lists them. */
@@ -258,6 +324,12 @@ export function attack(
   return readAttack({ kind: 'attack', faction, squads, target }, ROOT);
 }
 
+/** Build an explicit structure attack. */
+export function attackStructure(faction: Faction, squads: readonly number[],
+  target: AttackStructureCommand['target']): AttackStructureCommand {
+  return readAttackStructure({ kind: 'attackStructure', faction, squads, target }, ROOT);
+}
+
 /** Builds a Hold Command. @throws CommandValidationError when it names no Squad. */
 export function hold(faction: Faction, squads: readonly number[]): HoldCommand {
   return readHold({ kind: 'hold', faction, squads }, ROOT);
@@ -282,14 +354,15 @@ export function build(faction: Faction, settlement: number, building: string): B
   return readBuild({ kind: 'build', faction, settlement, building }, ROOT);
 }
 
-/** Builds a Recruit Command. @throws CommandValidationError when the count is not positive or the type has no id. */
+/** Builds a Recruit Command. @throws CommandValidationError when the size or count is not positive, or the type has no id. */
 export function recruit(
   faction: Faction,
   settlement: number,
   squadType: string,
+  men: number,
   count: number,
 ): RecruitCommand {
-  return readRecruit({ kind: 'recruit', faction, settlement, squadType, count }, ROOT);
+  return readRecruit({ kind: 'recruit', faction, settlement, squadType, men, count }, ROOT);
 }
 
 /** Builds an Assault Command. @throws CommandValidationError when it names no Squad or no settlement. */
@@ -363,6 +436,7 @@ const READERS: {
   move: readMove,
   attackMove: readAttackMove,
   attack: readAttack,
+  attackStructure: readAttackStructure,
   hold: readHold,
   garrison: readGarrison,
   withdraw: readWithdraw,
@@ -372,7 +446,45 @@ const READERS: {
   blockade: readBlockade,
   formation: readFormation,
   group: readGroup,
+  cancelPending: readCancelPending,
+  repairFortification: (value, path) => readFortificationRepair('repairFortification', value, path),
+  cancelFortificationRepair: (value, path) => readFortificationRepair('cancelFortificationRepair', value, path),
+  repairWork: (value, path) => readWorkRepair('repairWork', value, path),
+  cancelWorkRepair: (value, path) => readWorkRepair('cancelWorkRepair', value, path),
 };
+
+function readWorkRepair(kind: WorkRepairCommand['kind'], value: Candidate, path: string): WorkRepairCommand {
+  requireFields(value, path, kind, ['kind', FACTION_FIELD, 'settlement', 'building', 'ordinal']);
+  return { kind, faction: requireFaction(value.faction, `${path}.faction`),
+    settlement: requireId(value.settlement, `${path}.settlement`, 'settlement'),
+    building: requireContentId(value.building, `${path}.building`, 'building'),
+    ordinal: requireId(value.ordinal, `${path}.ordinal`, 'ordinal') };
+}
+
+export function repairWork(faction: Faction, settlement: number, building: string, ordinal: number): WorkRepairCommand {
+  return readWorkRepair('repairWork', { kind: 'repairWork', faction, settlement, building, ordinal }, ROOT);
+}
+
+export function cancelWorkRepair(faction: Faction, settlement: number, building: string, ordinal: number): WorkRepairCommand {
+  return readWorkRepair('cancelWorkRepair', { kind: 'cancelWorkRepair', faction, settlement, building, ordinal }, ROOT);
+}
+
+function readFortificationRepair(kind: FortificationRepairCommand['kind'], value: Candidate, path: string): FortificationRepairCommand {
+  requireFields(value, path, kind, ['kind', FACTION_FIELD, 'settlement', 'structure', 'side']);
+  if (value.structure !== 'wall' && value.structure !== 'gate') throw new CommandValidationError(`${path}.structure`, 'must be wall or gate');
+  if (value.side !== 'north' && value.side !== 'east' && value.side !== 'south' && value.side !== 'west')
+    throw new CommandValidationError(`${path}.side`, 'must be a cardinal direction');
+  return { kind, faction: requireFaction(value.faction, `${path}.faction`),
+    settlement: requireId(value.settlement, `${path}.settlement`, 'settlement'), structure: value.structure, side: value.side };
+}
+
+export function repairFortification(faction: Faction, settlement: number, structure: 'wall' | 'gate', side: Facing): FortificationRepairCommand {
+  return readFortificationRepair('repairFortification', { kind: 'repairFortification', faction, settlement, structure, side }, ROOT);
+}
+
+export function cancelFortificationRepair(faction: Faction, settlement: number, structure: 'wall' | 'gate', side: Facing): FortificationRepairCommand {
+  return readFortificationRepair('cancelFortificationRepair', { kind: 'cancelFortificationRepair', faction, settlement, structure, side }, ROOT);
+}
 
 /** The fields a march carries: a Move and an Attack-move differ only in their name. */
 interface March {
@@ -421,6 +533,24 @@ function readAttack(value: Candidate, path: string): AttackCommand {
   };
 }
 
+function readAttackStructure(value: Candidate, path: string): AttackStructureCommand {
+  requireFields(value, path, 'attackStructure', ['kind', FACTION_FIELD, 'squads', 'target']);
+  const target = requireRecord(value.target, `${path}.target`);
+  if (target.kind === 'work') {
+    requireFields(target, `${path}.target`, 'attackStructure', ['kind', 'settlement', 'building', 'ordinal']);
+    return { kind: 'attackStructure', faction: requireFaction(value.faction, `${path}.faction`),
+      squads: requireSquads(value.squads, `${path}.squads`),
+      target: { kind: 'work', settlement: requireId(target.settlement, `${path}.target.settlement`, 'settlement'),
+        building: requireContentId(target.building, `${path}.target.building`, 'building'),
+        ordinal: requireId(target.ordinal, `${path}.target.ordinal`, 'ordinal') } };
+  }
+  requireFields(target, `${path}.target`, 'attackStructure', ['kind', 'id']);
+  if (target.kind !== 'camp') throw new CommandValidationError(`${path}.target.kind`, 'must be camp or work');
+  return { kind: 'attackStructure', faction: requireFaction(value.faction, `${path}.faction`),
+    squads: requireSquads(value.squads, `${path}.squads`),
+    target: { kind: 'camp', id: requireId(target.id, `${path}.target.id`, 'camp') } };
+}
+
 function readHold(value: Candidate, path: string): HoldCommand {
   requireFields(value, path, 'hold', SQUAD_FIELDS);
 
@@ -466,12 +596,24 @@ function readBuild(value: Candidate, path: string): BuildCommand {
   };
 }
 
+function readCancelPending(value: Candidate, path: string): CancelPendingCommand {
+  requireFields(value, path, 'cancelPending', ['kind', FACTION_FIELD, 'settlement', 'order']);
+  return { kind: 'cancelPending', faction: requireFaction(value.faction, `${path}.faction`),
+    settlement: requireId(value.settlement, `${path}.settlement`, 'settlement'),
+    order: requireId(value.order, `${path}.order`, 'pending order') };
+}
+
+export function cancelPending(faction: Faction, settlement: number, order: number): CancelPendingCommand {
+  return readCancelPending({ kind: 'cancelPending', faction, settlement, order }, ROOT);
+}
+
 function readRecruit(value: Candidate, path: string): RecruitCommand {
   requireFields(value, path, 'recruit', [
     'kind',
     FACTION_FIELD,
     'settlement',
     'squadType',
+    'men',
     'count',
   ]);
 
@@ -480,6 +622,7 @@ function readRecruit(value: Candidate, path: string): RecruitCommand {
     faction: requireFaction(value.faction, `${path}.faction`),
     settlement: requireId(value.settlement, `${path}.settlement`, 'settlement'),
     squadType: requireContentId(value.squadType, `${path}.squadType`, 'Squad type'),
+    men: requirePositive(value.men, `${path}.men`, 'size'),
     count: requirePositive(value.count, `${path}.count`, 'count'),
   };
 }

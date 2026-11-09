@@ -13,12 +13,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import { hashState } from '../../src/sim/hash';
+import { findRoute } from '../../src/sim/route';
 import {
   generateMap,
   MAP_HEIGHT,
   MAP_WIDTH,
   RESOURCE_KINDS,
   TILE_COUNT,
+  TERRAIN,
+  tileIndex,
   isTerrain,
   type MapGrid,
 } from '../../src/sim/map';
@@ -32,6 +35,7 @@ import {
   strongholdProblems,
   terrainProblems,
 } from './map-invariants';
+import { testMap } from './economy-fixtures';
 
 /** The seeds the per-criterion tests walk: the first dozen, which is fast and varied. */
 const SEEDS = Array.from({ length: 12 }, (_, seed) => seed);
@@ -44,7 +48,7 @@ function problemsOver(seeds: readonly number[], check: (map: MapGrid) => readonl
 }
 
 describe('a map nobody drew', () => {
-  it('is a 96×96 grid of tiles, every one of them a terrain the map knows', () => {
+  it('is a full theatre of tiles, every one of them a terrain the map knows', () => {
     expect(problemsOver(SEEDS, terrainProblems)).toEqual([]);
 
     const map = generateMap(1);
@@ -70,6 +74,22 @@ describe('a map nobody drew', () => {
 });
 
 describe('the fairness the theatre is held to', () => {
+  it('requires separate crossings on a substantial river, not on a bypassable short stream', () => {
+    const makeStream = (length: number, ford: boolean): MapGrid => {
+      const map = testMap();
+      const tiles = Array.from({ length }, (_, i) => tileIndex(55, 10 + i));
+      for (const tile of tiles) map.terrain[tile] = TERRAIN.river;
+      if (ford) map.terrain[tiles[Math.floor(length / 2)] as number] = TERRAIN.ford;
+      return { ...map, rivers: [{ tiles }] };
+    };
+    const shortWithoutFord = makeStream(10, false);
+    const shortWithFord = makeStream(10, true);
+    expect(connectivityProblems(shortWithoutFord)).toEqual([]);
+    expect(connectivityProblems(shortWithFord)).toEqual([]);
+    expect(riverProblems(shortWithoutFord)).toEqual([]);
+    expect(riverProblems(shortWithFord)).toEqual([]);
+    expect(riverProblems(makeStream(100, true))).toContain('river 0 has fewer than two distinct crossings');
+  });
   it('leaves the land in one piece, with every settlement and resource node walkable from the Strongholds', () => {
     expect(problemsOver(SEEDS, connectivityProblems)).toEqual([]);
   });
@@ -78,11 +98,31 @@ describe('the fairness the theatre is held to', () => {
     expect(problemsOver(SEEDS, strongholdProblems)).toEqual([]);
   });
 
-  it('carries four to six capturable minor settlements, each on a tile of its own', () => {
+  it('carries six to eight capturable minor settlements, each on a tile of its own', () => {
     expect(problemsOver(SEEDS, settlementProblems)).toEqual([]);
+    expect(SEEDS.every((seed) => generateMap(seed).settlements.length >= 6)).toBe(true);
+    expect(SEEDS.some((seed) => generateMap(seed).settlements.length > 6)).toBe(true);
   });
 
-  it('crosses every river with at least the stated minimum of fords, and runs it edge to edge', () => {
+  it('gives each Stronghold a neutral settlement within a short opening march', () => {
+    for (let seed = 0; seed < 100; seed += 1) {
+      const map = generateMap(seed);
+      for (const stronghold of map.strongholds) {
+        const nearest = Math.min(...map.settlements.map((site) =>
+          Math.abs(site.x - stronghold.x) + Math.abs(site.y - stronghold.y)));
+        expect(nearest, `seed ${String(seed)}`).toBeLessThanOrEqual(48);
+        const nearby = map.settlements.filter((site) =>
+          Math.abs(site.x - stronghold.x) + Math.abs(site.y - stronghold.y) <= 48);
+        const marchLengths = nearby.flatMap((site) => {
+          const route = findRoute(map, stronghold, site);
+          return route.kind === 'route' ? [route.steps.length] : [];
+        });
+        expect(Math.min(...marchLengths), `seed ${String(seed)}`).toBeLessThanOrEqual(80);
+      }
+    }
+  });
+
+  it('keeps substantial rivers connected and crosses them with fords', () => {
     expect(problemsOver(SEEDS, riverProblems)).toEqual([]);
   });
 
